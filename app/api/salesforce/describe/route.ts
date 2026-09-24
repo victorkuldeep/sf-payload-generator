@@ -1,0 +1,99 @@
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { normalizeSalesforceUrl } from "@/lib/salesforce/url";
+import { SalesforceField, SalesforceDescribeResult } from "@/lib/salesforce/types";
+
+const schema = z.object({
+  instanceUrl: z.string().min(1),
+  token: z.string().min(1),
+  apiVersion: z.string().min(1),
+  objectName: z.string().min(1).regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, "Invalid object name"),
+});
+
+export async function POST(req: NextRequest) {
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten().fieldErrors }, { status: 400 });
+  }
+
+  const { instanceUrl, token, apiVersion, objectName } = parsed.data;
+
+  let normalizedUrl: string;
+  try {
+    normalizedUrl = normalizeSalesforceUrl(instanceUrl);
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Invalid instance URL" },
+      { status: 400 }
+    );
+  }
+
+  const ver = apiVersion.startsWith("v") ? apiVersion : `v${apiVersion}`;
+  const url = `${normalizedUrl}/services/data/${ver}/sobjects/${objectName}/describe`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+    });
+  } catch (err) {
+    return NextResponse.json(
+      { error: `Network error: ${err instanceof Error ? err.message : "unknown"}` },
+      { status: 502 }
+    );
+  }
+
+  if (!response.ok) {
+    let message = `${response.status} ${response.statusText}`;
+    if (response.status === 401) {
+      message = "401 Unauthorized — the access token may be expired or invalid.";
+    } else if (response.status === 404) {
+      message = `404 Not Found — object "${objectName}" does not exist or is not accessible.`;
+    } else {
+      try {
+        const errBody = (await response.json()) as Array<{ message: string }> | { message: string };
+        const first = Array.isArray(errBody) ? errBody[0] : errBody;
+        if (first?.message) message = first.message;
+      } catch {
+        /* ignore */
+      }
+    }
+    return NextResponse.json({ error: message }, { status: response.status });
+  }
+
+  try {
+    const data = (await response.json()) as {
+      name: string;
+      label: string;
+      labelPlural: string;
+      custom: boolean;
+      createable: boolean;
+      updateable: boolean;
+      fields: SalesforceField[];
+    };
+
+    const result: SalesforceDescribeResult = {
+      name: data.name,
+      label: data.label,
+      labelPlural: data.labelPlural,
+      custom: data.custom,
+      createable: data.createable,
+      updateable: data.updateable,
+      fields: data.fields,
+    };
+
+    return NextResponse.json(result);
+  } catch {
+    return NextResponse.json({ error: "Failed to parse Salesforce describe response" }, { status: 502 });
+  }
+}

@@ -17,7 +17,11 @@
 
 # misc
 .DS_Store
+Thumbs.db
+ehthumbs.db
 *.pem
+*.log
+logs/
 
 # debug
 npm-debug.log*
@@ -30,6 +34,10 @@ yarn-error.log*
 
 # vercel
 .vercel
+
+# editors / os
+.idea/
+.vscode/*
 
 # typescript
 *.tsbuildinfo
