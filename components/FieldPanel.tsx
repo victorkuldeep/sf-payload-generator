@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { SalesforceField, OperationType, SalesforcePicklistValue } from "@/lib/salesforce/types";
+import { SalesforceField, OperationType } from "@/lib/salesforce/types";
 import { getWritableFields, isRequiredField } from "@/lib/salesforce/metadata";
 import Badge from "./ui/Badge";
 import Input from "./ui/Input";
 import Button from "./ui/Button";
-import { PicklistPopover } from "./erd/PicklistPopover";
+import { PicklistValuesButton } from "./PicklistValuesButton";
 
 interface FieldPanelProps {
   fields: SalesforceField[];
@@ -19,12 +19,6 @@ interface FieldPanelProps {
   onToggleField: (fieldName: string) => void;
   onSelectAll: (fields: SalesforceField[]) => void;
   onClearAll: () => void;
-}
-
-interface ValuesPopover {
-  field: SalesforceField;
-  x: number;
-  y: number;
 }
 
 type TypeFilter = "all" | "createable" | "updateable" | "required" | "reference" | "picklist";
@@ -43,7 +37,6 @@ export default function FieldPanel({
 }: FieldPanelProps) {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
-  const [valuesPop, setValuesPop] = useState<ValuesPopover | null>(null);
 
   const writableFields = useMemo(
     () => getWritableFields(fields, operation),
@@ -189,27 +182,14 @@ export default function FieldPanel({
                       <Badge color="yellow">Updateable</Badge>
                     )}
                     {isPicklist && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          const rect = e.currentTarget.getBoundingClientRect();
-                          setValuesPop({
-                            field,
-                            x: rect.right + 8,
-                            y: rect.top,
-                          });
-                        }}
-                        title={`View all ${pickValues.length} values`}
-                        aria-label={`View ${field.label} picklist values`}
-                        className="ml-auto inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-full border border-bronze-300 bg-bronze-100 px-2 py-0.5 text-[11px] font-semibold text-bronze-700 transition-colors hover:bg-bronze-200"
-                      >
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
-                          <path d="M9 6h12M9 12h12M9 18h12" />
-                          <path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01" strokeWidth="3.2" />
-                        </svg>
-                        {pickValues.length}
-                      </button>
+                      <PicklistValuesButton
+                        objectName={objectName}
+                        objectLabel={objectLabel}
+                        fieldName={field.name}
+                        fieldLabel={field.label}
+                        fieldType={field.type}
+                        values={pickValues}
+                      />
                     )}
                   </div>
                 </div>
@@ -218,28 +198,6 @@ export default function FieldPanel({
           })
         )}
       </div>
-
-      {valuesPop && (
-        <PicklistPopover
-          pop={{
-            apiName: objectName || valuesPop.field.name,
-            nodeLabel: objectLabel || objectName || "Field",
-            fieldName: valuesPop.field.name,
-            fieldType: valuesPop.field.type,
-            values: (valuesPop.field.picklistValues ?? []).map(
-              (v: SalesforcePicklistValue) => ({
-                label: v.label ?? v.value,
-                value: v.value,
-                active: v.active !== false,
-                isDefault: !!v.defaultValue,
-              })
-            ),
-            x: valuesPop.x,
-            y: valuesPop.y,
-          }}
-          onClose={() => setValuesPop(null)}
-        />
-      )}
     </div>
   );
 }

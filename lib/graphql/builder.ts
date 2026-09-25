@@ -48,19 +48,56 @@ export function defaultGraphQLSelection(fields: SalesforceField[]): string[] {
   return selectable.slice(0, 3).map((f) => f.name);
 }
 
+export interface GraphQLQueryField {
+  name: string;
+  /** True for name fields and picklist-likes, which Salesforce exposes as
+      objects (StringValue / PicklistValue) requiring a `{ value }` sub-selection. */
+  needsValue: boolean;
+}
+
+/** Salesforce GraphQL returns these describe shapes as objects, not scalars. */
+export function fieldNeedsValueSubselect(f: {
+  type: string;
+  nameField: boolean;
+}): boolean {
+  return (
+    f.nameField ||
+    f.type === "picklist" ||
+    f.type === "multipicklist" ||
+    f.type === "combobox"
+  );
+}
+
 export interface GraphQLQueryInput {
   objectName: string;
-  fieldNames: string[];
+  fields: GraphQLQueryField[];
   first: number;
 }
 
-export function buildGraphQLQuery({ objectName, fieldNames, first }: GraphQLQueryInput): string {
+/** Back-compat helper for callers holding only names (treated as plain scalars). */
+export function buildGraphQLQueryFromNames(
+  objectName: string,
+  fieldNames: string[],
+  first: number
+): string {
+  return buildGraphQLQuery({
+    objectName,
+    fields: fieldNames.map((name) => ({ name, needsValue: false })),
+    first,
+  });
+}
+
+export function buildGraphQLQuery({ objectName, fields, first }: GraphQLQueryInput): string {
   if (!SAFE_NAME.test(objectName)) throw new Error("Invalid object name");
-  const fields = fieldNames.filter((n) => SAFE_NAME.test(n));
-  if (fields.length === 0) throw new Error("Select at least one field");
+  const valid = fields.filter((f) => SAFE_NAME.test(f.name));
+  if (valid.length === 0) throw new Error("Select at least one field");
   const limit = Math.min(Math.max(Math.floor(first) || 10, 1), 2000);
 
-  const selected = fields.map((f) => `          ${f}`).join("\n");
+  const selected = valid
+    .map((f) =>
+      f.needsValue ? `          ${f.name} {\n            value\n          }` : `          ${f}`
+    )
+    .join("\n");
   return [
     `{`,
     `  uiapi {`,

@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import { CompositeSubRequest as SubRequest, SalesforceObject, SalesforceField } from "@/lib/salesforce/types";
 import { getWritableFields, getActivePicklistValues, getFieldEditorType, isRequiredField } from "@/lib/salesforce/metadata";
 import { getSampleValueForField } from "@/lib/payload/samples";
+import { rankObjects } from "@/lib/search/rank";
+import { PicklistValuesButton } from "./PicklistValuesButton";
 import Badge from "./ui/Badge";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
@@ -31,6 +33,7 @@ export default function CompositeSubRequestCard({
   onDescribeObject,
 }: Props) {
   const [objectSearch, setObjectSearch] = useState("");
+  const [fieldSearch, setFieldSearch] = useState("");
   const [collapsed, setCollapsed] = useState(false);
 
   const filteredObjects = useMemo(() => {
@@ -46,6 +49,11 @@ export default function CompositeSubRequestCard({
   const writableFields = useMemo(
     () => (subRequest.describe ? getWritableFields(subRequest.describe.fields, operation) : []),
     [subRequest.describe, operation]
+  );
+
+  const visibleFields = useMemo(
+    () => rankObjects(writableFields, fieldSearch, Number.POSITIVE_INFINITY),
+    [writableFields, fieldSearch]
   );
 
   const handleObjectSelect = async (objectName: string) => {
@@ -189,10 +197,11 @@ export default function CompositeSubRequestCard({
           {/* Field selector + editors */}
           {subRequest.describe && subRequest.method !== "GET" && subRequest.method !== "DELETE" && (
             <div>
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-medium text-ivory-700">
-                  Fields <span className="text-ivory-500">({writableFields.length} writable)</span>
-                </span>
+              <div className="mb-2 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-ivory-700">
+                    Fields <span className="text-ivory-500">({writableFields.length} writable)</span>
+                  </span>
                 <div className="flex gap-1">
                   <button
                     onClick={() => {
@@ -216,10 +225,22 @@ export default function CompositeSubRequestCard({
                     Clear
                   </button>
                 </div>
+                <Input
+                  placeholder={`Search ${writableFields.length} fields…`}
+                  value={fieldSearch}
+                  onChange={(e) => setFieldSearch(e.target.value)}
+                  aria-label="Search fields in this sub-request"
+                />
+                </div>
               </div>
 
               <div className="max-h-64 overflow-y-auto rounded border border-ivory-400 bg-white divide-y divide-ivory-300">
-                {writableFields.map((field) => {
+                {visibleFields.length === 0 && (
+                  <p className="px-3 py-3 text-sm text-ivory-500">
+                    {fieldSearch.trim() ? `No fields match "${fieldSearch.trim()}".` : "No writable fields."}
+                  </p>
+                )}
+                {visibleFields.map((field) => {
                   const isSelected = subRequest.selectedFieldNames.has(field.name);
                   const isRequired = isRequiredField(field, operation);
                   const referenceMatch = findReferenceMatch(field);
@@ -245,6 +266,17 @@ export default function CompositeSubRequestCard({
                                 ⚡ @&#123;{referenceMatch.referenceId}.id&#125;
                               </Badge>
                             )}
+                            {(field.type === "picklist" || field.type === "multipicklist") &&
+                              (field.picklistValues ?? []).length > 0 && (
+                                <PicklistValuesButton
+                                  objectName={subRequest.objectName}
+                                  objectLabel={subRequest.describe?.label ?? subRequest.objectName}
+                                  fieldName={field.name}
+                                  fieldLabel={field.label}
+                                  fieldType={field.type}
+                                  values={field.picklistValues ?? []}
+                                />
+                              )}
                           </div>
                           <span className="font-mono text-xs text-ivory-500">{field.name}</span>
                         </div>

@@ -10,6 +10,7 @@ import {
   getGraphQLFields,
   defaultGraphQLSelection,
   buildGraphQLQuery,
+  fieldNeedsValueSubselect,
   graphqlEndpoint,
   buildGraphQLCurl,
 } from "@/lib/graphql/builder";
@@ -17,6 +18,7 @@ import type { NewCollectionItem } from "@/lib/collection/types";
 import { rankObjects } from "@/lib/search/rank";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import { apiFetch } from "@/lib/api";
+import { PicklistValuesButton } from "./PicklistValuesButton";
 import Badge from "./ui/Badge";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
@@ -81,17 +83,24 @@ export default function GraphQLPanel({
   }, [queryableFields, fieldSearch]);
 
   const query = useMemo(() => {
-    if (!objectName || selected.size === 0) return "";
+    if (!objectName || !describe || selected.size === 0) return "";
     try {
+      const byName = new Map(describe.fields.map((f) => [f.name, f]));
       return buildGraphQLQuery({
         objectName,
-        fieldNames: [...selected],
+        fields: [...selected].map((name) => {
+          const f = byName.get(name);
+          return {
+            name,
+            needsValue: f ? fieldNeedsValueSubselect(f) : false,
+          };
+        }),
         first: parseInt(first, 10) || 10,
       });
     } catch {
       return "";
     }
-  }, [objectName, selected, first]);
+  }, [objectName, describe, selected, first]);
 
   const endpoint = graphqlEndpoint(instanceUrl, apiVersion);
   const curl = query ? buildGraphQLCurl(endpoint, query) : "";
@@ -271,6 +280,25 @@ export default function GraphQLPanel({
                       <span className="block truncate text-[11px] font-mono text-ivory-600">{f.name}</span>
                     </span>
                     <Badge variant="default">{f.type}</Badge>
+                    {fieldNeedsValueSubselect(f) && (
+                      <span
+                        className="font-mono text-[10px] text-bronze-600"
+                        title="Salesforce returns this as an object — queried as { value }"
+                      >
+                        {"{v}"}
+                      </span>
+                    )}
+                    {(f.type === "picklist" || f.type === "multipicklist") &&
+                      (f.picklistValues ?? []).length > 0 && (
+                        <PicklistValuesButton
+                          objectName={objectName}
+                          objectLabel={describe?.label ?? objectName}
+                          fieldName={f.name}
+                          fieldLabel={f.label}
+                          fieldType={f.type}
+                          values={f.picklistValues ?? []}
+                        />
+                      )}
                   </label>
                 ))}
                 {filteredFields.length === 0 && (
