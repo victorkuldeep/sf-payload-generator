@@ -14,7 +14,7 @@ interface ConnectModalProps {
   initialToken: string;
   initialApiVersion: string;
   onClose: () => void;
-  onConnect: (instanceUrl: string, token: string, apiVersion: string) => Promise<void>;
+  onConnect: (instanceUrl: string, token: string, apiVersion: string) => Promise<boolean>;
 }
 
 const VERSIONS = [

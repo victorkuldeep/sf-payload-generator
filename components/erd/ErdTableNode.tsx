@@ -109,13 +109,12 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
               Custom
             </span>
           )}
-          <span className="flex-1" aria-hidden="true" />
           <button
             type="button"
             onClick={copyApiName}
             title={`Copy API name (${data.apiName})`}
             aria-label={`Copy API name ${data.apiName}`}
-            className="nodrag shrink-0 rounded p-1 text-ivory-400 hover:text-bronze-600 hover:bg-ivory-200 transition-colors cursor-pointer"
+            className={`nodrag shrink-0 rounded p-1 transition-colors cursor-pointer ${data.isRoot ? "text-ivory-300 hover:text-white hover:bg-ivory-800" : "text-ivory-950 hover:text-bronze-600 hover:bg-ivory-200"}`}
           >
             {copied ? <CheckIcon /> : <CopyIcon />}
           </button>
@@ -128,10 +127,12 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
               }}
               title={data.refreshing ? "Refreshing metadata…" : `Refresh ${data.apiName} metadata`}
               aria-label={data.refreshing ? `Refreshing ${data.apiName}` : `Refresh ${data.apiName} metadata`}
-              className={`nodrag shrink-0 rounded p-1 transition-all cursor-pointer ${
+              className={`nodrag shrink-0 rounded p-1 transition-colors cursor-pointer ${
                 data.refreshing
                   ? "text-bronze-600"
-                  : "text-ivory-400 opacity-0 group-hover:opacity-100 hover:text-bronze-600 hover:bg-ivory-200"
+                  : data.isRoot
+                    ? "text-white/85 hover:text-white hover:bg-ivory-800"
+                    : "text-ivory-700 hover:text-ivory-950 hover:bg-ivory-200"
               }`}
             >
               <RefreshIcon spinning={data.refreshing} />

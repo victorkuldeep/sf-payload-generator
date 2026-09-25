@@ -8,6 +8,8 @@ import {
   CompositePayload,
 } from "@/lib/salesforce/types";
 import { generateCompositePayload, deriveReferenceId } from "@/lib/payload/generator";
+import { isSessionExpiredMessage } from "@/lib/salesforce/client";
+import { apiFetch } from "@/lib/api";
 import type { NewCollectionItem } from "@/lib/collection/types";
 import CompositeSubRequestCard from "./CompositeSubRequest";
 import CodeBlock from "./ui/CodeBlock";
@@ -19,6 +21,7 @@ interface CompositePanelProps {
   apiVersion: string;
   getToken: () => string;
   onAddToCollection: (item: NewCollectionItem) => void;
+  onSessionExpired?: () => void;
 }
 
 type ExportTab = "json" | "curl";
@@ -42,6 +45,7 @@ export default function CompositePanel({
   apiVersion,
   getToken,
   onAddToCollection,
+  onSessionExpired,
 }: CompositePanelProps) {
   const counter = useRef(0);
   const nextId = () => String(++counter.current);
@@ -110,22 +114,23 @@ export default function CompositePanel({
       );
 
       try {
-        const response = await fetch("/api/salesforce/describe", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ instanceUrl, token, apiVersion, objectName }),
-        });
+        const response = await apiFetch("/api/salesforce/describe", { instanceUrl, token, apiVersion, objectName });
         const data = (await response.json()) as SalesforceDescribeResult & { error?: string };
         if (response.ok) {
           setSubRequests((prev) =>
             prev.map((sr) => (sr.id === subReqId ? { ...sr, describe: data } : sr))
           );
+        } else if (typeof data.error === "string" && isSessionExpiredMessage(data.error)) {
+          onSessionExpired?.();
         }
-      } catch {
+      } catch (err) {
+        if (isSessionExpiredMessage(err instanceof Error ? err.message : "")) {
+          onSessionExpired?.();
+        }
         // describe failed — leave describe: null, user can retry
       }
     },
-    [instanceUrl, apiVersion, getToken]
+    [instanceUrl, apiVersion, getToken, onSessionExpired]
   );
 
   const handleGenerate = () => {
@@ -150,25 +155,25 @@ export default function CompositePanel({
     if (!generatedPayload) return;
 
     try {
-      const response = await fetch("/api/salesforce/composite", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          instanceUrl,
-          token,
-          apiVersion,
-          allOrNone: generatedPayload.allOrNone,
-          compositeRequest: generatedPayload.compositeRequest,
-        }),
+      const response = await apiFetch("/api/salesforce/composite", {
+        instanceUrl,
+        token,
+        apiVersion,
+        allOrNone: generatedPayload.allOrNone,
+        compositeRequest: generatedPayload.compositeRequest,
       });
       const data = (await response.json()) as typeof testResult & { error?: string };
       if (!response.ok || data?.error) {
-        setTestError(typeof data?.error === "string" ? data.error : "Request failed");
+        const message = typeof data?.error === "string" ? data.error : "Request failed";
+        setTestError(message);
+        if (isSessionExpiredMessage(message)) onSessionExpired?.();
       } else {
         setTestResult(data);
       }
     } catch (err) {
-      setTestError(err instanceof Error ? err.message : "Network error");
+      const message = err instanceof Error ? err.message : "Network error";
+      setTestError(message);
+      if (isSessionExpiredMessage(message)) onSessionExpired?.();
     } finally {
       setTestLoading(false);
     }

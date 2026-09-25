@@ -117,3 +117,31 @@ function getHumanErrorMessage(status: number, detail: string): string {
       return `${status} — ${detail}`;
   }
 }
+
+// ── Timeouts & session-expiry detection (shared by API routes) ────────────
+
+/** Salesforce leg timeout — the browser leg uses a longer budget (see lib/api.ts). */
+export const SF_TIMEOUT_MS = 25000;
+
+export function sfTimeoutSignal(): AbortSignal {
+  return AbortSignal.timeout(SF_TIMEOUT_MS);
+}
+
+export function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === "AbortError";
+}
+
+export function sfTimeoutMessage(): string {
+  return `Salesforce did not respond within ${SF_TIMEOUT_MS / 1000}s — the org may be slow or unreachable. Try again.`;
+}
+
+/** True when an error message means the session is dead (expired/invalid token). */
+export function isSessionExpiredMessage(message: unknown): boolean {
+  if (typeof message !== "string") return false;
+  return (
+    /\b401\b/.test(message) ||
+    /unauthori[sz]ed|invalid_session_id|session (has )?expired|session (is )?invalid|expired or invalid/i.test(
+      message
+    )
+  );
+}

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { normalizeSalesforceUrl } from "@/lib/salesforce/url";
+import { sfTimeoutSignal, isAbortError, sfTimeoutMessage } from "@/lib/salesforce/client";
 
 const schema = z.object({
   instanceUrl: z.string().min(1),
@@ -62,8 +63,12 @@ export async function POST(req: NextRequest) {
         Accept: "application/json",
       },
       body: JSON.stringify({ query }),
+      signal: sfTimeoutSignal(),
     });
   } catch (err) {
+    if (isAbortError(err)) {
+      return NextResponse.json({ error: sfTimeoutMessage(), success: false }, { status: 504 });
+    }
     return NextResponse.json(
       {
         error: `Network error: ${err instanceof Error ? err.message : "unknown"}`,

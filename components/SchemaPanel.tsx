@@ -8,6 +8,8 @@ import type {
 } from "@/lib/salesforce/types";
 import { buildErdElements, type ErdNodeData } from "@/lib/erd/graph";
 import { rankObjects } from "@/lib/search/rank";
+import { isSessionExpiredMessage } from "@/lib/salesforce/client";
+import { apiFetch } from "@/lib/api";
 import { ErdCanvas, type ErdCanvasHandle } from "./erd/ErdCanvas";
 import { PicklistPopover, type PicklistPopoverData } from "./erd/PicklistPopover";
 import {
@@ -30,6 +32,7 @@ interface SchemaPanelProps {
   getToken: () => string;
   /** Room mode: fill the parent height instead of a fixed viewport calc. */
   fillHeight?: boolean;
+  onSessionExpired?: () => void;
 }
 
 const MAX_NODES = 60;
@@ -64,6 +67,7 @@ export default function SchemaPanel({
   apiVersion,
   getToken,
   fillHeight = false,
+  onSessionExpired,
 }: SchemaPanelProps) {
   const [rootSearch, setRootSearch] = useState("");
   const [rootName, setRootName] = useState("");
@@ -141,22 +145,19 @@ export default function SchemaPanel({
     async (objectName: string): Promise<SalesforceDescribeResult> => {
       const token = getToken();
       if (!token) throw new Error("Session token unavailable. Please reconnect.");
-      const response = await fetch("/api/salesforce/describe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instanceUrl, token, apiVersion, objectName }),
-      });
+      const response = await apiFetch("/api/salesforce/describe", { instanceUrl, token, apiVersion, objectName });
       const data = (await response.json()) as SalesforceDescribeResult & { error?: string };
       if (!response.ok) {
-        throw new Error(
+        const message =
           typeof (data as unknown as { error?: unknown }).error === "string"
             ? (data as unknown as { error: string }).error
-            : `Describe failed for ${objectName}`
-        );
+            : `Describe failed for ${objectName}`;
+        if (isSessionExpiredMessage(message)) onSessionExpired?.();
+        throw new Error(message);
       }
       return data;
     },
-    [instanceUrl, apiVersion, getToken]
+    [instanceUrl, apiVersion, getToken, onSessionExpired]
   );
 
   const mergeDescribes = useCallback((fresh: SalesforceDescribeResult[]) => {

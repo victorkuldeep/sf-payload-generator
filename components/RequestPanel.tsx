@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { GeneratedPayload, TestRequestResult } from "@/lib/salesforce/types";
+import { isSessionExpiredMessage } from "@/lib/salesforce/client";
+import { apiFetch } from "@/lib/api";
 import Button from "./ui/Button";
 import CodeBlock from "./ui/CodeBlock";
 
@@ -10,6 +12,7 @@ interface RequestPanelProps {
   instanceUrl: string;
   apiVersion: string;
   getToken: () => string;
+  onSessionExpired?: () => void;
 }
 
 export default function RequestPanel({
@@ -17,6 +20,7 @@ export default function RequestPanel({
   instanceUrl,
   apiVersion,
   getToken,
+  onSessionExpired,
 }: RequestPanelProps) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -37,29 +41,29 @@ export default function RequestPanel({
     }
 
     try {
-      const response = await fetch("/api/salesforce/test-request", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          instanceUrl,
-          token,
-          apiVersion,
-          objectName: generatedPayload.objectName,
-          operation: generatedPayload.operation,
-          payload: generatedPayload.payload,
-          recordId: generatedPayload.recordId,
-        }),
+      const response = await apiFetch("/api/salesforce/test-request", {
+        instanceUrl,
+        token,
+        apiVersion,
+        objectName: generatedPayload.objectName,
+        operation: generatedPayload.operation,
+        payload: generatedPayload.payload,
+        recordId: generatedPayload.recordId,
       });
 
       const data = (await response.json()) as TestRequestResult & { error?: string };
 
       if (!response.ok || data.error) {
-        setError(typeof data.error === "string" ? data.error : "Request failed");
+        const message = typeof data.error === "string" ? data.error : "Request failed";
+        setError(message);
+        if (isSessionExpiredMessage(message)) onSessionExpired?.();
       } else {
         setResult(data);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Network error");
+      const message = err instanceof Error ? err.message : "Network error";
+      setError(message);
+      if (isSessionExpiredMessage(message)) onSessionExpired?.();
     } finally {
       setLoading(false);
     }

@@ -61,7 +61,7 @@ export default function SchemaRoom() {
   );
 
   const handleConnect = useCallback(
-    async (url: string, token: string, ver: string) => {
+    async (url: string, token: string, ver: string): Promise<boolean> => {
       setConnecting(true);
       setConnectError(null);
       try {
@@ -77,7 +77,7 @@ export default function SchemaRoom() {
         };
         if (!response.ok || !data.success) {
           setConnectError(data.error ?? "Connection failed");
-          return;
+          return false;
         }
         tokenRef.current = token;
         sessionStorage.setItem(
@@ -91,8 +91,10 @@ export default function SchemaRoom() {
         setConnected(true);
         setShowConnect(false);
         await loadObjects(url, token, ver);
+        return true;
       } catch (err) {
         setConnectError(err instanceof Error ? err.message : "Connection failed");
+        return false;
       } finally {
         setConnecting(false);
       }

@@ -11,11 +11,14 @@ import {
 import { generatePayload, generateEndpoint } from "@/lib/payload/generator";
 import { generateSampleValues, getSampleValueForField } from "@/lib/payload/samples";
 import { getWritableFields } from "@/lib/salesforce/metadata";
+import { isSessionExpiredMessage } from "@/lib/salesforce/client";
+import { apiFetch } from "@/lib/api";
 import { AppShell } from "@/components/layout/AppShell";
 import { Stepper } from "@/components/Stepper";
 import { EmptyState } from "@/components/EmptyState";
 import { WelcomeModal } from "@/components/WelcomeModal";
 import { HowItWorksModal } from "@/components/HowItWorksModal";
+import { SessionExpiredModal } from "@/components/SessionExpiredModal";
 import { BootLoader } from "@/components/BootLoader";
 import { CollectionDrawer } from "@/components/CollectionDrawer";
 import { CollectionPicker } from "@/components/CollectionPicker";
@@ -261,6 +264,11 @@ export default function Home() {
   const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null);
   const [collection, setCollection] = useState<CollectionItem[]>([]);
   const [pickerItem, setPickerItem] = useState<NewCollectionItem | null>(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
+
+  const handleSessionExpired = useCallback(() => {
+    setSessionExpired(true);
+  }, []);
 
   // Graceful boot: cover connect + initial object load so the UI never
   // pops in half-built. Fades out once the object list lands (or fails).
@@ -288,7 +296,8 @@ export default function Home() {
   const tokenRef = useRef<string>("");
 
   // On mount: restore session, seed modal prefill, decide on welcome,
-  // and reload the persisted request collection (IndexedDB)
+  // and reload the persisted request collection (IndexedDB).
+  // A dead restored session pops the Connect dialog instead of failing silently.
   useEffect(() => {
     setSavedCreds(readSavedCreds());
     const saved = sessionStorage.getItem("sf_session");
@@ -303,7 +312,13 @@ export default function Home() {
         apiVersion: string;
       };
       if (instanceUrl && token && apiVersion) {
-        handleConnect(instanceUrl, token, apiVersion);
+        sessionStorage.setItem("sf_welcomed", "1");
+        void handleConnect(instanceUrl, token, apiVersion).then((ok) => {
+          if (!ok) {
+            setSavedCreds(readSavedCreds());
+            setShowConnect(true);
+          }
+        });
       } else if (!sessionStorage.getItem("sf_welcomed")) {
         setShowWelcome(true);
       }
@@ -375,11 +390,12 @@ export default function Home() {
     return () => window.clearTimeout(t);
   }, []);
 
-  // Connection success → dismiss welcome + connect modal
+  // Connection success → dismiss welcome + connect + expired modals
   useEffect(() => {
     if (state.connected) {
       setShowConnect(false);
       setShowWelcome(false);
+      setSessionExpired(false);
       sessionStorage.setItem("sf_welcomed", "1");
     }
   }, [state.connected]);
@@ -404,22 +420,18 @@ export default function Home() {
     setErrors((prev) => ({ ...prev, [key]: value }));
 
   const handleConnect = useCallback(
-    async (instanceUrl: string, token: string, apiVersion: string) => {
+    async (instanceUrl: string, token: string, apiVersion: string): Promise<boolean> => {
       setLoadingKey("connect", true);
       setErrorKey("connect", null);
 
       try {
-        const response = await fetch("/api/salesforce/connect", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ instanceUrl, token, apiVersion }),
-        });
+        const response = await apiFetch("/api/salesforce/connect", { instanceUrl, token, apiVersion });
 
         const data = (await response.json()) as { success?: boolean; objectCount?: number; error?: string };
 
         if (!response.ok || !data.success) {
           setErrorKey("connect", data.error ?? "Connection failed");
-          return;
+          return false;
         }
 
         // Store token in ref, NOT in rendered state
@@ -440,8 +452,10 @@ export default function Home() {
 
         // Load objects immediately
         await loadObjects(instanceUrl, token, apiVersion);
+        return true;
       } catch (err) {
         setErrorKey("connect", err instanceof Error ? err.message : "Connection failed");
+        return false;
       } finally {
         setLoadingKey("connect", false);
       }
@@ -454,22 +468,22 @@ export default function Home() {
     setErrorKey("objects", null);
 
     try {
-      const response = await fetch("/api/salesforce/objects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instanceUrl, token, apiVersion }),
-      });
+      const response = await apiFetch("/api/salesforce/objects", { instanceUrl, token, apiVersion });
 
       const data = (await response.json()) as { objects?: SalesforceObject[]; error?: string };
 
       if (!response.ok) {
-        setErrorKey("objects", data.error ?? "Failed to load objects");
+        const message = data.error ?? "Failed to load objects";
+        setErrorKey("objects", message);
+        if (isSessionExpiredMessage(message)) handleSessionExpired();
         return;
       }
 
       setState((prev) => ({ ...prev, objects: data.objects ?? [] }));
     } catch (err) {
-      setErrorKey("objects", err instanceof Error ? err.message : "Failed to load objects");
+      const message = err instanceof Error ? err.message : "Failed to load objects";
+      setErrorKey("objects", message);
+      if (isSessionExpiredMessage(message)) handleSessionExpired();
     } finally {
       setLoadingKey("objects", false);
     }
@@ -489,32 +503,32 @@ export default function Home() {
       setLoadingKey("describe", true);
 
       try {
-        const response = await fetch("/api/salesforce/describe", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            instanceUrl: state.instanceUrl,
-            token: tokenRef.current,
-            apiVersion: state.apiVersion,
-            objectName: obj.name,
-          }),
+        const response = await apiFetch("/api/salesforce/describe", {
+          instanceUrl: state.instanceUrl,
+          token: tokenRef.current,
+          apiVersion: state.apiVersion,
+          objectName: obj.name,
         });
 
         const data = (await response.json()) as SalesforceDescribeResult & { error?: string };
 
         if (!response.ok) {
-          setErrorKey("describe", (data as unknown as { error: string }).error ?? "Failed to load fields");
+          const message = (data as unknown as { error: string }).error ?? "Failed to load fields";
+          setErrorKey("describe", message);
+          if (isSessionExpiredMessage(message)) handleSessionExpired();
           return;
         }
 
         setState((prev) => ({ ...prev, describe: data }));
       } catch (err) {
-        setErrorKey("describe", err instanceof Error ? err.message : "Failed to load fields");
+        const message = err instanceof Error ? err.message : "Failed to load fields";
+        setErrorKey("describe", message);
+        if (isSessionExpiredMessage(message)) handleSessionExpired();
       } finally {
         setLoadingKey("describe", false);
       }
     },
-    [state.instanceUrl, state.apiVersion]
+    [state.instanceUrl, state.apiVersion, handleSessionExpired]
   );
 
   const handleToggleField = useCallback((fieldName: string) => {
@@ -633,6 +647,7 @@ export default function Home() {
     sessionStorage.removeItem("sf_session");
     setShowSearch(false);
     setShowConnect(false);
+    setSessionExpired(false);
     setState(initialState);
     setErrors({ connect: null, objects: null, describe: null });
   }, []);
@@ -927,6 +942,7 @@ export default function Home() {
                   apiVersion={state.apiVersion}
                   getToken={() => tokenRef.current}
                   onAddToCollection={requestAddToCollection}
+                  onSessionExpired={handleSessionExpired}
                 />
               </section>
             )}
@@ -940,6 +956,7 @@ export default function Home() {
                   apiVersion={state.apiVersion}
                   getToken={() => tokenRef.current}
                   onAddToCollection={requestAddToCollection}
+                  onSessionExpired={handleSessionExpired}
                 />
               </section>
             )}
@@ -952,6 +969,7 @@ export default function Home() {
                   instanceUrl={state.instanceUrl}
                   apiVersion={state.apiVersion}
                   getToken={() => tokenRef.current}
+                  onSessionExpired={handleSessionExpired}
                 />
               </section>
             )}
@@ -975,6 +993,8 @@ export default function Home() {
                       operation={state.operation}
                       loading={loading.describe}
                       error={errors.describe}
+                      objectName={state.selectedObject.name}
+                      objectLabel={state.selectedObject.label}
                       onToggleField={handleToggleField}
                       onSelectAll={handleSelectAll}
                       onClearAll={handleClearAll}
@@ -1032,6 +1052,7 @@ export default function Home() {
                   instanceUrl={state.instanceUrl}
                   apiVersion={state.apiVersion}
                   getToken={() => tokenRef.current}
+                  onSessionExpired={handleSessionExpired}
                 />
               </section>
             )}
@@ -1040,6 +1061,15 @@ export default function Home() {
       </main>
 
       {/* ── Overlays ── */}
+      <SessionExpiredModal
+        open={sessionExpired && state.connected}
+        instanceUrl={state.instanceUrl}
+        onReconnect={() => {
+          setSessionExpired(false);
+          openConnect();
+        }}
+        onDisconnect={handleDisconnect}
+      />
       {bootShown && (
         <BootLoader
           stage={state.connected ? "objects" : "connect"}

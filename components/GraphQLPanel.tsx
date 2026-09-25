@@ -15,6 +15,8 @@ import {
 } from "@/lib/graphql/builder";
 import type { NewCollectionItem } from "@/lib/collection/types";
 import { rankObjects } from "@/lib/search/rank";
+import { isSessionExpiredMessage } from "@/lib/salesforce/client";
+import { apiFetch } from "@/lib/api";
 import Badge from "./ui/Badge";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
@@ -26,6 +28,7 @@ interface GraphQLPanelProps {
   apiVersion: string;
   getToken: () => string;
   onAddToCollection: (item: NewCollectionItem) => void;
+  onSessionExpired?: () => void;
 }
 
 type ExportTab = "query" | "curl";
@@ -36,6 +39,7 @@ export default function GraphQLPanel({
   apiVersion,
   getToken,
   onAddToCollection,
+  onSessionExpired,
 }: GraphQLPanelProps) {
   const [objectSearch, setObjectSearch] = useState("");
   const [objectName, setObjectName] = useState("");
@@ -109,24 +113,23 @@ export default function GraphQLPanel({
     }
 
     try {
-      const response = await fetch("/api/salesforce/describe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instanceUrl, token, apiVersion, objectName: obj.name }),
-      });
+      const response = await apiFetch("/api/salesforce/describe", { instanceUrl, token, apiVersion, objectName: obj.name });
       const data = (await response.json()) as SalesforceDescribeResult & { error?: string };
       if (!response.ok) {
-        setDescribeError(
+        const message =
           typeof (data as unknown as { error?: unknown }).error === "string"
             ? (data as unknown as { error: string }).error
-            : "Failed to load fields"
-        );
+            : "Failed to load fields";
+        setDescribeError(message);
+        if (isSessionExpiredMessage(message)) onSessionExpired?.();
         return;
       }
       setDescribe(data);
       setSelected(new Set(defaultGraphQLSelection(data.fields)));
     } catch (err) {
-      setDescribeError(err instanceof Error ? err.message : "Failed to load fields");
+      const message = err instanceof Error ? err.message : "Failed to load fields";
+      setDescribeError(message);
+      if (isSessionExpiredMessage(message)) onSessionExpired?.();
     } finally {
       setDescribeLoading(false);
     }
@@ -153,21 +156,19 @@ export default function GraphQLPanel({
     setRunError(null);
     setResult(null);
     try {
-      const response = await fetch("/api/salesforce/graphql", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instanceUrl, token, apiVersion, query }),
-      });
+      const response = await apiFetch("/api/salesforce/graphql", { instanceUrl, token, apiVersion, query });
       const data = (await response.json()) as TestRequestResult & { error?: unknown };
       if (!response.ok || data.error) {
-        setRunError(
-          typeof data.error === "string" ? data.error : "GraphQL request failed"
-        );
+        const message = typeof data.error === "string" ? data.error : "GraphQL request failed";
+        setRunError(message);
+        if (isSessionExpiredMessage(message)) onSessionExpired?.();
       } else {
         setResult(data);
       }
     } catch (err) {
-      setRunError(err instanceof Error ? err.message : "Network error");
+      const message = err instanceof Error ? err.message : "Network error";
+      setRunError(message);
+      if (isSessionExpiredMessage(message)) onSessionExpired?.();
     } finally {
       setRunLoading(false);
     }

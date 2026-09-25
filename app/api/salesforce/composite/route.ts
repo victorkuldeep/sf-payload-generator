@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { normalizeSalesforceUrl } from "@/lib/salesforce/url";
+import { sfTimeoutSignal, isAbortError, sfTimeoutMessage } from "@/lib/salesforce/client";
 
 const compositeRequestItemSchema = z.object({
   method: z.enum(["POST", "PATCH", "GET", "DELETE"]),
@@ -64,8 +65,12 @@ export async function POST(req: NextRequest) {
         Accept: "application/json",
       },
       body: JSON.stringify({ allOrNone, compositeRequest }),
+      signal: sfTimeoutSignal(),
     });
   } catch (err) {
+    if (isAbortError(err)) {
+      return NextResponse.json({ error: sfTimeoutMessage(), success: false }, { status: 504 });
+    }
     return NextResponse.json(
       { error: `Network error: ${err instanceof Error ? err.message : "unknown"}`, success: false },
       { status: 502 }
