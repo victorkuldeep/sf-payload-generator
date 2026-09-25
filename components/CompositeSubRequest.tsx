@@ -12,7 +12,7 @@ interface Props {
   index: number;
   subRequest: SubRequest;
   allObjects: SalesforceObject[];
-  /** Sub-requests that come BEFORE this one — used for smart reference detection */
+  /** Sub-requests that come BEFORE this one - used for smart reference detection */
   priorSubRequests: SubRequest[];
   onUpdate: (id: string, patch: Partial<SubRequest>) => void;
   onRemove: (id: string) => void;

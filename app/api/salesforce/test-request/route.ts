@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
 
   const responseTime = Date.now() - startTime;
 
-  // Filter headers — never expose Authorization or sensitive headers
+  // Filter headers - never expose Authorization or sensitive headers
   const safeHeaders: Record<string, string> = {};
   response.headers.forEach((value, key) => {
     if (SAFE_RESPONSE_HEADERS.has(key.toLowerCase())) {

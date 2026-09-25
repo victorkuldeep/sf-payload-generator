@@ -40,7 +40,7 @@ export function AppHeader({
   return (
     <header className="sticky top-0 z-40 w-full bg-[var(--color-canvas)]/95 backdrop-blur-sm border-b border-[var(--color-line)]">
       <div className="w-full px-5 flex items-center justify-between h-[64px] gap-3">
-        <Link href="/" className="sf-brand" aria-label="Salesforce sObject Payload Studio — Architect Toolkit">
+        <Link href="/" className="sf-brand" aria-label="Salesforce sObject Payload Studio - Architect Toolkit">
           <span className="sf-brand__title">
             <span className="sf-brand__lead">Salesforce</span>
             <span className="sf-brand__rest">sObject Payload Studio</span>

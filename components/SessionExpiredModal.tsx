@@ -48,7 +48,7 @@ export function SessionExpiredModal({
           <p id="expired-desc" className="mt-2 text-sm leading-relaxed text-ivory-700">
             Your token for{" "}
             <span className="font-mono font-semibold text-ivory-950">{hostOf(instanceUrl)}</span>{" "}
-            is no longer valid — it expired or was revoked. Reconnect with a fresh
+            is no longer valid - it expired or was revoked. Reconnect with a fresh
             token to continue. Your staged collections and canvas work are untouched.
           </p>
         </div>

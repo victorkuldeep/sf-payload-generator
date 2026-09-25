@@ -57,7 +57,7 @@ export async function sfFetch<T>(
         fields = firstError.fields;
       }
     } catch {
-      // ignore JSON parse failure — use status text
+      // ignore JSON parse failure - use status text
     }
 
     throw new SalesforceApiError(
@@ -80,7 +80,7 @@ export async function sfFetch<T>(
 }
 
 /**
- * Versioned Salesforce API fetch — constructs the full URL from components.
+ * Versioned Salesforce API fetch - constructs the full URL from components.
  */
 export async function sfFetchVersioned<T>(
   instanceUrl: string,
@@ -99,28 +99,28 @@ export async function sfFetchVersioned<T>(
 function getHumanErrorMessage(status: number, detail: string): string {
   switch (status) {
     case 400:
-      return `400 Bad Request — ${detail}`;
+      return `400 Bad Request - ${detail}`;
     case 401:
-      return `401 Unauthorized — the access token may be expired or invalid. ${detail}`;
+      return `401 Unauthorized - the access token may be expired or invalid. ${detail}`;
     case 403:
-      return `403 Forbidden — insufficient permissions to access this resource. ${detail}`;
+      return `403 Forbidden - insufficient permissions to access this resource. ${detail}`;
     case 404:
-      return `404 Not Found — the object or resource does not exist. ${detail}`;
+      return `404 Not Found - the object or resource does not exist. ${detail}`;
     case 409:
-      return `409 Conflict — ${detail}`;
+      return `409 Conflict - ${detail}`;
     case 429:
-      return `429 Too Many Requests — Salesforce API rate limit exceeded. ${detail}`;
+      return `429 Too Many Requests - Salesforce API rate limit exceeded. ${detail}`;
     default:
       if (status >= 500) {
-        return `${status} Salesforce Server Error — ${detail}`;
+        return `${status} Salesforce Server Error - ${detail}`;
       }
-      return `${status} — ${detail}`;
+      return `${status} - ${detail}`;
   }
 }
 
 // ── Timeouts & session-expiry detection (shared by API routes) ────────────
 
-/** Salesforce leg timeout — the browser leg uses a longer budget (see lib/api.ts). */
+/** Salesforce leg timeout - the browser leg uses a longer budget (see lib/api.ts). */
 export const SF_TIMEOUT_MS = 25000;
 
 export function sfTimeoutSignal(): AbortSignal {
@@ -132,7 +132,7 @@ export function isAbortError(err: unknown): boolean {
 }
 
 export function sfTimeoutMessage(): string {
-  return `Salesforce did not respond within ${SF_TIMEOUT_MS / 1000}s — the org may be slow or unreachable. Try again.`;
+  return `Salesforce did not respond within ${SF_TIMEOUT_MS / 1000}s - the org may be slow or unreachable. Try again.`;
 }
 
 /** True when an error message means the session is dead (expired/invalid token). */

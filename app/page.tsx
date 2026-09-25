@@ -160,7 +160,7 @@ function scrollToSection(id: string, updateHash: boolean): boolean {
 }
 
 /**
- * The home hero — identical offline and online (post-login it just swaps
+ * The home hero - identical offline and online (post-login it just swaps
  * the primary CTA to Switch org). Headline, artwork, trio cards.
  */
 function HomeHero({
@@ -189,7 +189,7 @@ function HomeHero({
           <p className="mt-4 max-w-xl text-sm leading-relaxed text-ivory-700">
             Connect to any Salesforce org, describe any standard or custom
             sObject, and generate accurate POST / PATCH payloads plus
-            Composite API batches — exported as JSON, cURL, JavaScript
+            Composite API batches - exported as JSON, cURL, JavaScript
             fetch or Apex. No manual field copy-paste.
           </p>
           <div className="mt-6 flex flex-col sm:flex-row gap-3">
@@ -217,7 +217,7 @@ function HomeHero({
         <div className="relative">
           <Image
             src="/sf-payload-toolkit.webp"
-            alt="Salesforce sObject Payload Studio — payload builder preview"
+            alt="Salesforce sObject Payload Studio - payload builder preview"
             width={1536}
             height={1024}
             priority
@@ -292,7 +292,7 @@ export default function Home() {
   const [showSearch, setShowSearch] = useState(false);
   const [savedCreds, setSavedCreds] = useState(readSavedCreds);
 
-  // Token stored in ref — never in rendered state or localStorage
+  // Token stored in ref - never in rendered state or localStorage
   const tokenRef = useRef<string>("");
 
   // On mount: restore session, seed modal prefill, decide on welcome,
@@ -329,7 +329,7 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Persisted collections + staged items live in IndexedDB — reload them
+  // Persisted collections + staged items live in IndexedDB - reload them
   // (fail-soft to memory). Legacy items without a collectionId are backfilled
   // into the default collection.
   useEffect(() => {
@@ -679,7 +679,7 @@ export default function Home() {
         prev.map((c) => (c.id === target.id ? { ...c, updatedAt: Date.now() } : c))
       );
       saveCollectionItem(full).catch(() => {
-        /* IndexedDB unavailable — item still staged in memory */
+        /* IndexedDB unavailable - item still staged in memory */
       });
       saveCollection({ ...target, updatedAt: Date.now() }).catch(() => {});
       const count = collection.filter((i) => i.collectionId === target.id).length + 1;
@@ -750,7 +750,7 @@ export default function Home() {
       }
       deleteCollectionFromDb(id).catch(() => {});
       Promise.all(doomed.map((i) => deleteCollectionItem(i.id))).catch(() => {});
-      // Never leave zero collections — recreate the default
+      // Never leave zero collections - recreate the default
       if (remaining.length === 0) {
         const now = Date.now();
         const def: Collection = { id: newItemId(), name: "My Collection", createdAt: now, updatedAt: now };
@@ -847,7 +847,7 @@ export default function Home() {
           />
         ) : (
           <>
-            {/* ── Stepper (hidden on home — nothing started yet) ── */}
+            {/* ── Stepper (hidden on home - nothing started yet) ── */}
             {state.mode !== "home" && (
               <Stepper
                 steps={
@@ -913,11 +913,11 @@ export default function Home() {
                 {state.mode === "composite"
                   ? "Batch multiple sObjects with reference IDs in one call"
                   : state.mode === "graphql"
-                    ? "Read-only queries against live metadata — no mutations"
+                    ? "Read-only queries against live metadata - no mutations"
                     : state.mode === "schema"
-                      ? "Explore the data model as an ERD — discover, present, export"
+                      ? "Explore the data model as an ERD - discover, present, export"
                       : state.mode === "home"
-                        ? "Pick a builder to begin — nothing runs until you choose"
+                        ? "Pick a builder to begin - nothing runs until you choose"
                         : "POST or PATCH a single record with live field metadata"}
               </span>
             </div>
@@ -1008,7 +1008,7 @@ export default function Home() {
                         </svg>
                       }
                       title="Select an object to describe its fields"
-                      description="Pick any standard or custom sObject — or press ⌘K to jump straight to it. Field types, picklists and writability load live from your org."
+                      description="Pick any standard or custom sObject - or press ⌘K to jump straight to it. Field types, picklists and writability load live from your org."
                       action={
                         <Button variant="secondary" size="sm" onClick={() => setShowSearch(true)}>
                           Find objects ⌘K

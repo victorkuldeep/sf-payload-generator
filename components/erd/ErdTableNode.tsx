@@ -100,7 +100,7 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
             {data.label}
           </p>
           {data.isJunction && (
-            <span className="shrink-0 rounded border px-1 py-px text-[9px] font-bold bg-bronze-100 text-bronze-700 border-bronze-300" title="Two or more required lookups — classic junction object">
+            <span className="shrink-0 rounded border px-1 py-px text-[9px] font-bold bg-bronze-100 text-bronze-700 border-bronze-300" title="Two or more required lookups - classic junction object">
               JUNCTION
             </span>
           )}
@@ -143,7 +143,7 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
           {data.apiName} · {data.totalFields} fields · {data.totalChildren} children
         </p>
       </div>
-      {/* Rows — scrollable in-node, expandable to all fields */}
+      {/* Rows - scrollable in-node, expandable to all fields */}
       <div
         className="nodrag nowheel overflow-y-auto py-1"
         style={expanded ? { maxHeight: 300 } : undefined}
@@ -160,7 +160,7 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
                 {r.required && <span className="text-red-600"> *</span>}
               </span>
               {pickable ? (
-                <span className="shrink-0 rounded-full border border-bronze-300 bg-bronze-100 px-1.5 py-px text-[9px] font-bold text-bronze-700" title={`${r.pickValues.length} picklist values — click to view`}>
+                <span className="shrink-0 rounded-full border border-bronze-300 bg-bronze-100 px-1.5 py-px text-[9px] font-bold text-bronze-700" title={`${r.pickValues.length} picklist values - click to view`}>
                   {r.pickValues.length}
                 </span>
               ) : (
@@ -182,7 +182,7 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
                   height: rect.height,
                 });
               }}
-              title={`${r.name} — click to view ${r.pickValues.length} picklist values`}
+              title={`${r.name} - click to view ${r.pickValues.length} picklist values`}
               className="nodrag flex w-full cursor-pointer items-center gap-1.5 px-3 py-[3px] text-left transition-colors hover:bg-bronze-100"
             >
               {inner}
@@ -206,7 +206,7 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
           </button>
         ) : null}
       </div>
-      {/* Footer — the landing zone; every join terminates at this height */}
+      {/* Footer - the landing zone; every join terminates at this height */}
       <div className="h-[30px] flex items-center justify-between gap-2 border-t border-[var(--color-line-soft)] bg-[var(--color-surface-soft)] px-3">
         <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-ivory-600">{data.apiName}</span>
         <span className="shrink-0 text-[10px] font-medium text-ivory-600">

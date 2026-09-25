@@ -318,7 +318,7 @@ export function CollectionDrawer({
           {activeItems.length > 0 && (
             <p className="mt-3 text-[11px] leading-relaxed text-ivory-600">
               Export uses <Badge variant="default">{"{{baseUrl}}"}</Badge> and{" "}
-              <Badge variant="default">{"{{accessToken}}"}</Badge> variables — no secrets land in
+              <Badge variant="default">{"{{accessToken}}"}</Badge> variables - no secrets land in
               the file. Collections persist in this browser via IndexedDB.
             </p>
           )}

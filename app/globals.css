@@ -5,7 +5,7 @@
 :root {
   color-scheme: light;
 
-  /* ── Canvas / Surface — off-white with light warmth ── */
+  /* ── Canvas / Surface - off-white with light warmth ── */
   --color-canvas: #FAF8F2;
   --color-surface: #FFFFFF;
   --color-surface-strong: #F0EAD6;
@@ -20,7 +20,7 @@
   --color-line: #DDD3BC;
   --color-line-soft: #EAE2CF;
 
-  /* ── Accent — metallic bronze ── */
+  /* ── Accent - metallic bronze ── */
   --color-accent: #9A7653;
   --color-accent-soft: #C9B39A;
   --color-accent-dark: #7A5C3A;
@@ -34,7 +34,7 @@
   --color-error: #8B4049;
   --color-error-bg: #FDF0F1;
 
-  /* ── Typography — Apple-grade system stack (SF Pro-like, zero webfont dependency) ── */
+  /* ── Typography - Apple-grade system stack (SF Pro-like, zero webfont dependency) ── */
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
@@ -141,7 +141,7 @@ button, input, select, textarea, optgroup, option {
   text-transform: uppercase;
 }
 
-/* ── Display type — SF Pro Display style: semibold, tight tracking, normal case ── */
+/* ── Display type - SF Pro Display style: semibold, tight tracking, normal case ── */
 .font-display {
   font-family: var(--font-sans);
   font-weight: 700;
@@ -231,7 +231,7 @@ button, input, select, textarea, optgroup, option {
   100% { box-shadow: 0 0 0 0 rgba(154, 118, 83, 0); }
 }
 
-/* Code blocks — dark warm-neutral */
+/* Code blocks - dark warm-neutral */
 .code-block-bg { background-color: #1A1710; color: #ECE8DF; }
 
 /* Focus ring helper */

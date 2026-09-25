@@ -127,11 +127,11 @@ export function ConnectModal({
       // Raw session ID → still needs the instance URL alongside
       const org = instanceUrl.trim();
       if (!/^https:\/\//i.test(org)) {
-        setSessionError("That's a session ID — also add your Instance URL below (https://…) so we know which org to hit.");
+        setSessionError("That's a session ID - also add your Instance URL below (https://…) so we know which org to hit.");
         return;
       }
       if (/\s/.test(raw)) {
-        setSessionError("Session IDs don't contain spaces — check the pasted value.");
+        setSessionError("Session IDs don't contain spaces - check the pasted value.");
         return;
       }
       setSessionError("");
@@ -293,23 +293,23 @@ export function ConnectModal({
         ) : (
           <div className="px-6 py-4 space-y-3 text-xs leading-relaxed text-ivory-700">
             <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] p-3">
-              <p className="font-semibold text-ivory-950">Option 1 — Workbench</p>
+              <p className="font-semibold text-ivory-950">Option 1 - Workbench</p>
               <p className="mt-1">Log in at workbench.developerforce.com, then open the session info page to copy your Session ID and use it as the token.</p>
             </div>
             <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] p-3">
-              <p className="font-semibold text-ivory-950">Option 2 — Salesforce CLI</p>
+              <p className="font-semibold text-ivory-950">Option 2 - Salesforce CLI</p>
               <p className="mt-1">Run <code className="font-mono text-[11px] bg-ivory-300 px-1 rounded">sf org display --target-org &lt;alias&gt;</code> and copy the Access Token.</p>
             </div>
             <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] p-3">
-              <p className="font-semibold text-ivory-950">Option 3 — Connected App</p>
+              <p className="font-semibold text-ivory-950">Option 3 - Connected App</p>
               <p className="mt-1">Use an OAuth client-credentials or authorization-code flow against your org, then paste the issued access token here.</p>
             </div>
             <div className="rounded-lg border border-[var(--color-accent-soft)] bg-[var(--color-accent-bg)] p-3">
-              <p className="font-semibold text-ivory-950">Option 4 — Frontdoor link (fastest)</p>
+              <p className="font-semibold text-ivory-950">Option 4 - Frontdoor link (fastest)</p>
               <p className="mt-1">
                 Have a <code className="font-mono text-[11px] bg-ivory-300 px-1 rounded">…/secur/frontdoor.jsp?sid=…</code> link?
                 Open the <button type="button" onClick={() => setTab("session")} className="font-semibold text-bronze-600 underline cursor-pointer">Session ID</button> tab
-                and paste it — instance + token are extracted automatically.
+                and paste it - instance + token are extracted automatically.
               </p>
             </div>
           </div>
@@ -317,7 +317,7 @@ export function ConnectModal({
 
         <div className="px-6 py-4 border-t border-[var(--color-line-soft)] bg-[var(--color-canvas)] flex flex-col sm:flex-row sm:items-center gap-3">
           <p className="flex-1 text-[11px] leading-relaxed text-ivory-600">
-            Token is kept in session memory only — never written to disk. All Salesforce calls are proxied server-side.
+            Token is kept in session memory only - never written to disk. All Salesforce calls are proxied server-side.
           </p>
           <div className="flex gap-2 shrink-0">
             <Button variant="secondary" onClick={onClose} disabled={loading}>

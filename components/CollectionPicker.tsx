@@ -108,7 +108,7 @@ export function CollectionPicker({
             </label>
           ))}
           {collections.length === 0 && (
-            <p className="text-xs text-ivory-600">No collections yet — create one below.</p>
+            <p className="text-xs text-ivory-600">No collections yet - create one below.</p>
           )}
         </div>
 

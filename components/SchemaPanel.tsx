@@ -108,7 +108,7 @@ export default function SchemaPanel({
       .catch(() => setSnapshots([]));
   }, [orgDomain]);
 
-  // Popover values come from live describes — drop it if metadata changes underneath
+  // Popover values come from live describes - drop it if metadata changes underneath
   useEffect(() => {
     setPopover(null);
   }, [describes]);
@@ -278,16 +278,16 @@ export default function SchemaPanel({
     if (staged.size === 0 || busy) return;
     const names = [...staged].filter((n) => !describes.has(n));
     if (names.length === 0) {
-      // Everything staged is already on canvas — just focus the first
+      // Everything staged is already on canvas - just focus the first
       const first = [...staged][0];
       setFocusName(first);
       setStaged(new Set());
       setRootSearch("");
-      setNotice(`${first} is already on the canvas — focused.`);
+      setNotice(`${first} is already on the canvas - focused.`);
       return;
     }
     if (describes.size + names.length > MAX_NODES) {
-      setNotice(`Canvas cap is ${MAX_NODES} objects — adding ${names.length} would exceed it. Remove some nodes first.`);
+      setNotice(`Canvas cap is ${MAX_NODES} objects - adding ${names.length} would exceed it. Remove some nodes first.`);
       return;
     }
     setError(null);
@@ -307,8 +307,8 @@ export default function SchemaPanel({
       setRootSearch("");
       setNotice(
         fresh.length === 1
-          ? `${fresh[0].name} added — links to objects already on canvas draw automatically.`
-          : `${fresh.length} objects added — links draw automatically where both ends are present.`
+          ? `${fresh[0].name} added - links to objects already on canvas draw automatically.`
+          : `${fresh.length} objects added - links draw automatically where both ends are present.`
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add objects");
@@ -350,7 +350,7 @@ export default function SchemaPanel({
       setNotice(
         parts.length > 0
           ? `Refreshed ${fresh.length} · ` + parts.slice(0, 4).join(" · ") + (parts.length > 4 ? ` · +${parts.length - 4} more` : "")
-          : `Refreshed ${fresh.length} object${fresh.length === 1 ? "" : "s"} — no field changes.`
+          : `Refreshed ${fresh.length} object${fresh.length === 1 ? "" : "s"} - no field changes.`
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Refresh failed");
@@ -379,7 +379,7 @@ export default function SchemaPanel({
     try {
       await persistSnapshot(snap);
       setSnapshots(await listSnapshotsByOrg(orgDomain));
-      setNotice(`Snapshot “${snap.name}” saved — restore it anytime from history.`);
+      setNotice(`Snapshot “${snap.name}” saved - restore it anytime from history.`);
     } catch {
       setError("Couldn't save snapshot (IndexedDB unavailable).");
     }
@@ -404,7 +404,7 @@ export default function SchemaPanel({
         });
         const fresh = results.filter((d): d is SalesforceDescribeResult => d !== null);
         if (fresh.length === 0) {
-          throw new Error("None of the snapshotted objects could be described — org changed or session expired.");
+          throw new Error("None of the snapshotted objects could be described - org changed or session expired.");
         }
         setDescribes(new Map(fresh.map((d) => [d.name, d] as const)));
         const root = fresh.some((d) => d.name === snap.root) ? snap.root : fresh[0].name;
@@ -463,7 +463,7 @@ export default function SchemaPanel({
       return;
     }
     if (describes.size + kids.length > MAX_NODES) {
-      setNotice(`Canvas cap is ${MAX_NODES} objects — remove some nodes or reset first.`);
+      setNotice(`Canvas cap is ${MAX_NODES} objects - remove some nodes or reset first.`);
       return;
     }
     setError(null);
@@ -501,7 +501,7 @@ export default function SchemaPanel({
         const room = MAX_NODES - known.size;
         if (frontier.length === 0 || room <= 0) break;
         const batch = frontier.slice(0, Math.min(room, MAX_NEW_PER_ACTION));
-        setBusy(`Discovering level ${depth + 2} — ${batch.length} objects…`);
+        setBusy(`Discovering level ${depth + 2} - ${batch.length} objects…`);
         const fresh = await mapLimit(batch, 6, fetchDescribe);
         for (const d of fresh) known.set(d.name, d);
         setDescribes(new Map(known));
@@ -537,7 +537,7 @@ export default function SchemaPanel({
       setSpot({ focus: target, related: new Set(onCanvas) });
       setNotice(
         onCanvas.length > 0
-          ? `${target} is ringed — ${onCanvas.length} parent${onCanvas.length === 1 ? "" : "s"} highlighted. Click empty canvas to clear.`
+          ? `${target} is ringed - ${onCanvas.length} parent${onCanvas.length === 1 ? "" : "s"} highlighted. Click empty canvas to clear.`
           : `${target} has no lookup parents to highlight.`
       );
     } catch (err) {
@@ -568,7 +568,7 @@ export default function SchemaPanel({
     setEnforced(null);
     setDescribes(new Map(describes));
     setLayoutRev((r) => r + 1);
-    setNotice("Layout refreshed — nodes re-arranged, nothing removed.");
+    setNotice("Layout refreshed - nodes re-arranged, nothing removed.");
   }, [describes]);
 
   const [confirmClear, setConfirmClear] = useState(false);
@@ -600,11 +600,11 @@ export default function SchemaPanel({
 
   // Pop-out handoff: fresh tabs don't inherit sessionStorage, so serve the
   // live session over a same-origin BroadcastChannel (memory only, one-shot,
-  // nonce-matched — the token never touches disk or the URL).
+  // nonce-matched - the token never touches disk or the URL).
   const popOut = useCallback(() => {
     const token = getToken();
     if (!token) {
-      setError("Session expired — reconnect in the studio first, then pop out.");
+      setError("Session expired - reconnect in the studio first, then pop out.");
       return;
     }
     const nonce =
@@ -625,7 +625,7 @@ export default function SchemaPanel({
         }
       };
     } catch {
-      /* BroadcastChannel unavailable — room falls back to its own Connect */
+      /* BroadcastChannel unavailable - room falls back to its own Connect */
     }
   }, [getToken, instanceUrl, apiVersion]);
 
@@ -663,7 +663,7 @@ export default function SchemaPanel({
               onClick={saveSnapshot}
               disabled={busy != null || describes.size === 0}
               aria-label="Save canvas snapshot"
-              title="Snapshot this canvas — restorable per org from history"
+              title="Snapshot this canvas - restorable per org from history"
               className="rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer disabled:opacity-40"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
@@ -705,13 +705,13 @@ export default function SchemaPanel({
           <div className="flex-1 space-y-3 overflow-y-auto p-3.5">
             <div>
               <Input
-                placeholder="Add object — try Account…"
+                placeholder="Add object - try Account…"
                 value={rootSearch}
                 onChange={(e) => setRootSearch(e.target.value)}
                 aria-label="Choose root object for ERD"
               />
               {rootSearch.trim() && (
-                <div className="mt-1.5 max-h-44 overflow-y-auto rounded-lg border border-[var(--color-line)] divide-y divide-[var(--color-line-soft)]" role="group" aria-label="Matching objects — check to stage">
+                <div className="mt-1.5 max-h-44 overflow-y-auto rounded-lg border border-[var(--color-line)] divide-y divide-[var(--color-line-soft)]" role="group" aria-label="Matching objects - check to stage">
                   {filteredObjects.length === 0 ? (
                     <p className="p-3 text-xs text-ivory-600">No objects match.</p>
                   ) : (
@@ -800,7 +800,7 @@ export default function SchemaPanel({
                     <Button size="sm" variant="ghost" onClick={removeNode} disabled={!focusName || focusName === rootName || !!busy} className="flex-1" title="Remove the focused object from the canvas">
                       Remove
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={resetAll} disabled={describes.size === 0 || !!busy} className="flex-1" title="Re-run auto-layout and re-fit — keeps every node">
+                    <Button size="sm" variant="ghost" onClick={resetAll} disabled={describes.size === 0 || !!busy} className="flex-1" title="Re-run auto-layout and re-fit - keeps every node">
                       Reset view
                     </Button>
                   </div>
@@ -876,7 +876,7 @@ export default function SchemaPanel({
                 </svg>
               }
               title="Pick an object to map its data model"
-              description="Search the explorer panel — the object lands on the infinite canvas as an ERD table. Discover children level by level, go full-depth, present with the laser, export hi-res PNG."
+              description="Search the explorer panel - the object lands on the infinite canvas as an ERD table. Discover children level by level, go full-depth, present with the laser, export hi-res PNG."
             />
           </div>
         ) : (
@@ -937,7 +937,7 @@ export default function SchemaPanel({
                 <div className="py-6 text-center">
                   <p className="text-sm font-semibold text-ivory-950">No snapshots yet</p>
                   <p className="mt-1 text-xs leading-relaxed text-ivory-600">
-                    Arrange your canvas, hit the camera icon, and pick up exactly here later —
+                    Arrange your canvas, hit the camera icon, and pick up exactly here later -
                     snapshots restore with fresh metadata.
                   </p>
                 </div>
@@ -1009,7 +1009,7 @@ export default function SchemaPanel({
               )}
             </div>
             <p className="px-6 pb-4 text-[11px] text-ivory-600">
-              Restoring re-fetches live metadata — layouts come back, stale fields don&apos;t.
+              Restoring re-fetches live metadata - layouts come back, stale fields don&apos;t.
             </p>
           </div>
         </div>

@@ -7,12 +7,12 @@ const schema = z.object({
   instanceUrl: z.string().min(1),
   token: z.string().min(1),
   apiVersion: z.string().min(1),
-  // Salesforce GraphQL is query-only — reject mutations defense-in-depth.
+  // Salesforce GraphQL is query-only - reject mutations defense-in-depth.
   query: z
     .string()
     .min(1)
     .max(25000)
-    .refine((q) => !/\bmutation\b/i.test(q), "Only queries are supported — mutations are rejected"),
+    .refine((q) => !/\bmutation\b/i.test(q), "Only queries are supported - mutations are rejected"),
 });
 
 const SAFE_RESPONSE_HEADERS = new Set([
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
 
   const responseTime = Date.now() - startTime;
 
-  // Filter headers — never expose Authorization or sensitive headers
+  // Filter headers - never expose Authorization or sensitive headers
   const safeHeaders: Record<string, string> = {};
   response.headers.forEach((value, key) => {
     if (SAFE_RESPONSE_HEADERS.has(key.toLowerCase())) {

@@ -46,7 +46,7 @@ export function BootLoader({ stage, fading }: BootLoaderProps) {
           So
         </div>
         <h2 className="text-lg font-bold text-ivory-950">Setting up your studio</h2>
-        <p className="mt-1.5 text-sm text-ivory-600">Hold tight — this takes a few seconds.</p>
+        <p className="mt-1.5 text-sm text-ivory-600">Hold tight - this takes a few seconds.</p>
         <ol className="mt-6 space-y-3 text-left">
           <li className="flex items-center gap-3 text-sm">
             {connectDone ? <Check /> : <Spinner />}

@@ -14,7 +14,7 @@ const STEPS = [
     n: "01",
     title: "Connect securely",
     points: [
-      "Instance URL + access token — validated live against your org.",
+      "Instance URL + access token - validated live against your org.",
       "Token stays in session memory only; every call is proxied server-side.",
       "Get a token from Workbench, Salesforce CLI, or a Connected App.",
     ],
@@ -25,7 +25,7 @@ const STEPS = [
     points: [
       "Browse all standard and custom objects, or jump with ⌘K quick-find.",
       "Live field metadata: types, picklists, references, required flags.",
-      "Writability is split correctly — createable for POST, updateable for PATCH.",
+      "Writability is split correctly - createable for POST, updateable for PATCH.",
     ],
   },
   {
@@ -51,7 +51,7 @@ const STEPS = [
 const MODES = [
   { name: "Single Object", desc: "POST or PATCH one record with live field metadata." },
   { name: "Composite API", desc: "Multi-sObject graphs with reference IDs in a single call." },
-  { name: "GraphQL", desc: "Read-only queries — Salesforce GraphQL has no mutations." },
+  { name: "GraphQL", desc: "Read-only queries - Salesforce GraphQL has no mutations." },
 ];
 
 export function HowItWorksModal({ open, onClose, onConnect }: HowItWorksModalProps) {
@@ -137,7 +137,7 @@ export function HowItWorksModal({ open, onClose, onConnect }: HowItWorksModalPro
 
         <div className="px-6 sm:px-8 py-4 border-t border-[var(--color-line-soft)] bg-[var(--color-canvas)] flex flex-col sm:flex-row sm:items-center gap-3 shrink-0">
           <p className="flex-1 text-[11px] leading-relaxed text-ivory-600">
-            Your access token is never written to disk — session memory only.
+            Your access token is never written to disk - session memory only.
           </p>
           <div className="flex gap-2 shrink-0">
             <Button variant="secondary" onClick={onClose}>

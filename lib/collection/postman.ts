@@ -37,7 +37,7 @@ export function buildPostmanCollection(
       {
         key: "accessToken",
         value: "",
-        description: "Paste a session access token here — never stored in this file",
+        description: "Paste a session access token here - never stored in this file",
       },
     ],
     item: items.map((item) => {

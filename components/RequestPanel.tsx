@@ -95,7 +95,7 @@ export default function RequestPanel({
             <span className="text-xs text-ivory-800">{Object.keys(generatedPayload.payload).length} fields</span>
           </Row>
           <Row label="Auth">
-            <span className="text-xs text-ivory-600">Bearer [session token — not shown]</span>
+            <span className="text-xs text-ivory-600">Bearer [session token - not shown]</span>
           </Row>
         </div>
 

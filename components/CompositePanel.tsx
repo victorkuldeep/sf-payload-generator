@@ -127,7 +127,7 @@ export default function CompositePanel({
         if (isSessionExpiredMessage(err instanceof Error ? err.message : "")) {
           onSessionExpired?.();
         }
-        // describe failed — leave describe: null, user can retry
+        // describe failed - leave describe: null, user can retry
       }
     },
     [instanceUrl, apiVersion, getToken, onSessionExpired]
@@ -287,7 +287,7 @@ export default function CompositePanel({
                   if (!generatedPayload) return;
                   const n = generatedPayload.compositeRequest.length;
                   onAddToCollection({
-                    name: `Composite — ${n} sub-request${n === 1 ? "" : "s"}`,
+                    name: `Composite - ${n} sub-request${n === 1 ? "" : "s"}`,
                     method: "POST",
                     kind: "composite",
                     url: compositeEndpoint,
@@ -330,7 +330,7 @@ export default function CompositePanel({
               ) : (
                 <div className="rounded border border-amber-300 bg-amber-50 p-3 space-y-3">
                   <p className="text-sm text-amber-800">
-                    ⚠ This will execute {generatedPayload.compositeRequest.length} sub-request(s) against your Salesforce org{allOrNone ? " — all or none" : ""}. Confirm?
+                    ⚠ This will execute {generatedPayload.compositeRequest.length} sub-request(s) against your Salesforce org{allOrNone ? " - all or none" : ""}. Confirm?
                   </p>
                   <div className="flex gap-2">
                     <Button variant="danger" size="sm" onClick={handleSendTest} loading={testLoading}>

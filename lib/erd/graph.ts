@@ -93,7 +93,7 @@ function orderRows(
   return [...rows].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
 }
 
-/** Audit/system lookups every standard object carries — never junction evidence. */
+/** Audit/system lookups every standard object carries - never junction evidence. */
 const SYSTEM_REF_FIELDS = new Set(["CreatedById", "LastModifiedById", "OwnerId"]);
 
 /** Junction heuristic: 2+ required NON-SYSTEM lookups = classic junction object. */
@@ -138,7 +138,7 @@ export function buildErdElements(
   const edges: Edge[] = [];
   const seenEdges = new Set<string>();
 
-  // Pass 1 — nodes
+  // Pass 1 - nodes
   for (const [apiName, describe] of describes) {
     const allRows = orderRows(
       describe.fields.map((f) =>
@@ -180,7 +180,7 @@ export function buildErdElements(
     });
   }
 
-  // Pass 2 — edges docked on side edges at header/footer height.
+  // Pass 2 - edges docked on side edges at header/footer height.
   // Inter-node: parent header-right → child footer-left (bezier sweep).
   // Self-lookup: header-left → footer-left, hugging the node's own flank
   // in staggered lanes so stacked loops never share one path.

@@ -22,7 +22,7 @@ export async function apiFetch(
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") {
       throw new Error(
-        `Request timed out after ${timeoutMs / 1000}s — check your connection and try again.`
+        `Request timed out after ${timeoutMs / 1000}s - check your connection and try again.`
       );
     }
     throw err instanceof Error ? err : new Error("Network error");

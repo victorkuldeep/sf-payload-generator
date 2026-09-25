@@ -180,7 +180,7 @@ export default function GraphQLPanel({
         <h2 className="text-sm font-semibold text-ivory-950">GraphQL Query Builder</h2>
         <Badge variant="info">Read-only</Badge>
         <span className="text-[11px] text-ivory-600">
-          Salesforce GraphQL supports queries only — writes stay in REST / Composite.
+          Salesforce GraphQL supports queries only - writes stay in REST / Composite.
         </span>
       </div>
 
@@ -339,7 +339,7 @@ export default function GraphQLPanel({
               onClick={() => {
                 if (!query) return;
                 onAddToCollection({
-                  name: `GraphQL — ${objectName}`,
+                  name: `GraphQL - ${objectName}`,
                   method: "POST",
                   kind: "graphql",
                   url: endpoint,

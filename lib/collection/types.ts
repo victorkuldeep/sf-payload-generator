@@ -17,7 +17,7 @@ export interface CollectionItem {
   kind: CollectionKind;
   /** Full URL, e.g. https://myorg.my.salesforce.com/services/data/v66.0/sobjects/Account */
   url: string;
-  /** Origin of the org, e.g. https://myorg.my.salesforce.com — becomes {{baseUrl}} on export */
+  /** Origin of the org, e.g. https://myorg.my.salesforce.com - becomes {{baseUrl}} on export */
   origin: string;
   body: unknown;
   createdAt: number;

@@ -19,18 +19,18 @@ export function parseFrontdoorUrl(input: string): FrontdoorSession {
   try {
     url = new URL(trimmed);
   } catch {
-    throw new Error("That doesn't look like a URL — paste the full frontdoor.jsp link");
+    throw new Error("That doesn't look like a URL - paste the full frontdoor.jsp link");
   }
 
   if (url.protocol !== "https:") {
     throw new Error("Frontdoor URL must start with https://");
   }
   if (!FRONTDOOR_PATH.test(url.pathname)) {
-    throw new Error("Not a frontdoor link — it must contain /secur/frontdoor.jsp?sid=…");
+    throw new Error("Not a frontdoor link - it must contain /secur/frontdoor.jsp?sid=…");
   }
   const sid = url.searchParams.get("sid");
   if (!sid) {
-    throw new Error("No sid parameter found — copy the full link including ?sid=…");
+    throw new Error("No sid parameter found - copy the full link including ?sid=…");
   }
   return { instanceUrl: url.origin, token: sid };
 }

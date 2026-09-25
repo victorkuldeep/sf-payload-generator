@@ -78,7 +78,7 @@ export function getSampleValueForField(field: SalesforceField): unknown {
 
 /**
  * Returns an 18-char placeholder that hints at the target object type.
- * Salesforce IDs start with a 3-char key prefix — we use known ones for common objects.
+ * Salesforce IDs start with a 3-char key prefix - we use known ones for common objects.
  */
 function referencePlaceholder(field: SalesforceField): string {
   const target = field.referenceTo[0] ?? "";

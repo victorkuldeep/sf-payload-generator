@@ -1,6 +1,6 @@
 # Salesforce sObject Payload Studio
 
-Metadata-driven REST payload builder for Salesforce. Discover objects and fields, select what you need, and generate accurate POST/PATCH payloads for Postman, cURL, JavaScript, or Apex — without manual copy/paste of field definitions.
+Metadata-driven REST payload builder for Salesforce. Discover objects and fields, select what you need, and generate accurate POST/PATCH payloads for Postman, cURL, JavaScript, or Apex - without manual copy/paste of field definitions.
 
 ## Features
 
@@ -11,7 +11,7 @@ Metadata-driven REST payload builder for Salesforce. Discover objects and fields
 - Generate POST or PATCH payloads with type-appropriate editors
 - Export as JSON, cURL, JavaScript fetch, or Apex
 - Send optional test request directly to Salesforce (with confirmation prompt)
-- Token never persisted — session memory only
+- Token never persisted - session memory only
 
 ## Stack
 
@@ -26,7 +26,7 @@ Metadata-driven REST payload builder for Salesforce. Discover objects and fields
 # Install dependencies
 npm install
 
-# Copy env example (optional — defaults work without it)
+# Copy env example (optional - defaults work without it)
 cp .env.example .env.local
 
 # Start dev server
@@ -51,7 +51,7 @@ The token needs at minimum:
 
 - The access token is stored only in React component state (in-memory)
 - It is never written to `localStorage`, `sessionStorage`, or any cookie
-- All Salesforce REST calls are proxied through Next.js server-side route handlers — the token never leaves the server in API responses
+- All Salesforce REST calls are proxied through Next.js server-side route handlers - the token never leaves the server in API responses
 - Generated cURL uses `$SF_ACCESS_TOKEN` placeholder, not the real token
 - Server-side error messages are sanitized before returning to the client
 
@@ -65,7 +65,7 @@ The token needs at minimum:
 ## Limitations
 
 - Record type–specific picklist filtering is not implemented. Picklist values come from object-level describe metadata.
-- OAuth login flow is not included — you must provide an access token manually.
+- OAuth login flow is not included - you must provide an access token manually.
 - Sample values are illustrative only; they may not be valid in your specific org configuration.
 - Composite API, Bulk API, and GraphQL are not supported in this release.
 

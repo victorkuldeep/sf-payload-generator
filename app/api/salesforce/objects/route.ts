@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
     if (response.status === 401) {
-      message = "401 Unauthorized — the access token may be expired or invalid.";
+      message = "401 Unauthorized - the access token may be expired or invalid.";
     } else {
       try {
         const errBody = (await response.json()) as Array<{ message: string }> | { message: string };

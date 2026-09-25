@@ -313,7 +313,7 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
           type="button"
           onClick={() => setLaser((v) => !v)}
           aria-pressed={laser}
-          title={laser ? "Exit laser pointer (Esc)" : "Laser walkthrough — press L to present, Esc to scroll again"}
+          title={laser ? "Exit laser pointer (Esc)" : "Laser walkthrough - press L to present, Esc to scroll again"}
           className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors cursor-pointer ${
             laser
               ? "bg-[#ef4444] border-[#dc2626] text-white shadow-[0_0_12px_rgba(239,68,68,0.5)]"
@@ -325,7 +325,7 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
         </button>
       </div>
 
-      {/* Top-right: snapshot export — always visible */}
+      {/* Top-right: snapshot export - always visible */}
       <div className="absolute right-3 top-3 z-30 flex items-center gap-1.5">
         {exportError && (
           <span className="rounded-lg border border-red-300 bg-red-50 px-2 py-1.5 text-[11px] text-red-700" role="alert">

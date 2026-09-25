@@ -14,11 +14,11 @@ const config: Config = {
         mono: ["ui-monospace", '"SF Mono"', "SFMono-Regular", "Menlo", "Consolas", '"Liberation Mono"', "monospace"],
       },
       colors: {
-        // Ivory — warm elephant-teeth creamy base, charcoal text/accents
+        // Ivory - warm elephant-teeth creamy base, charcoal text/accents
         ivory: {
           50:  "#FDFBF5",
-          100: "#F7F2E3",   // main bg — warm elephant-teeth ivory
-          200: "#F0EAD4",   // panel bg — cream
+          100: "#F7F2E3",   // main bg - warm elephant-teeth ivory
+          200: "#F0EAD4",   // panel bg - cream
           300: "#E6DEC8",   // hover / nested surface
           400: "#CEC5B0",   // borders
           500: "#AEA48E",   // muted borders / placeholders
@@ -28,7 +28,7 @@ const config: Config = {
           900: "#2C2820",   // dark text
           950: "#18140C",   // near-black
         },
-        // Muted metallic bronze — dark, restrained, editorial (accent #9A7653)
+        // Muted metallic bronze - dark, restrained, editorial (accent #9A7653)
         bronze: {
           50:  "#F6F2EA",
           100: "#EFE5D0",

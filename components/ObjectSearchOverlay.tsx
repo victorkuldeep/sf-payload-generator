@@ -86,7 +86,7 @@ export function ObjectSearchOverlay({ objects, onSelect, onClose }: ObjectSearch
           <input
             ref={inputRef}
             type="text"
-            placeholder="Jump to object — try Account, Opportunity, MyObject__c…"
+            placeholder="Jump to object - try Account, Opportunity, MyObject__c…"
             value={query}
             onChange={(e) => { setQuery(e.target.value); setActive(0); }}
             onKeyDown={handleKey}

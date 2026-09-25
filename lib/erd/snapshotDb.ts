@@ -1,6 +1,6 @@
 export interface ErdSnapshot {
   id: string;
-  /** Org hostname, e.g. myorg.my.salesforce.com — snapshots are listed per org. */
+  /** Org hostname, e.g. myorg.my.salesforce.com - snapshots are listed per org. */
   orgDomain: string;
   name: string;
   createdAt: number;
@@ -95,7 +95,7 @@ export async function saveSnapshot(snap: ErdSnapshot): Promise<void> {
   if (extra.length > 0) {
     await withStore("readwrite", (store) => {
       for (const s of extra) store.delete(s.id);
-      // Return a dummy request — completion is tracked via the transaction
+      // Return a dummy request - completion is tracked via the transaction
       return store.get(snap.id);
     });
   }

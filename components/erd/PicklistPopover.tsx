@@ -9,7 +9,7 @@ export interface PicklistPopoverData {
   fieldName: string;
   fieldType: string;
   values: ErdPickValue[];
-  /** Viewport anchor (row rect) — panel flips to fit. */
+  /** Viewport anchor (row rect) - panel flips to fit. */
   x: number;
   y: number;
 }

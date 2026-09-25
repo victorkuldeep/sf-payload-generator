@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
 
     if (response.status === 401) {
       return NextResponse.json(
-        { error: "401 Unauthorized — the access token may be expired or invalid." },
+        { error: "401 Unauthorized - the access token may be expired or invalid." },
         { status: 401 }
       );
     }

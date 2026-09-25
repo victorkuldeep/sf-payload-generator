@@ -204,7 +204,7 @@ export default function SchemaRoom() {
               <p className="mt-3 max-w-md text-sm leading-relaxed text-ivory-700">
                 {objectCount > 0 || connecting
                   ? "Restoring your org session…"
-                  : "This room is chrome-free on purpose — connect and the entire viewport becomes your ERD."}
+                  : "This room is chrome-free on purpose - connect and the entire viewport becomes your ERD."}
               </p>
               {!connecting && (
                 <Button size="lg" className="mt-5" onClick={() => setShowConnect(true)}>

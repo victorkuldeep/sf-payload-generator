@@ -10,7 +10,7 @@ interface WelcomeModalProps {
 
 const STEPS = [
   { n: "01", title: "Connect securely", body: "Instance URL + access token. Token stays in session memory, calls are proxied server-side." },
-  { n: "02", title: "Describe any sObject", body: "Live metadata — types, picklists, references and writability for POST vs PATCH." },
+  { n: "02", title: "Describe any sObject", body: "Live metadata - types, picklists, references and writability for POST vs PATCH." },
   { n: "03", title: "Generate & export", body: "Table API payloads, Composite batches, then JSON, cURL, JS fetch or Apex." },
 ];
 
@@ -28,7 +28,7 @@ export function WelcomeModal({ open, onConnect, onExplore }: WelcomeModalProps) 
             Payloads without <em>the grunt work.</em>
           </h2>
           <p className="mt-3 text-sm leading-relaxed text-ivory-700 max-w-lg">
-            Welcome to <strong className="text-ivory-950">Salesforce sObject Payload Studio</strong> — connect
+            Welcome to <strong className="text-ivory-950">Salesforce sObject Payload Studio</strong> - connect
             to any org, describe live sObjects, and generate accurate REST payloads for
             single records and Composite API batches. No manual field copy-paste.
           </p>
@@ -54,7 +54,7 @@ export function WelcomeModal({ open, onConnect, onExplore }: WelcomeModalProps) 
         </div>
 
         <p className="px-6 sm:px-8 pb-5 text-center text-[11px] text-ivory-600">
-          Your access token is never written to disk — session memory only.
+          Your access token is never written to disk - session memory only.
         </p>
       </div>
     </div>

@@ -2,7 +2,7 @@ import type { SalesforceField } from "@/lib/salesforce/types";
 
 /**
  * Field types that map cleanly to Salesforce GraphQL scalar selections.
- * Compound / binary types (address, location, base64, …) are excluded —
+ * Compound / binary types (address, location, base64, …) are excluded -
  * they need nested sub-selections and break generated queries.
  */
 const GRAPHQL_SCALAR_TYPES = new Set([
