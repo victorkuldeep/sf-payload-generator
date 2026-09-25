@@ -36,7 +36,6 @@ import {
 import { ConnectModal } from "@/components/ConnectModal";
 import { ObjectSearchOverlay } from "@/components/ObjectSearchOverlay";
 import Button from "@/components/ui/Button";
-import StatusBadge from "@/components/StatusBadge";
 import ObjectPanel from "@/components/ObjectPanel";
 import FieldPanel from "@/components/FieldPanel";
 import PayloadPanel from "@/components/PayloadPanel";
@@ -44,9 +43,21 @@ import ExportPanel from "@/components/ExportPanel";
 import RequestPanel from "@/components/RequestPanel";
 import CompositePanel from "@/components/CompositePanel";
 import GraphQLPanel from "@/components/GraphQLPanel";
-import SchemaPanel from "@/components/SchemaPanel";
+import SoqlPanel from "@/components/SoqlPanel";
+import dynamic from "next/dynamic";
 
-type BuilderMode = "home" | "single" | "composite" | "graphql" | "schema";
+// Schema canvas loads on demand: keeps the main bundle lean and the
+// static-generation worker light (xyflow + dagre stay out of SSR).
+const SchemaPanel = dynamic(() => import("@/components/SchemaPanel"), {
+  ssr: false,
+  loading: () => (
+    <div className="arch-card px-6 py-12 text-center text-sm text-ivory-600">
+      Loading schema canvas…
+    </div>
+  ),
+});
+
+type BuilderMode = "home" | "single" | "composite" | "soql" | "graphql" | "schema";
 
 interface AppState {
   connected: boolean;
@@ -107,16 +118,16 @@ const COMPOSITE_STEPS = [
   { label: "Send", hint: "One call" },
 ];
 
+const SOQL_STEPS = [
+  { label: "Connect", hint: "Org + token" },
+  { label: "Query", hint: "SOQL + plan" },
+  { label: "Export", hint: "CSV + JSON" },
+];
+
 const GRAPHQL_STEPS = [
   { label: "Connect", hint: "Org + token" },
   { label: "Query", hint: "Object + fields" },
   { label: "Run", hint: "Read-only" },
-];
-
-const SCHEMA_STEPS = [
-  { label: "Connect", hint: "Org + token" },
-  { label: "Map", hint: "Objects + links" },
-  { label: "Export", hint: "PNG + present" },
 ];
 
 const DEFAULT_API_VERSION =
@@ -163,34 +174,99 @@ function scrollToSection(id: string, updateHash: boolean): boolean {
  * The home hero - identical offline and online (post-login it just swaps
  * the primary CTA to Switch org). Headline, artwork, trio cards.
  */
+const HERO_SLIDES: {
+  eyebrow: string;
+  titleA: string;
+  titleEm: string;
+  copy: string;
+  cta: string;
+  mode: Exclude<BuilderMode, "home">;
+}[] = [
+  {
+    eyebrow: "Metadata-driven REST payload builder",
+    titleA: "From live metadata to",
+    titleEm: "ready-to-send payloads.",
+    copy: "Connect to any Salesforce org, describe any standard or custom sObject, and generate accurate POST / PATCH payloads plus Composite API batches - exported as JSON, cURL, JavaScript fetch or Apex. No manual field copy-paste.",
+    cta: "Single Object",
+    mode: "single",
+  },
+  {
+    eyebrow: "SOQL query engine",
+    titleA: "Ask anything,",
+    titleEm: "explain everything.",
+    copy: "Run SOQL with query plans, history, saved queries and CSV exports - Dev Console power without leaving the studio.",
+    cta: "SOQL",
+    mode: "soql",
+  },
+  {
+    eyebrow: "Schema deep dive",
+    titleA: "See the model,",
+    titleEm: "not just the fields.",
+    copy: "Explore any org as an ERD canvas - discover relationships, present with the laser, export hi-res PNG.",
+    cta: "Schema Map",
+    mode: "schema",
+  },
+  {
+    eyebrow: "Every Salesforce API",
+    titleA: "Composite, GraphQL,",
+    titleEm: "collections.",
+    copy: "Batch sObjects with reference IDs, traverse object graphs in one round trip, stage requests and export Postman collections.",
+    cta: "Composite API",
+    mode: "composite",
+  },
+];
+
 function HomeHero({
   connected,
   loadingConnect,
   connectError,
   onConnect,
   onHowItWorks,
+  onJumpMode,
 }: {
   connected: boolean;
   loadingConnect: boolean;
   connectError: string | null;
   onConnect: () => void;
   onHowItWorks: () => void;
+  onJumpMode: (m: Exclude<BuilderMode, "home">) => void;
 }) {
+  const [idx, setIdx] = useState(0);
+  const [paused, setPaused] = useState(false);
+
+  useEffect(() => {
+    if (paused) return;
+    if (
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      return;
+    }
+    const t = window.setInterval(() => setIdx((i) => (i + 1) % HERO_SLIDES.length), 10000);
+    return () => window.clearInterval(t);
+  }, [paused]);
+
+  const slide = HERO_SLIDES[idx];
+
   return (
-    <section aria-label="Welcome" className="arch-card overflow-hidden">
+    <section
+      aria-label="Welcome"
+      aria-roledescription="carousel"
+      className="arch-card overflow-hidden"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+    >
       <div className="grid items-center gap-8 px-6 sm:px-10 pt-8 sm:pt-10 pb-6 lg:grid-cols-2">
-        <div>
+        <div key={idx} className="hero-slide">
           <p className="text-[10px] font-semibold uppercase tracking-[2px] text-[var(--color-accent-dark)]">
-            Metadata-driven REST payload builder
+            {slide.eyebrow}
           </p>
           <h1 className="hero-title mt-2 text-4xl sm:text-5xl xl:text-6xl text-ivory-950">
-            From live metadata to <em>ready-to-send payloads.</em>
+            {slide.titleA} <em>{slide.titleEm}</em>
           </h1>
           <p className="mt-4 max-w-xl text-sm leading-relaxed text-ivory-700">
-            Connect to any Salesforce org, describe any standard or custom
-            sObject, and generate accurate POST / PATCH payloads plus
-            Composite API batches - exported as JSON, cURL, JavaScript
-            fetch or Apex. No manual field copy-paste.
+            {slide.copy}
           </p>
           <div className="mt-6 flex flex-col sm:flex-row gap-3">
             <Button size="lg" onClick={onConnect} loading={loadingConnect}>
@@ -200,10 +276,50 @@ function HomeHero({
               size="lg"
               variant="secondary"
               className="w-full sm:w-auto"
+              onClick={() => onJumpMode(slide.mode)}
+            >
+              Open {slide.cta} →
+            </Button>
+          </div>
+          <div className="mt-5 flex items-center gap-3">
+            <div className="flex items-center gap-1.5" role="tablist" aria-label="Hero slides">
+              <button
+                type="button"
+                onClick={() => setIdx((idx + HERO_SLIDES.length - 1) % HERO_SLIDES.length)}
+                aria-label="Previous slide"
+                className="rounded p-1 text-ivory-500 hover:text-ivory-950 transition-colors cursor-pointer"
+              >
+                ‹
+              </button>
+              {HERO_SLIDES.map((s, i) => (
+                <button
+                  key={s.cta}
+                  type="button"
+                  role="tab"
+                  aria-selected={i === idx}
+                  aria-label={`Slide ${i + 1}: ${s.cta}`}
+                  onClick={() => setIdx(i)}
+                  className={`h-1.5 rounded-full transition-all cursor-pointer ${
+                    i === idx ? "w-6 bg-bronze-600" : "w-1.5 bg-ivory-400 hover:bg-ivory-600"
+                  }`}
+                />
+              ))}
+              <button
+                type="button"
+                onClick={() => setIdx((idx + 1) % HERO_SLIDES.length)}
+                aria-label="Next slide"
+                className="rounded p-1 text-ivory-500 hover:text-ivory-950 transition-colors cursor-pointer"
+              >
+                ›
+              </button>
+            </div>
+            <button
+              type="button"
               onClick={onHowItWorks}
+              className="text-xs text-ivory-600 hover:text-ivory-950 underline underline-offset-2 cursor-pointer"
             >
               How it works
-            </Button>
+            </button>
           </div>
           {connectError && (
             <div className="mt-4 max-w-xl rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
@@ -294,6 +410,58 @@ export default function Home() {
 
   // Token stored in ref - never in rendered state or localStorage
   const tokenRef = useRef<string>("");
+
+  // Jump-link intent from the hero carousel when offline: connect first, land after.
+  const pendingModeRef = useRef<Exclude<BuilderMode, "home"> | null>(null);
+
+  const openConnect = useCallback(() => {
+    setSavedCreds(readSavedCreds());
+    setShowWelcome(false);
+    setShowConnect(true);
+  }, []);
+
+  // Header nav: offline → prompt connect; online → switch mode + scroll to section
+  const goMode = useCallback((mode: BuilderMode) => {
+    setState((p) => ({ ...p, mode }));
+    if (mode === "home") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    window.setTimeout(() => {
+      const id =
+        mode === "composite" ? "composite"
+        : mode === "soql" ? "soql"
+        : mode === "graphql" ? "graphql"
+        : mode === "schema" ? "schema"
+        : "builder";
+      scrollToSection(id, false);
+    }, 80);
+  }, []);
+
+  const handleNavigate = useCallback(
+    (mode: "builder" | "composite" | "soql" | "graphql" | "schema") => {
+      if (!state.connected) {
+        openConnect();
+        return;
+      }
+      goMode(mode === "builder" ? "single" : mode);
+    },
+    [state.connected, openConnect, goMode]
+  );
+
+  // Hero carousel jump links: offline visitors connect first, then land
+  // on the chosen builder automatically.
+  const jumpToMode = useCallback(
+    (mode: Exclude<BuilderMode, "home">) => {
+      if (!state.connected) {
+        pendingModeRef.current = mode;
+        openConnect();
+        return;
+      }
+      goMode(mode);
+    },
+    [state.connected, openConnect, goMode]
+  );
 
   // On mount: restore session, seed modal prefill, decide on welcome,
   // and reload the persisted request collection (IndexedDB).
@@ -390,15 +558,21 @@ export default function Home() {
     return () => window.clearTimeout(t);
   }, []);
 
-  // Connection success → dismiss welcome + connect + expired modals
+  // Connection success → dismiss welcome + connect + expired modals,
+  // then honor any pending hero jump-link
   useEffect(() => {
     if (state.connected) {
       setShowConnect(false);
       setShowWelcome(false);
       setSessionExpired(false);
       sessionStorage.setItem("sf_welcomed", "1");
+      if (pendingModeRef.current) {
+        const m = pendingModeRef.current;
+        pendingModeRef.current = null;
+        goMode(m);
+      }
     }
-  }, [state.connected]);
+  }, [state.connected, goMode]);
 
   // Global ⌘K / Ctrl+K → object quick-find when connected
   useEffect(() => {
@@ -652,12 +826,6 @@ export default function Home() {
     setErrors({ connect: null, objects: null, describe: null });
   }, []);
 
-  const openConnect = useCallback(() => {
-    setSavedCreds(readSavedCreds());
-    setShowWelcome(false);
-    setShowConnect(true);
-  }, []);
-
   const flashToast = useCallback((message: string) => {
     setToast(message);
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
@@ -774,34 +942,6 @@ export default function Home() {
     Promise.all(doomed.map((i) => deleteCollectionItem(i.id))).catch(() => {});
   }, [collection, activeCollectionId]);
 
-  // Header nav: offline → prompt connect; online → switch mode + scroll to section
-  const goMode = useCallback((mode: BuilderMode) => {
-    setState((p) => ({ ...p, mode }));
-    if (mode === "home") {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      return;
-    }
-    window.setTimeout(() => {
-      const id =
-        mode === "composite" ? "composite"
-        : mode === "graphql" ? "graphql"
-        : mode === "schema" ? "schema"
-        : "builder";
-      scrollToSection(id, false);
-    }, 80);
-  }, []);
-
-  const handleNavigate = useCallback(
-    (mode: "builder" | "composite" | "graphql" | "schema") => {
-      if (!state.connected) {
-        openConnect();
-        return;
-      }
-      goMode(mode === "builder" ? "single" : mode);
-    },
-    [state.connected, openConnect, goMode]
-  );
-
   const selectedFields = state.describe?.fields.filter((f) =>
     state.selectedFieldNames.has(f.name)
   ) ?? [];
@@ -813,14 +953,6 @@ export default function Home() {
       : !state.generatedPayload
         ? 2
         : 3;
-
-  const host = (() => {
-    try {
-      return new URL(state.instanceUrl).host;
-    } catch {
-      return state.instanceUrl;
-    }
-  })();
 
   return (
     <AppShell
@@ -835,6 +967,22 @@ export default function Home() {
       onNavigate={handleNavigate}
       collectionCount={collection.length}
       onCollectionClick={() => setShowCollection(true)}
+      trail={
+        state.connected && state.mode !== "home" && state.mode !== "schema" ? (
+          <Stepper
+            steps={
+              state.mode === "composite"
+                ? COMPOSITE_STEPS
+                : state.mode === "soql"
+                  ? SOQL_STEPS
+                  : state.mode === "graphql"
+                    ? GRAPHQL_STEPS
+                    : SINGLE_STEPS
+            }
+            current={state.mode === "single" ? singleStep : 1}
+          />
+        ) : null
+      }
     >
       <main className="mx-auto w-full px-5 py-6 space-y-5">
         {!state.connected ? (
@@ -844,47 +992,11 @@ export default function Home() {
             connectError={errors.connect}
             onConnect={openConnect}
             onHowItWorks={() => setShowHowItWorks(true)}
+            onJumpMode={jumpToMode}
           />
         ) : (
           <>
-            {/* ── Stepper (hidden on home - nothing started yet) ── */}
-            {state.mode !== "home" && (
-              <Stepper
-                steps={
-                  state.mode === "composite"
-                    ? COMPOSITE_STEPS
-                    : state.mode === "graphql"
-                      ? GRAPHQL_STEPS
-                      : state.mode === "schema"
-                        ? SCHEMA_STEPS
-                        : SINGLE_STEPS
-                }
-                current={state.mode === "single" ? singleStep : 1}
-              />
-            )}
-
-            {/* ── Org context strip ── */}
-            <div className="arch-card flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5">
-              <StatusBadge status={loading.connect ? "loading" : "connected"} />
-              <span className="text-xs font-medium text-ivory-950 truncate max-w-[260px]" title={state.instanceUrl}>
-                {host}
-              </span>
-              <span className="text-xs text-ivory-600 font-mono">{state.apiVersion}</span>
-              {state.objectCount > 0 && (
-                <span className="text-xs text-ivory-600">
-                  {state.objectCount.toLocaleString()} objects
-                </span>
-              )}
-              <span className="flex-1" />
-              <Button variant="ghost" size="sm" onClick={() => setShowSearch(true)}>
-                Find objects ⌘K
-              </Button>
-              <Button variant="ghost" size="sm" onClick={openConnect}>
-                Switch org
-              </Button>
-            </div>
-
-            {/* ── Mode toggle ── */}
+            {/* ── Mode toggle first: the workbench starts here ── */}
             <div className="flex items-center gap-3">
               <div className="flex rounded-lg border border-[var(--color-line)] overflow-hidden w-fit bg-[var(--color-surface)]" role="tablist" aria-label="Builder mode">
                 {(
@@ -892,6 +1004,7 @@ export default function Home() {
                     { id: "home", label: "Home" },
                     { id: "single", label: "Single Object" },
                     { id: "composite", label: "Composite API" },
+                    { id: "soql", label: "SOQL" },
                     { id: "graphql", label: "GraphQL" },
                     { id: "schema", label: "Schema Map" },
                   ] as { id: BuilderMode; label: string }[]
@@ -912,13 +1025,15 @@ export default function Home() {
               <span className="hidden sm:inline text-[11px] text-ivory-600">
                 {state.mode === "composite"
                   ? "Batch multiple sObjects with reference IDs in one call"
-                  : state.mode === "graphql"
-                    ? "Read-only queries against live metadata - no mutations"
-                    : state.mode === "schema"
-                      ? "Explore the data model as an ERD - discover, present, export"
-                      : state.mode === "home"
-                        ? "Pick a builder to begin - nothing runs until you choose"
-                        : "POST or PATCH a single record with live field metadata"}
+                    : state.mode === "soql"
+                      ? "SOQL with plans, history and exports"
+                    : state.mode === "graphql"
+                      ? "Read-only queries against live metadata - no mutations"
+                      : state.mode === "schema"
+                        ? "Explore the data model as an ERD - discover, present, export"
+                        : state.mode === "home"
+                          ? "Pick a builder to begin - nothing runs until you choose"
+                          : "POST or PATCH a single record with live field metadata"}
               </span>
             </div>
 
@@ -930,6 +1045,7 @@ export default function Home() {
                 connectError={errors.connect}
                 onConnect={openConnect}
                 onHowItWorks={() => setShowHowItWorks(true)}
+                onJumpMode={jumpToMode}
               />
             )}
 
@@ -956,6 +1072,19 @@ export default function Home() {
                   apiVersion={state.apiVersion}
                   getToken={() => tokenRef.current}
                   onAddToCollection={requestAddToCollection}
+                  onSessionExpired={handleSessionExpired}
+                />
+              </section>
+            )}
+
+            {/* ── SOQL mode ── */}
+            {state.mode === "soql" && (
+              <section id="soql" aria-label="SOQL Query Builder" className="scroll-mt-20">
+                <SoqlPanel
+                  objects={state.objects}
+                  instanceUrl={state.instanceUrl}
+                  apiVersion={state.apiVersion}
+                  getToken={() => tokenRef.current}
                   onSessionExpired={handleSessionExpired}
                 />
               </section>

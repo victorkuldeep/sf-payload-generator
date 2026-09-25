@@ -1,21 +1,19 @@
-export interface ErdSnapshot {
+export interface SoqlQuery {
   id: string;
-  /** Org hostname, e.g. myorg.my.salesforce.com - snapshots are listed per org. */
-  orgDomain: string;
-  name: string;
+  soql: string;
+  label: string;
+  /** User-saved (named) vs auto history. */
+  saved: boolean;
+  tooling: boolean;
+  rowCount: number | null;
   createdAt: number;
-  root: string;
-  focus: string;
-  /** Objects on canvas. */
-  nodes: string[];
-  /** Drag positions to reapply on restore. */
-  positions: Record<string, { x: number; y: number }>;
+  lastRun: number;
 }
 
 const DB_NAME = "sf-payload-studio";
-const STORE = "erd-snapshots";
+const STORE = "soql-queries";
 const DB_VERSION = 4;
-const MAX_PER_ORG = 20;
+const MAX_HISTORY = 30;
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -32,11 +30,11 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains("collections")) {
         db.createObjectStore("collections", { keyPath: "id" });
       }
+      if (!db.objectStoreNames.contains("erd-snapshots")) {
+        db.createObjectStore("erd-snapshots", { keyPath: "id" });
+      }
       if (!db.objectStoreNames.contains(STORE)) {
         db.createObjectStore(STORE, { keyPath: "id" });
-      }
-      if (!db.objectStoreNames.contains("soql-queries")) {
-        db.createObjectStore("soql-queries", { keyPath: "id" });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -83,34 +81,24 @@ function withStore<T>(
   );
 }
 
-export async function listSnapshotsByOrg(orgDomain: string): Promise<ErdSnapshot[]> {
-  const all = await withStore<ErdSnapshot[]>("readonly", (store) => store.getAll());
-  return (all ?? [])
-    .filter((s) => s.orgDomain === orgDomain)
-    .sort((a, b) => b.createdAt - a.createdAt);
+export async function listSoqlQueries(): Promise<SoqlQuery[]> {
+  const all = await withStore<SoqlQuery[]>("readonly", (store) => store.getAll());
+  return (all ?? []).sort((a, b) => b.lastRun - a.lastRun);
 }
 
-export async function saveSnapshot(snap: ErdSnapshot): Promise<void> {
-  await withStore("readwrite", (store) => store.put(snap));
-  // Prune to the newest MAX_PER_ORG for this org
-  const kept = await listSnapshotsByOrg(snap.orgDomain);
-  const extra = kept.slice(MAX_PER_ORG);
-  if (extra.length > 0) {
+export async function saveSoqlQuery(q: SoqlQuery): Promise<void> {
+  await withStore("readwrite", (store) => store.put(q));
+  // Prune auto-history (saved queries are immortal)
+  const all = await listSoqlQueries();
+  const auto = all.filter((x) => !x.saved).slice(MAX_HISTORY);
+  if (auto.length > 0) {
     await withStore("readwrite", (store) => {
-      for (const s of extra) store.delete(s.id);
-      // Return a dummy request - completion is tracked via the transaction
-      return store.get(snap.id);
+      for (const x of auto) store.delete(x.id);
+      return store.get(q.id);
     });
   }
 }
 
-export async function deleteSnapshot(id: string): Promise<void> {
+export async function deleteSoqlQuery(id: string): Promise<void> {
   await withStore("readwrite", (store) => store.delete(id));
-}
-
-export async function renameSnapshot(id: string, name: string): Promise<void> {
-  const all = await withStore<ErdSnapshot[]>("readonly", (store) => store.getAll());
-  const found = (all ?? []).find((s) => s.id === id);
-  if (!found) return;
-  await withStore("readwrite", (store) => store.put({ ...found, name }));
 }

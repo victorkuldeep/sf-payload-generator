@@ -3,8 +3,8 @@ import type { Collection, CollectionItem } from "./types";
 const DB_NAME = "sf-payload-studio";
 const ITEMS_STORE = "request-collection";
 const COLLECTIONS_STORE = "collections";
-// v3 also hosts the erd-snapshots store (see lib/erd/snapshotDb.ts).
-const DB_VERSION = 3;
+// v4 also hosts erd-snapshots + soql-queries (see lib/erd/snapshotDb.ts, lib/soql/historyDb.ts).
+const DB_VERSION = 4;
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {

@@ -219,6 +219,18 @@ button, input, select, textarea, optgroup, option {
   border-radius: 9999px;
 }
 
+/* ── Hero carousel slide entrance ── */
+.hero-slide {
+  animation: hero-fade 0.45s ease-out;
+}
+@keyframes hero-fade {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-slide { animation: none; }
+}
+
 /* ── Section flash-highlight (proves a nav click landed, even when already in view) ── */
 .flash-target {
   border-radius: 12px;

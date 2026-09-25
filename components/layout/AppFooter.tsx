@@ -1,9 +1,16 @@
 "use client";
 
-export function AppFooter() {
+import type { ReactNode } from "react";
+
+export function AppFooter({ trail }: { trail?: ReactNode }) {
   return (
-    <footer className="w-full border-t border-[var(--color-line)] bg-[var(--color-surface)] py-2 mt-auto">
-      <div className="w-full px-5 flex items-center justify-between gap-x-4 gap-y-0.5 flex-wrap text-[10px] leading-tight text-[var(--color-muted)]">
+    <footer className="w-full border-t border-[var(--color-line)] bg-[var(--color-surface)] mt-auto">
+      {trail && (
+        <div className="border-b border-[var(--color-line-soft)] px-5 py-3 flex justify-center">
+          <div className="w-full max-w-3xl">{trail}</div>
+        </div>
+      )}
+      <div className="w-full px-5 py-2 flex items-center justify-between gap-x-4 gap-y-0.5 flex-wrap text-[10px] leading-tight text-[var(--color-muted)]">
         <div className="flex items-center gap-2 min-w-0">
           <span className="font-semibold text-[var(--color-ink)] whitespace-nowrap">
             Salesforce sObject Payload Studio

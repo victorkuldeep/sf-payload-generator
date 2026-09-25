@@ -14,9 +14,11 @@ interface AppShellProps {
   onConnectClick: () => void;
   onDisconnect: () => void;
   onSearchClick: () => void;
-  onNavigate: (mode: "builder" | "composite" | "graphql" | "schema") => void;
+  onNavigate: (mode: "builder" | "composite" | "soql" | "graphql" | "schema") => void;
   collectionCount: number;
   onCollectionClick: () => void;
+  /** Builder progress trail — docked above the footer, null on home/schema. */
+  trail?: ReactNode;
 }
 
 export function AppShell({
@@ -32,6 +34,7 @@ export function AppShell({
   onNavigate,
   collectionCount,
   onCollectionClick,
+  trail,
 }: AppShellProps) {
   return (
     <div className="flex flex-col min-h-screen">
@@ -51,7 +54,7 @@ export function AppShell({
       <div className="flex-1 flex flex-col" id="main-content">
         {children}
       </div>
-      <AppFooter />
+      <AppFooter trail={trail} />
     </div>
   );
 }

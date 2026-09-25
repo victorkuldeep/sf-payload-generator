@@ -13,7 +13,8 @@ interface StepperProps {
 export function Stepper({ steps, current }: StepperProps) {
   return (
     <ol
-      className="grid grid-cols-2 sm:grid-cols-4 gap-2"
+      className="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(var(--stc),minmax(0,1fr))]"
+      style={{ "--stc": steps.length } as React.CSSProperties}
       aria-label="Builder progress"
     >
       {steps.map((step, i) => {

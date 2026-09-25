@@ -634,7 +634,7 @@ export default function SchemaPanel({
   return (
     <div
       className="flex gap-3"
-      style={fillHeight ? { height: "100%", minHeight: 0 } : { height: "calc(100vh - 300px)", minHeight: 520 }}
+      style={fillHeight ? { height: "100%", minHeight: 0 } : { height: "calc(100vh - 180px)", minHeight: 520 }}
     >
       {/* ── Collapsible explorer sidebar ── */}
       {sideOpen ? (

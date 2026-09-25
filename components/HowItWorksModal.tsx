@@ -14,36 +14,36 @@ const STEPS = [
     n: "01",
     title: "Connect securely",
     points: [
-      "Instance URL + access token - validated live against your org.",
+      "Three ways in: Credentials, Session ID (frontdoor-link 1-click), or token help.",
       "Token stays in session memory only; every call is proxied server-side.",
-      "Get a token from Workbench, Salesforce CLI, or a Connected App.",
+      "Dead sessions reopen the login by themselves - expired tokens get a reconnect dialog, never a dead screen.",
     ],
   },
   {
     n: "02",
-    title: "Describe any sObject",
+    title: "Find anything fast",
     points: [
-      "Browse all standard and custom objects, or jump with ⌘K quick-find.",
-      "Live field metadata: types, picklists, references, required flags.",
-      "Writability is split correctly - createable for POST, updateable for PATCH.",
+      "Relevance-ranked search everywhere: exact matches first, ⌘K quick-find across 2,700+ objects.",
+      "Live field metadata: types, picklists, references, required flags, writability split for POST vs PATCH.",
+      "Picklist inspector: value counts open floating panels with defaults and inactive flags.",
     ],
   },
   {
     n: "03",
-    title: "Configure values",
+    title: "Build in five modes",
     points: [
-      "Type-aware editors per field, with one-click sample value generation.",
-      "Record ID handling for PATCH; excluded non-writable fields flagged.",
-      "GraphQL mode filters to query-safe fields with a first: N limit.",
+      "Single payloads with type-aware editors, Composite batches, SOQL with query plans.",
+      "Multi-object GraphQL graphs and an ERD Schema Map with discovery and laser walkthroughs.",
+      "Timeouts on every call (30s browser, 25s proxy) - nothing ever hangs silently.",
     ],
   },
   {
     n: "04",
-    title: "Export & test",
+    title: "Export, test, collect",
     points: [
-      "JSON, cURL ($SF_ACCESS_TOKEN placeholder), JS fetch, or Apex HttpRequest.",
-      "Send a live test request with confirmation and full response viewer.",
-      "Composite batches and GraphQL queries run through the same safe proxy.",
+      "JSON, cURL, JS fetch, Apex, CSV/Excel, hi-res PNG, and Postman v2.1 collections.",
+      "Live test runs with confirmation, full response viewer, and SOQL stop support.",
+      "Stage requests across builders into named collections - IndexedDB-backed, export once.",
     ],
   },
 ];
@@ -51,7 +51,10 @@ const STEPS = [
 const MODES = [
   { name: "Single Object", desc: "POST or PATCH one record with live field metadata." },
   { name: "Composite API", desc: "Multi-sObject graphs with reference IDs in a single call." },
-  { name: "GraphQL", desc: "Read-only queries - Salesforce GraphQL has no mutations." },
+  { name: "SOQL", desc: "Inspector-style queries with plans, history, saved queries and exports." },
+  { name: "GraphQL", desc: "Multi-object graphs plus nested traversal - read-only, one round trip." },
+  { name: "Schema Map", desc: "ERD canvas - discover the model, spotlight parents, export PNG." },
+  { name: "Collections", desc: "Stage requests from any builder, export a Postman collection at once." },
 ];
 
 export function HowItWorksModal({ open, onClose, onConnect }: HowItWorksModalProps) {
@@ -85,7 +88,7 @@ export function HowItWorksModal({ open, onClose, onConnect }: HowItWorksModalPro
               How it works
             </p>
             <h2 id="how-title" className="hero-title mt-1 text-2xl sm:text-3xl">
-              From connection to payload <em>in four steps.</em>
+              Five builders, <em>one connection.</em>
             </h2>
           </div>
           <button
@@ -122,9 +125,9 @@ export function HowItWorksModal({ open, onClose, onConnect }: HowItWorksModalPro
 
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[2px] text-[var(--color-accent-dark)] mb-2">
-              Three builders, one connection
+              The full toolkit
             </p>
-            <div className="grid sm:grid-cols-3 gap-3">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {MODES.map((m) => (
                 <div key={m.name} className="rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-4">
                   <p className="text-xs font-semibold text-ivory-950">{m.name}</p>

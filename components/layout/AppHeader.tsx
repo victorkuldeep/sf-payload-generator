@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 interface AppHeaderProps {
@@ -11,17 +12,9 @@ interface AppHeaderProps {
   onConnectClick: () => void;
   onDisconnect: () => void;
   onSearchClick: () => void;
-  onNavigate: (mode: "builder" | "composite" | "graphql" | "schema") => void;
+  onNavigate: (mode: "builder" | "composite" | "soql" | "graphql" | "schema") => void;
   collectionCount: number;
   onCollectionClick: () => void;
-}
-
-function shortHost(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return url.length > 32 ? url.slice(0, 32) + "…" : url;
-  }
 }
 
 export function AppHeader({
@@ -37,6 +30,43 @@ export function AppHeader({
   collectionCount,
   onCollectionClick,
 }: AppHeaderProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [copiedOrg, setCopiedOrg] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as globalThis.Node)) {
+        setMenuOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
+  const closeMenu = (fn: () => void) => () => {
+    setMenuOpen(false);
+    fn();
+  };
+
+  const copyOrgUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(instanceUrl);
+      setCopiedOrg(true);
+      window.setTimeout(() => setCopiedOrg(false), 1600);
+    } catch {
+      /* clipboard unavailable */
+    }
+  };
+
   return (
     <header className="sticky top-0 z-40 w-full bg-[var(--color-canvas)]/95 backdrop-blur-sm border-b border-[var(--color-line)]">
       <div className="w-full px-5 flex items-center justify-between h-[64px] gap-3">
@@ -64,6 +94,14 @@ export function AppHeader({
             title={connected ? "Go to composite builder" : "Connect to open composite"}
           >
             Composite
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate("soql")}
+            className="hover:text-[var(--color-ink)] hover:underline underline-offset-4 transition-colors cursor-pointer"
+            title={connected ? "Go to SOQL builder" : "Connect to open SOQL"}
+          >
+            SOQL
           </button>
           <button
             type="button"
@@ -125,45 +163,133 @@ export function AppHeader({
             </button>
           )}
 
-          {/* Connectivity pill */}
-          <div
-            className={`flex items-center gap-2 pl-2.5 pr-1 py-1 rounded-full border text-xs ${
-              connected
-                ? "bg-[var(--color-success-bg)] border-green-200 text-green-800"
-                : "bg-[var(--color-surface)] border-[var(--color-line)] text-[var(--color-muted)]"
-            }`}
-            role="status"
-            aria-label={connected ? `Connected to ${instanceUrl}` : "Not connected"}
-            title={connected ? `${instanceUrl} · ${apiVersion} · ${objectCount} objects` : "Not connected"}
-          >
-            <span
-              className={`status-dot ${connected ? "is-live" : ""}`}
-              style={{
-                backgroundColor: connected ? "#4A7C59" : "#AEA48E",
-                color: connected ? "#4A7C59" : "#AEA48E",
-              }}
-              aria-hidden="true"
-            />
-            <span className="font-medium max-w-[150px] truncate hidden sm:inline">
-              {connected ? shortHost(instanceUrl) : connecting ? "Connecting…" : "Offline"}
-            </span>
-            {connected ? (
-              <button
-                type="button"
-                onClick={onDisconnect}
-                className="px-2 py-0.5 rounded-full hover:bg-red-500/10 hover:text-red-700 transition-colors cursor-pointer font-medium"
-                title="Disconnect"
+          {/* Connectivity pill - status badge trigger, details live in the dropdown */}
+          <div className="relative" ref={menuRef}>
+            <div
+              className="flex items-center gap-2 pl-2.5 pr-1 py-1 rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] text-xs"
+              role="status"
+              aria-label={connected ? `Connected to ${instanceUrl}` : "Not connected"}
+              title={connected ? `${instanceUrl} · ${apiVersion} · ${objectCount} objects` : "Not connected"}
+            >
+              <span
+                className={`status-dot ${connected ? "is-live" : ""}`}
+                style={{
+                  backgroundColor: connected ? "#4A7C59" : "#AEA48E",
+                  color: connected ? "#4A7C59" : "#AEA48E",
+                }}
+                aria-hidden="true"
+              />
+              {connected ? (
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen((v) => !v)}
+                  aria-expanded={menuOpen}
+                  aria-haspopup="menu"
+                  aria-label="Connection details and actions"
+                  className="flex items-center gap-1.5 pr-1 cursor-pointer"
+                  title="Org details, switch org, disconnect"
+                >
+                  <span className="font-bold tracking-wide bg-gradient-to-r from-bronze-600 via-[#C9A86A] to-bronze-600 bg-clip-text text-transparent">
+                    Connected
+                  </span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7A5C3A" strokeWidth="2.4" aria-hidden="true" className={`transition-transform ${menuOpen ? "rotate-180" : ""}`}>
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </button>
+              ) : (
+                <>
+                  <span className="font-medium text-[var(--color-muted)] hidden sm:inline">
+                    {connecting ? "Connecting…" : "Offline"}
+                  </span>
+                  {!connecting && (
+                    <button
+                      type="button"
+                      onClick={onConnectClick}
+                      className="px-2.5 py-0.5 rounded-full bg-ivory-950 text-ivory-100 hover:bg-bronze-600 transition-colors cursor-pointer font-semibold"
+                    >
+                      Connect
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+
+            {connected && menuOpen && (
+              <div
+                role="menu"
+                aria-label="Connection"
+                className="absolute right-0 top-full mt-2 w-80 overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] shadow-[0_16px_48px_-12px_rgba(24,20,12,0.35)]"
               >
-                Disconnect
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={onConnectClick}
-                className="px-2.5 py-0.5 rounded-full bg-ivory-950 text-ivory-100 hover:bg-bronze-600 transition-colors cursor-pointer font-semibold"
-              >
-                Connect
-              </button>
+                <div className="border-b border-[var(--color-line-soft)] px-3.5 py-2.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-success)]" aria-hidden="true" />
+                    <span className="text-[10px] font-semibold uppercase tracking-[1.6px] text-[var(--color-accent-dark)]">
+                      Live org
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <p className="min-w-0 flex-1 truncate font-mono text-xs font-semibold text-ivory-950" title={instanceUrl}>
+                      {instanceUrl.replace(/^https:\/\//, "")}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={copyOrgUrl}
+                      aria-label="Copy org URL"
+                      title="Copy org URL"
+                      className="shrink-0 rounded-md p-1 text-ivory-500 hover:text-bronze-600 hover:bg-ivory-200 transition-colors cursor-pointer"
+                    >
+                      {copiedOrg ? (
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" aria-hidden="true" className="text-green-600">
+                          <path d="m4 12.5 5 5L20 6.5" />
+                        </svg>
+                      ) : (
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                          <rect x="9" y="9" width="12" height="12" rx="2" />
+                          <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                  <p className="mt-1 text-[11px] text-ivory-600">
+                    {apiVersion}
+                    {objectCount > 0 && <> · {objectCount.toLocaleString()} objects</>}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 p-1.5">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={closeMenu(onSearchClick)}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-xs text-ivory-800 hover:bg-ivory-200 transition-colors cursor-pointer"
+                    title="Find objects (⌘K)"
+                  >
+                    Find
+                    <kbd className="font-mono text-[10px] text-ivory-500">⌘K</kbd>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={closeMenu(onConnectClick)}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-xs text-ivory-800 hover:bg-ivory-200 transition-colors cursor-pointer"
+                    title="Connect a different org"
+                  >
+                    Switch org
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={closeMenu(onDisconnect)}
+                    aria-label="Disconnect"
+                    title="Disconnect"
+                    className="flex items-center justify-center rounded-lg p-2 text-ivory-500 hover:text-red-700 hover:bg-red-500/10 transition-colors cursor-pointer"
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+                      <path d="M12 3v8" />
+                      <path d="M6.3 6.5a8 8 0 1 0 11.4 0" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </div>
