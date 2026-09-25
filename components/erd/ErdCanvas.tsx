@@ -65,10 +65,7 @@ function ErdFlow({ nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick 
   const [laser, setLaser] = useState(false);
   const [strokes, setStrokes] = useState<Stroke[]>([]);
   const strokeId = useRef(0);
-  // While idle the layer is click-through (pointer-events: none) so wheel,
-  // trackpad scroll, pinch-zoom and canvas pan all keep working with laser ON.
-  // It only grabs the pointer for the duration of a draw stroke.
-  const [drawing, setDrawing] = useState(false);
+  const drawing = useRef(false);
 
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -88,6 +85,22 @@ function ErdFlow({ nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [laser]);
+
+  // "L" toggles the laser (Excalidraw-style): press to present, Esc to scroll again.
+  // Ignored while typing or with modifier keys held. ⌘K stays as object find.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key.toLowerCase() !== "l") return;
+      const el = document.activeElement as HTMLElement | null;
+      const tag = el?.tagName ?? "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return;
+      e.preventDefault();
+      setLaser((v) => !v);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const doExport = useCallback(
     async (scale: 2 | 3) => {
@@ -142,10 +155,8 @@ function ErdFlow({ nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick 
   const startStroke = useCallback(
     (e: React.PointerEvent) => {
       if (!laser) return;
-      // Left mouse / pen draws; touch stays free to pan and zoom.
-      if (e.button !== 0 || (e.pointerType !== "mouse" && e.pointerType !== "pen")) return;
-      setDrawing(true);
-      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+      drawing.current = true;
+      (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
       const id = ++strokeId.current;
       setStrokes((prev) => [...prev.slice(-11), { id, pts: [relPos(e)] }]);
       window.setTimeout(() => {
@@ -157,19 +168,16 @@ function ErdFlow({ nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick 
 
   const extendStroke = useCallback(
     (e: React.PointerEvent) => {
+      if (!laser || !drawing.current) return;
+      const p = relPos(e);
       setStrokes((prev) => {
         if (prev.length === 0) return prev;
-        const p = relPos(e);
         const last = prev[prev.length - 1];
         return [...prev.slice(0, -1), { ...last, pts: [...last.pts, p].slice(-120) }];
       });
     },
-    [relPos]
+    [laser, relPos]
   );
-
-  const endStroke = useCallback(() => {
-    setDrawing(false);
-  }, []);
 
   return (
     <div
@@ -207,18 +215,16 @@ function ErdFlow({ nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick 
 
       {laser && (
         <svg
-          className="erd-laser-layer absolute inset-0 h-full w-full"
-          style={{
-            cursor: drawing ? "crosshair" : "default",
-            zIndex: 20,
-            pointerEvents: drawing ? "auto" : "none",
-            touchAction: "none",
-          }}
+          className="erd-laser-layer absolute inset-0 h-full w-full touch-none"
+          style={{ cursor: "crosshair", zIndex: 20 }}
           onPointerDown={startStroke}
           onPointerMove={extendStroke}
-          onPointerUp={endStroke}
-          onPointerCancel={endStroke}
-          onPointerLeave={endStroke}
+          onPointerUp={() => {
+            drawing.current = false;
+          }}
+          onPointerLeave={() => {
+            drawing.current = false;
+          }}
         >
           {strokes.map((s) => (
             <g key={s.id}>
@@ -252,7 +258,7 @@ function ErdFlow({ nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick 
           type="button"
           onClick={() => setLaser((v) => !v)}
           aria-pressed={laser}
-          title={laser ? "Exit laser pointer (Esc)" : "Laser walkthrough — draw on the canvas while you present"}
+          title={laser ? "Exit laser pointer (Esc)" : "Laser walkthrough — press L to present, Esc to scroll again"}
           className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors cursor-pointer ${
             laser
               ? "bg-[#ef4444] border-[#dc2626] text-white shadow-[0_0_12px_rgba(239,68,68,0.5)]"
