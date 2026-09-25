@@ -60,6 +60,12 @@ export interface SalesforceField {
   soapType: string;
 }
 
+export interface SalesforceChildRelationship {
+  childSObject: string;
+  field: string;
+  relationshipName: string | null;
+}
+
 export interface SalesforceDescribeResult {
   name: string;
   label: string;
@@ -68,6 +74,7 @@ export interface SalesforceDescribeResult {
   createable: boolean;
   updateable: boolean;
   fields: SalesforceField[];
+  childRelationships: SalesforceChildRelationship[];
 }
 
 export class SalesforceApiError extends Error {

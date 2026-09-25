@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { parseFrontdoorUrl, looksLikeFrontdoor } from "@/lib/salesforce/frontdoor";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
 import Select from "./ui/Select";
@@ -21,7 +22,13 @@ const VERSIONS = [
   "v64.0", "v63.0", "v62.0", "v61.0", "v60.0", "v59.0",
 ];
 
-type Tab = "credentials" | "token-help";
+type Tab = "credentials" | "session" | "token-help";
+
+const TAB_LABELS: Record<Tab, string> = {
+  credentials: "Credentials",
+  session: "Session ID",
+  "token-help": "Where's my token?",
+};
 
 export function ConnectModal({
   open,
@@ -40,6 +47,8 @@ export function ConnectModal({
   const [showToken, setShowToken] = useState(false);
   const [urlError, setUrlError] = useState("");
   const [tokenError, setTokenError] = useState("");
+  const [frontdoorUrl, setFrontdoorUrl] = useState("");
+  const [sessionError, setSessionError] = useState("");
   const urlRef = useRef<HTMLInputElement>(null);
 
   // Re-seed fields every time the modal opens (e.g. session restore / switch org)
@@ -50,6 +59,8 @@ export function ConnectModal({
       setApiVersion(initialApiVersion);
       setUrlError("");
       setTokenError("");
+      setSessionError("");
+      setFrontdoorUrl("");
       setTab("credentials");
       const t = setTimeout(() => urlRef.current?.focus(), 60);
       return () => clearTimeout(t);
@@ -71,12 +82,64 @@ export function ConnectModal({
   const submit = async () => {
     setUrlError("");
     setTokenError("");
+
+    // One-click: a frontdoor link pasted into either field auto-fills both
+    const pasted = [instanceUrl, token].find((v) => looksLikeFrontdoor(v));
+    let effUrl = instanceUrl.trim();
+    let effToken = token.trim();
+    if (pasted) {
+      try {
+        const parsed = parseFrontdoorUrl(pasted);
+        effUrl = parsed.instanceUrl;
+        effToken = parsed.token;
+        setInstanceUrl(effUrl);
+        setToken(effToken);
+      } catch (err) {
+        setUrlError(err instanceof Error ? err.message : "Invalid frontdoor link");
+        return;
+      }
+    }
+
     let bad = false;
-    if (!instanceUrl.trim()) { setUrlError("Instance URL is required"); bad = true; }
-    else if (!/^https:\/\//i.test(instanceUrl.trim())) { setUrlError("Must start with https://"); bad = true; }
-    if (!token.trim()) { setTokenError("Access token is required"); bad = true; }
+    if (!effUrl) { setUrlError("Instance URL is required"); bad = true; }
+    else if (!/^https:\/\//i.test(effUrl)) { setUrlError("Must start with https://"); bad = true; }
+    if (!effToken) { setTokenError("Access token is required"); bad = true; }
     if (bad) return;
-    await onConnect(instanceUrl.trim(), token.trim(), apiVersion);
+    await onConnect(effUrl, effToken, apiVersion);
+  };
+
+  const submitSession = async () => {
+    const raw = frontdoorUrl.trim();
+    if (!raw) {
+      setSessionError("Paste a frontdoor link or a session ID");
+      return;
+    }
+    try {
+      // Full frontdoor link → instance + session extracted, one click
+      if (looksLikeFrontdoor(raw)) {
+        const parsed = parseFrontdoorUrl(raw);
+        setSessionError("");
+        setInstanceUrl(parsed.instanceUrl);
+        setToken(parsed.token);
+        await onConnect(parsed.instanceUrl, parsed.token, apiVersion);
+        return;
+      }
+      // Raw session ID → still needs the instance URL alongside
+      const org = instanceUrl.trim();
+      if (!/^https:\/\//i.test(org)) {
+        setSessionError("That's a session ID — also add your Instance URL below (https://…) so we know which org to hit.");
+        return;
+      }
+      if (/\s/.test(raw)) {
+        setSessionError("Session IDs don't contain spaces — check the pasted value.");
+        return;
+      }
+      setSessionError("");
+      setToken(raw);
+      await onConnect(org, raw, apiVersion);
+    } catch (err) {
+      setSessionError(err instanceof Error ? err.message : "Couldn't use that session");
+    }
   };
 
   return (
@@ -111,18 +174,18 @@ export function ConnectModal({
         </div>
 
         <div className="px-6 pt-4">
-          <div className="flex rounded-lg border border-[var(--color-line)] overflow-hidden w-fit text-xs font-medium" role="tablist" aria-label="Connect dialog tabs">
-            {(["credentials", "token-help"] as Tab[]).map((t) => (
+          <div className="flex rounded-lg border border-[var(--color-line)] overflow-hidden w-fit max-w-full text-xs font-medium" role="tablist" aria-label="Connect dialog tabs">
+            {(Object.keys(TAB_LABELS) as Tab[]).map((t) => (
               <button
                 key={t}
                 role="tab"
                 aria-selected={tab === t}
                 onClick={() => setTab(t)}
-                className={`px-4 py-2 transition-colors cursor-pointer ${
+                className={`px-3 sm:px-4 py-2 transition-colors cursor-pointer whitespace-nowrap ${
                   tab === t ? "bg-ivory-950 text-ivory-100" : "bg-[var(--color-surface)] text-ivory-700 hover:text-ivory-950"
                 }`}
               >
-                {t === "credentials" ? "Credentials" : "Where's my token?"}
+                {TAB_LABELS[t]}
               </button>
             ))}
           </div>
@@ -181,6 +244,52 @@ export function ConnectModal({
               </div>
             )}
           </div>
+        ) : tab === "session" ? (
+          <div className="px-6 py-4 space-y-4">
+            <Input
+              label="Frontdoor link or Session ID"
+              type="text"
+              placeholder="https://mydomain.my.salesforce.com/secur/frontdoor.jsp?sid=…"
+              value={frontdoorUrl}
+              onChange={(e) => {
+                setFrontdoorUrl(e.target.value);
+                setSessionError("");
+              }}
+              error={sessionError}
+              disabled={loading}
+              autoComplete="off"
+              spellCheck={false}
+              hint="Paste the full frontdoor.jsp?sid=… link for true one-click login"
+              onKeyDown={(e) => { if (e.key === "Enter") submitSession(); }}
+            />
+            <Input
+              label="Instance URL (only needed for a raw session ID)"
+              type="url"
+              placeholder="https://myorg.my.salesforce.com"
+              value={instanceUrl}
+              onChange={(e) => setInstanceUrl(e.target.value)}
+              disabled={loading}
+              autoComplete="off"
+              spellCheck={false}
+              onKeyDown={(e) => { if (e.key === "Enter") submitSession(); }}
+            />
+            <Select
+              label="API Version"
+              value={apiVersion}
+              onChange={(e) => setApiVersion(e.target.value)}
+              disabled={loading}
+            >
+              {VERSIONS.map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </Select>
+
+            {error && (
+              <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+                {error}
+              </div>
+            )}
+          </div>
         ) : (
           <div className="px-6 py-4 space-y-3 text-xs leading-relaxed text-ivory-700">
             <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] p-3">
@@ -195,6 +304,14 @@ export function ConnectModal({
               <p className="font-semibold text-ivory-950">Option 3 — Connected App</p>
               <p className="mt-1">Use an OAuth client-credentials or authorization-code flow against your org, then paste the issued access token here.</p>
             </div>
+            <div className="rounded-lg border border-[var(--color-accent-soft)] bg-[var(--color-accent-bg)] p-3">
+              <p className="font-semibold text-ivory-950">Option 4 — Frontdoor link (fastest)</p>
+              <p className="mt-1">
+                Have a <code className="font-mono text-[11px] bg-ivory-300 px-1 rounded">…/secur/frontdoor.jsp?sid=…</code> link?
+                Open the <button type="button" onClick={() => setTab("session")} className="font-semibold text-bronze-600 underline cursor-pointer">Session ID</button> tab
+                and paste it — instance + token are extracted automatically.
+              </p>
+            </div>
           </div>
         )}
 
@@ -206,8 +323,12 @@ export function ConnectModal({
             <Button variant="secondary" onClick={onClose} disabled={loading}>
               Cancel
             </Button>
-            <Button onClick={submit} loading={loading} disabled={loading}>
-              Test &amp; Connect
+            <Button
+              onClick={tab === "session" ? submitSession : submit}
+              loading={loading}
+              disabled={loading}
+            >
+              {tab === "session" ? "Connect" : <>Test &amp; Connect</>}
             </Button>
           </div>
         </div>

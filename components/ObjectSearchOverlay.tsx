@@ -31,6 +31,15 @@ export function ObjectSearchOverlay({ objects, onSelect, onClose }: ObjectSearch
     inputRef.current?.focus();
   }, []);
 
+  // ESC closes even when focus has moved off the search input
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   useEffect(() => {
     const el = listRef.current?.querySelector(`[data-idx="${activeIdx}"]`);
     el?.scrollIntoView({ block: "nearest" });

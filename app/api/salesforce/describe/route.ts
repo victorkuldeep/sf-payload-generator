@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { normalizeSalesforceUrl } from "@/lib/salesforce/url";
-import { SalesforceField, SalesforceDescribeResult } from "@/lib/salesforce/types";
+import { SalesforceField, SalesforceChildRelationship, SalesforceDescribeResult } from "@/lib/salesforce/types";
 
 const schema = z.object({
   instanceUrl: z.string().min(1),
@@ -80,6 +80,7 @@ export async function POST(req: NextRequest) {
       createable: boolean;
       updateable: boolean;
       fields: SalesforceField[];
+      childRelationships?: SalesforceChildRelationship[];
     };
 
     const result: SalesforceDescribeResult = {
@@ -90,6 +91,15 @@ export async function POST(req: NextRequest) {
       createable: data.createable,
       updateable: data.updateable,
       fields: data.fields,
+      childRelationships: Array.isArray(data.childRelationships)
+        ? data.childRelationships
+            .filter((r) => r && typeof r.childSObject === "string" && typeof r.field === "string")
+            .map((r) => ({
+              childSObject: r.childSObject,
+              field: r.field,
+              relationshipName: r.relationshipName ?? null,
+            }))
+        : [],
     };
 
     return NextResponse.json(result);

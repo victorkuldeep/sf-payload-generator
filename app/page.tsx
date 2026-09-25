@@ -40,8 +40,9 @@ import ExportPanel from "@/components/ExportPanel";
 import RequestPanel from "@/components/RequestPanel";
 import CompositePanel from "@/components/CompositePanel";
 import GraphQLPanel from "@/components/GraphQLPanel";
+import SchemaPanel from "@/components/SchemaPanel";
 
-type BuilderMode = "single" | "composite" | "graphql";
+type BuilderMode = "single" | "composite" | "graphql" | "schema";
 
 interface AppState {
   connected: boolean;
@@ -106,6 +107,12 @@ const GRAPHQL_STEPS = [
   { label: "Connect", hint: "Org + token" },
   { label: "Query", hint: "Object + fields" },
   { label: "Run", hint: "Read-only" },
+];
+
+const SCHEMA_STEPS = [
+  { label: "Connect", hint: "Org + token" },
+  { label: "Map", hint: "Objects + links" },
+  { label: "Export", hint: "PNG + present" },
 ];
 
 const DEFAULT_API_VERSION =
@@ -652,7 +659,7 @@ export default function Home() {
 
   // Header nav: offline → prompt connect; online → switch mode + scroll to section
   const handleNavigate = useCallback(
-    (mode: "builder" | "composite" | "graphql") => {
+    (mode: "builder" | "composite" | "graphql" | "schema") => {
       if (!state.connected) {
         openConnect();
         return;
@@ -663,7 +670,11 @@ export default function Home() {
         setState((p) => ({ ...p, mode: "single" }));
       }
       window.setTimeout(() => {
-        const id = mode === "composite" ? "composite" : mode === "graphql" ? "graphql" : "builder";
+        const id =
+          mode === "composite" ? "composite"
+          : mode === "graphql" ? "graphql"
+          : mode === "schema" ? "schema"
+          : "builder";
         scrollToSection(id, false);
       }, 80);
     },
@@ -780,7 +791,9 @@ export default function Home() {
                   ? COMPOSITE_STEPS
                   : state.mode === "graphql"
                     ? GRAPHQL_STEPS
-                    : SINGLE_STEPS
+                    : state.mode === "schema"
+                      ? SCHEMA_STEPS
+                      : SINGLE_STEPS
               }
               current={state.mode === "single" ? singleStep : 1}
             />
@@ -814,6 +827,7 @@ export default function Home() {
                     { id: "single", label: "Single Object" },
                     { id: "composite", label: "Composite API" },
                     { id: "graphql", label: "GraphQL" },
+                    { id: "schema", label: "Schema Map" },
                   ] as { id: BuilderMode; label: string }[]
                 ).map((m) => (
                   <button
@@ -834,7 +848,9 @@ export default function Home() {
                   ? "Batch multiple sObjects with reference IDs in one call"
                   : state.mode === "graphql"
                     ? "Read-only queries against live metadata — no mutations"
-                    : "POST or PATCH a single record with live field metadata"}
+                    : state.mode === "schema"
+                      ? "Explore the data model as an ERD — discover, present, export"
+                      : "POST or PATCH a single record with live field metadata"}
               </span>
             </div>
 
@@ -860,6 +876,18 @@ export default function Home() {
                   apiVersion={state.apiVersion}
                   getToken={() => tokenRef.current}
                   onAddToCollection={requestAddToCollection}
+                />
+              </section>
+            )}
+
+            {/* ── Schema deep-dive mode ── */}
+            {state.mode === "schema" && (
+              <section id="schema" aria-label="Schema Deep Dive" className="scroll-mt-20">
+                <SchemaPanel
+                  objects={state.objects}
+                  instanceUrl={state.instanceUrl}
+                  apiVersion={state.apiVersion}
+                  getToken={() => tokenRef.current}
                 />
               </section>
             )}

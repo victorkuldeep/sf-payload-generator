@@ -14,7 +14,7 @@ interface AppShellProps {
   onConnectClick: () => void;
   onDisconnect: () => void;
   onSearchClick: () => void;
-  onNavigate: (mode: "builder" | "composite" | "graphql") => void;
+  onNavigate: (mode: "builder" | "composite" | "graphql" | "schema") => void;
   collectionCount: number;
   onCollectionClick: () => void;
 }
