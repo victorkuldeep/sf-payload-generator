@@ -2,6 +2,13 @@ import dagre from "@dagrejs/dagre";
 import type { Node, Edge } from "@xyflow/react";
 import type { SalesforceDescribeResult } from "@/lib/salesforce/types";
 
+export interface ErdPickValue {
+  label: string;
+  value: string;
+  active: boolean;
+  isDefault: boolean;
+}
+
 export interface ErdFieldRow {
   name: string;
   type: string;
@@ -10,6 +17,8 @@ export interface ErdFieldRow {
   /** Lookup targets, e.g. ["Account", "Opportunity"] */
   refs: string[];
   required: boolean;
+  /** Picklist options (picklist/multipicklist only, capped). */
+  pickValues: ErdPickValue[];
 }
 
 export interface ErdNodeData extends Record<string, unknown> {
@@ -25,6 +34,14 @@ export interface ErdNodeData extends Record<string, unknown> {
   /** Spotlight mode: focused node gets a ring, everything unrelated dims. */
   spotlight: boolean;
   dimmed: boolean;
+  /** True while this node's describe is being refreshed. */
+  refreshing: boolean;
+  onRefreshNode?: (id: string) => void;
+  onPicklistClick?: (
+    nodeId: string,
+    fieldName: string,
+    anchor: { x: number; y: number; width: number; height: number }
+  ) => void;
 }
 
 export const ERD_NODE_WIDTH = 300;
@@ -38,9 +55,17 @@ export function erdNodeHeight(rowCount: number): number {
 }
 
 function toRow(
-  f: { name: string; type: string; nillable: boolean; nameField: boolean; referenceTo: string[] },
+  f: {
+    name: string;
+    type: string;
+    nillable: boolean;
+    nameField: boolean;
+    referenceTo: string[];
+    picklistValues?: { label: string; value: string; active: boolean; defaultValue: boolean }[] | null;
+  },
   targetLabels: Map<string, string>
 ): ErdFieldRow {
+  const isPick = f.type === "picklist" || f.type === "multipicklist";
   return {
     name: f.name,
     type: f.type,
@@ -48,6 +73,15 @@ function toRow(
     isName: !!f.nameField,
     refs: (f.referenceTo ?? []).filter((t) => targetLabels.has(t)),
     required: !f.nillable,
+    pickValues:
+      isPick && Array.isArray(f.picklistValues)
+        ? f.picklistValues.slice(0, 100).map((p) => ({
+            label: p.label ?? p.value,
+            value: p.value,
+            active: p.active !== false,
+            isDefault: !!p.defaultValue,
+          }))
+        : [],
   };
 }
 
@@ -115,6 +149,7 @@ export function buildErdElements(
             nillable: f.nillable,
             nameField: f.nameField,
             referenceTo: f.referenceTo ?? [],
+            picklistValues: f.picklistValues ?? null,
           },
           labels
         )
@@ -139,6 +174,8 @@ export function buildErdElements(
         isRoot: apiName === root,
         spotlight: spot != null && spot.focus === apiName,
         dimmed: spot != null && spot.focus !== apiName && !spot.related.has(apiName),
+        // Panel overrides per live refresh state
+        refreshing: false,
       },
     });
   }

@@ -1,8 +1,10 @@
 "use client";
 
 import {
+  forwardRef,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useRef,
   useState,
 } from "react";
@@ -29,11 +31,20 @@ import { ErdEdge } from "./ErdEdge";
 const nodeTypes = { erdTable: ErdTableNode } as const;
 const edgeTypes = { erdEdge: ErdEdge } as const;
 
+export interface ErdCanvasHandle {
+  getNodes: () => Node<ErdNodeData>[];
+}
+
 interface ErdCanvasProps {
   nodes: Node<ErdNodeData>[];
   edges: Edge[];
   onNodeClick?: (id: string) => void;
   onPaneClick?: () => void;
+  onViewportMove?: () => void;
+  /** Bump to force a fresh auto-layout. Unchanged revisions preserve drag positions. */
+  layoutRev: number;
+  /** Explicit positions (snapshot restore) applied on top of the fresh layout. */
+  enforcedPositions?: Map<string, { x: number; y: number }> | null;
 }
 
 interface Stroke {
@@ -56,11 +67,29 @@ function pngFileName(scale: 2 | 3): string {
   return `salesforce-erd-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}@${scale}x.png`;
 }
 
-function ErdFlow({ nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick }: ErdCanvasProps) {
+const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
+  { nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick, onViewportMove, layoutRev, enforcedPositions },
+  ref
+) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<ErdNodeData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const { fitView } = useReactFlow();
+  const lastRev = useRef(layoutRev);
+
+  // Live mirror for snapshot saves (drag positions included)
+  const nodesRef = useRef<Node<ErdNodeData>[]>([]);
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      getNodes: () => nodesRef.current,
+    }),
+    []
+  );
 
   const [laser, setLaser] = useState(false);
   const [strokes, setStrokes] = useState<Stroke[]>([]);
@@ -71,11 +100,36 @@ function ErdFlow({ nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick 
   const [exportError, setExportError] = useState<string | null>(null);
 
   useEffect(() => {
-    setNodes(propNodes);
-    setEdges(propEdges);
+    if (enforcedPositions) {
+      // Snapshot restore: fresh layout underneath, saved drag positions on top
+      setNodes(
+        propNodes.map((n) => {
+          const p = enforcedPositions.get(n.id);
+          return p ? { ...n, position: { ...p } } : n;
+        })
+      );
+      setEdges(propEdges);
+      lastRev.current = layoutRev;
+    } else if (lastRev.current !== layoutRev) {
+      // Explicit re-layout (discover, reset, fresh add)
+      lastRev.current = layoutRev;
+      setNodes(propNodes);
+      setEdges(propEdges);
+    } else {
+      // Same revision (e.g. metadata refresh): keep every dragged position,
+      // adopt fresh positions only for brand-new nodes
+      setNodes((prev) => {
+        const current = new Map(prev.map((p) => [p.id, p.position] as const));
+        return propNodes.map((n) => {
+          const p = current.get(n.id);
+          return p ? { ...n, position: p } : n;
+        });
+      });
+      setEdges(propEdges);
+    }
     const t = window.setTimeout(() => fitView({ padding: 0.18, maxZoom: 1 }), 60);
     return () => window.clearTimeout(t);
-  }, [propNodes, propEdges, setNodes, setEdges, fitView]);
+  }, [propNodes, propEdges, layoutRev, enforcedPositions, setNodes, setEdges, fitView]);
 
   useEffect(() => {
     if (!laser) return;
@@ -191,6 +245,7 @@ function ErdFlow({ nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick 
         onEdgesChange={onEdgesChange}
         onNodeClick={(_, node) => onNodeClick?.(node.id)}
         onPaneClick={() => onPaneClick?.()}
+        onMoveStart={() => onViewportMove?.()}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         panOnDrag={!laser}
@@ -298,12 +353,12 @@ function ErdFlow({ nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick 
       </div>
     </div>
   );
-}
+});
 
-export function ErdCanvas(props: ErdCanvasProps) {
+export const ErdCanvas = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdCanvas(props, ref) {
   return (
     <ReactFlowProvider>
-      <ErdFlow {...props} />
+      <ErdFlow {...props} ref={ref} />
     </ReactFlowProvider>
   );
-}
+});
