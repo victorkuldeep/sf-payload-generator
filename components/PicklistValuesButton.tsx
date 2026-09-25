@@ -7,7 +7,7 @@ import { PicklistPopover } from "./erd/PicklistPopover";
 /**
  * Shared picklist inspector trigger: a right-side count button that opens
  * the floating values popover. Used in Single, Composite and GraphQL pickers
- * so 100-value lists never stretch a row. Must stopPropagation — it often
+ * so 100-value lists never stretch a row. Must stopPropagation - it often
  * lives inside a <label> that would otherwise toggle a checkbox.
  */
 export function PicklistValuesButton({

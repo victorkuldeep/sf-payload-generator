@@ -48,24 +48,123 @@ export function defaultGraphQLSelection(fields: SalesforceField[]): string[] {
   return selectable.slice(0, 3).map((f) => f.name);
 }
 
-export interface GraphQLQueryField {
-  name: string;
-  /** True for name fields and picklist-likes, which Salesforce exposes as
-      objects (StringValue / PicklistValue) requiring a `{ value }` sub-selection. */
-  needsValue: boolean;
-}
-
-/** Salesforce GraphQL returns these describe shapes as objects, not scalars. */
+/**
+ * UI API GraphQL returns value objects, not scalars, for almost everything.
+ * Live evidence: Id is the only true scalar. Name, strings, numbers,
+ * dates, picklists, lookups all need `{ value }` (SubselectionRequired
+ * errors prove it field by field).
+ */
 export function fieldNeedsValueSubselect(f: {
+  name: string;
   type: string;
   nameField: boolean;
 }): boolean {
+  return f.name !== "Id";
+}
+
+// ── Multi-object query engine ─────────────────────────────────────────────
+
+export interface QueryLeaf {
+  kind: "leaf";
+  name: string;
+  needsValue: boolean;
+}
+
+/** Parent traversal, e.g. Account { Name { value } } via a lookup's relationshipName. */
+export interface QueryParent {
+  kind: "parent";
+  relation: string;
+  fields: QueryLeaf[];
+}
+
+/** Child list, e.g. Contacts(first: 5) { edges { node { … } } }. */
+export interface QueryChild {
+  kind: "child";
+  relation: string;
+  first: number;
+  fields: QueryLeaf[];
+}
+
+export type QueryNode = QueryLeaf | QueryParent | QueryChild;
+
+export interface QueryBlock {
+  objectName: string;
+  first: number;
+  nodes: QueryNode[];
+}
+
+const MAX_BLOCKS = 10;
+const MAX_FIRST = 2000;
+
+export { MAX_BLOCKS };
+
+function clampFirst(n: number): number {
+  return Math.min(Math.max(Math.floor(n) || 10, 1), MAX_FIRST);
+}
+
+function renderLeaf(f: QueryLeaf, indent: string): string {
+  if (!SAFE_NAME.test(f.name)) throw new Error(`Invalid field name: ${f.name}`);
+  return f.needsValue
+    ? `${indent}${f.name} {\n${indent}  value\n${indent}}`
+    : `${indent}${f.name}`;
+}
+
+function renderParent(p: QueryParent, indent: string): string {
+  if (!SAFE_NAME.test(p.relation)) throw new Error(`Invalid relationship: ${p.relation}`);
+  const leaves = p.fields.filter((f) => SAFE_NAME.test(f.name));
+  if (leaves.length === 0) throw new Error(`No fields selected under ${p.relation}`);
+  const inner = leaves.map((f) => renderLeaf(f, `${indent}  `)).join("\n");
+  return `${indent}${p.relation} {\n${inner}\n${indent}}`;
+}
+
+function renderChild(c: QueryChild, indent: string): string {
+  if (!SAFE_NAME.test(c.relation)) throw new Error(`Invalid relationship: ${c.relation}`);
+  const leaves = c.fields.filter((f) => SAFE_NAME.test(f.name));
+  if (leaves.length === 0) throw new Error(`No fields selected under ${c.relation}`);
+  const inner = leaves.map((f) => renderLeaf(f, `${indent}      `)).join("\n");
   return (
-    f.nameField ||
-    f.type === "picklist" ||
-    f.type === "multipicklist" ||
-    f.type === "combobox"
+    `${indent}${c.relation}(first: ${clampFirst(c.first)}) {\n` +
+    `${indent}  edges {\n` +
+    `${indent}    node {\n` +
+    `${inner}\n` +
+    `${indent}    }\n` +
+    `${indent}  }\n` +
+    `${indent}}`
   );
+}
+
+function renderNode(n: QueryNode, indent: string): string {
+  if (n.kind === "parent") return renderParent(n, indent);
+  if (n.kind === "child") return renderChild(n, indent);
+  return renderLeaf(n, indent);
+}
+
+export function buildGraphQLQueryMulti(blocks: QueryBlock[]): string {
+  const valid = blocks.filter((b) => SAFE_NAME.test(b.objectName) && b.nodes.length > 0);
+  if (valid.length === 0) throw new Error("Add at least one object with fields");
+  if (valid.length > MAX_BLOCKS) throw new Error(`At most ${MAX_BLOCKS} objects per query`);
+
+  const rendered = valid.map((b) => {
+    const inner = b.nodes.map((n) => renderNode(n, "          ")).join("\n");
+    return (
+      `      ${b.objectName}(first: ${clampFirst(b.first)}) {\n` +
+      `        edges {\n` +
+      `          node {\n` +
+      `${inner}\n` +
+      `          }\n` +
+      `        }\n` +
+      `      }`
+    );
+  });
+
+  return [`{`, `  uiapi {`, `    query {`, ...rendered, `    }`, `  }`, `}`].join("\n");
+}
+
+// ── Legacy single-object shape (kept for compatibility) ───────────────────
+
+export interface GraphQLQueryField {
+  name: string;
+  needsValue: boolean;
 }
 
 export interface GraphQLQueryInput {
@@ -74,45 +173,14 @@ export interface GraphQLQueryInput {
   first: number;
 }
 
-/** Back-compat helper for callers holding only names (treated as plain scalars). */
-export function buildGraphQLQueryFromNames(
-  objectName: string,
-  fieldNames: string[],
-  first: number
-): string {
-  return buildGraphQLQuery({
-    objectName,
-    fields: fieldNames.map((name) => ({ name, needsValue: false })),
-    first,
-  });
-}
-
 export function buildGraphQLQuery({ objectName, fields, first }: GraphQLQueryInput): string {
-  if (!SAFE_NAME.test(objectName)) throw new Error("Invalid object name");
-  const valid = fields.filter((f) => SAFE_NAME.test(f.name));
-  if (valid.length === 0) throw new Error("Select at least one field");
-  const limit = Math.min(Math.max(Math.floor(first) || 10, 1), 2000);
-
-  const selected = valid
-    .map((f) =>
-      f.needsValue ? `          ${f.name} {\n            value\n          }` : `          ${f}`
-    )
-    .join("\n");
-  return [
-    `{`,
-    `  uiapi {`,
-    `    query {`,
-    `      ${objectName}(first: ${limit}) {`,
-    `        edges {`,
-    `          node {`,
-    selected,
-    `          }`,
-    `        }`,
-    `      }`,
-    `    }`,
-    `  }`,
-    `}`,
-  ].join("\n");
+  return buildGraphQLQueryMulti([
+    {
+      objectName,
+      first,
+      nodes: fields.map((f) => ({ kind: "leaf" as const, ...f })),
+    },
+  ]);
 }
 
 export function graphqlEndpoint(instanceUrl: string, apiVersion: string): string {
