@@ -14,6 +14,7 @@ import {
   buildGraphQLCurl,
 } from "@/lib/graphql/builder";
 import type { NewCollectionItem } from "@/lib/collection/types";
+import { rankObjects } from "@/lib/search/rank";
 import Badge from "./ui/Badge";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
@@ -52,16 +53,11 @@ export default function GraphQLPanel({
   const [runError, setRunError] = useState<string | null>(null);
 
   const filteredObjects = useMemo(() => {
-    const q = objectSearch.toLowerCase().trim();
-    const pool = objects.filter((o) => o.queryable !== false);
-    if (!q) return pool.slice(0, 100);
-    return pool
-      .filter(
-        (o) =>
-          o.label.toLowerCase().includes(q) ||
-          o.name.toLowerCase().includes(q)
-      )
-      .slice(0, 100);
+    return rankObjects(
+      objects.filter((o) => o.queryable !== false),
+      objectSearch,
+      100
+    );
   }, [objects, objectSearch]);
 
   const queryableFields = useMemo(

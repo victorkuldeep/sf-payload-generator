@@ -7,6 +7,7 @@ import type {
   SalesforceDescribeResult,
 } from "@/lib/salesforce/types";
 import { buildErdElements, type ErdNodeData } from "@/lib/erd/graph";
+import { rankObjects } from "@/lib/search/rank";
 import { ErdCanvas } from "./erd/ErdCanvas";
 import { EmptyState } from "./EmptyState";
 import Button from "./ui/Button";
@@ -54,6 +55,7 @@ export default function SchemaPanel({
   const [notice, setNotice] = useState<string | null>(null);
   const [spot, setSpot] = useState<{ focus: string; related: Set<string> } | null>(null);
   const [sideOpen, setSideOpen] = useState(true);
+  const [staged, setStaged] = useState<Set<string>>(new Set());
 
   const labels = useMemo(() => {
     const m = new Map<string, string>();
@@ -62,13 +64,10 @@ export default function SchemaPanel({
     return m;
   }, [objects, describes]);
 
-  const filteredObjects = useMemo(() => {
-    const q = rootSearch.toLowerCase().trim();
-    if (!q) return objects.slice(0, 80);
-    return objects
-      .filter((o) => o.label.toLowerCase().includes(q) || o.name.toLowerCase().includes(q))
-      .slice(0, 80);
-  }, [objects, rootSearch]);
+  const filteredObjects = useMemo(
+    () => rankObjects(objects, rootSearch, 80),
+    [objects, rootSearch]
+  );
 
   const elements: { nodes: Node<ErdNodeData>[]; edges: Edge[] } = useMemo(() => {
     if (describes.size === 0 || !rootName) return { nodes: [], edges: [] };
@@ -133,42 +132,55 @@ export default function SchemaPanel({
     []
   );
 
-  const addObject = useCallback(
-    async (obj: SalesforceObject) => {
-      setError(null);
-      setNotice(null);
-      setSpot(null);
-      // Already on canvas → just focus it
-      if (describes.has(obj.name)) {
-        setFocusName(obj.name);
-        setRootSearch("");
-        setNotice(`${obj.name} is already on the canvas — focused.`);
-        return;
+  const toggleStage = useCallback((apiName: string) => {
+    setStaged((prev) => {
+      const next = new Set(prev);
+      if (next.has(apiName)) next.delete(apiName);
+      else next.add(apiName);
+      return next;
+    });
+  }, []);
+
+  const applyStaged = useCallback(async () => {
+    if (staged.size === 0 || busy) return;
+    const names = [...staged].filter((n) => !describes.has(n));
+    if (names.length === 0) {
+      // Everything staged is already on canvas — just focus the first
+      const first = [...staged][0];
+      setFocusName(first);
+      setStaged(new Set());
+      setRootSearch("");
+      setNotice(`${first} is already on the canvas — focused.`);
+      return;
+    }
+    if (describes.size + names.length > MAX_NODES) {
+      setNotice(`Canvas cap is ${MAX_NODES} objects — adding ${names.length} would exceed it. Remove some nodes first.`);
+      return;
+    }
+    setError(null);
+    setNotice(null);
+    setSpot(null);
+    setBusy(`Adding ${names.length} object${names.length === 1 ? "" : "s"} to canvas…`);
+    try {
+      const fresh = await mapLimit(names, 6, fetchDescribe);
+      mergeDescribes(fresh);
+      if (describes.size === 0 && fresh.length > 0) {
+        setRootName(fresh[0].name);
       }
-      setBusy(`Describing ${obj.name}…`);
-      try {
-        const fresh = await fetchDescribe(obj.name);
-        mergeDescribes([fresh]);
-        const isFirst = describes.size === 0;
-        if (isFirst) {
-          setRootName(fresh.name);
-          const kidCount = (fresh.childRelationships ?? []).filter((r) => r.relationshipName).length;
-          setNotice(
-            `${fresh.name} is on the canvas. Add more objects above — links draw automatically — or select it and Discover children / Discover full (${kidCount} direct children).`
-          );
-        } else {
-          setNotice(`${fresh.name} added — links to objects already on canvas draw automatically.`);
-        }
-        setFocusName(fresh.name);
-        setRootSearch("");
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to describe object");
-      } finally {
-        setBusy(null);
-      }
-    },
-    [describes, fetchDescribe, mergeDescribes]
-  );
+      setFocusName(fresh[fresh.length - 1]?.name ?? rootName);
+      setStaged(new Set());
+      setRootSearch("");
+      setNotice(
+        fresh.length === 1
+          ? `${fresh[0].name} added — links to objects already on canvas draw automatically.`
+          : `${fresh.length} objects added — links draw automatically where both ends are present.`
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add objects");
+    } finally {
+      setBusy(null);
+    }
+  }, [staged, describes, busy, rootName, fetchDescribe, mergeDescribes]);
 
   const discoverChildren = useCallback(async () => {
     const target = focusName || rootName;
@@ -387,23 +399,58 @@ export default function SchemaPanel({
                 aria-label="Choose root object for ERD"
               />
               {rootSearch.trim() && (
-                <div className="mt-1.5 max-h-44 overflow-y-auto rounded-lg border border-[var(--color-line)] divide-y divide-[var(--color-line-soft)]" role="listbox" aria-label="Matching objects">
+                <div className="mt-1.5 max-h-44 overflow-y-auto rounded-lg border border-[var(--color-line)] divide-y divide-[var(--color-line-soft)]" role="group" aria-label="Matching objects — check to stage">
                   {filteredObjects.length === 0 ? (
                     <p className="p-3 text-xs text-ivory-600">No objects match.</p>
                   ) : (
-                    filteredObjects.map((o) => (
-                      <button
-                        key={o.name}
-                        role="option"
-                        aria-selected={o.name === rootName}
-                        onClick={() => addObject(o)}
-                        className="w-full px-3 py-2 text-left transition-colors cursor-pointer hover:bg-ivory-300"
-                      >
-                        <span className="block truncate text-xs font-medium text-ivory-950">{o.label}</span>
-                        <span className="block truncate text-[11px] font-mono text-ivory-600">{o.name}</span>
-                      </button>
-                    ))
+                    filteredObjects.map((o) => {
+                      const onCanvas = describes.has(o.name);
+                      const checked = onCanvas || staged.has(o.name);
+                      return (
+                        <label
+                          key={o.name}
+                          className={`flex cursor-pointer items-center gap-2.5 px-3 py-2 transition-colors hover:bg-ivory-300 ${
+                            checked ? "bg-ivory-200" : ""
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={onCanvas}
+                            onChange={() => toggleStage(o.name)}
+                            className="h-4 w-4 shrink-0 rounded border-ivory-400 bg-white text-bronze-600 focus:ring-bronze-500 disabled:opacity-60"
+                            aria-label={onCanvas ? `${o.label} (already on canvas)` : `Stage ${o.label}`}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-xs font-medium text-ivory-950">{o.label}</span>
+                            <span className="block truncate text-[11px] font-mono text-ivory-600">{o.name}</span>
+                          </span>
+                          {onCanvas && (
+                            <span className="shrink-0 rounded border border-bronze-300 bg-bronze-100 px-1 py-px text-[9px] font-semibold text-bronze-700">
+                              On canvas
+                            </span>
+                          )}
+                        </label>
+                      );
+                    })
                   )}
+                </div>
+              )}
+              {staged.size > 0 && (
+                <div className="flex items-center gap-2 rounded-lg border border-[var(--color-accent-soft)] bg-[var(--color-accent-bg)] px-3 py-2">
+                  <span className="flex-1 text-[11px] font-medium text-ivory-900">
+                    {staged.size} staged
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setStaged(new Set())}
+                    className="text-[11px] text-ivory-600 hover:text-ivory-950 underline cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                  <Button size="sm" onClick={applyStaged} disabled={!!busy} loading={!!busy}>
+                    Add to canvas
+                  </Button>
                 </div>
               )}
             </div>
@@ -478,7 +525,7 @@ export default function SchemaPanel({
               <p className="font-semibold text-ivory-900 mb-1">Legend</p>
               <p><strong className="text-ivory-950">Key</strong> = Id / Name · <strong className="text-bronze-600">Link</strong> = lookup</p>
               <p><strong className="text-red-600">*</strong> = required · <strong className="text-bronze-700">JUNCTION</strong> = 2+ required lookups (audit fields excluded)</p>
-              <p>Header → footer joins · <strong className="text-bronze-600">link icon</strong> = lookup field · drag nodes to rearrange</p>
+              <p>Joins: parent header-right → child footer-left · self-loops hug the left flank · <strong className="text-bronze-600">link icon</strong> = lookup field · drag nodes to rearrange</p>
             </div>
           </div>
         </aside>

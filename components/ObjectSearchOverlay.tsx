@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SalesforceObject } from "@/lib/salesforce/types";
+import { rankObjects } from "@/lib/search/rank";
 
 interface ObjectSearchOverlayProps {
   objects: SalesforceObject[];
@@ -15,17 +16,10 @@ export function ObjectSearchOverlay({ objects, onSelect, onClose }: ObjectSearch
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const results = useMemo(() => {
-    const q = query.toLowerCase().trim();
-    if (!q) return objects.slice(0, 200);
-    return objects
-      .filter(
-        (o) =>
-          o.label.toLowerCase().includes(q) ||
-          o.name.toLowerCase().includes(q)
-      )
-      .slice(0, 200);
-  }, [objects, query]);
+  const results = useMemo(
+    () => rankObjects(objects, query, 200),
+    [objects, query]
+  );
 
   useEffect(() => {
     inputRef.current?.focus();

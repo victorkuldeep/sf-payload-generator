@@ -3,7 +3,11 @@
 import { memo, useState } from "react";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import type { ErdNodeData } from "@/lib/erd/graph";
-import { ERD_MAX_ROWS, parentExitHandleId, childEntryHandleId } from "@/lib/erd/graph";
+import { ERD_MAX_ROWS, parentExitHandleId, childEntryHandleId, loopOutHandleId, loopInHandleId } from "@/lib/erd/graph";
+
+// Fixed chrome heights so edge docks sit exactly at header/footer mid-height.
+const HEADER_H = 62;
+const FOOTER_H = 30;
 
 function KeyIcon() {
   return (
@@ -38,11 +42,13 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
               : "border-[var(--color-line)]"
       } ${data.dimmed ? "opacity-40" : ""}`}
     >
-      {/* Header/footer docking handles — joins never touch mid-row */}
-      <Handle type="source" id={parentExitHandleId} position={Position.Top} style={{ opacity: 0, width: 2, height: 2, pointerEvents: "none" }} />
-      <Handle type="target" id={childEntryHandleId} position={Position.Bottom} style={{ opacity: 0, width: 2, height: 2, pointerEvents: "none" }} />
+      {/* Side-edge docks: exits at header height, entries at footer height */}
+      <Handle type="source" id={parentExitHandleId} position={Position.Right} style={{ top: HEADER_H / 2, opacity: 0, width: 2, height: 2, pointerEvents: "none" }} />
+      <Handle type="target" id={childEntryHandleId} position={Position.Left} style={{ top: `calc(100% - ${FOOTER_H / 2}px)`, opacity: 0, width: 2, height: 2, pointerEvents: "none" }} />
+      <Handle type="source" id={loopOutHandleId} position={Position.Left} style={{ top: HEADER_H / 2, opacity: 0, width: 2, height: 2, pointerEvents: "none" }} />
+      <Handle type="target" id={loopInHandleId} position={Position.Left} style={{ top: `calc(100% - ${FOOTER_H / 2}px)`, opacity: 0, width: 2, height: 2, pointerEvents: "none" }} />
       {/* Header */}
-      <div className={`px-3 py-2 border-b ${data.isRoot ? "bg-ivory-950 text-ivory-100" : "bg-[var(--color-surface-soft)]"}`}>
+      <div className={`h-[62px] flex flex-col justify-center px-3 border-b ${data.isRoot ? "bg-ivory-950 text-ivory-100" : "bg-[var(--color-surface-soft)]"}`}>
         <div className="flex items-center gap-1.5">
           <p className={`flex-1 min-w-0 truncate text-[13px] font-bold ${data.isRoot ? "text-ivory-100" : "text-ivory-950"}`}>
             {data.label}
@@ -91,6 +97,13 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
             {expanded ? "Show less" : `+${collapsedHidden} more fields`}
           </button>
         ) : null}
+      </div>
+      {/* Footer — the landing zone; every join terminates at this height */}
+      <div className="h-[30px] flex items-center justify-between gap-2 border-t border-[var(--color-line-soft)] bg-[var(--color-surface-soft)] px-3">
+        <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-ivory-600">{data.apiName}</span>
+        <span className="shrink-0 text-[10px] font-medium text-ivory-600">
+          {data.totalChildren} {data.totalChildren === 1 ? "child" : "children"}
+        </span>
       </div>
     </div>
   );

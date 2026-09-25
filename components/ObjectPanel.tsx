@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { SalesforceObject } from "@/lib/salesforce/types";
+import { rankObjects } from "@/lib/search/rank";
 import Badge from "./ui/Badge";
 import Input from "./ui/Input";
 
@@ -22,15 +23,10 @@ export default function ObjectPanel({
 }: ObjectPanelProps) {
   const [search, setSearch] = useState("");
 
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase().trim();
-    if (!q) return objects;
-    return objects.filter(
-      (o) =>
-        o.label.toLowerCase().includes(q) ||
-        o.name.toLowerCase().includes(q)
-    );
-  }, [objects, search]);
+  const filtered = useMemo(
+    () => rankObjects(objects, search, Number.POSITIVE_INFINITY),
+    [objects, search]
+  );
 
   if (loading) {
     return (

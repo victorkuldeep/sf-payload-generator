@@ -36,11 +36,11 @@ function ErdEdgeInner({
   selected,
   data,
 }: EdgeProps) {
-  // Self-lookup: hug the node's own left side, header → footer.
+  // Self-lookup: hug the node's own left flank, header-left → footer-left.
   // Stacked loops stagger outward in lanes so they never share one path.
   const isLoop = source === target;
   const lane = (data as { loopLane?: number } | undefined)?.loopLane ?? 0;
-  const LOOP = 64 + lane * 30;
+  const LOOP = 44 + lane * 26;
   const bezier = getBezierPath({
     sourceX,
     sourceY,
@@ -53,7 +53,8 @@ function ErdEdgeInner({
     ? `M ${sourceX},${sourceY} C ${sourceX - LOOP},${sourceY} ${targetX - LOOP},${targetY} ${targetX},${targetY}`
     : bezier[0];
   const labelX = isLoop ? sourceX - LOOP * 0.55 : bezier[1];
-  const labelY = isLoop ? (sourceY + targetY) / 2 : bezier[2];
+  // Stacked loop labels step upward per lane so pills never collide.
+  const labelY = isLoop ? (sourceY + targetY) / 2 - lane * 30 : bezier[2];
 
   // Direction of travel at each end (drives the 1-bar / crow's-foot glyphs)
   const sd = isLoop ? { x: -1, y: 0 } : dirFor(sourcePosition);

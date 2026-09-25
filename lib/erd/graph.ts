@@ -30,9 +30,11 @@ export interface ErdNodeData extends Record<string, unknown> {
 export const ERD_NODE_WIDTH = 300;
 export const ERD_MAX_ROWS = 10;
 const ROW_H = 26;
+// Header 62 + rows + more-button 22 + footer 30 + padding
+const CHROME_H = 122;
 
 export function erdNodeHeight(rowCount: number): number {
-  return 78 + Math.min(rowCount, ERD_MAX_ROWS) * ROW_H + 30;
+  return CHROME_H + Math.min(rowCount, ERD_MAX_ROWS) * ROW_H;
 }
 
 function toRow(
@@ -77,9 +79,11 @@ export interface ErdElements {
   edges: Edge[];
 }
 
-/** Handle ids used by ErdTableNode. Joins dock header → footer, never mid-row. */
-export const parentExitHandleId = "erd-top";
-export const childEntryHandleId = "erd-bottom";
+/** Handle ids used by ErdTableNode. Joins dock on side edges at header/footer height. */
+export const parentExitHandleId = "erd-exit";
+export const childEntryHandleId = "erd-entry";
+export const loopOutHandleId = "erd-loop-out";
+export const loopInHandleId = "erd-loop-in";
 
 export interface ErdSpotlight {
   focus: string;
@@ -139,10 +143,10 @@ export function buildErdElements(
     });
   }
 
-  // Pass 2 — edges, docked header → footer.
-  // Parent lines leave the parent HEADER, sweep down, and land on the child
-  // FOOTER. Self-lookups loop down the node's own LEFT side, staggered in
-  // lanes so stacked loops never share one path.
+  // Pass 2 — edges docked on side edges at header/footer height.
+  // Inter-node: parent header-right → child footer-left (bezier sweep).
+  // Self-lookup: header-left → footer-left, hugging the node's own flank
+  // in staggered lanes so stacked loops never share one path.
   const selfLanes = new Map<string, number>();
   for (const [apiName, describe] of describes) {
     // Parent edges: this object's lookups → described targets
@@ -163,8 +167,8 @@ export function buildErdElements(
           id: key,
           source: target,
           target: apiName,
-          sourceHandle: parentExitHandleId,
-          targetHandle: childEntryHandleId,
+          sourceHandle: isLoop ? loopOutHandleId : parentExitHandleId,
+          targetHandle: isLoop ? loopInHandleId : childEntryHandleId,
           label: field.name,
           // Custom ERD edge: "one" bar at the parent end, crow's foot at the child end.
           type: "erdEdge",

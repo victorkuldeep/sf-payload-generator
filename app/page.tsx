@@ -16,6 +16,7 @@ import { Stepper } from "@/components/Stepper";
 import { EmptyState } from "@/components/EmptyState";
 import { WelcomeModal } from "@/components/WelcomeModal";
 import { HowItWorksModal } from "@/components/HowItWorksModal";
+import { BootLoader } from "@/components/BootLoader";
 import { CollectionDrawer } from "@/components/CollectionDrawer";
 import { CollectionPicker } from "@/components/CollectionPicker";
 import Image from "next/image";
@@ -42,7 +43,7 @@ import CompositePanel from "@/components/CompositePanel";
 import GraphQLPanel from "@/components/GraphQLPanel";
 import SchemaPanel from "@/components/SchemaPanel";
 
-type BuilderMode = "single" | "composite" | "graphql" | "schema";
+type BuilderMode = "home" | "single" | "composite" | "graphql" | "schema";
 
 interface AppState {
   connected: boolean;
@@ -66,7 +67,7 @@ const initialState: AppState = {
   instanceUrl: "",
   token: "",
   apiVersion: "v66.0",
-  mode: "single",
+  mode: "home",
   objectCount: 0,
   objects: [],
   selectedObject: null,
@@ -155,6 +156,89 @@ function scrollToSection(id: string, updateHash: boolean): boolean {
   return true;
 }
 
+/**
+ * The home hero — identical offline and online (post-login it just swaps
+ * the primary CTA to Switch org). Headline, artwork, trio cards.
+ */
+function HomeHero({
+  connected,
+  loadingConnect,
+  connectError,
+  onConnect,
+  onHowItWorks,
+}: {
+  connected: boolean;
+  loadingConnect: boolean;
+  connectError: string | null;
+  onConnect: () => void;
+  onHowItWorks: () => void;
+}) {
+  return (
+    <section aria-label="Welcome" className="arch-card overflow-hidden">
+      <div className="grid items-center gap-8 px-6 sm:px-10 pt-8 sm:pt-10 pb-6 lg:grid-cols-2">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[2px] text-[var(--color-accent-dark)]">
+            Metadata-driven REST payload builder
+          </p>
+          <h1 className="hero-title mt-2 text-4xl sm:text-5xl xl:text-6xl text-ivory-950">
+            From live metadata to <em>ready-to-send payloads.</em>
+          </h1>
+          <p className="mt-4 max-w-xl text-sm leading-relaxed text-ivory-700">
+            Connect to any Salesforce org, describe any standard or custom
+            sObject, and generate accurate POST / PATCH payloads plus
+            Composite API batches — exported as JSON, cURL, JavaScript
+            fetch or Apex. No manual field copy-paste.
+          </p>
+          <div className="mt-6 flex flex-col sm:flex-row gap-3">
+            <Button size="lg" onClick={onConnect} loading={loadingConnect}>
+              {connected ? "Switch org" : "Connect to Salesforce"}
+            </Button>
+            <Button
+              size="lg"
+              variant="secondary"
+              className="w-full sm:w-auto"
+              onClick={onHowItWorks}
+            >
+              How it works
+            </Button>
+          </div>
+          {connectError && (
+            <div className="mt-4 max-w-xl rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+              {connectError}{" "}
+              <button type="button" onClick={onConnect} className="underline font-medium cursor-pointer">
+                Try again
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="relative">
+          <Image
+            src="/sf-payload-toolkit.webp"
+            alt="Salesforce sObject Payload Studio — payload builder preview"
+            width={1536}
+            height={1024}
+            priority
+            className="w-full max-w-[440px] ml-auto h-auto mix-blend-multiply drop-shadow-lg"
+          />
+        </div>
+      </div>
+      <div className="bronze-rule mx-6 sm:mx-10" aria-hidden="true" />
+      <div id="how-it-works" className="grid sm:grid-cols-3 gap-3 px-6 sm:px-10 py-6 scroll-mt-20">
+        {[
+          { t: "Table API payloads", d: "POST & PATCH bodies with type-correct values, required-field awareness and record-ID handling." },
+          { t: "Composite batches", d: "Multi-sObject graphs with reference IDs in a single Composite API call." },
+          { t: "Export anywhere", d: "JSON, cURL with $SF_ACCESS_TOKEN placeholder, JS fetch, or Apex HttpRequest." },
+        ].map((f) => (
+          <div key={f.t} className="rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-4">
+            <p className="text-xs font-semibold text-ivory-950">{f.t}</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-ivory-600">{f.d}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default function Home() {
   const [state, setState] = useState<AppState>(initialState);
   const [loading, setLoading] = useState<LoadingState>({
@@ -177,6 +261,24 @@ export default function Home() {
   const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null);
   const [collection, setCollection] = useState<CollectionItem[]>([]);
   const [pickerItem, setPickerItem] = useState<NewCollectionItem | null>(null);
+
+  // Graceful boot: cover connect + initial object load so the UI never
+  // pops in half-built. Fades out once the object list lands (or fails).
+  const bootActive =
+    loading.connect || (state.connected && loading.objects && state.objects.length === 0);
+  const [bootShown, setBootShown] = useState(false);
+  const [bootFade, setBootFade] = useState(false);
+  useEffect(() => {
+    let t: number | undefined;
+    if (bootActive) {
+      setBootShown(true);
+      setBootFade(false);
+    } else if (bootShown) {
+      setBootFade(true);
+      t = window.setTimeout(() => setBootShown(false), 300);
+    }
+    return () => window.clearTimeout(t);
+  }, [bootActive, bootShown]);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | null>(null);
   const [showSearch, setShowSearch] = useState(false);
@@ -658,27 +760,31 @@ export default function Home() {
   }, [collection, activeCollectionId]);
 
   // Header nav: offline → prompt connect; online → switch mode + scroll to section
+  const goMode = useCallback((mode: BuilderMode) => {
+    setState((p) => ({ ...p, mode }));
+    if (mode === "home") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    window.setTimeout(() => {
+      const id =
+        mode === "composite" ? "composite"
+        : mode === "graphql" ? "graphql"
+        : mode === "schema" ? "schema"
+        : "builder";
+      scrollToSection(id, false);
+    }, 80);
+  }, []);
+
   const handleNavigate = useCallback(
     (mode: "builder" | "composite" | "graphql" | "schema") => {
       if (!state.connected) {
         openConnect();
         return;
       }
-      if (mode !== "builder") {
-        setState((p) => ({ ...p, mode }));
-      } else {
-        setState((p) => ({ ...p, mode: "single" }));
-      }
-      window.setTimeout(() => {
-        const id =
-          mode === "composite" ? "composite"
-          : mode === "graphql" ? "graphql"
-          : mode === "schema" ? "schema"
-          : "builder";
-        scrollToSection(id, false);
-      }, 80);
+      goMode(mode === "builder" ? "single" : mode);
     },
-    [state.connected, openConnect]
+    [state.connected, openConnect, goMode]
   );
 
   const selectedFields = state.describe?.fields.filter((f) =>
@@ -717,86 +823,30 @@ export default function Home() {
     >
       <main className="mx-auto w-full px-5 py-6 space-y-5">
         {!state.connected ? (
-          <>
-            {/* ── Disconnected hero ── */}
-            <section aria-label="Welcome" className="arch-card overflow-hidden">
-              <div className="grid items-center gap-8 px-6 sm:px-10 pt-8 sm:pt-10 pb-6 lg:grid-cols-2">
-                <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[2px] text-[var(--color-accent-dark)]">
-                  Metadata-driven REST payload builder
-                </p>
-                <h1 className="hero-title mt-2 text-4xl sm:text-5xl xl:text-6xl text-ivory-950">
-                  From live metadata to <em>ready-to-send payloads.</em>
-                </h1>
-                <p className="mt-4 max-w-xl text-sm leading-relaxed text-ivory-700">
-                  Connect to any Salesforce org, describe any standard or custom
-                  sObject, and generate accurate POST / PATCH payloads plus
-                  Composite API batches — exported as JSON, cURL, JavaScript
-                  fetch or Apex. No manual field copy-paste.
-                </p>
-                <div className="mt-6 flex flex-col sm:flex-row gap-3">
-                  <Button size="lg" onClick={openConnect} loading={loading.connect}>
-                    Connect to Salesforce
-                  </Button>
-                  <Button
-                    size="lg"
-                    variant="secondary"
-                    className="w-full sm:w-auto"
-                    onClick={() => setShowHowItWorks(true)}
-                  >
-                    How it works
-                  </Button>
-                </div>
-                {errors.connect && (
-                  <div className="mt-4 max-w-xl rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
-                    {errors.connect}{" "}
-                    <button type="button" onClick={openConnect} className="underline font-medium cursor-pointer">
-                      Try again
-                    </button>
-                  </div>
-                )}
-                </div>
-                <div className="relative">
-                  <Image
-                    src="/sf-payload-toolkit.webp"
-                    alt="Salesforce sObject Payload Studio — payload builder preview"
-                    width={1536}
-                    height={1024}
-                    priority
-                    className="w-full max-w-[440px] ml-auto h-auto mix-blend-multiply drop-shadow-lg"
-                  />
-                </div>
-              </div>
-              <div className="bronze-rule mx-6 sm:mx-10" aria-hidden="true" />
-              <div id="how-it-works" className="grid sm:grid-cols-3 gap-3 px-6 sm:px-10 py-6 scroll-mt-20">
-                {[
-                  { t: "Table API payloads", d: "POST & PATCH bodies with type-correct values, required-field awareness and record-ID handling." },
-                  { t: "Composite batches", d: "Multi-sObject graphs with reference IDs in a single Composite API call." },
-                  { t: "Export anywhere", d: "JSON, cURL with $SF_ACCESS_TOKEN placeholder, JS fetch, or Apex HttpRequest." },
-                ].map((f) => (
-                  <div key={f.t} className="rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-4">
-                    <p className="text-xs font-semibold text-ivory-950">{f.t}</p>
-                    <p className="mt-1 text-[11px] leading-relaxed text-ivory-600">{f.d}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </>
+          <HomeHero
+            connected={false}
+            loadingConnect={loading.connect}
+            connectError={errors.connect}
+            onConnect={openConnect}
+            onHowItWorks={() => setShowHowItWorks(true)}
+          />
         ) : (
           <>
-            {/* ── Stepper ── */}
-            <Stepper
-              steps={
-                state.mode === "composite"
-                  ? COMPOSITE_STEPS
-                  : state.mode === "graphql"
-                    ? GRAPHQL_STEPS
-                    : state.mode === "schema"
-                      ? SCHEMA_STEPS
-                      : SINGLE_STEPS
-              }
-              current={state.mode === "single" ? singleStep : 1}
-            />
+            {/* ── Stepper (hidden on home — nothing started yet) ── */}
+            {state.mode !== "home" && (
+              <Stepper
+                steps={
+                  state.mode === "composite"
+                    ? COMPOSITE_STEPS
+                    : state.mode === "graphql"
+                      ? GRAPHQL_STEPS
+                      : state.mode === "schema"
+                        ? SCHEMA_STEPS
+                        : SINGLE_STEPS
+                }
+                current={state.mode === "single" ? singleStep : 1}
+              />
+            )}
 
             {/* ── Org context strip ── */}
             <div className="arch-card flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5">
@@ -824,6 +874,7 @@ export default function Home() {
               <div className="flex rounded-lg border border-[var(--color-line)] overflow-hidden w-fit bg-[var(--color-surface)]" role="tablist" aria-label="Builder mode">
                 {(
                   [
+                    { id: "home", label: "Home" },
                     { id: "single", label: "Single Object" },
                     { id: "composite", label: "Composite API" },
                     { id: "graphql", label: "GraphQL" },
@@ -837,7 +888,7 @@ export default function Home() {
                     className={`px-4 py-2 text-xs font-medium tracking-wide transition-colors cursor-pointer ${
                       state.mode === m.id ? "bg-ivory-950 text-ivory-100" : "text-ivory-700 hover:text-ivory-950"
                     }`}
-                    onClick={() => setState((p) => ({ ...p, mode: m.id }))}
+                    onClick={() => goMode(m.id)}
                   >
                     {m.label}
                   </button>
@@ -850,9 +901,22 @@ export default function Home() {
                     ? "Read-only queries against live metadata — no mutations"
                     : state.mode === "schema"
                       ? "Explore the data model as an ERD — discover, present, export"
-                      : "POST or PATCH a single record with live field metadata"}
+                      : state.mode === "home"
+                        ? "Pick a builder to begin — nothing runs until you choose"
+                        : "POST or PATCH a single record with live field metadata"}
               </span>
             </div>
+
+            {/* ── Connected home: the same home hero, tabs visible above ── */}
+            {state.mode === "home" && (
+              <HomeHero
+                connected
+                loadingConnect={loading.connect}
+                connectError={errors.connect}
+                onConnect={openConnect}
+                onHowItWorks={() => setShowHowItWorks(true)}
+              />
+            )}
 
             {/* ── Composite mode ── */}
             {state.mode === "composite" && (
@@ -976,6 +1040,12 @@ export default function Home() {
       </main>
 
       {/* ── Overlays ── */}
+      {bootShown && (
+        <BootLoader
+          stage={state.connected ? "objects" : "connect"}
+          fading={bootFade}
+        />
+      )}
       <CollectionPicker
         item={pickerItem}
         collections={collections}
