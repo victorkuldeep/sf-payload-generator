@@ -12,7 +12,7 @@ interface AppHeaderProps {
   onConnectClick: () => void;
   onDisconnect: () => void;
   onSearchClick: () => void;
-  onNavigate: (mode: "builder" | "composite" | "soql" | "graphql" | "schema") => void;
+  onNavigate: (mode: "builder" | "composite" | "soql" | "graphql" | "schema" | "rest") => void;
   collectionCount: number;
   onCollectionClick: () => void;
 }
@@ -118,6 +118,14 @@ export function AppHeader({
             title={connected ? "Go to schema deep dive" : "Connect to open the ERD"}
           >
             Schema
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate("rest")}
+            className="hover:text-[var(--color-ink)] hover:underline underline-offset-4 transition-colors cursor-pointer"
+            title={connected ? "Go to REST explorer" : "Connect to open REST explorer"}
+          >
+            REST
           </button>
           <a
             href="https://workbench.developerforce.com"

@@ -44,6 +44,7 @@ import RequestPanel from "@/components/RequestPanel";
 import CompositePanel from "@/components/CompositePanel";
 import GraphQLPanel from "@/components/GraphQLPanel";
 import SoqlPanel from "@/components/SoqlPanel";
+import RestExplorerPanel from "@/components/RestExplorerPanel";
 import dynamic from "next/dynamic";
 
 // Schema canvas loads on demand: keeps the main bundle lean and the
@@ -57,7 +58,7 @@ const SchemaPanel = dynamic(() => import("@/components/SchemaPanel"), {
   ),
 });
 
-type BuilderMode = "home" | "single" | "composite" | "soql" | "graphql" | "schema";
+type BuilderMode = "home" | "single" | "composite" | "soql" | "graphql" | "schema" | "rest";
 
 interface AppState {
   connected: boolean;
@@ -122,6 +123,12 @@ const SOQL_STEPS = [
   { label: "Connect", hint: "Org + token" },
   { label: "Query", hint: "SOQL + plan" },
   { label: "Export", hint: "CSV + JSON" },
+];
+
+const REST_STEPS = [
+  { label: "Connect", hint: "Org + token" },
+  { label: "Explore", hint: "Any method" },
+  { label: "Export", hint: "Collect" },
 ];
 
 const GRAPHQL_STEPS = [
@@ -433,13 +440,14 @@ export default function Home() {
         : mode === "soql" ? "soql"
         : mode === "graphql" ? "graphql"
         : mode === "schema" ? "schema"
+        : mode === "rest" ? "rest"
         : "builder";
       scrollToSection(id, false);
     }, 80);
   }, []);
 
   const handleNavigate = useCallback(
-    (mode: "builder" | "composite" | "soql" | "graphql" | "schema") => {
+    (mode: "builder" | "composite" | "soql" | "graphql" | "schema" | "rest") => {
       if (!state.connected) {
         openConnect();
         return;
@@ -970,15 +978,17 @@ export default function Home() {
       trail={
         state.connected && state.mode !== "home" && state.mode !== "schema" ? (
           <Stepper
-            steps={
-              state.mode === "composite"
-                ? COMPOSITE_STEPS
-                : state.mode === "soql"
-                  ? SOQL_STEPS
-                  : state.mode === "graphql"
-                    ? GRAPHQL_STEPS
-                    : SINGLE_STEPS
-            }
+                steps={
+                  state.mode === "composite"
+                    ? COMPOSITE_STEPS
+                    : state.mode === "soql"
+                      ? SOQL_STEPS
+                      : state.mode === "graphql"
+                        ? GRAPHQL_STEPS
+                        : state.mode === "rest"
+                          ? REST_STEPS
+                          : SINGLE_STEPS
+                }
             current={state.mode === "single" ? singleStep : 1}
           />
         ) : null
@@ -1007,6 +1017,7 @@ export default function Home() {
                     { id: "soql", label: "SOQL" },
                     { id: "graphql", label: "GraphQL" },
                     { id: "schema", label: "Schema Map" },
+                    { id: "rest", label: "REST" },
                   ] as { id: BuilderMode; label: string }[]
                 ).map((m) => (
                   <button
@@ -1031,7 +1042,9 @@ export default function Home() {
                       ? "Read-only queries against live metadata - no mutations"
                       : state.mode === "schema"
                         ? "Explore the data model as an ERD - discover, present, export"
-                        : state.mode === "home"
+                        : state.mode === "rest"
+                          ? "Raw REST explorer - any method, any path, collect anything"
+                          : state.mode === "home"
                           ? "Pick a builder to begin - nothing runs until you choose"
                           : "POST or PATCH a single record with live field metadata"}
               </span>
@@ -1098,6 +1111,19 @@ export default function Home() {
                   instanceUrl={state.instanceUrl}
                   apiVersion={state.apiVersion}
                   getToken={() => tokenRef.current}
+                  onSessionExpired={handleSessionExpired}
+                />
+              </section>
+            )}
+
+            {/* ── REST explorer mode ── */}
+            {state.mode === "rest" && (
+              <section id="rest" aria-label="REST API Explorer" className="scroll-mt-20">
+                <RestExplorerPanel
+                  instanceUrl={state.instanceUrl}
+                  apiVersion={state.apiVersion}
+                  getToken={() => tokenRef.current}
+                  onAddToCollection={requestAddToCollection}
                   onSessionExpired={handleSessionExpired}
                 />
               </section>
