@@ -65,7 +65,10 @@ function ErdFlow({ nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick 
   const [laser, setLaser] = useState(false);
   const [strokes, setStrokes] = useState<Stroke[]>([]);
   const strokeId = useRef(0);
-  const drawing = useRef(false);
+  // While idle the layer is click-through (pointer-events: none) so wheel,
+  // trackpad scroll, pinch-zoom and canvas pan all keep working with laser ON.
+  // It only grabs the pointer for the duration of a draw stroke.
+  const [drawing, setDrawing] = useState(false);
 
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -139,8 +142,10 @@ function ErdFlow({ nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick 
   const startStroke = useCallback(
     (e: React.PointerEvent) => {
       if (!laser) return;
-      drawing.current = true;
-      (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+      // Left mouse / pen draws; touch stays free to pan and zoom.
+      if (e.button !== 0 || (e.pointerType !== "mouse" && e.pointerType !== "pen")) return;
+      setDrawing(true);
+      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
       const id = ++strokeId.current;
       setStrokes((prev) => [...prev.slice(-11), { id, pts: [relPos(e)] }]);
       window.setTimeout(() => {
@@ -152,16 +157,19 @@ function ErdFlow({ nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick 
 
   const extendStroke = useCallback(
     (e: React.PointerEvent) => {
-      if (!laser || !drawing.current) return;
-      const p = relPos(e);
       setStrokes((prev) => {
         if (prev.length === 0) return prev;
+        const p = relPos(e);
         const last = prev[prev.length - 1];
         return [...prev.slice(0, -1), { ...last, pts: [...last.pts, p].slice(-120) }];
       });
     },
-    [laser, relPos]
+    [relPos]
   );
+
+  const endStroke = useCallback(() => {
+    setDrawing(false);
+  }, []);
 
   return (
     <div
@@ -199,16 +207,18 @@ function ErdFlow({ nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick 
 
       {laser && (
         <svg
-          className="erd-laser-layer absolute inset-0 h-full w-full touch-none"
-          style={{ cursor: "crosshair", zIndex: 20 }}
+          className="erd-laser-layer absolute inset-0 h-full w-full"
+          style={{
+            cursor: drawing ? "crosshair" : "default",
+            zIndex: 20,
+            pointerEvents: drawing ? "auto" : "none",
+            touchAction: "none",
+          }}
           onPointerDown={startStroke}
           onPointerMove={extendStroke}
-          onPointerUp={() => {
-            drawing.current = false;
-          }}
-          onPointerLeave={() => {
-            drawing.current = false;
-          }}
+          onPointerUp={endStroke}
+          onPointerCancel={endStroke}
+          onPointerLeave={endStroke}
         >
           {strokes.map((s) => (
             <g key={s.id}>
