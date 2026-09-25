@@ -85,6 +85,8 @@ function ErdEdgeInner({
 
   return (
     <>
+      {/* Wide invisible hit-path so thin curves are easy to click */}
+      <path d={path} fill="none" stroke="transparent" strokeWidth={16} style={{ pointerEvents: "stroke" }} />
       <path
         id={id}
         d={path}
@@ -94,7 +96,7 @@ function ErdEdgeInner({
       />
       <path d={bar} stroke={stroke} strokeWidth={2} strokeLinecap="round" />
       <path d={fan} stroke={stroke} strokeWidth={1.5} strokeLinecap="round" fill="none" />
-      {label != null && String(label) !== "" && (
+      {selected && label != null && String(label) !== "" && (
         <EdgeLabelRenderer>
           <div
             className="rounded border border-[var(--color-line)] bg-white px-1.5 py-px font-mono text-[10px] text-ivory-800 shadow-sm"

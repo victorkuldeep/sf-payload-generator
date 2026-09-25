@@ -525,7 +525,7 @@ export default function SchemaPanel({
               <p className="font-semibold text-ivory-900 mb-1">Legend</p>
               <p><strong className="text-ivory-950">Key</strong> = Id / Name · <strong className="text-bronze-600">Link</strong> = lookup</p>
               <p><strong className="text-red-600">*</strong> = required · <strong className="text-bronze-700">JUNCTION</strong> = 2+ required lookups (audit fields excluded)</p>
-              <p>Joins: parent header-right → child footer-left · self-loops hug the left flank · <strong className="text-bronze-600">link icon</strong> = lookup field · drag nodes to rearrange</p>
+              <p>Joins: parent header-right → child footer-left · click a line to reveal its lookup field · <strong className="text-bronze-600">link icon</strong> = lookup field · drag nodes to rearrange</p>
             </div>
           </div>
         </aside>
