@@ -276,6 +276,8 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
           pannable
           zoomable
           position="bottom-right"
+          nodeColor="#D9CFB6"
+          nodeStrokeColor="#9A7653"
           style={{ background: "#FFFFFF", border: "1px solid #DDD3BC", borderRadius: 8 }}
           maskColor="rgba(250, 248, 242, 0.75)"
         />
@@ -316,6 +318,24 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
             </g>
           ))}
         </svg>
+      )}
+
+      {/* Empty canvas: guidance card (pan still works around it) */}
+      {propNodes.length === 0 && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center p-6 pointer-events-none">
+          <div className="pointer-events-auto max-w-sm rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] px-6 py-5 text-center shadow-[0_12px_36px_-16px_rgba(24,20,12,0.4)]">
+            <p className="text-[11px] font-bold uppercase tracking-[1.8px] text-[var(--color-accent-dark)]">
+              Map your data model
+            </p>
+            <p className="mt-1.5 text-xs leading-relaxed text-ivory-700">
+              Add an object from the panel on the left - links to objects
+              already on canvas draw automatically.
+            </p>
+            <p className="mt-2.5 text-[11px] text-ivory-500">
+              ⌘K find · L laser · drag to pan · scroll to zoom
+            </p>
+          </div>
+        </div>
       )}
 
       {/* Top-left: counts + laser */}
