@@ -261,7 +261,7 @@ export function AppHeader({
                       )}
                     </button>
                   </div>
-                  <p className="mt-1 text-[11px] text-ivory-600">
+                  <p className="mt-1 font-inter text-[11px] text-ivory-600">
                     {apiVersion}
                     {objectCount > 0 && <> · {objectCount.toLocaleString()} objects</>}
                   </p>
@@ -281,7 +281,7 @@ export function AppHeader({
                     type="button"
                     role="menuitem"
                     onClick={closeMenu(onConnectClick)}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-xs text-ivory-800 hover:bg-ivory-200 transition-colors cursor-pointer"
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold bg-ivory-950 text-ivory-100 hover:bg-bronze-600 transition-colors cursor-pointer"
                     title="Connect a different org"
                   >
                     Switch org
@@ -292,7 +292,7 @@ export function AppHeader({
                     onClick={closeMenu(onDisconnect)}
                     aria-label="Disconnect"
                     title="Disconnect"
-                    className="flex items-center justify-center rounded-lg p-2 text-ivory-500 hover:text-red-700 hover:bg-red-500/10 transition-colors cursor-pointer"
+                    className="flex items-center justify-center rounded-lg border border-red-400 p-2 text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
                   >
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
                       <path d="M12 3v8" />

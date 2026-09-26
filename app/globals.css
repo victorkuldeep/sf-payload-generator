@@ -147,6 +147,10 @@ button, input, select, textarea, optgroup, option {
   font-weight: 700;
   letter-spacing: -0.02em;
 }
+/* ── Inter utility (version lines, compact UI accents) ── */
+.font-inter {
+  font-family: var(--font-inter), system-ui, sans-serif;
+}
 .hero-title {
   font-family: "Arial Narrow", "Bahnschrift Condensed", "Roboto Condensed", -apple-system, sans-serif;
   font-size: clamp(48px, 6vw, 84px);
