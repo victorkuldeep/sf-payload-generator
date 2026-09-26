@@ -20,6 +20,8 @@ import type {
   StudioMethod,
   FieldMode,
 } from "@/lib/composite/studio";
+import { PicklistValuesButton } from "../PicklistValuesButton";
+import PicklistDropdown from "../ui/PicklistDropdown";
 import Badge from "../ui/Badge";
 import Button from "../ui/Button";
 import Input from "../ui/Input";
@@ -511,14 +513,13 @@ function FieldSection({
       <div className="overflow-hidden rounded-lg border border-[#E8E2D8] divide-y divide-[#E8E2D8]">
         {request.fields.map((f) => {
           const meta = describe?.fields.find((x) => x.name === f.apiName);
-          const pickValues = meta ? getActivePicklistValues(meta).map((p) => p.value) : [];
           return (
             <FieldRow
               key={f.apiName}
               doc={doc}
               request={request}
               field={f}
-              pickValues={pickValues}
+              meta={meta}
               locked={requiredSet.has(f.apiName)}
               issue={fieldIssue(f.apiName)}
               actions={actions}
@@ -536,7 +537,7 @@ function FieldRow({
   doc,
   request,
   field,
-  pickValues,
+  meta,
   locked,
   issue,
   actions,
@@ -544,8 +545,7 @@ function FieldRow({
   doc: StudioDocument;
   request: StudioRequest;
   field: StudioFieldValue;
-  pickValues: string[];
-  /** Mandatory fields cannot be removed - it would corrupt the request. */
+  meta: SalesforceField | undefined;
   locked: boolean;
   issue: StudioIssue | undefined;
   actions: StudioRequestActions;
@@ -556,6 +556,9 @@ function FieldRow({
   const [confirmUnlink, setConfirmUnlink] = useState(false);
 
   const mapping = doc.mappings.find((m) => m.id === field.mappingId) ?? null;
+  const pickValues = meta ? getActivePicklistValues(meta).map((p) => p.value) : [];
+  const refTargets = meta?.referenceTo ?? [];
+  const isPicklist = (field.fieldType === "picklist" || field.fieldType === "multipicklist") && pickValues.length > 0;
   const sourceReq = mapping ? doc.requests.find((r) => r.id === mapping.sourceRequestId) : undefined;
   const expr = mapping && sourceReq ? `@{${sourceReq.referenceId}.${mapping.sourceProperty}}` : null;
 
@@ -570,6 +573,19 @@ function FieldRow({
       return aOk - bOk || ai - bi;
     });
   }, [doc.requests, priors, request.id]);
+  // Type-aware: requests whose object matches the destination referenceTo
+  // come first under their own group; the rest stay reachable below.
+  const matchedPriors = refTargets.length === 0
+    ? orderedPriors
+    : orderedPriors.filter((sr) => sr.objectApiName !== "" && refTargets.includes(sr.objectApiName));
+  const otherPriors = refTargets.length === 0
+    ? []
+    : orderedPriors.filter((sr) => !(sr.objectApiName !== "" && refTargets.includes(sr.objectApiName)));
+  const priorOption = (sr: StudioRequest) => (
+    <option key={sr.id} value={sr.id}>
+      @{sr.referenceId} · {sr.displayName || sr.objectLabel || sr.objectApiName}
+    </option>
+  );
 
   // Suggest a source whose object matches the describe referenceTo, if known.
 
@@ -580,6 +596,19 @@ function FieldRow({
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="truncate text-[13px] font-medium text-[#27241F]">{field.fieldLabel}</span>
             <span className="rounded border border-[#E8E2D8] bg-[#F8F6F0] px-1 font-mono text-[10px] text-[#777168]">{field.fieldType}</span>
+            {field.fieldType === "reference" && refTargets.length > 0 && (
+              <Badge color="purple">→ {refTargets.join(", ")}</Badge>
+            )}
+            {isPicklist && meta && (
+              <PicklistValuesButton
+                objectName={request.objectApiName}
+                objectLabel={request.displayName || request.objectLabel || request.objectApiName}
+                fieldName={field.apiName}
+                fieldLabel={field.fieldLabel}
+                fieldType={field.fieldType}
+                values={meta.picklistValues ?? []}
+              />
+            )}
             {locked && <Badge variant="error">Required</Badge>}
             {mapping && <Badge variant="success">⬦ link</Badge>}
           </div>
@@ -659,12 +688,22 @@ function FieldRow({
                 className="w-full rounded-lg border border-[#E8E2D8] bg-white px-2 py-1.5 text-[13px] cursor-pointer"
               >
                 <option value="">Choose…</option>
-                {orderedPriors.map((sr) => (
-                  <option key={sr.id} value={sr.id}>
-                    @{sr.referenceId} · {sr.displayName || sr.objectLabel || sr.objectApiName}
-                  </option>
-                ))}
+                {matchedPriors.length > 0 && (
+                  <optgroup label={refTargets.length > 0 ? `Matching ${refTargets.join(", ")}` : "Requests"}>
+                    {matchedPriors.map(priorOption)}
+                  </optgroup>
+                )}
+                {otherPriors.length > 0 && (
+                  <optgroup label="Other requests">
+                    {otherPriors.map(priorOption)}
+                  </optgroup>
+                )}
               </select>
+              {refTargets.length > 0 && matchedPriors.length === 0 && (
+                <p className="mt-1 text-[11px] text-[#B98335]">
+                  No {refTargets.join(", ")} request yet - add one, or pick below and fix the order later.
+                </p>
+              )}
             </label>
             <label className="block">
               <span className="mb-0.5 block text-[11px] text-[#777168]">Source property</span>
@@ -734,32 +773,14 @@ function LiteralInput({ field, pickValues, onChange }: { field: StudioFieldValue
   const t = field.fieldType;
 
   if ((t === "picklist" || t === "multipicklist") && pickValues.length > 0) {
-    if (t === "multipicklist") {
-      const sel = new Set(str.split(";").map((s) => s.trim()).filter(Boolean));
-      return (
-        <select
-          multiple
-          value={[...sel]}
-          onChange={(e) => {
-            const vals = [...e.target.selectedOptions].map((o) => o.value);
-            onChange(vals.join(";"));
-          }}
-          className={`${cls} min-h-[58px]`}
-          aria-label="Values"
-        >
-          {pickValues.map((v) => (
-            <option key={v} value={v}>{v}</option>
-          ))}
-        </select>
-      );
-    }
     return (
-      <select value={str} onChange={(e) => onChange(e.target.value)} className={`${cls} cursor-pointer`}>
-        <option value="">-- Select --</option>
-        {pickValues.map((v) => (
-          <option key={v} value={v}>{v}</option>
-        ))}
-      </select>
+      <PicklistDropdown
+        values={pickValues}
+        value={str}
+        multiple={t === "multipicklist"}
+        ariaLabel={`Pick value for ${field.apiName}`}
+        onChange={(v) => onChange(v)}
+      />
     );
   }
 

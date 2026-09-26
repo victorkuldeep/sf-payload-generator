@@ -39,17 +39,10 @@ interface StudioGraphProps {
   onResetLayout: () => void;
 }
 
-const NODE_W = 280;
-const NODE_H = 200;
+const NODE_W = 240;
+const NODE_H = 210;
 const X_GAP = 130;
 const Y_GAP = 48;
-
-const METHOD_RING: Record<string, string> = {
-  POST: "border-[#32815B]",
-  PATCH: "border-[#B98335]",
-  GET: "border-[#5B8DC0]",
-  DELETE: "border-[#B84C42]",
-};
 
 /**
  * Graph is a READ-ONLY visualizer of the whole transaction: round nodes in
@@ -280,21 +273,22 @@ function StudioGraphFlow(props: StudioGraphProps) {
   );
 }
 
-/** Round bubble node in the schema-graph language: seq monogram in a
- *  method-colored ring, label + @refId beneath, counts caption. */
+/** Round bubble in the schema-graph language: neutral ring, seq monogram,
+ *  label + @refId beneath. Bronze appears only for selection; red/amber
+ *  only for validation. Method rides along as quiet caption text. */
 function StudioBubbleNode({ data, selected }: { data: StudioBubbleData; selected?: boolean }) {
   const ring = data.hasError
     ? "border-[#B84C42]"
     : data.hasWarning
       ? "border-[#B98335]"
-      : (METHOD_RING[data.method] ?? "border-[#E8E2D8]");
+      : "border-[#E8E2D8]";
   return (
     <div className="flex flex-col items-center" style={{ width: 176 }}>
-      <div className="relative" style={{ width: 88, height: 88 }}>
+      <div className="relative" style={{ width: 84, height: 84 }}>
         <Handle type="target" position={Position.Left} style={{ opacity: 0, width: 2, height: 2, pointerEvents: "none" }} />
         <Handle type="source" position={Position.Right} style={{ opacity: 0, width: 2, height: 2, pointerEvents: "none" }} />
         <div
-          className={`flex h-full w-full flex-col items-center justify-center rounded-full border-[3px] bg-white shadow-[0_10px_30px_-12px_rgba(24,20,12,0.45)] ${ring} ${
+          className={`flex h-full w-full flex-col items-center justify-center rounded-full border-2 bg-white shadow-[0_10px_30px_-12px_rgba(24,20,12,0.4)] ${ring} ${
             selected ? "ring-4 ring-[#A98450]/40" : ""
           }`}
           title={`${data.label} (@${data.referenceId})`}
@@ -302,13 +296,13 @@ function StudioBubbleNode({ data, selected }: { data: StudioBubbleData; selected
           <span className="font-mono text-xl font-extrabold text-[#27241F]">
             {String(data.seq).padStart(2, "0")}
           </span>
-          <span className="font-mono text-[10px] font-bold text-[#777168]">{data.method}</span>
+          <span className="font-mono text-[10px] font-bold text-[#A39B8E]">{data.method}</span>
         </div>
       </div>
       <p className="mt-1.5 max-w-full truncate text-center text-[12px] font-semibold text-[#27241F]" title={data.label}>
         {data.label}
       </p>
-      <p className="max-w-full truncate text-center font-mono text-[11px] text-[#A98450]" title={`@${data.referenceId}`}>
+      <p className="max-w-full truncate text-center font-mono text-[11px] text-[#777168]" title={`@${data.referenceId}`}>
         @{data.referenceId}
       </p>
       <p className="text-[10px] text-[#A39B8E]">
