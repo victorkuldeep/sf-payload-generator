@@ -51,13 +51,12 @@ export function deriveReferenceId(objectName: string): string {
 }
 
 /**
- * Makes a referenceId unique across the batch: first use keeps the bare
- * base (`pricingRequest`), later clashes get `base_1`, `base_2`…
+ * Makes a referenceId unique across the batch: always suffixed
+ * (`account_1`, `account_2`…) so same-object instances never collide.
  */
 export function uniqueReferenceId(base: string, taken: Set<string> | string[]): string {
   const used = taken instanceof Set ? taken : new Set(taken);
   const clean = (base || "").trim() || "request";
-  if (!used.has(clean)) return clean;
   let n = 1;
   while (used.has(`${clean}_${n}`)) n++;
   return `${clean}_${n}`;

@@ -315,17 +315,10 @@ export default function CompositePanel({
             fields: r.fields.map((f) => {
               if (f.apiName !== apiName) return f;
               if (f.mode === mode) return f;
-              // Leaving reference mode drops the mapping; the expression
-              // text stays as the literal so nothing silently vanishes.
+              // Leaving reference mode drops the mapping AND clears the value -
+              // a stale @{...} string with no edge is an invisible dependency.
               if (f.mode === "reference" && mode === "literal") {
-                const m = p.mappings.find((x) => x.id === f.mappingId);
-                const src = m ? p.requests.find((x) => x.id === m.sourceRequestId) : undefined;
-                return {
-                  ...f,
-                  mode,
-                  mappingId: null,
-                  literal: src ? `@{${src.referenceId}.${m?.sourceProperty ?? "id"}}` : f.literal,
-                };
+                return { ...f, mode, mappingId: null, literal: "" };
               }
               return { ...f, mode, mappingId: mode === "reference" ? f.mappingId : null };
             }),
@@ -614,16 +607,10 @@ export default function CompositePanel({
       {screen === "graph" && (
         <StudioGraph
           doc={doc}
-          describes={describes}
           issues={issues}
           onEditRequest={gotoRequest}
-          onDuplicate={handleDuplicate}
-          onDelete={handleDelete}
           onPosition={handlePosition}
           onResetLayout={handleResetLayout}
-          onCreateMapping={handleCreateMapping}
-          onRemoveMapping={handleRemoveMapping}
-          onAddRequest={() => setScreen("requests")}
         />
       )}
 

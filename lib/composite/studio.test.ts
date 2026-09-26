@@ -46,17 +46,12 @@ const pricingDoc = (): StudioDocument => ({
 });
 
 describe("nextReferenceId", () => {
-  it("keeps the bare base on first use", () => {
-    expect(nextReferenceId("Pricing_Request__c", new Set())).toBe("pricingRequest");
-  });
-  it("suffices _1, _2 on clash", () => {
-    expect(nextReferenceId("Request_Term__c", new Set(["requestTerm"]))).toBe("requestTerm_1");
-    expect(nextReferenceId("Request_Term__c", new Set(["requestTerm", "requestTerm_1"]))).toBe(
-      "requestTerm_2"
-    );
+  it("always suffixes, starting at _1", () => {
+    expect(nextReferenceId("Pricing_Request__c", new Set())).toBe("pricingRequest_1");
+    expect(nextReferenceId("Request_Term__c", new Set(["requestTerm_1"]))).toBe("requestTerm_2");
   });
   it("derives from labels too", () => {
-    expect(nextReferenceId("Vendor Quote Request", new Set())).toBe("vendorQuoteRequest");
+    expect(nextReferenceId("Vendor Quote Request", new Set())).toBe("vendorQuoteRequest_1");
   });
 });
 

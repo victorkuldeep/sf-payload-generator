@@ -62,8 +62,8 @@ export interface StudioIssue {
 }
 
 // ── referenceId generation ──────────────────────────────────────────────────
-// First instance keeps the bare base (pricingRequest), later instances get
-// _1, _2… Stable after creation - never regenerated on edit or reorder.
+// EVERY instance gets a suffixed id (account_1, account_2…) - no bare base,
+// so 2-3 Accounts can never collide. Stable after creation.
 
 function toBase(input: string): string {
   const normalized = (input || "").replace(/[^A-Za-z0-9_]+/g, "_");
@@ -78,7 +78,6 @@ function toBase(input: string): string {
 export function nextReferenceId(objectLabelOrApi: string, taken: Set<string> | string[]): string {
   const used = taken instanceof Set ? taken : new Set(taken);
   const base = toBase(objectLabelOrApi);
-  if (!used.has(base)) return base;
   let n = 1;
   while (used.has(`${base}_${n}`)) n++;
   return `${base}_${n}`;

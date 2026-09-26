@@ -215,16 +215,14 @@ describe("generateCompositePayload", () => {
 });
 
 describe("uniqueReferenceId", () => {
-  it("keeps the bare base on first use", () => {
-    expect(uniqueReferenceId("pricingRequest", new Set())).toBe("pricingRequest");
-  });
-  it("appends a counter on clash", () => {
-    expect(uniqueReferenceId("requestTerm", new Set(["requestTerm"]))).toBe("requestTerm_1");
-    expect(uniqueReferenceId("requestTerm", ["requestTerm", "requestTerm_1"])).toBe(
-      "requestTerm_2"
+  it("always suffixes, starting at _1", () => {
+    expect(uniqueReferenceId("pricingRequest", new Set())).toBe("pricingRequest_1");
+    expect(uniqueReferenceId("requestTerm", ["requestTerm_1"])).toBe("requestTerm_2");
+    expect(uniqueReferenceId("requestTerm", ["requestTerm_1", "requestTerm_2"])).toBe(
+      "requestTerm_3"
     );
   });
   it("falls back for empty base", () => {
-    expect(uniqueReferenceId("", new Set())).toBe("request");
+    expect(uniqueReferenceId("", new Set())).toBe("request_1");
   });
 });

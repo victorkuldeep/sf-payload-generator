@@ -460,6 +460,19 @@ function FieldSection({
                 <option key={t} value={t}>{t === "all" ? "All types" : t}</option>
               ))}
             </select>
+            <Button
+              size="sm"
+              disabled={picked.size === 0}
+              onClick={() => {
+                const fields = writable.filter((f) => picked.has(f.name));
+                actions.onAddFields(request.id, fields);
+                setPicked(new Set());
+                setSearch("");
+              }}
+              title="Add selected fields"
+            >
+              Add{picked.size > 0 ? ` ${picked.size}` : ""}
+            </Button>
           </div>
           <div className="max-h-56 overflow-y-auto px-2 pb-2">
             {candidates.map((f) => {
@@ -479,21 +492,6 @@ function FieldSection({
               );
             })}
             {candidates.length === 0 && <p className="px-2 py-3 text-[13px] text-[#A39B8E]">No fields match.</p>}
-          </div>
-          <div className="flex items-center justify-between border-t border-[#E8E2D8] p-2">
-            <span className="text-xs text-[#A39B8E]">{picked.size} selected</span>
-            <Button
-              size="sm"
-              disabled={picked.size === 0}
-              onClick={() => {
-                const fields = writable.filter((f) => picked.has(f.name));
-                actions.onAddFields(request.id, fields);
-                setPicked(new Set());
-                setSearch("");
-              }}
-            >
-              Add {picked.size > 0 ? `${picked.size} ` : ""}field{picked.size === 1 ? "" : "s"}
-            </Button>
           </div>
         </div>
       )}
@@ -593,6 +591,9 @@ function FieldRow({
             value={field.mode}
             onChange={(e) => {
               const mode = e.target.value as FieldMode;
+              // Any mode change closes the linker - a stale popover over a
+              // Text/Null field is exactly the reported confusion.
+              setLinkOpen(false);
               if (mode === "reference") {
                 setLinkOpen(true);
                 return;
@@ -603,9 +604,9 @@ function FieldRow({
             aria-label={`Value mode for ${field.apiName}`}
             title="Literal · Reference · Null"
           >
-            <option value="literal">Abc</option>
-            <option value="reference">⬦ Ref</option>
-            <option value="null">∅ Null</option>
+            <option value="literal">Text</option>
+            <option value="reference">Ref</option>
+            <option value="null">Null</option>
           </select>
           <button
             onClick={() => actions.onRemoveField(request.id, field.apiName)}
