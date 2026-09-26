@@ -5,10 +5,6 @@ import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import type { ErdNodeData } from "@/lib/erd/graph";
 import { ERD_MAX_ROWS, ERD_HEADER_H, ERD_FOOTER_H, parentExitHandleId, childEntryHandleId, loopOutHandleId, loopInHandleId } from "@/lib/erd/graph";
 
-// Fixed chrome heights so edge docks sit exactly at header/footer mid-height.
-const HEADER_H = 62;
-const FOOTER_H = 30;
-
 function KeyIcon() {
   return (
     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true" className="shrink-0 text-bronze-600">
