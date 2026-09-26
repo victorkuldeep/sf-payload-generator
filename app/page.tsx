@@ -447,7 +447,12 @@ export default function Home() {
   }, []);
 
   const handleNavigate = useCallback(
-    (mode: "builder" | "composite" | "soql" | "graphql" | "schema" | "rest") => {
+    (mode: "home" | "builder" | "composite" | "soql" | "graphql" | "schema" | "rest") => {
+      // Home is always available - it just shows the start screen.
+      if (mode === "home") {
+        goMode("home");
+        return;
+      }
       if (!state.connected) {
         openConnect();
         return;
@@ -1006,51 +1011,7 @@ export default function Home() {
           />
         ) : (
           <>
-            {/* ── Mode toggle first: the workbench starts here ── */}
-            <div className="flex items-center gap-3">
-              <div className="flex rounded-lg border border-[var(--color-line)] overflow-hidden w-fit bg-[var(--color-surface)]" role="tablist" aria-label="Builder mode">
-                {(
-                  [
-                    { id: "home", label: "Home" },
-                    { id: "single", label: "Single Object" },
-                    { id: "composite", label: "Composite API" },
-                    { id: "soql", label: "SOQL" },
-                    { id: "graphql", label: "GraphQL" },
-                    { id: "schema", label: "Schema Map" },
-                    { id: "rest", label: "REST" },
-                  ] as { id: BuilderMode; label: string }[]
-                ).map((m) => (
-                  <button
-                    key={m.id}
-                    role="tab"
-                    aria-selected={state.mode === m.id}
-                    className={`px-4 py-2 text-xs font-medium tracking-wide transition-colors cursor-pointer ${
-                      state.mode === m.id ? "bg-ivory-950 text-ivory-100" : "text-ivory-700 hover:text-ivory-950"
-                    }`}
-                    onClick={() => goMode(m.id)}
-                  >
-                    {m.label}
-                  </button>
-                ))}
-              </div>
-              <span className="hidden sm:inline text-[11px] text-ivory-600">
-                {state.mode === "composite"
-                  ? "Batch multiple sObjects with reference IDs in one call"
-                    : state.mode === "soql"
-                      ? "SOQL with plans, history and exports"
-                    : state.mode === "graphql"
-                      ? "Read-only queries against live metadata - no mutations"
-                      : state.mode === "schema"
-                        ? "Explore the data model as an ERD - discover, present, export"
-                        : state.mode === "rest"
-                          ? "Raw REST explorer - any method, any path, collect anything"
-                          : state.mode === "home"
-                          ? "Pick a builder to begin - nothing runs until you choose"
-                          : "POST or PATCH a single record with live field metadata"}
-              </span>
-            </div>
-
-            {/* ── Connected home: the same home hero, tabs visible above ── */}
+            {/* ── Connected home: the same home hero ── */}
             {state.mode === "home" && (
               <HomeHero
                 connected

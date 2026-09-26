@@ -12,7 +12,7 @@ interface AppHeaderProps {
   onConnectClick: () => void;
   onDisconnect: () => void;
   onSearchClick: () => void;
-  onNavigate: (mode: "builder" | "composite" | "soql" | "graphql" | "schema" | "rest") => void;
+  onNavigate: (mode: "home" | "builder" | "composite" | "soql" | "graphql" | "schema" | "rest") => void;
   collectionCount: number;
   onCollectionClick: () => void;
 }
@@ -57,6 +57,20 @@ export function AppHeader({
     fn();
   };
 
+  // Single product navigation (Home first). Desktop renders it inline;
+  // mobile gets the same list as a scrollable row under the header.
+  const navItems: { id: "home" | "builder" | "composite" | "soql" | "graphql" | "schema" | "rest"; label: string; title: string }[] = [
+    { id: "home", label: "Home", title: "Back to the start" },
+    { id: "builder", label: "Builder", title: connected ? "Go to single-object builder" : "Connect to open the builder" },
+    { id: "composite", label: "Composite", title: connected ? "Go to composite builder" : "Connect to open composite" },
+    { id: "soql", label: "SOQL", title: connected ? "Go to SOQL builder" : "Connect to open SOQL" },
+    { id: "graphql", label: "GraphQL", title: connected ? "Go to GraphQL query builder" : "Connect to open GraphQL" },
+    { id: "schema", label: "Schema", title: connected ? "Go to schema deep dive" : "Connect to open the ERD" },
+    { id: "rest", label: "REST", title: connected ? "Go to REST explorer" : "Connect to open REST explorer" },
+  ];
+  const navLinkClass =
+    "hover:text-[var(--color-ink)] hover:underline underline-offset-4 transition-colors cursor-pointer whitespace-nowrap";
+
   const copyOrgUrl = async () => {
     try {
       await navigator.clipboard.writeText(instanceUrl);
@@ -79,54 +93,17 @@ export function AppHeader({
         </Link>
 
         <nav className="hidden md:flex items-center gap-5 text-xs font-medium text-[var(--color-ink-soft)]" aria-label="Product">
-          <button
-            type="button"
-            onClick={() => onNavigate("builder")}
-            className="hover:text-[var(--color-ink)] hover:underline underline-offset-4 transition-colors cursor-pointer"
-            title={connected ? "Go to single-object builder" : "Connect to open the builder"}
-          >
-            Builder
-          </button>
-          <button
-            type="button"
-            onClick={() => onNavigate("composite")}
-            className="hover:text-[var(--color-ink)] hover:underline underline-offset-4 transition-colors cursor-pointer"
-            title={connected ? "Go to composite builder" : "Connect to open composite"}
-          >
-            Composite
-          </button>
-          <button
-            type="button"
-            onClick={() => onNavigate("soql")}
-            className="hover:text-[var(--color-ink)] hover:underline underline-offset-4 transition-colors cursor-pointer"
-            title={connected ? "Go to SOQL builder" : "Connect to open SOQL"}
-          >
-            SOQL
-          </button>
-          <button
-            type="button"
-            onClick={() => onNavigate("graphql")}
-            className="hover:text-[var(--color-ink)] hover:underline underline-offset-4 transition-colors cursor-pointer"
-            title={connected ? "Go to GraphQL query builder" : "Connect to open GraphQL"}
-          >
-            GraphQL
-          </button>
-          <button
-            type="button"
-            onClick={() => onNavigate("schema")}
-            className="hover:text-[var(--color-ink)] hover:underline underline-offset-4 transition-colors cursor-pointer"
-            title={connected ? "Go to schema deep dive" : "Connect to open the ERD"}
-          >
-            Schema
-          </button>
-          <button
-            type="button"
-            onClick={() => onNavigate("rest")}
-            className="hover:text-[var(--color-ink)] hover:underline underline-offset-4 transition-colors cursor-pointer"
-            title={connected ? "Go to REST explorer" : "Connect to open REST explorer"}
-          >
-            REST
-          </button>
+          {navItems.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onNavigate(item.id)}
+              className={navLinkClass}
+              title={item.title}
+            >
+              {item.label}
+            </button>
+          ))}
           <a
             href="https://workbench.developerforce.com"
             target="_blank"
@@ -302,6 +279,27 @@ export function AppHeader({
           </div>
         </div>
       </div>
+      <nav className="md:hidden flex items-center gap-4 overflow-x-auto px-5 pb-2.5 text-xs font-medium text-[var(--color-ink-soft)]" aria-label="Product">
+        {navItems.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onNavigate(item.id)}
+            className={navLinkClass}
+            title={item.title}
+          >
+            {item.label}
+          </button>
+        ))}
+        <a
+          href="https://workbench.developerforce.com"
+          target="_blank"
+          rel="noreferrer"
+          className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
+        >
+          Workbench ↗
+        </a>
+      </nav>
     </header>
   );
 }
