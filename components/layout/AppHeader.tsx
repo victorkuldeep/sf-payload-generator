@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
+export type NavMode = "home" | "builder" | "composite" | "soql" | "graphql" | "schema" | "rest";
+
 interface AppHeaderProps {
   connected: boolean;
   instanceUrl: string;
@@ -12,7 +14,9 @@ interface AppHeaderProps {
   onConnectClick: () => void;
   onDisconnect: () => void;
   onSearchClick: () => void;
-  onNavigate: (mode: "home" | "builder" | "composite" | "soql" | "graphql" | "schema" | "rest") => void;
+  onNavigate: (mode: NavMode) => void;
+  /** Current mode - the matching tab renders underlined. */
+  activeMode: NavMode;
   collectionCount: number;
   onCollectionClick: () => void;
 }
@@ -27,6 +31,7 @@ export function AppHeader({
   onDisconnect,
   onSearchClick,
   onNavigate,
+  activeMode,
   collectionCount,
   onCollectionClick,
 }: AppHeaderProps) {
@@ -71,6 +76,30 @@ export function AppHeader({
   const navLinkClass =
     "hover:text-[var(--color-ink)] hover:underline underline-offset-4 transition-colors cursor-pointer whitespace-nowrap";
 
+  const renderNavItems = () => (
+    <>
+      {navItems.map((item) => {
+        const active = item.id === activeMode;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onNavigate(item.id)}
+            aria-current={active ? "page" : undefined}
+            className={
+              active
+                ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors cursor-pointer whitespace-nowrap"
+                : navLinkClass
+            }
+            title={item.title}
+          >
+            {item.label}
+          </button>
+        );
+      })}
+    </>
+  );
+
   const copyOrgUrl = async () => {
     try {
       await navigator.clipboard.writeText(instanceUrl);
@@ -93,17 +122,7 @@ export function AppHeader({
         </Link>
 
         <nav className="hidden md:flex items-center gap-5 text-xs font-medium text-[var(--color-ink-soft)]" aria-label="Product">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onNavigate(item.id)}
-              className={navLinkClass}
-              title={item.title}
-            >
-              {item.label}
-            </button>
-          ))}
+          {renderNavItems()}
           <a
             href="https://workbench.developerforce.com"
             target="_blank"
@@ -280,17 +299,7 @@ export function AppHeader({
         </div>
       </div>
       <nav className="md:hidden flex items-center gap-4 overflow-x-auto px-5 pb-2.5 text-xs font-medium text-[var(--color-ink-soft)]" aria-label="Product">
-        {navItems.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => onNavigate(item.id)}
-            className={navLinkClass}
-            title={item.title}
-          >
-            {item.label}
-          </button>
-        ))}
+        {renderNavItems()}
         <a
           href="https://workbench.developerforce.com"
           target="_blank"

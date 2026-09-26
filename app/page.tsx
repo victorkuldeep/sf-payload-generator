@@ -978,6 +978,7 @@ export default function Home() {
       onDisconnect={handleDisconnect}
       onSearchClick={() => setShowSearch(true)}
       onNavigate={handleNavigate}
+      activeMode={state.mode === "single" ? "builder" : state.mode}
       collectionCount={collection.length}
       onCollectionClick={() => setShowCollection(true)}
       trail={

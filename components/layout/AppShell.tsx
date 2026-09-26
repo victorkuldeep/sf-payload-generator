@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { AppHeader } from "./AppHeader";
+import { AppHeader, type NavMode } from "./AppHeader";
 import { AppFooter } from "./AppFooter";
 
 interface AppShellProps {
@@ -14,7 +14,8 @@ interface AppShellProps {
   onConnectClick: () => void;
   onDisconnect: () => void;
   onSearchClick: () => void;
-  onNavigate: (mode: "home" | "builder" | "composite" | "soql" | "graphql" | "schema" | "rest") => void;
+  onNavigate: (mode: NavMode) => void;
+  activeMode: NavMode;
   collectionCount: number;
   onCollectionClick: () => void;
   /** Builder progress trail — docked above the footer, null on home/schema. */
@@ -32,6 +33,7 @@ export function AppShell({
   onDisconnect,
   onSearchClick,
   onNavigate,
+  activeMode,
   collectionCount,
   onCollectionClick,
   trail,
@@ -48,6 +50,7 @@ export function AppShell({
         onDisconnect={onDisconnect}
         onSearchClick={onSearchClick}
         onNavigate={onNavigate}
+        activeMode={activeMode}
         collectionCount={collectionCount}
         onCollectionClick={onCollectionClick}
       />
