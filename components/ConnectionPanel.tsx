@@ -18,22 +18,17 @@ interface ConnectionPanelProps {
 }
 
 const DEFAULT_VERSIONS = [
+  "v75.0",
+  "v74.0",
+  "v73.0",
+  "v72.0",
+  "v71.0",
   "v70.0",
   "v69.0",
   "v68.0",
   "v67.0",
   "v66.0",
   "v65.0",
-  "v64.0",
-  "v63.0",
-  "v62.0",
-  "v61.0",
-  "v60.0",
-  "v59.0",
-  "v58.0",
-  "v57.0",
-  "v56.0",
-  "v55.0",
 ];
 
 export default function ConnectionPanel({

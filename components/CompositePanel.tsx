@@ -35,7 +35,7 @@ interface CompositePanelProps {
 type StudioScreen = "requests" | "graph" | "payload";
 
 const MAX_REQUESTS = 25;
-const API_VERSIONS = ["v66.0", "v65.0", "v64.0", "v63.0", "v62.0", "v61.0", "v60.0", "v59.0"];
+const API_VERSIONS = ["v75.0", "v74.0", "v73.0", "v72.0", "v71.0", "v70.0", "v69.0", "v68.0", "v67.0", "v66.0", "v65.0"];
 
 /**
  * Composite Studio shell: one canonical StudioDocument shared by the
