@@ -27,6 +27,7 @@
     "@types/react-dom": "^19",
     "@vitest/coverage-v8": "^5.0.2",
     "autoprefixer": "^10.0.1",
+    "esbuild": "^0.28.1",
     "eslint": "^8",
     "eslint-config-next": "15.5.26",
     "happy-dom": "^20.14.5",
