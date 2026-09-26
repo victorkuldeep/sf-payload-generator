@@ -22,7 +22,6 @@ import { SessionExpiredModal } from "@/components/SessionExpiredModal";
 import { BootLoader } from "@/components/BootLoader";
 import { CollectionDrawer } from "@/components/CollectionDrawer";
 import { CollectionPicker } from "@/components/CollectionPicker";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import type { Collection, CollectionItem, NewCollectionItem } from "@/lib/collection/types";
 import { newItemId } from "@/lib/collection/types";
@@ -191,10 +190,10 @@ const HERO_SLIDES: {
   mode: Exclude<BuilderMode, "home"> | "json";
 }[] = [
   {
-    eyebrow: "Metadata-driven REST payload builder",
+    eyebrow: "Metadata-driven payload builder",
     titleA: "From live metadata to",
     titleEm: "ready-to-send payloads.",
-    copy: "Connect to any Salesforce org, describe any standard or custom sObject, and generate accurate POST / PATCH payloads plus Composite API batches - exported as JSON, cURL, JavaScript fetch or Apex. No manual field copy-paste.",
+    copy: "Describe any standard or custom sObject and mint accurate POST / PATCH bodies - type-correct, required-aware, exportable everywhere.",
     cta: "Single Object",
     mode: "single",
   },
@@ -202,7 +201,7 @@ const HERO_SLIDES: {
     eyebrow: "Composite Studio",
     titleA: "Requests, graph,",
     titleEm: "payload.",
-    copy: "Compose multi-sObject batches with unique reference IDs - Requests, Graph and Payload screens on one canonical model.",
+    copy: "Compose multi-sObject batches with unique reference IDs - one model, three views, zero hand-written JSON.",
     cta: "Composite",
     mode: "composite",
   },
@@ -210,7 +209,7 @@ const HERO_SLIDES: {
     eyebrow: "SOQL query engine",
     titleA: "Ask anything,",
     titleEm: "explain everything.",
-    copy: "Run SOQL with query plans, history, saved queries and CSV exports - Dev Console power without leaving the studio.",
+    copy: "Plans, history, saved queries and CSV exports - Dev Console power without leaving the studio.",
     cta: "SOQL",
     mode: "soql",
   },
@@ -218,7 +217,7 @@ const HERO_SLIDES: {
     eyebrow: "GraphQL query builder",
     titleA: "One round trip,",
     titleEm: "whole graph.",
-    copy: "Traverse lookup trees with value precision - live metadata, read-only, no mutations.",
+    copy: "Walk lookup trees with value precision. Live metadata, read-only, no mutations.",
     cta: "GraphQL",
     mode: "graphql",
   },
@@ -226,7 +225,7 @@ const HERO_SLIDES: {
     eyebrow: "Schema deep dive",
     titleA: "See the model,",
     titleEm: "not just the fields.",
-    copy: "Explore any org as an ERD canvas - discover relationships, present with the laser, export hi-res PNG.",
+    copy: "Traverse any org as an ERD - discover relationships, present with the laser, export hi-res PNG.",
     cta: "Schema Map",
     mode: "schema",
   },
@@ -234,7 +233,7 @@ const HERO_SLIDES: {
     eyebrow: "Raw REST explorer",
     titleA: "Any method,",
     titleEm: "any endpoint.",
-    copy: "Send org-scoped or public calls with cURL paste, history and one-click collection staging.",
+    copy: "Org-scoped or public calls with cURL paste, history and one-click collection staging.",
     cta: "REST",
     mode: "rest",
   },
@@ -242,17 +241,10 @@ const HERO_SLIDES: {
     eyebrow: "JSON Studio",
     titleA: "Diff payloads,",
     titleEm: "node by node.",
-    copy: "Edit JSON in a tree and compare versions side by side - virtualized for the biggest context payloads.",
+    copy: "Edit JSON in a tree and compare versions side by side - virtualized for the biggest payloads.",
     cta: "JSON",
     mode: "json",
   },
-];
-
-const HERO_PHOTOS = [
-  "/kuldeep-profile.webp",
-  "/hero-dp.webp",
-  "/hero-pic4.webp",
-  "/hero-pic5.webp",
 ];
 
 function HomeHero({
@@ -287,7 +279,13 @@ function HomeHero({
   }, [paused]);
 
   const slide = HERO_SLIDES[idx];
-  const photo = HERO_PHOTOS[idx % HERO_PHOTOS.length];
+  const HERO_IMAGES = [
+    { src: "/hero/img1.webp", alt: "Studio visual 1" },
+    { src: "/hero/img2.webp", alt: "Studio visual 2" },
+    { src: "/hero/img3.webp", alt: "Studio visual 3" },
+    { src: "/hero/img4.webp", alt: "Studio visual 4" },
+  ];
+  const heroImgIdx = idx % HERO_IMAGES.length;
 
   return (
     <section
@@ -300,30 +298,30 @@ function HomeHero({
       <div className="grid items-center gap-12 px-6 sm:px-12 pt-12 sm:pt-16 pb-10 lg:grid-cols-2">
         {/* Fixed frame - text moves inside, page length never shifts */}
         <div key={idx} className="hero-slide min-h-[540px] flex flex-col justify-center">
-          <p className="hero-kicker">
-            <span className="hero-kicker__dot" aria-hidden="true" />
-            Architect toolkit · API-first Salesforce
-          </p>
-          <p className="mt-4 font-mono text-[11px] font-semibold uppercase tracking-[2.4px] text-[var(--color-accent-dark)]">
-            {slide.eyebrow}
-          </p>
-          <h1 className="hero-title hero-title--mono mt-3 text-5xl sm:text-6xl xl:text-7xl text-ivory-950">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-[var(--color-canvas)] border border-[var(--color-line)] text-[11px] font-mono uppercase tracking-wider text-[var(--color-accent-dark)] font-medium">
+              {slide.eyebrow}
+            </span>
+            <span className="text-[10px] font-mono text-[var(--color-muted)] px-2 py-0.5 rounded bg-[var(--color-surface-strong)] border border-[var(--color-line-soft)]">
+              {idx + 1} of {HERO_SLIDES.length}
+            </span>
+          </div>
+          <h1 className="hero-title hero-title--red mt-3 text-5xl sm:text-6xl xl:text-7xl text-ivory-950">
             {slide.titleA} <em>{slide.titleEm}</em>
           </h1>
           <p className="mt-5 max-w-2xl text-[15px] leading-relaxed text-ivory-700">
             {slide.copy}
           </p>
-          <div className="mt-6 flex flex-col sm:flex-row gap-3">
-            <Button size="lg" onClick={onConnect} loading={loadingConnect}>
-              {connected ? "Switch org" : "Connect to Salesforce"}
-            </Button>
+          <div className="mt-6 flex items-center gap-3">
             <Button
               size="lg"
-              variant="secondary"
-              className="w-full sm:w-auto"
               onClick={() => onJumpMode(slide.mode)}
+              className="bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent)]/90"
             >
               Open {slide.cta} →
+            </Button>
+            <Button size="lg" variant="secondary" onClick={onConnect} loading={loadingConnect}>
+              {connected ? "Switch org" : "Connect to Salesforce"}
             </Button>
           </div>
           <div className="mt-5 flex items-center gap-3">
@@ -375,37 +373,46 @@ function HomeHero({
             </div>
           )}
         </div>
-        <div className="relative mx-auto w-fit">
-          <div className="rounded-full bg-white p-2.5 shadow-[0_24px_64px_-24px_rgba(24,20,12,0.45)] ring-1 ring-[var(--color-line)]">
-            <div key={photo} className="hero-slide overflow-hidden rounded-full" style={{ width: 300, height: 300 }}>
-              <Image
-                src={photo}
-                alt="Kuldeep Singh"
-                width={300}
-                height={300}
-                priority={idx === 0}
-                className="h-full w-full object-cover"
-              />
+        <div className="relative mx-auto w-full max-w-[560px]">
+          <div className="rounded-2xl bg-[#0c0d14] p-2 shadow-[0_32px_80px_-32px_rgba(12,13,20,0.7)]">
+            <div className="relative aspect-video overflow-hidden rounded-xl bg-[#0c0d14]">
+              {HERO_IMAGES.map((img, i) => (
+                <div
+                  key={img.src}
+                  className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${
+                    i === heroImgIdx ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"
+                  }`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={img.src}
+                    alt={img.alt}
+                    className="h-full w-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none" />
+                </div>
+              ))}
+              <div
+                className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 p-1 rounded-full bg-black/40 backdrop-blur-sm border border-white/10"
+                role="tablist"
+                aria-label="Hero image slides"
+              >
+                {HERO_IMAGES.map((img, i) => (
+                  <button
+                    key={img.src}
+                    type="button"
+                    role="tab"
+                    aria-selected={i === heroImgIdx}
+                    aria-label={`Image ${i + 1}: ${img.alt}`}
+                    onClick={() => setIdx(i)}
+                    className={`h-2 rounded-full transition-all duration-300 cursor-pointer ${
+                      i === heroImgIdx ? "w-6 bg-[var(--color-accent)]" : "w-2 bg-white/40 hover:bg-white/70"
+                    }`}
+                  />
+                ))}
+              </div>
             </div>
           </div>
-          <span className="absolute -bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-[var(--color-line)] bg-white px-3 py-1 font-mono text-[10px] font-semibold tracking-[1.8px] text-[var(--color-ink)] shadow-sm">
-            <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-[#32815B]" aria-hidden="true" />
-            ARCHITECT TOOLKIT
-          </span>
-          <p className="mt-6 text-center text-[15px] font-bold text-ivory-950">Kuldeep Singh</p>
-          <p className="mt-0.5 text-center font-mono text-[10px] uppercase tracking-[2px] text-[var(--color-muted)]">
-            Principal Technical Architect
-          </p>
-          <p className="mt-1 text-center">
-            <a
-              href="https://victorkuldeep.com"
-              target="_blank"
-              rel="noreferrer"
-              className="font-mono text-xs text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:underline underline-offset-2 transition-colors"
-            >
-              victorkuldeep.com ↗
-            </a>
-          </p>
         </div>
       </div>
     </section>

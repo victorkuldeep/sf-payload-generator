@@ -148,19 +148,15 @@ button, input, select, textarea, optgroup, option {
   letter-spacing: -0.02em;
 }
 .hero-title {
-  font-family: var(--font-sans);
+  font-family: var(--font-inter), system-ui, sans-serif;
   font-weight: 800;
-  letter-spacing: -0.03em;
-  line-height: 1.02;
+  letter-spacing: -0.04em;
+  line-height: 0.95;
   color: var(--color-ink);
 }
 .hero-title em { color: var(--color-accent); font-style: normal; }
-/* Lab mono display variant - home hero only */
-.hero-title--mono {
-  font-family: var(--font-mono);
-  font-weight: 800;
-  letter-spacing: -0.01em;
-}
+/* Home hero variant - archtools black + red */
+.hero-title--red em { color: #c41230; }
 
 /* ── Hero dotted mesh (research-lab language): warm sand base, bronze dots,
  * faint survey grid, contour curves top-right ── */

@@ -1,6 +1,12 @@
 import type { Metadata, Viewport } from "next";
-import { JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
+});
 
 const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
@@ -38,7 +44,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${jetbrainsMono.variable} min-h-screen bg-[var(--color-canvas)] text-[var(--color-ink)] antialiased flex flex-col`}>
+      <body className={`${inter.variable} ${jetbrainsMono.variable} min-h-screen bg-[var(--color-canvas)] text-[var(--color-ink)] antialiased flex flex-col`}>
         <a href="#main-content" className="skip-to-content">
           Skip to main content
         </a>
