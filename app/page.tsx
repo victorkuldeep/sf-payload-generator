@@ -394,7 +394,7 @@ function HomeHero({
                   <img
                     src={img.src}
                     alt={img.alt}
-                    className="h-full w-full object-cover"
+                    className="h-full w-full object-contain object-center"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none" />
                 </div>
