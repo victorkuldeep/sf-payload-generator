@@ -65,7 +65,7 @@ export default function ObjectPanel({
         />
       </div>
 
-      <div className="max-h-72 overflow-y-auto" role="listbox" aria-label="Salesforce objects">
+      <div className="max-h-[560px] overflow-y-auto" role="listbox" aria-label="Salesforce objects">
         {filtered.length === 0 ? (
           <p className="p-4 text-sm text-ivory-600">No objects found matching &quot;{search}&quot;</p>
         ) : (

@@ -138,7 +138,7 @@ export default function FieldPanel({
         </div>
       </div>
 
-      <div className="max-h-80 overflow-y-auto" role="group" aria-label="Field selection">
+      <div className="max-h-[560px] overflow-y-auto" role="group" aria-label="Field selection">
         {filtered.length === 0 ? (
           <p className="p-4 text-sm text-ivory-600">No fields match the current filter.</p>
         ) : (
