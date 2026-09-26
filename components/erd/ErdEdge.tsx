@@ -82,6 +82,11 @@ function ErdEdgeInner({
   const fan = `M ${apex.x},${apex.y} L ${f1.x},${f1.y} M ${apex.x},${apex.y} L ${f2.x},${f2.y} M ${apex.x},${apex.y} L ${f3.x},${f3.y}`;
 
   const stroke = selected ? STROKE_ACTIVE : STROKE;
+  // Solid = master-detail, dotted = lookup (kind travels in edge data).
+  const kind = (data as { kind?: string } | undefined)?.kind;
+  const isMd = kind === "md";
+  const lineWidth = selected ? 2.2 : isMd ? 2 : 1.5;
+  const dash = isMd ? undefined : "7 5";
 
   return (
     <>
@@ -92,7 +97,8 @@ function ErdEdgeInner({
         d={path}
         fill="none"
         stroke={stroke}
-        strokeWidth={selected ? 2 : 1.5}
+        strokeWidth={lineWidth}
+        strokeDasharray={dash}
       />
       <path d={bar} stroke={stroke} strokeWidth={2} strokeLinecap="round" />
       <path d={fan} stroke={stroke} strokeWidth={1.5} strokeLinecap="round" fill="none" />

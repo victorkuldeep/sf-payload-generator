@@ -64,6 +64,8 @@ export interface SalesforceChildRelationship {
   childSObject: string;
   field: string;
   relationshipName: string | null;
+  /** True when the child is in a master-detail with the parent. */
+  cascadeDelete: boolean;
 }
 
 export interface SalesforceDescribeResult {

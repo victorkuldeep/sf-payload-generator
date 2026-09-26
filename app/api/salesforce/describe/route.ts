@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
       createable: boolean;
       updateable: boolean;
       fields: SalesforceField[];
-      childRelationships?: SalesforceChildRelationship[];
+      childRelationships?: (SalesforceChildRelationship & { cascadeDelete?: unknown })[];
     };
 
     const result: SalesforceDescribeResult = {
@@ -103,6 +103,7 @@ export async function POST(req: NextRequest) {
               childSObject: r.childSObject,
               field: r.field,
               relationshipName: r.relationshipName ?? null,
+              cascadeDelete: r.cascadeDelete === true,
             }))
         : [],
     };

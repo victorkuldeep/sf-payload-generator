@@ -459,17 +459,6 @@ export default function RestExplorerPanel({
 
   if (!active) return null;
 
-  const targetLabel =
-    active.scope === "org" ? `${origin}${active.path.trim()}` : active.customUrl.trim() || "https://…";
-  const responseText =
-    active.result == null
-      ? ""
-      : typeof active.result.body === "string"
-        ? active.result.body
-        : JSON.stringify(active.result.body, null, 2);
-  const collectUrl = active.scope === "org" ? `${origin}${active.path.trim()}` : active.customUrl.trim();
-  const shortPath = collectUrl.split("?")[0].split("/").filter(Boolean).slice(-2).join("/") || "root";
-
   return (
     <div className="arch-card overflow-hidden">
       <div className="arch-card__head px-4 py-3 flex flex-wrap items-center gap-2">

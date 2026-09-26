@@ -24,19 +24,20 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { toPng } from "html-to-image";
-import type { ErdNodeData } from "@/lib/erd/graph";
+import type { ErdNodeData, GraphBubbleData } from "@/lib/erd/graph";
 import { ErdTableNode } from "./ErdTableNode";
 import { ErdEdge } from "./ErdEdge";
+import { GraphBubbleNode } from "./GraphBubbleNode";
 
-const nodeTypes = { erdTable: ErdTableNode } as const;
+const nodeTypes = { erdTable: ErdTableNode, graphBubble: GraphBubbleNode } as const;
 const edgeTypes = { erdEdge: ErdEdge } as const;
 
 export interface ErdCanvasHandle {
-  getNodes: () => Node<ErdNodeData>[];
+  getNodes: () => Node<ErdNodeData | GraphBubbleData>[];
 }
 
 interface ErdCanvasProps {
-  nodes: Node<ErdNodeData>[];
+  nodes: Node<ErdNodeData | GraphBubbleData>[];
   edges: Edge[];
   onNodeClick?: (id: string) => void;
   onPaneClick?: () => void;
@@ -72,13 +73,16 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node<ErdNodeData>>([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node<ErdNodeData | GraphBubbleData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const { fitView } = useReactFlow();
   const lastRev = useRef(layoutRev);
+  // Refit only when the graph SHAPE changes (count, view type, explicit
+  // re-layout) - never on data-only refreshes, so zoom is never stolen.
+  const fitSig = useRef("");
 
   // Live mirror for snapshot saves (drag positions included)
-  const nodesRef = useRef<Node<ErdNodeData>[]>([]);
+  const nodesRef = useRef<Node<ErdNodeData | GraphBubbleData>[]>([]);
   useEffect(() => {
     nodesRef.current = nodes;
   }, [nodes]);
@@ -127,8 +131,16 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
       });
       setEdges(propEdges);
     }
-    const t = window.setTimeout(() => fitView({ padding: 0.18, maxZoom: 1 }), 60);
-    return () => window.clearTimeout(t);
+    // Refit only when the graph shape actually changes - node count, node
+    // type (ERD <-> graph switch), explicit re-layout, or restore. Never on
+    // data-only updates, selection, or spotlight: your zoom is sacred.
+    const sig = `${propNodes[0]?.type ?? ""}:${propNodes.length}:${layoutRev}:${enforcedPositions ? "e" : ""}`;
+    if (sig !== fitSig.current) {
+      fitSig.current = sig;
+      const t = window.setTimeout(() => fitView({ padding: 0.18, maxZoom: 1 }), 60);
+      return () => window.clearTimeout(t);
+    }
+    return undefined;
   }, [propNodes, propEdges, layoutRev, enforcedPositions, setNodes, setEdges, fitView]);
 
   useEffect(() => {

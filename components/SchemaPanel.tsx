@@ -6,11 +6,12 @@ import type {
   SalesforceObject,
   SalesforceDescribeResult,
 } from "@/lib/salesforce/types";
-import { buildErdElements, type ErdNodeData } from "@/lib/erd/graph";
+import { buildErdElements, buildGraphElements, rootNeighbors, type ErdNodeData } from "@/lib/erd/graph";
 import { rankObjects } from "@/lib/search/rank";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import { apiFetch } from "@/lib/api";
 import { ErdCanvas, type ErdCanvasHandle } from "./erd/ErdCanvas";
+import { DiscoverPicker, type DiscoverCandidate } from "./erd/DiscoverPicker";
 import { PicklistPopover, type PicklistPopoverData } from "./erd/PicklistPopover";
 import {
   listSnapshotsByOrg,
@@ -61,6 +62,131 @@ function timeAgo(ts: number): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+type GraphDetail =
+  | {
+      kind: "loaded";
+      d: SalesforceDescribeResult;
+      parents: string[];
+      kids: string[];
+    }
+  | {
+      kind: "lite";
+      n: {
+        apiName: string;
+        label: string;
+        custom: boolean;
+        role: "parent" | "child";
+        via: string;
+        kind: "md" | "lookup";
+      };
+    };
+
+function GraphDetailCard({
+  detail,
+  labels,
+  onClose,
+  onOpenInErd,
+  onMakeRoot,
+  onLoad,
+}: {
+  detail: GraphDetail;
+  labels: Map<string, string>;
+  onClose: () => void;
+  onOpenInErd: () => void;
+  onMakeRoot: () => void;
+  onLoad: () => void;
+}) {
+  const apiName = detail.kind === "loaded" ? detail.d.name : detail.n.apiName;
+  const label = detail.kind === "loaded" ? detail.d.label : detail.n.label;
+  return (
+    <div className="absolute right-3 top-3 bottom-3 z-30 w-[280px] overflow-y-auto rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] shadow-[0_16px_48px_-12px_rgba(24,20,12,0.35)]">
+      <div className="border-b border-[var(--color-line-soft)] p-4">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[1.6px] text-[var(--color-accent-dark)]">
+              {detail.kind === "loaded" ? "On canvas" : `Preview · ${detail.n.role}`}
+            </p>
+            <h3 className="mt-1 text-xl font-bold tracking-tight text-ivory-950">{label}</h3>
+            <p className="truncate font-mono text-[11px] text-ivory-600">{apiName}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close details"
+            className="rounded-md p-1 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer shrink-0"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-1">
+          {detail.kind === "loaded" ? (
+            <>
+              <Badge variant="default">{detail.d.fields.length} fields</Badge>
+              <Badge variant="default">
+                {detail.d.childRelationships.filter((r) => r.relationshipName).length} children
+              </Badge>
+              {detail.d.custom && <Badge variant="info">Custom</Badge>}
+            </>
+          ) : (
+            <>
+              <Badge variant={detail.n.role === "parent" ? "default" : "info"}>{detail.n.role}</Badge>
+              <Badge variant={detail.n.kind === "md" ? "custom" : "default"}>
+                {detail.n.kind === "md" ? "master-detail" : "lookup"}
+              </Badge>
+              <Badge variant="default">via {detail.n.via}</Badge>
+            </>
+          )}
+        </div>
+      </div>
+
+      {detail.kind === "loaded" && (
+        <div className="space-y-3 p-4">
+          <div>
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-[1.6px] text-ivory-600">
+              Connected edges ({detail.parents.length + detail.kids.length})
+            </p>
+            <ul className="space-y-1">
+              {detail.parents.map((p) => (
+                <li key={`p:${p}`} className="truncate rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-canvas)] px-2.5 py-1.5 font-mono text-[11px] text-ivory-800">
+                  ↑ {labels.get(p) ?? p} <span className="text-ivory-500">({p})</span>
+                </li>
+              ))}
+              {detail.kids.map((k) => (
+                <li key={`c:${k}`} className="truncate rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-canvas)] px-2.5 py-1.5 font-mono text-[11px] text-ivory-800">
+                  ↓ {labels.get(k) ?? k} <span className="text-ivory-500">({k})</span>
+                </li>
+              ))}
+              {detail.parents.length === 0 && detail.kids.length === 0 && (
+                <li className="text-[11px] text-ivory-500">No described links yet.</li>
+              )}
+            </ul>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Button size="sm" variant="secondary" onClick={onOpenInErd}>
+              Open in ERD
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onMakeRoot}>
+              Make graph root
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {detail.kind === "lite" && (
+        <div className="space-y-3 p-4">
+          <p className="text-xs leading-relaxed text-ivory-700">
+            Placed from relationship metadata - its fields are not fetched yet.
+            Related to the root via <span className="font-mono font-semibold text-ivory-950">{detail.n.via}</span>.
+          </p>
+          <Button size="sm" onClick={onLoad} className="w-full">
+            Fetch details
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SchemaPanel({
   objects,
   instanceUrl,
@@ -89,6 +215,53 @@ export default function SchemaPanel({
   const [showHistory, setShowHistory] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+
+  // Graph view + filters + detail
+  const [view, setView] = useState<"erd" | "graph">("erd");
+  const [filterMode, setFilterMode] = useState<"all" | "standard" | "custom" | "manual">("all");
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  const [manageChecked, setManageChecked] = useState<Set<string>>(new Set());
+  const [hideSystem, setHideSystem] = useState(false);
+  const [graphSelected, setGraphSelected] = useState<string | null>(null);
+  const [picker, setPicker] = useState<{
+    mode: "children" | "parents";
+    title: string;
+    subtitle: string;
+    candidates: DiscoverCandidate[];
+  } | null>(null);
+
+  const SYSTEM_OBJECTS = useMemo(
+    () => new Set(["User", "RecordType", "Organization", "Profile"]),
+    []
+  );
+
+  const customSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const o of objects) if (o.custom) s.add(o.name);
+    return s;
+  }, [objects]);
+
+  const isCustomName = useCallback(
+    (apiName: string) => customSet.has(apiName) || apiName.endsWith("__c"),
+    [customSet]
+  );
+
+  // Visible describes: filters hide without deleting (manual eyes, std/custom, system)
+  const visibleDescribes = useMemo(() => {
+    const out = new Map<string, SalesforceDescribeResult>();
+    for (const [name, d] of describes) {
+      if (name === rootName) {
+        out.set(name, d);
+        continue;
+      }
+      if (hideSystem && SYSTEM_OBJECTS.has(name)) continue;
+      if (filterMode === "standard" && isCustomName(name)) continue;
+      if (filterMode === "custom" && !isCustomName(name)) continue;
+      if (filterMode === "manual" && hiddenIds.has(name)) continue;
+      out.set(name, d);
+    }
+    return out;
+  }, [describes, rootName, hideSystem, filterMode, hiddenIds, isCustomName, SYSTEM_OBJECTS]);
 
   const orgDomain = useMemo(() => {
     try {
@@ -126,9 +299,9 @@ export default function SchemaPanel({
   );
 
   const baseElements: { nodes: Node<ErdNodeData>[]; edges: Edge[] } = useMemo(() => {
-    if (describes.size === 0 || !rootName) return { nodes: [], edges: [] };
-    const built = buildErdElements(describes, labels, rootName, spot);
-    const describedSet = new Set(describes.keys());
+    if (visibleDescribes.size === 0 || !rootName) return { nodes: [], edges: [] };
+    const built = buildErdElements(visibleDescribes, labels, rootName, spot);
+    const describedSet = new Set(visibleDescribes.keys());
     return {
       edges: built.edges,
       nodes: built.nodes.map((n) => {
@@ -139,7 +312,49 @@ export default function SchemaPanel({
         return { ...n, data: { ...n.data, shownChildren: shown } };
       }),
     };
-  }, [describes, labels, rootName, spot]);
+  }, [visibleDescribes, describes, labels, rootName, spot]);
+
+  // Radial graph elements (built from the same cache + visibility rules)
+  const graphElements = useMemo(() => {
+    if (view !== "graph" || !rootName) return { nodes: [], edges: [] };
+    const root = describes.get(rootName);
+    if (!root) return { nodes: [], edges: [] };
+    const neighbors = rootNeighbors(root, labels, isCustomName).filter((n) => {
+      if (hideSystem && SYSTEM_OBJECTS.has(n.apiName)) return false;
+      if (filterMode === "standard" && n.custom) return false;
+      if (filterMode === "custom" && !n.custom) return false;
+      if (filterMode === "manual" && hiddenIds.has(n.apiName)) return false;
+      return true;
+    });
+    return buildGraphElements(root, neighbors, new Set(describes.keys()), spot);
+  }, [view, rootName, describes, labels, isCustomName, hideSystem, SYSTEM_OBJECTS, filterMode, hiddenIds, spot]);
+
+  const neighborMap = useMemo(() => {
+    const root = describes.get(rootName);
+    if (!root) return new Map<string, ReturnType<typeof rootNeighbors>[number]>();
+    const m = new Map<string, ReturnType<typeof rootNeighbors>[number]>();
+    for (const n of rootNeighbors(root, labels, isCustomName)) m.set(n.apiName, n);
+    return m;
+  }, [describes, rootName, labels, isCustomName]);
+
+  const detail = useMemo(() => {
+    if (!graphSelected || view !== "graph") return null;
+    const d = describes.get(graphSelected);
+    if (d) {
+      const parents = [...new Set((d.fields ?? []).flatMap((f) => f.referenceTo ?? []))];
+      const kids = [
+        ...new Set(
+          (d.childRelationships ?? [])
+            .filter((r) => r.relationshipName)
+            .map((r) => r.childSObject)
+        ),
+      ];
+      return { kind: "loaded" as const, d, parents, kids };
+    }
+    const n = neighborMap.get(graphSelected);
+    if (!n) return null;
+    return { kind: "lite" as const, n };
+  }, [graphSelected, view, describes, neighborMap]);
 
   const fetchDescribe = useCallback(
     async (objectName: string): Promise<SalesforceDescribeResult> => {
@@ -274,6 +489,18 @@ export default function SchemaPanel({
     setEnforced(m);
   }, []);
 
+  // Shared add-pipeline: fetch, merge, pin layout, bump revision
+  const addNames = useCallback(
+    async (names: string[]): Promise<SalesforceDescribeResult[]> => {
+      const fresh = await mapLimit(names, 6, fetchDescribe);
+      mergeDescribes(fresh);
+      pinCurrentLayout();
+      setLayoutRev((r) => r + 1);
+      return fresh;
+    },
+    [fetchDescribe, mergeDescribes, pinCurrentLayout]
+  );
+
   const applyStaged = useCallback(async () => {
     if (staged.size === 0 || busy) return;
     const names = [...staged].filter((n) => !describes.has(n));
@@ -295,10 +522,7 @@ export default function SchemaPanel({
     setSpot(null);
     setBusy(`Adding ${names.length} object${names.length === 1 ? "" : "s"} to canvas…`);
     try {
-      const fresh = await mapLimit(names, 6, fetchDescribe);
-      mergeDescribes(fresh);
-      pinCurrentLayout();
-      setLayoutRev((r) => r + 1);
+      const fresh = await addNames(names);
       if (describes.size === 0 && fresh.length > 0) {
         setRootName(fresh[0].name);
       }
@@ -315,7 +539,7 @@ export default function SchemaPanel({
     } finally {
       setBusy(null);
     }
-  }, [staged, describes, busy, rootName, fetchDescribe, mergeDescribes, pinCurrentLayout]);
+  }, [staged, describes, busy, rootName, addNames]);
 
   const refreshAll = useCallback(async () => {
     if (busy || describes.size === 0) return;
@@ -454,34 +678,38 @@ export default function SchemaPanel({
     [orgDomain]
   );
 
-  const discoverChildren = useCallback(async () => {
+  const discoverChildren = useCallback(() => {
     const target = focusName || rootName;
     if (!target || busy) return;
-    const kids = undiscoveredChildren(target, describes).slice(0, MAX_NEW_PER_ACTION);
-    if (kids.length === 0) {
-      setNotice(`No undiscovered children on ${target}.`);
+    const d = describes.get(target);
+    if (!d) return;
+    const seen = new Set<string>();
+    const candidates: DiscoverCandidate[] = [];
+    for (const r of d.childRelationships ?? []) {
+      if (!r.relationshipName || seen.has(r.childSObject)) continue;
+      seen.add(r.childSObject);
+      candidates.push({
+        apiName: r.childSObject,
+        label: labels.get(r.childSObject) ?? r.childSObject,
+        custom: isCustomName(r.childSObject),
+        group: "child",
+        via: r.relationshipName,
+        kind: r.cascadeDelete === true ? "md" : "lookup",
+        onCanvas: describes.has(r.childSObject),
+        system: SYSTEM_OBJECTS.has(r.childSObject),
+      });
+    }
+    if (candidates.length === 0) {
+      setNotice(`No child relationships on ${target}.`);
       return;
     }
-    if (describes.size + kids.length > MAX_NODES) {
-      setNotice(`Canvas cap is ${MAX_NODES} objects - remove some nodes or reset first.`);
-      return;
-    }
-    setError(null);
-    setNotice(null);
-    setSpot(null);
-    setBusy(`Discovering ${kids.length} child objects of ${target}…`);
-    try {
-      const fresh = await mapLimit(kids, 6, fetchDescribe);
-      mergeDescribes(fresh);
-      pinCurrentLayout();
-      setLayoutRev((r) => r + 1);
-      setNotice(`Added ${fresh.length} children of ${target}. Select any node to go deeper.`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Discovery failed");
-    } finally {
-      setBusy(null);
-    }
-  }, [focusName, rootName, busy, undiscoveredChildren, describes, fetchDescribe, mergeDescribes, pinCurrentLayout]);
+    setPicker({
+      mode: "children",
+      title: `Discover children of ${target}`,
+      subtitle: `${candidates.length} related objects - tick what joins the canvas`,
+      candidates,
+    });
+  }, [focusName, rootName, busy, describes, labels, isCustomName, SYSTEM_OBJECTS]);
 
   const discoverFull = useCallback(async () => {
     if (!rootName || busy) return;
@@ -516,36 +744,94 @@ export default function SchemaPanel({
     }
   }, [rootName, busy, undiscoveredChildren, describes, fetchDescribe, pinCurrentLayout]);
 
-  const showParents = useCallback(async () => {
+  const showParents = useCallback(() => {
     const target = focusName || rootName;
     if (!target || busy) return;
     const d = describes.get(target);
     if (!d) return;
-    const allParents = [...new Set((d.fields ?? []).flatMap((f) => f.referenceTo ?? []))];
-    const missing = allParents.filter((t) => !describes.has(t)).slice(0, 15);
-    setError(null);
-    setNotice(null);
-    try {
-      if (missing.length > 0) {
-        setBusy(`Loading ${missing.length} parent objects of ${target}…`);
-        const fresh = await mapLimit(missing, 6, fetchDescribe);
-        mergeDescribes(fresh);
-        pinCurrentLayout();
-        setLayoutRev((r) => r + 1);
+    const seen = new Set<string>();
+    const candidates: DiscoverCandidate[] = [];
+    for (const f of d.fields ?? []) {
+      if (f.type !== "reference") continue;
+      for (const t of f.referenceTo ?? []) {
+        if (t === target || seen.has(t)) continue;
+        seen.add(t);
+        candidates.push({
+          apiName: t,
+          label: labels.get(t) ?? t,
+          custom: isCustomName(t),
+          group: "parent",
+          via: f.name,
+          kind: "lookup",
+          onCanvas: describes.has(t),
+          system: SYSTEM_OBJECTS.has(t),
+        });
       }
-      const onCanvas = allParents.filter((t) => t === target || describes.has(t) || missing.includes(t));
-      setSpot({ focus: target, related: new Set(onCanvas) });
-      setNotice(
-        onCanvas.length > 0
-          ? `${target} is ringed - ${onCanvas.length} parent${onCanvas.length === 1 ? "" : "s"} highlighted. Click empty canvas to clear.`
-          : `${target} has no lookup parents to highlight.`
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load parents");
-    } finally {
-      setBusy(null);
     }
-  }, [focusName, rootName, busy, describes, fetchDescribe, mergeDescribes, pinCurrentLayout]);
+    if (candidates.length === 0) {
+      setNotice(`${target} has no lookup parents.`);
+      return;
+    }
+    setPicker({
+      mode: "parents",
+      title: `Show parents of ${target}`,
+      subtitle: `${candidates.length} lookup targets - tick what joins the canvas, then they spotlight`,
+      candidates,
+    });
+  }, [focusName, rootName, busy, describes, labels, isCustomName, SYSTEM_OBJECTS]);
+
+  const applyPicker = useCallback(
+    async (selected: string[]) => {
+      if (!picker || busy) return;
+      const mode = picker.mode;
+      const target = focusName || rootName;
+      setPicker(null);
+      const names = selected.filter((n) => !describes.has(n)).slice(0, MAX_NEW_PER_ACTION);
+      if (names.length === 0) {
+        setNotice("Everything selected is already on canvas.");
+        return;
+      }
+      if (describes.size + names.length > MAX_NODES) {
+        setNotice(`Canvas cap is ${MAX_NODES} objects - adding ${names.length} would exceed it. Remove some nodes first.`);
+        return;
+      }
+      setError(null);
+      setNotice(null);
+      setSpot(null);
+      setBusy(`Adding ${names.length} object${names.length === 1 ? "" : "s"}…`);
+      try {
+        const fresh = await addNames(names);
+        setFocusName(fresh[fresh.length - 1]?.name ?? target);
+        if (mode === "parents" && target) {
+          const dd = fresh.find((x) => x.name === target) ?? describes.get(target);
+          const allParents = dd
+            ? [...new Set((dd.fields ?? []).flatMap((f) => f.referenceTo ?? []))]
+            : [];
+          const freshNames = new Set(fresh.map((x) => x.name));
+          const onCanvas = allParents.filter(
+            (t) => t === target || describes.has(t) || freshNames.has(t)
+          );
+          if (onCanvas.length > 0) {
+            setSpot({ focus: target, related: new Set(onCanvas) });
+            setNotice(
+              `${target} is ringed - ${onCanvas.length} parent${onCanvas.length === 1 ? "" : "s"} highlighted. Click empty canvas to clear.`
+            );
+            return;
+          }
+        }
+        setNotice(
+          fresh.length === 1
+            ? `${fresh[0].name} added - links draw automatically.`
+            : `${fresh.length} objects added - links draw automatically where both ends are present.`
+        );
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Discovery failed");
+      } finally {
+        setBusy(null);
+      }
+    },
+    [picker, busy, describes, focusName, rootName, addNames]
+  );
 
   const removeNode = useCallback(() => {
     const target = focusName;
@@ -558,6 +844,40 @@ export default function SchemaPanel({
     });
     setFocusName(rootName);
   }, [focusName, rootName]);
+
+  const removeMany = useCallback(
+    (ids: string[]) => {
+      const doomed = ids.filter((id) => id !== rootName);
+      if (doomed.length === 0) return;
+      const gone = new Set(doomed);
+      setSpot(null);
+      setHiddenIds((prev) => {
+        const next = new Set(prev);
+        for (const id of gone) next.delete(id);
+        return next;
+      });
+      setDescribes((prev) => {
+        const next = new Map(prev);
+        for (const id of gone) next.delete(id);
+        return next;
+      });
+      if (gone.has(focusName)) setFocusName(rootName);
+      if (graphSelected && gone.has(graphSelected)) setGraphSelected(null);
+      setNotice(`Removed ${gone.size} object${gone.size === 1 ? "" : "s"} from canvas.`);
+    },
+    [rootName, focusName, graphSelected]
+  );
+
+  const toggleHidden = useCallback((id: string) => {
+    setHiddenIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    // Eye toggles only take effect in manual mode - jump there automatically
+    setFilterMode((m) => (m === "manual" ? m : "manual"));
+  }, []);
 
   const resetAll = useCallback(() => {
     if (describes.size === 0) return;
@@ -583,14 +903,41 @@ export default function SchemaPanel({
     setConfirmClear(false);
   }, []);
 
-  const handleNodeClick = useCallback((id: string) => {
-    setFocusName(id);
-    setSpot(null);
-  }, []);
+  const handleNodeClick = useCallback(
+    (id: string) => {
+      // Graph bubbles carry prefixed ids (p:X / c:X) - strip to the API name
+      const api = id.includes(":") ? id.split(":").slice(1).join(":") : id;
+      setFocusName(api);
+      setSpot(null);
+      setGraphSelected(api);
+    },
+    []
+  );
+
+  const loadLite = useCallback(
+    async (api: string) => {
+      if (busy || describes.has(api)) return;
+      setError(null);
+      setBusy(`Loading ${api}…`);
+      try {
+        const fresh = await addNames([api]);
+        if (fresh.length > 0) {
+          setFocusName(api);
+          setNotice(`${api} added to canvas.`);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : `Failed to load ${api}`);
+      } finally {
+        setBusy(null);
+      }
+    },
+    [busy, describes, addNames]
+  );
 
   const handlePaneClick = useCallback(() => {
     setSpot(null);
     setPopover(null);
+    setGraphSelected(null);
   }, []);
 
   const handleFocusChange = useCallback((id: string) => {
@@ -836,11 +1183,106 @@ export default function SchemaPanel({
             )}
             {notice && <p className="text-[11px] leading-relaxed text-ivory-700">{notice}</p>}
 
+            {describes.size > 0 && (
+              <details className="rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-canvas)]">
+                <summary className="cursor-pointer list-none px-2.5 py-2 text-[11px] font-semibold text-ivory-900 hover:text-ivory-950">
+                  Canvas nodes ({describes.size})
+                  <span className="ml-1 font-normal text-ivory-500">- eye to hide, tick + remove for bulk</span>
+                </summary>
+                <ul className="max-h-44 space-y-0.5 overflow-y-auto border-t border-[var(--color-line-soft)] p-1.5">
+                  {[...describes.keys()].sort().map((name) => {
+                    const isRoot = name === rootName;
+                    const hidden = hiddenIds.has(name);
+                    const checked = manageChecked.has(name);
+                    return (
+                      <li
+                        key={name}
+                        className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 ${hidden ? "opacity-50" : ""}`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => toggleHidden(name)}
+                          aria-label={hidden ? `Show ${name}` : `Hide ${name}`}
+                          title={hidden ? "Show (manual filter)" : "Hide (manual filter)"}
+                          className="rounded p-1 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer"
+                        >
+                          {hidden ? (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                              <path d="M3 3l18 18M10.5 5.2A9.8 9.8 0 0 1 12 5c7 0 10 7 10 7a17 17 0 0 1-3.2 3.9M6.6 6.6C4 8.4 2 12 2 12s3 7 10 7c1.5 0 2.9-.3 4.1-.8" />
+                              <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+                            </svg>
+                          ) : (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                              <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                              <circle cx="12" cy="12" r="3" />
+                            </svg>
+                          )}
+                        </button>
+                        {!isRoot && (
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              setManageChecked((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(name)) next.delete(name);
+                                else next.add(name);
+                                return next;
+                              });
+                            }}
+                            aria-label={`Select ${name} for bulk remove`}
+                            className="h-3.5 w-3.5 shrink-0 rounded border-ivory-400 text-bronze-600"
+                          />
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFocusName(name);
+                            setSpot(null);
+                            if (view === "graph") setGraphSelected(name);
+                          }}
+                          className="min-w-0 flex-1 truncate text-left font-mono text-[11px] text-ivory-800 hover:text-ivory-950 cursor-pointer"
+                          title={`${labels.get(name) ?? name} - click to focus`}
+                        >
+                          {name}
+                          {isRoot && <span className="ml-1 text-[9px] font-bold text-bronze-600">ROOT</span>}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {[...manageChecked].some((n) => n !== rootName && describes.has(n)) && (
+                  <div className="border-t border-[var(--color-line-soft)] p-1.5">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="w-full text-red-700"
+                      onClick={() => {
+                        removeMany([...manageChecked]);
+                        setManageChecked(new Set());
+                      }}
+                    >
+                      Remove checked
+                    </Button>
+                  </div>
+                )}
+              </details>
+            )}
+
             <div className="rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-canvas)] p-2.5 text-[10px] leading-relaxed text-ivory-600">
               <p className="font-semibold text-ivory-900 mb-1">Legend</p>
-              <p><strong className="text-ivory-950">Key</strong> = Id / Name · <strong className="text-bronze-600">Link</strong> = lookup</p>
-              <p><strong className="text-red-600">*</strong> = required · <strong className="text-bronze-700">JUNCTION</strong> = 2+ required lookups (audit fields excluded)</p>
-              <p>Joins: parent header-right → child footer-left · click a line to reveal its lookup field · <strong className="text-bronze-600">link icon</strong> = lookup field · drag nodes to rearrange</p>
+              {view === "graph" ? (
+                <>
+                  <p><strong className="text-ivory-950">Solid</strong> = master-detail · <strong className="text-ivory-950">dotted</strong> = lookup</p>
+                  <p>Dashed bubble = preview, click for details · ring = selected · click empty canvas to clear</p>
+                </>
+              ) : (
+                <>
+                  <p><strong className="text-ivory-950">Key</strong> = Id / Name · <strong className="text-bronze-600">Link</strong> = lookup</p>
+                  <p><strong className="text-red-600">*</strong> = required · <strong className="text-bronze-700">JUNCTION</strong> = 2+ required lookups (audit fields excluded)</p>
+                  <p>Solid = master-detail · dotted = lookup · click a line to reveal its lookup field · drag nodes to rearrange</p>
+                </>
+              )}
             </div>
           </div>
         </aside>
@@ -864,37 +1306,145 @@ export default function SchemaPanel({
       )}
 
       {/* ── Full-height canvas ── */}
-      <div className="min-w-0 flex-1 min-h-0">
-        {!rootName || describes.size === 0 ? (
-          <div className={`flex items-center justify-center rounded-xl border border-dashed border-[var(--color-line)] bg-[var(--color-surface)] p-6 ${fillHeight ? "h-full" : "h-full min-h-[420px]"}`}>
-            <EmptyState
-              icon={
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                  <rect x="3" y="3" width="7" height="7" rx="1.5" />
-                  <rect x="14" y="14" width="7" height="7" rx="1.5" />
-                  <path d="M10 6.5h5.5a2 2 0 0 1 2 2V14M14 17.5H8.5a2 2 0 0 1-2-2V10" />
-                </svg>
-              }
-              title="Pick an object to map its data model"
-              description="Search the explorer panel - the object lands on the infinite canvas as an ERD table. Discover children level by level, go full-depth, present with the laser, export hi-res PNG."
-            />
+      <div className="min-w-0 flex-1 min-h-0 flex flex-col gap-2">
+        {rootName && describes.size > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+            <div className="flex rounded-lg border border-[var(--color-line)] overflow-hidden bg-[var(--color-surface)]" role="tablist" aria-label="Canvas view">
+              {(["erd", "graph"] as const).map((v) => (
+                <button
+                  key={v}
+                  role="tab"
+                  aria-selected={view === v}
+                  onClick={() => {
+                    setView(v);
+                    setGraphSelected(null);
+                  }}
+                  title={v === "erd" ? "ERD tables with fields" : "Radial graph - root in the middle, fan out"}
+                  className={`px-3 py-1.5 text-[11px] font-semibold transition-colors cursor-pointer ${
+                    view === v ? "bg-ivory-950 text-ivory-100" : "text-ivory-700 hover:text-ivory-950"
+                  }`}
+                >
+                  {v === "erd" ? "ERD" : "Graph"}
+                </button>
+              ))}
+            </div>
+            <span className="mx-1 h-4 w-px bg-[var(--color-line)]" aria-hidden="true" />
+            {(["all", "standard", "custom", "manual"] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setFilterMode(f)}
+                aria-pressed={filterMode === f}
+                title={
+                  f === "all" ? "Show everything on canvas"
+                  : f === "standard" ? "Show standard objects only"
+                  : f === "custom" ? "Show custom objects only"
+                  : "Show only eye-checked nodes"
+                }
+                className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold capitalize transition-colors cursor-pointer ${
+                  filterMode === f
+                    ? "bg-ivory-950 text-ivory-100 border-ivory-950"
+                    : "bg-[var(--color-surface)] border-[var(--color-line)] text-ivory-700 hover:border-[var(--color-accent)]"
+                }`}
+              >
+                {f}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setHideSystem((v) => !v)}
+              aria-pressed={hideSystem}
+              title="Hide system objects (User, RecordType, Organization, Profile)"
+              className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors cursor-pointer ${
+                hideSystem
+                  ? "bg-bronze-600 text-white border-bronze-600"
+                  : "bg-[var(--color-surface)] border-[var(--color-line)] text-ivory-600 hover:text-ivory-950"
+              }`}
+            >
+              Hide system
+            </button>
           </div>
-        ) : (
-          <ErdCanvas
-            nodes={elements.nodes}
-            edges={elements.edges}
-            onNodeClick={handleNodeClick}
-            onPaneClick={handlePaneClick}
-            onViewportMove={() => setPopover(null)}
-            layoutRev={layoutRev}
-            enforcedPositions={enforced}
-            ref={canvasRef}
-          />
         )}
+        <div className="relative min-h-0 flex-1">
+          {!rootName || describes.size === 0 ? (
+            <div className={`flex items-center justify-center rounded-xl border border-dashed border-[var(--color-line)] bg-[var(--color-surface)] p-6 ${fillHeight ? "h-full" : "h-full min-h-[420px]"}`}>
+              <EmptyState
+                icon={
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                    <rect x="3" y="3" width="7" height="7" rx="1.5" />
+                    <rect x="14" y="14" width="7" height="7" rx="1.5" />
+                    <path d="M10 6.5h5.5a2 2 0 0 1 2 2V14M14 17.5H8.5a2 2 0 0 1-2-2V10" />
+                  </svg>
+                }
+                title="Pick an object to map its data model"
+                description="Search the explorer panel - the object lands on the infinite canvas as an ERD table. Discover children level by level, go full-depth, present with the laser, export hi-res PNG."
+              />
+            </div>
+          ) : view === "erd" ? (
+            <ErdCanvas
+              nodes={elements.nodes}
+              edges={elements.edges}
+              onNodeClick={handleNodeClick}
+              onPaneClick={handlePaneClick}
+              onViewportMove={() => setPopover(null)}
+              layoutRev={layoutRev}
+              enforcedPositions={enforced}
+              ref={canvasRef}
+            />
+          ) : (
+            <ErdCanvas
+              nodes={graphElements.nodes}
+              edges={graphElements.edges}
+              onNodeClick={handleNodeClick}
+              onPaneClick={handlePaneClick}
+              onViewportMove={() => setPopover(null)}
+              layoutRev={layoutRev}
+              enforcedPositions={null}
+              ref={canvasRef}
+            />
+          )}
+          {view === "graph" && detail && (
+            <GraphDetailCard
+              detail={detail}
+              labels={labels}
+              onClose={() => setGraphSelected(null)}
+              onOpenInErd={() => {
+                if (detail.kind === "loaded") {
+                  setFocusName(detail.d.name);
+                  setView("erd");
+                }
+              }}
+              onMakeRoot={() => {
+                if (detail.kind === "loaded") {
+                  setRootName(detail.d.name);
+                  setFocusName(detail.d.name);
+                  setSpot(null);
+                  setGraphSelected(detail.d.name);
+                  setNotice(`${detail.d.name} is now the graph root.`);
+                }
+              }}
+              onLoad={() => {
+                if (detail.kind === "lite") void loadLite(detail.n.apiName);
+              }}
+            />
+          )}
+        </div>
       </div>
 
       {/* Picklist inspector */}
       {popover && <PicklistPopover pop={popover} onClose={() => setPopover(null)} />}
+
+      {/* Selective discovery picker */}
+      {picker && (
+        <DiscoverPicker
+          open
+          title={picker.title}
+          subtitle={picker.subtitle}
+          candidates={picker.candidates}
+          onApply={applyPicker}
+          onClose={() => setPicker(null)}
+        />
+      )}
 
       {/* Snapshot history */}
       {showHistory && (
