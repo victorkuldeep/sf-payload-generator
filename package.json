@@ -18,6 +18,8 @@
     "next": "15.5.26",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "vanilla-jsoneditor": "^3.13.0",
+    "virtual-react-json-diff": "^1.0.20",
     "zod": "^3.23.8"
   },
   "devDependencies": {
