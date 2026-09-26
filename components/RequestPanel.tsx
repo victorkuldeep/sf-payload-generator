@@ -70,7 +70,7 @@ export default function RequestPanel({
   };
 
   return (
-    <div className="rounded-lg border border-ivory-400 bg-ivory-200">
+    <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)]">
       <div className="border-b border-ivory-400 p-4">
         <h2 className="text-sm font-semibold text-ivory-900">Send Test Request</h2>
         <p className="mt-1 text-xs text-ivory-600">

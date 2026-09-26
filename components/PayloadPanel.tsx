@@ -33,14 +33,14 @@ export default function PayloadPanel({
 
   if (selectedFields.length === 0) {
     return (
-      <div className="rounded-lg border border-ivory-400 bg-ivory-200 p-5 text-center">
+      <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-5 text-center">
         <p className="text-sm text-ivory-600">Select fields above to configure payload values.</p>
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-ivory-400 bg-ivory-200">
+    <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)]">
       <div className="border-b border-ivory-400 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">

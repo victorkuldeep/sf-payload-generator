@@ -30,7 +30,7 @@ export default function ObjectPanel({
 
   if (loading) {
     return (
-      <div className="rounded-lg border border-ivory-400 bg-ivory-200 p-5">
+      <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-5">
         <div className="flex items-center gap-2 text-sm text-ivory-700">
           <svg className="h-4 w-4 animate-spin text-bronze-500" viewBox="0 0 24 24" fill="none">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -51,7 +51,7 @@ export default function ObjectPanel({
   }
 
   return (
-    <div className="rounded-lg border border-ivory-400 bg-ivory-200">
+    <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)]">
       <div className="border-b border-ivory-400 p-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-ivory-900">Select Object</h2>

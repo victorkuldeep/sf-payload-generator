@@ -149,7 +149,7 @@ export default function ExportPanel({ generatedPayload, onAddToCollection }: Exp
   };
 
   return (
-    <div className="rounded-lg border border-ivory-400 bg-ivory-200">
+    <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)]">
       <div className="border-b border-ivory-400 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">

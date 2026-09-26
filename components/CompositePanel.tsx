@@ -204,7 +204,7 @@ export default function CompositePanel({
   return (
     <div className="space-y-4">
       {/* Header controls */}
-      <div className="rounded-lg border border-ivory-400 bg-ivory-200 px-4 py-3">
+      <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-4">
             <h2 className="text-sm font-semibold text-ivory-950">Composite API Builder</h2>
@@ -270,7 +270,7 @@ export default function CompositePanel({
 
       {/* Generated payload */}
       {generatedPayload && (
-        <div className="rounded-lg border border-ivory-400 bg-ivory-200">
+        <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)]">
           <div className="border-b border-ivory-400 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">

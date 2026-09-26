@@ -92,7 +92,7 @@ export default function ConnectionPanel({
 
   if (connected) {
     return (
-      <div className="rounded-lg border border-ivory-400 bg-ivory-200 p-4">
+      <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <StatusBadge status="connected" />
@@ -117,7 +117,7 @@ export default function ConnectionPanel({
   }
 
   return (
-    <div className="rounded-lg border border-ivory-400 bg-ivory-200 p-5">
+    <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-5">
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-ivory-900">Connect to Salesforce</h2>
         <StatusBadge status={loading ? "loading" : "disconnected"} />
