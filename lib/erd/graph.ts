@@ -499,8 +499,11 @@ export function layoutErd(
     if (n) n.position = { ...p };
   }
 
-  // 2. Walk every unpinned node out of overlap along a spiral
+  // 2. Push every unpinned node out of overlap - radially away from the
+  // clash partner's center, so newcomers cascade to free space instead of
+  // stacking under pinned nodes. Pinned nodes (drags, restores) never move.
   const GAP = 28;
+  const STEP = 40;
   const rectOf = (n: (typeof placed)[number]) => ({
     x: n.position.x,
     y: n.position.y,
@@ -512,18 +515,27 @@ export function layoutErd(
     b.x < a.x + a.w + GAP &&
     a.y < b.y + b.h + GAP &&
     b.y < a.y + a.h + GAP;
+  const centerOf = (r: ReturnType<typeof rectOf>) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
 
   for (const n of placed) {
     if (pinned.has(n.id)) continue;
     let r = rectOf(n);
     let tries = 0;
-    while (tries < 80) {
-      const clash = placed.some((m) => m.id !== n.id && hits(r, rectOf(m)));
+    while (tries < 200) {
+      const clash = placed.find((m) => m.id !== n.id && hits(r, rectOf(m)));
       if (!clash) break;
       tries++;
-      const ang = tries * 0.9;
-      const step = 26;
-      r = { ...r, x: r.x + Math.cos(ang) * step, y: r.y + Math.sin(ang) * step };
+      const c = centerOf(rectOf(clash));
+      const s = centerOf(r);
+      let dx = s.x - c.x;
+      let dy = s.y - c.y;
+      // Dead-center stack (the Lead/Account case): cascade down-right.
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) {
+        dx = 1;
+        dy = 0.6;
+      }
+      const len = Math.hypot(dx, dy);
+      r = { ...r, x: r.x + (dx / len) * STEP, y: r.y + (dy / len) * STEP };
       n.position = { x: r.x, y: r.y };
     }
   }
