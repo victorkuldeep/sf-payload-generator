@@ -300,7 +300,7 @@ export default function SchemaPanel({
 
   const baseElements: { nodes: Node<ErdNodeData>[]; edges: Edge[] } = useMemo(() => {
     if (visibleDescribes.size === 0 || !rootName) return { nodes: [], edges: [] };
-    const built = buildErdElements(visibleDescribes, labels, rootName, spot);
+    const built = buildErdElements(visibleDescribes, labels, rootName, spot, enforced);
     const describedSet = new Set(visibleDescribes.keys());
     return {
       edges: built.edges,
@@ -312,13 +312,13 @@ export default function SchemaPanel({
         return { ...n, data: { ...n.data, shownChildren: shown } };
       }),
     };
-  }, [visibleDescribes, describes, labels, rootName, spot]);
+  }, [visibleDescribes, describes, labels, rootName, spot, enforced]);
 
   // Radial graph elements (built from the same cache + visibility rules)
   const graphElements = useMemo(() => {
-    if (view !== "graph" || !rootName) return { nodes: [], edges: [] };
+    if (view !== "graph" || !rootName) return { nodes: [], edges: [], overflow: 0 };
     const root = describes.get(rootName);
-    if (!root) return { nodes: [], edges: [] };
+    if (!root) return { nodes: [], edges: [], overflow: 0 };
     const neighbors = rootNeighbors(root, labels, isCustomName).filter((n) => {
       if (hideSystem && SYSTEM_OBJECTS.has(n.apiName)) return false;
       if (filterMode === "standard" && n.custom) return false;
@@ -326,8 +326,8 @@ export default function SchemaPanel({
       if (filterMode === "manual" && hiddenIds.has(n.apiName)) return false;
       return true;
     });
-    return buildGraphElements(root, neighbors, new Set(describes.keys()), spot);
-  }, [view, rootName, describes, labels, isCustomName, hideSystem, SYSTEM_OBJECTS, filterMode, hiddenIds, spot]);
+    return buildGraphElements(root, neighbors, new Set(describes.keys()), spot, enforced);
+  }, [view, rootName, describes, labels, isCustomName, hideSystem, SYSTEM_OBJECTS, filterMode, hiddenIds, spot, enforced]);
 
   const neighborMap = useMemo(() => {
     const root = describes.get(rootName);
@@ -481,12 +481,43 @@ export default function SchemaPanel({
 
   // Pin live drag positions so growth actions keep the user's arrangement
   // (fresh nodes still take dagre-planned spots). Reset view clears the pins.
+  // Prefixed graph ids (p:X) are ALSO stored stripped (X) so a position
+  // survives the trip back to the ERD view instead of colliding there.
   const pinCurrentLayout = useCallback(() => {
     const live = canvasRef.current?.getNodes() ?? [];
     if (live.length === 0) return;
-    const m = new Map<string, { x: number; y: number }>();
-    for (const n of live) m.set(n.id, { ...n.position });
-    setEnforced(m);
+    setEnforced((prev) => {
+      const next = new Map(prev ?? []);
+      for (const n of live) {
+        next.set(n.id, { ...n.position });
+        if (n.id.includes(":")) {
+          next.set(n.id.split(":").slice(1).join(":"), { ...n.position });
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  const handleNodeDragStop = useCallback((id: string, position: { x: number; y: number }) => {
+    setEnforced((prev) => {
+      const next = new Map(prev ?? []);
+      next.set(id, { ...position });
+      return next;
+    });
+  }, []);
+
+  const pruneEnforced = useCallback((ids: Set<string>) => {
+    setEnforced((prev) => {
+      if (!prev) return prev;
+      const next = new Map(prev);
+      for (const id of ids) {
+        next.delete(id);
+        for (const k of [...next.keys()]) {
+          if (k.endsWith(`:${id}`)) next.delete(k);
+        }
+      }
+      return next;
+    });
   }, []);
 
   // Shared add-pipeline: fetch, merge, pin layout, bump revision
@@ -837,13 +868,14 @@ export default function SchemaPanel({
     const target = focusName;
     if (!target || target === rootName) return;
     setSpot(null);
+    pruneEnforced(new Set([target]));
     setDescribes((prev) => {
       const next = new Map(prev);
       next.delete(target);
       return next;
     });
     setFocusName(rootName);
-  }, [focusName, rootName]);
+  }, [focusName, rootName, pruneEnforced]);
 
   const removeMany = useCallback(
     (ids: string[]) => {
@@ -851,6 +883,7 @@ export default function SchemaPanel({
       if (doomed.length === 0) return;
       const gone = new Set(doomed);
       setSpot(null);
+      pruneEnforced(gone);
       setHiddenIds((prev) => {
         const next = new Set(prev);
         for (const id of gone) next.delete(id);
@@ -865,7 +898,7 @@ export default function SchemaPanel({
       if (graphSelected && gone.has(graphSelected)) setGraphSelected(null);
       setNotice(`Removed ${gone.size} object${gone.size === 1 ? "" : "s"} from canvas.`);
     },
-    [rootName, focusName, graphSelected]
+    [rootName, focusName, graphSelected, pruneEnforced]
   );
 
   const toggleHidden = useCallback((id: string) => {
@@ -898,6 +931,7 @@ export default function SchemaPanel({
     setRootName("");
     setFocusName("");
     setSpot(null);
+    setEnforced(null);
     setNotice(null);
     setError(null);
     setConfirmClear(false);
@@ -1363,6 +1397,14 @@ export default function SchemaPanel({
             >
               Hide system
             </button>
+            {view === "graph" && graphElements.overflow > 0 && (
+              <span
+                className="rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800"
+                title="Dense neighborhood - refine with filters or Manual mode to see the rest"
+              >
+                +{graphElements.overflow} beyond orbit room
+              </span>
+            )}
           </div>
         )}
         <div className="relative min-h-0 flex-1">
@@ -1387,6 +1429,7 @@ export default function SchemaPanel({
               onNodeClick={handleNodeClick}
               onPaneClick={handlePaneClick}
               onViewportMove={() => setPopover(null)}
+              onNodeDragStop={handleNodeDragStop}
               layoutRev={layoutRev}
               enforcedPositions={enforced}
               ref={canvasRef}
@@ -1398,6 +1441,7 @@ export default function SchemaPanel({
               onNodeClick={handleNodeClick}
               onPaneClick={handlePaneClick}
               onViewportMove={() => setPopover(null)}
+              onNodeDragStop={handleNodeDragStop}
               layoutRev={layoutRev}
               enforcedPositions={null}
               ref={canvasRef}

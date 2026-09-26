@@ -130,12 +130,14 @@ export interface ErdSpotlight {
 /**
  * Build ERD nodes + edges from cached describes.
  * Edges are derived from reference fields and only drawn when BOTH ends are described.
+ * `pinned` fixes node positions (drags, restores); newcomers spiral to free space.
  */
 export function buildErdElements(
   describes: Map<string, SalesforceDescribeResult>,
   labels: Map<string, string>,
   root: string,
-  spot: ErdSpotlight | null = null
+  spot: ErdSpotlight | null = null,
+  pinned: Map<string, { x: number; y: number }> | null = null
 ): ErdElements {
   const nodes: Node<ErdNodeData>[] = [];
 
@@ -183,7 +185,7 @@ export function buildErdElements(
 
   const edges = buildEdges(describes);
 
-  return { nodes: layoutErd(nodes, edges), edges };
+  return { nodes: layoutErd(nodes, edges, pinned), edges };
 }
 
 export type ErdEdgeKind = "md" | "lookup";
@@ -318,45 +320,50 @@ export function rootNeighbors(
 
 const BUBBLE_ROOT = 104;
 const BUBBLE_NODE = 80;
-const MAX_FAN = 36;
+const MAX_FAN = 64;
 
-function fanPositions(count: number, radius: number, centerDeg: number): { x: number; y: number }[] {
-  if (count === 0) return [];
-  if (count === 1) {
-    const rad = (centerDeg * Math.PI) / 180;
-    return [{ x: radius * Math.cos(rad), y: radius * Math.sin(rad) }];
-  }
-  const step = Math.min(30, 160 / (count - 1));
-  const start = centerDeg - (step * (count - 1)) / 2;
-  return Array.from({ length: count }, (_, i) => {
-    const rad = ((start + i * step) * Math.PI) / 180;
-    return { x: radius * Math.cos(rad), y: radius * Math.sin(rad) };
-  });
+// Scatter orbits: bubbles sit on concentric rings so dense fans never share
+// one crowded circle. Lane step clears two bubble diameters + margin.
+const ORBITS = [330, 475, 620];
+const ARC_DEG = 160;
+const MIN_GAP = 118;
+
+function orbitSlots(radius: number): number[] {
+  const arcLen = radius * ((ARC_DEG * Math.PI) / 180);
+  const n = Math.max(3, Math.floor(arcLen / MIN_GAP));
+  return Array.from({ length: n }, (_, i) => -ARC_DEG / 2 + (ARC_DEG * i) / Math.max(1, n - 1));
+}
+
+function dist(a: { x: number; y: number }, b: { x: number; y: number }): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
 export interface GraphElements {
   nodes: Node<GraphBubbleData>[];
   edges: Edge[];
+  /** Neighbors left out for lack of room - panel surfaces the count. */
+  overflow: number;
 }
 
 /**
- * Radial fan: root at origin, parents fanning left, children fanning right.
+ * Radial scatter: root at origin, parents fanning left, children fanning
+ * right, spread across concentric orbits. Greedy fill - each bubble takes the
+ * first free slot starting from the inner orbit, so dense neighborhoods spill
+ * outward like stars instead of piling onto one ring. Fully deterministic:
+ * same input, same sky. Anything past capacity is counted as overflow.
  * Lite (undescribed) neighbors render dashed and load on click.
  */
 export function buildGraphElements(
   root: SalesforceDescribeResult,
   neighbors: GraphNeighbor[],
   described: Set<string>,
-  spot: ErdSpotlight | null = null
+  spot: ErdSpotlight | null = null,
+  pinned: Map<string, { x: number; y: number }> | null = null
 ): GraphElements {
   const shown = neighbors.slice(0, MAX_FAN);
+  const overflow = Math.max(0, neighbors.length - shown.length);
   const parents = shown.filter((n) => n.role === "parent");
   const children = shown.filter((n) => n.role === "child");
-
-  const radius = Math.min(
-    640,
-    Math.max(330, 120 + Math.max(parents.length, children.length) * 34)
-  );
 
   const nodes: Node<GraphBubbleData>[] = [
     {
@@ -378,18 +385,54 @@ export function buildGraphElements(
   ];
   const edges: Edge[] = [];
 
+  // Occupied points: root center + any pinned (dragged) bubbles, matched by
+  // bare API name or prefixed graph id.
+  const occupied: { x: number; y: number }[] = [{ x: 0, y: 0 }];
+  if (pinned) {
+    const seen = new Set<string>();
+    for (const [key, p] of pinned) {
+      const api = key.includes(":") ? key.split(":").slice(1).join(":") : key;
+      if (api !== root.name && !seen.has(api)) {
+        seen.add(api);
+        occupied.push({ x: p.x + BUBBLE_NODE / 2, y: p.y + BUBBLE_NODE / 2 });
+      }
+    }
+  }
+
   const place = (
     list: GraphNeighbor[],
     centerDeg: number,
     prefix: string
   ) => {
-    const pts = fanPositions(list.length, radius, centerDeg);
-    list.forEach((n, i) => {
+    const taken: boolean[][] = ORBITS.map(() => []);
+    const slotAngles = ORBITS.map(orbitSlots);
+    list.forEach((n) => {
+      let placed: { x: number; y: number } | null = null;
+      for (let o = 0; o < ORBITS.length && !placed; o++) {
+        const angles = slotAngles[o];
+        // Start near the middle and alternate outward for a balanced fan
+        const order = [...angles.keys()].sort((a, b) => {
+          const da = Math.abs(a - (angles.length - 1) / 2);
+          const db = Math.abs(b - (angles.length - 1) / 2);
+          return da - db || a - b;
+        });
+        for (const si of order) {
+          if (taken[o][si]) continue;
+          const rad = ((centerDeg + angles[si]) * Math.PI) / 180;
+          const p = { x: ORBITS[o] * Math.cos(rad), y: ORBITS[o] * Math.sin(rad) };
+          if (occupied.some((q) => dist(p, q) < MIN_GAP)) continue;
+          taken[o][si] = true;
+          placed = p;
+          break;
+        }
+      }
+      if (!placed) return; // no room even out here - counted as overflow below
+      occupied.push(placed);
       const loaded = described.has(n.apiName);
       nodes.push({
         id: `${prefix}:${n.apiName}`,
         type: "graphBubble",
-        position: { x: pts[i].x - BUBBLE_NODE / 2, y: pts[i].y - BUBBLE_NODE / 2 },
+        position: { x: placed.x - BUBBLE_NODE / 2, y: placed.y - BUBBLE_NODE / 2 },
         data: {
           label: n.label,
           apiName: n.apiName,
@@ -414,15 +457,18 @@ export function buildGraphElements(
     });
   };
 
+  const before = nodes.length;
   place(parents, 180, "p");
   place(children, 0, "c");
+  const unplaced = shown.length - (nodes.length - before);
 
-  return { nodes, edges };
+  return { nodes, edges, overflow: overflow + unplaced };
 }
 
 export function layoutErd(
   nodes: Node<ErdNodeData>[],
-  edges: Edge[]
+  edges: Edge[],
+  pinned?: Map<string, { x: number; y: number }> | null
 ): Node<ErdNodeData>[] {
   if (nodes.length === 0) return nodes;
   const g = new dagre.graphlib.Graph();
@@ -438,9 +484,49 @@ export function layoutErd(
   for (const e of edges) g.setEdge(e.source, e.target);
   dagre.layout(g);
 
-  return nodes.map((n) => {
+  const placed = nodes.map((n) => {
     const p = g.node(n.id);
     const h = heights.get(n.id) ?? 200;
     return { ...n, position: { x: p.x - ERD_NODE_WIDTH / 2, y: p.y - h / 2 } };
   });
+
+  if (!pinned || pinned.size === 0) return placed;
+
+  // 1. Honor pins (user drags + restored snapshots)
+  const byId = new Map(placed.map((n) => [n.id, n]));
+  for (const [id, p] of pinned) {
+    const n = byId.get(id);
+    if (n) n.position = { ...p };
+  }
+
+  // 2. Walk every unpinned node out of overlap along a spiral
+  const GAP = 28;
+  const rectOf = (n: (typeof placed)[number]) => ({
+    x: n.position.x,
+    y: n.position.y,
+    w: ERD_NODE_WIDTH,
+    h: heights.get(n.id) ?? 200,
+  });
+  const hits = (a: ReturnType<typeof rectOf>, b: ReturnType<typeof rectOf>) =>
+    a.x < b.x + b.w + GAP &&
+    b.x < a.x + a.w + GAP &&
+    a.y < b.y + b.h + GAP &&
+    b.y < a.y + a.h + GAP;
+
+  for (const n of placed) {
+    if (pinned.has(n.id)) continue;
+    let r = rectOf(n);
+    let tries = 0;
+    while (tries < 80) {
+      const clash = placed.some((m) => m.id !== n.id && hits(r, rectOf(m)));
+      if (!clash) break;
+      tries++;
+      const ang = tries * 0.9;
+      const step = 26;
+      r = { ...r, x: r.x + Math.cos(ang) * step, y: r.y + Math.sin(ang) * step };
+      n.position = { x: r.x, y: r.y };
+    }
+  }
+
+  return placed;
 }

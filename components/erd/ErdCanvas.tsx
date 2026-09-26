@@ -42,6 +42,7 @@ interface ErdCanvasProps {
   onNodeClick?: (id: string) => void;
   onPaneClick?: () => void;
   onViewportMove?: () => void;
+  onNodeDragStop?: (id: string, position: { x: number; y: number }) => void;
   /** Bump to force a fresh auto-layout. Unchanged revisions preserve drag positions. */
   layoutRev: number;
   /** Explicit positions (snapshot restore) applied on top of the fresh layout. */
@@ -69,7 +70,7 @@ function pngFileName(scale: 2 | 3): string {
 }
 
 const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
-  { nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick, onViewportMove, layoutRev, enforcedPositions },
+  { nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick, onViewportMove, onNodeDragStop, layoutRev, enforcedPositions },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -257,6 +258,7 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
         onEdgesChange={onEdgesChange}
         onNodeClick={(_, node) => onNodeClick?.(node.id)}
         onPaneClick={() => onPaneClick?.()}
+        onNodeDragStop={(_, node) => onNodeDragStop?.(node.id, { ...node.position })}
         onMoveStart={() => onViewportMove?.()}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}

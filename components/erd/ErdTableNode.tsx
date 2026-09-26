@@ -211,7 +211,7 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") copyField(e, r.name);
                 }}
-                className="shrink-0 rounded p-0.5 text-ivory-400 opacity-0 group-hover:opacity-100 hover:text-bronze-600 hover:bg-ivory-200 transition-all cursor-pointer"
+                className="shrink-0 rounded p-0.5 text-ivory-400 hover:text-bronze-600 hover:bg-ivory-200 transition-colors cursor-pointer"
               >
                 {copiedField === r.name ? <CheckIcon /> : <CopyIcon />}
               </span>
