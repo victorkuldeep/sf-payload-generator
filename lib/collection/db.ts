@@ -1,77 +1,8 @@
 import type { Collection, CollectionItem } from "./types";
+import { STORES, withStore } from "@/lib/db";
 
-const DB_NAME = "sf-payload-studio";
-const ITEMS_STORE = "request-collection";
-const COLLECTIONS_STORE = "collections";
-// v5 also hosts erd-snapshots + soql-queries + rest-history
-// (see lib/erd/snapshotDb.ts, lib/soql/historyDb.ts, lib/rest/historyDb.ts).
-const DB_VERSION = 5;
-
-function openDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    if (typeof indexedDB === "undefined") {
-      reject(new Error("IndexedDB is not available"));
-      return;
-    }
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(ITEMS_STORE)) {
-        db.createObjectStore(ITEMS_STORE, { keyPath: "id" });
-      }
-      if (!db.objectStoreNames.contains(COLLECTIONS_STORE)) {
-        db.createObjectStore(COLLECTIONS_STORE, { keyPath: "id" });
-      }
-      for (const name of ["erd-snapshots", "soql-queries", "rest-history"]) {
-        if (!db.objectStoreNames.contains(name)) {
-          db.createObjectStore(name, { keyPath: "id" });
-        }
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error ?? new Error("Failed to open IndexedDB"));
-  });
-}
-
-function withStore<T>(
-  storeName: string,
-  mode: IDBTransactionMode,
-  fn: (store: IDBObjectStore) => IDBRequest<T>
-): Promise<T> {
-  return openDb().then(
-    (db) =>
-      new Promise<T>((resolve, reject) => {
-        let tx: IDBTransaction;
-        try {
-          tx = db.transaction(storeName, mode);
-        } catch (err) {
-          db.close();
-          reject(err instanceof Error ? err : new Error("IndexedDB transaction failed"));
-          return;
-        }
-        const store = tx.objectStore(storeName);
-        let result: T;
-        try {
-          const req = fn(store);
-          req.onsuccess = () => {
-            result = req.result;
-          };
-          req.onerror = () => reject(req.error ?? new Error("IndexedDB request failed"));
-        } catch (err) {
-          reject(err instanceof Error ? err : new Error("IndexedDB request failed"));
-          return;
-        }
-        tx.oncomplete = () => {
-          db.close();
-          resolve(result);
-        };
-        tx.onerror = () => {
-          db.close();
-          reject(tx.error ?? new Error("IndexedDB transaction failed"));
-        };
-      })
-  );
-}
+const ITEMS_STORE = STORES.items;
+const COLLECTIONS_STORE = STORES.collections;
 
 // ── Items ────────────────────────────────────────────────────────────────
 
