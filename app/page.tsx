@@ -1045,6 +1045,7 @@ export default function Home() {
       onSearchClick={() => setShowSearch(true)}
       onNavigate={handleNavigate}
       activeMode={state.mode === "single" ? "builder" : state.mode}
+      footerVariant={state.mode === "home" ? "full" : "slim"}
       collectionCount={collection.length}
       onCollectionClick={() => setShowCollection(true)}
       trail={

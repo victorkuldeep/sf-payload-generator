@@ -20,6 +20,8 @@ interface AppShellProps {
   onCollectionClick: () => void;
   /** Builder progress trail — docked above the footer, null on home/schema. */
   trail?: ReactNode;
+  /** Full website footer on home, slim one-row bar inside work tools. */
+  footerVariant: "full" | "slim";
 }
 
 export function AppShell({
@@ -34,6 +36,7 @@ export function AppShell({
   onSearchClick,
   onNavigate,
   activeMode,
+  footerVariant,
   collectionCount,
   onCollectionClick,
   trail,
@@ -57,7 +60,7 @@ export function AppShell({
       <div className="flex-1 flex flex-col" id="main-content">
         {children}
       </div>
-      <AppFooter trail={trail} />
+        <AppFooter trail={trail} variant={footerVariant} />
     </div>
   );
 }
