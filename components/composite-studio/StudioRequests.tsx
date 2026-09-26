@@ -591,13 +591,15 @@ function FieldRow({
             value={field.mode}
             onChange={(e) => {
               const mode = e.target.value as FieldMode;
-              // Any mode change closes the linker - a stale popover over a
-              // Text/Null field is exactly the reported confusion.
-              setLinkOpen(false);
+              // Ref applies instantly (missing-source chip shows) and the
+              // linker opens for completion; any other choice closes it.
+              // Canceling the linker reverts to Text.
               if (mode === "reference") {
+                actions.onSetMode(request.id, field.apiName, "reference");
                 setLinkOpen(true);
                 return;
               }
+              setLinkOpen(false);
               actions.onSetMode(request.id, field.apiName, mode);
             }}
             className="shrink-0 cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-1.5 py-1.5 text-[11px] font-medium text-[#777168]"
@@ -664,7 +666,11 @@ function FieldRow({
             }}>
               Apply link
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => setLinkOpen(false)}>Cancel</Button>
+            <Button variant="ghost" size="sm" onClick={() => {
+              // Canceling reverts to Text - no half-linked state lingers.
+              actions.onSetMode(request.id, field.apiName, "literal");
+              setLinkOpen(false);
+            }}>Cancel</Button>
           </div>
         </div>
       )}

@@ -4,6 +4,7 @@ import { useState, useCallback, useMemo } from "react";
 import type { SalesforceObject, SalesforceDescribeResult, SalesforceField } from "@/lib/salesforce/types";
 import { apiFetch } from "@/lib/api";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
+import { getWritableFields, isRequiredField } from "@/lib/salesforce/metadata";
 import type { NewCollectionItem } from "@/lib/collection/types";
 import {
   buildStudioPayload,
@@ -82,7 +83,7 @@ export default function CompositePanel({
   }, []);
 
   const fetchDescribe = useCallback(
-    async (objectName: string): Promise<SalesforceDescribeResult | null> => {
+    async (requestId: string, objectName: string): Promise<SalesforceDescribeResult | null> => {
       const token = getToken();
       if (!token) return null;
       try {
@@ -90,6 +91,27 @@ export default function CompositePanel({
         const data = (await response.json()) as SalesforceDescribeResult & { error?: string };
         if (response.ok) {
           setDescribes((prev) => new Map(prev).set(objectName, data));
+          // Mandatory fields auto-added: required + writable for the
+          // request's method, empty values for the user to fill.
+          setDoc((p) => ({
+            ...p,
+            requests: p.requests.map((r) => {
+              if (r.id !== requestId) return r;
+              const operation = r.method === "PATCH" ? "PATCH" : "POST";
+              const have = new Set(r.fields.map((f) => f.apiName));
+              const required = getWritableFields(data.fields, operation)
+                .filter((f) => !have.has(f.name) && isRequiredField(f, operation))
+                .map((f) => ({
+                  apiName: f.name,
+                  fieldLabel: f.label,
+                  fieldType: f.type,
+                  mode: "literal" as const,
+                  literal: "",
+                  mappingId: null,
+                }));
+              return required.length > 0 ? { ...r, fields: [...r.fields, ...required] } : r;
+            }),
+          }));
           return data;
         }
         if (typeof data.error === "string" && isSessionExpiredMessage(data.error)) onSessionExpired?.();
@@ -119,7 +141,7 @@ export default function CompositePanel({
       setDoc((p) => ({ ...p, requests: [...p.requests, req] }));
       setSelectedId(id);
       touch();
-      void fetchDescribe(objectName);
+      void fetchDescribe(id, objectName);
     },
     [doc.requests, objects, fetchDescribe, touch]
   );
@@ -142,7 +164,7 @@ export default function CompositePanel({
         };
       });
       touch();
-      await fetchDescribe(objectName);
+      await fetchDescribe(subReqId, objectName);
     },
     [objects, fetchDescribe, touch]
   );
@@ -314,10 +336,12 @@ export default function CompositePanel({
             fields: r.fields.map((f) => {
               if (f.apiName !== apiName) return f;
               if (f.mode === mode) return f;
-              // Leaving reference mode drops the mapping AND clears the value -
-              // a stale @{...} string with no edge is an invisible dependency.
+              // Leaving reference mode drops the mapping. With no mapping
+              // (linker canceled) the prior literal is restored untouched;
+              // with an applied link the stale @{...} is cleared so no
+              // invisible dependency lingers.
               if (f.mode === "reference" && mode === "literal") {
-                return { ...f, mode, mappingId: null, literal: "" };
+                return { ...f, mode, mappingId: null, literal: f.mappingId ? "" : f.literal };
               }
               return { ...f, mode, mappingId: mode === "reference" ? f.mappingId : null };
             }),

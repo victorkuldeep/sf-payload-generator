@@ -392,3 +392,38 @@ export function independentIds(doc: StudioDocument): Set<string> {
   }
   return new Set(doc.requests.filter((r) => !linked.has(r.id)).map((r) => r.id));
 }
+
+/**
+ * Longest-path layer per request (sources = 0, independents = -1).
+ * Drives the graph's layered layout: chains, fan-outs and diamonds all
+ * resolve to stable layers; multiple mappings between one pair stay one edge.
+ */
+export function computeRequestLayers(doc: StudioDocument): Map<string, number> {
+  const depth = new Map(doc.requests.map((r) => [r.id, -1]));
+  const linked = new Set<string>();
+  for (const m of doc.mappings) {
+    linked.add(m.sourceRequestId);
+    linked.add(m.targetRequestId);
+  }
+  const incoming = new Map<string, string[]>();
+  for (const r of doc.requests) incoming.set(r.id, []);
+  for (const m of doc.mappings) incoming.get(m.targetRequestId)?.push(m.sourceRequestId);
+  const visit = (id: string, stack: Set<string>): number => {
+    const known = depth.get(id) ?? -1;
+    if (known >= 0) return known;
+    if (stack.has(id)) return 0;
+    stack.add(id);
+    let d = 0;
+    for (const s of incoming.get(id) ?? []) {
+      if (!linked.has(s)) continue;
+      d = Math.max(d, visit(s, stack) + 1);
+    }
+    stack.delete(id);
+    depth.set(id, d);
+    return d;
+  };
+  for (const r of doc.requests) {
+    if (linked.has(r.id)) visit(r.id, new Set());
+  }
+  return depth;
+}

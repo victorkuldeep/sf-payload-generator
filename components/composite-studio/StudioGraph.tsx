@@ -17,6 +17,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { StudioDocument, StudioIssue } from "@/lib/composite/studio";
+import { computeRequestLayers } from "@/lib/composite/studio";
 
 interface StudioBubbleData extends Record<string, unknown> {
   seq: number;
@@ -49,37 +50,6 @@ const METHOD_RING: Record<string, string> = {
   GET: "border-[#5B8DC0]",
   DELETE: "border-[#B84C42]",
 };
-
-/** Longest-path layer per request (sources = 0). Independents get -1. */
-function computeLayers(doc: StudioDocument): Map<string, number> {
-  const depth = new Map(doc.requests.map((r) => [r.id, -1]));
-  const linked = new Set<string>();
-  for (const m of doc.mappings) {
-    linked.add(m.sourceRequestId);
-    linked.add(m.targetRequestId);
-  }
-  const incoming = new Map<string, string[]>();
-  for (const r of doc.requests) incoming.set(r.id, []);
-  for (const m of doc.mappings) incoming.get(m.targetRequestId)?.push(m.sourceRequestId);
-  const visit = (id: string, stack: Set<string>): number => {
-    const known = depth.get(id) ?? -1;
-    if (known >= 0) return known;
-    if (stack.has(id)) return 0;
-    stack.add(id);
-    let d = 0;
-    for (const s of incoming.get(id) ?? []) {
-      if (!linked.has(s)) continue;
-      d = Math.max(d, visit(s, stack) + 1);
-    }
-    stack.delete(id);
-    depth.set(id, d);
-    return d;
-  };
-  for (const r of doc.requests) {
-    if (linked.has(r.id)) visit(r.id, new Set());
-  }
-  return depth;
-}
 
 /**
  * Graph is a READ-ONLY visualizer of the whole transaction: round nodes in
@@ -119,7 +89,7 @@ function StudioGraphFlow(props: StudioGraphProps) {
 
   // Deterministic layered auto-layout; user drags persist in request.position.
   const autoPositions = useMemo(() => {
-    const layers = computeLayers(doc);
+    const layers = computeRequestLayers(doc);
     const pos = new Map<string, { x: number; y: number }>();
     const byLayer = new Map<number, string[]>();
     for (const r of doc.requests) {
@@ -149,7 +119,7 @@ function StudioGraphFlow(props: StudioGraphProps) {
   }, [doc]);
 
   useEffect(() => {
-    const layers = computeLayers(doc);
+    const layers = computeRequestLayers(doc);
     const built: Node<StudioBubbleData>[] = [];
     for (const r of doc.requests) {
       const independent = (layers.get(r.id) ?? -1) < 0;

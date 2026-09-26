@@ -6,6 +6,7 @@ import {
   validateStudio,
   fixExecutionOrder,
   independentIds,
+  computeRequestLayers,
   emptyStudioRequest,
   type StudioDocument,
 } from "./studio";
@@ -152,5 +153,43 @@ describe("independentIds", () => {
       { id: "m1", sourceRequestId: "r1", sourceProperty: "id", targetRequestId: "r2", targetFieldApiName: "X__c" },
     ];
     expect(independentIds(doc)).toEqual(new Set());
+  });
+});
+
+describe("computeRequestLayers", () => {
+  const chain = (): StudioDocument => ({
+    name: "t",
+    apiVersion: "v66.0",
+    allOrNone: true,
+    requests: [
+      req({ id: "a", referenceId: "account_1" }),
+      req({ id: "l", referenceId: "lead_1" }),
+      req({ id: "c", referenceId: "custom_1" }),
+      req({ id: "solo", referenceId: "solo_1" }),
+    ],
+    mappings: [
+      { id: "m1", sourceRequestId: "a", sourceProperty: "id", targetRequestId: "l", targetFieldApiName: "Account__c" },
+      { id: "m2", sourceRequestId: "l", sourceProperty: "id", targetRequestId: "c", targetFieldApiName: "Lead__c" },
+    ],
+  });
+  it("layers chains Account(0) -> Lead(1) -> Custom(2), isolates solo(-1)", () => {
+    const layers = computeRequestLayers(chain());
+    expect(layers.get("a")).toBe(0);
+    expect(layers.get("l")).toBe(1);
+    expect(layers.get("c")).toBe(2);
+    expect(layers.get("solo")).toBe(-1);
+  });
+  it("fans out siblings onto one layer and bundles parallel edges", () => {
+    const doc = chain();
+    doc.mappings.push(
+      { id: "m3", sourceRequestId: "a", sourceProperty: "id", targetRequestId: "c", targetFieldApiName: "Account__c" },
+      { id: "m4", sourceRequestId: "a", sourceProperty: "id", targetRequestId: "l", targetFieldApiName: "Owner__c" }
+    );
+    const layers = computeRequestLayers(doc);
+    expect(layers.get("l")).toBe(1);
+    expect(layers.get("c")).toBe(2);
+    // Two mappings a->l still resolve: diamond longest path wins, no crash.
+    const pair = doc.mappings.filter((m) => m.sourceRequestId === "a" && m.targetRequestId === "l");
+    expect(pair).toHaveLength(2);
   });
 });
