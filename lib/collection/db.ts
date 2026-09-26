@@ -3,8 +3,9 @@ import type { Collection, CollectionItem } from "./types";
 const DB_NAME = "sf-payload-studio";
 const ITEMS_STORE = "request-collection";
 const COLLECTIONS_STORE = "collections";
-// v4 also hosts erd-snapshots + soql-queries (see lib/erd/snapshotDb.ts, lib/soql/historyDb.ts).
-const DB_VERSION = 4;
+// v5 also hosts erd-snapshots + soql-queries + rest-history
+// (see lib/erd/snapshotDb.ts, lib/soql/historyDb.ts, lib/rest/historyDb.ts).
+const DB_VERSION = 5;
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -20,6 +21,11 @@ function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(COLLECTIONS_STORE)) {
         db.createObjectStore(COLLECTIONS_STORE, { keyPath: "id" });
+      }
+      for (const name of ["erd-snapshots", "soql-queries", "rest-history"]) {
+        if (!db.objectStoreNames.contains(name)) {
+          db.createObjectStore(name, { keyPath: "id" });
+        }
       }
     };
     req.onsuccess = () => resolve(req.result);

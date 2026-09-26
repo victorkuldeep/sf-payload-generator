@@ -1062,8 +1062,10 @@ export default function Home() {
               />
             )}
 
+            {/* ── Builder modes stay mounted (hidden when inactive) so work
+                survives tab switches - describe caches, drafts, canvases kept ── */}
             {/* ── Composite mode ── */}
-            {state.mode === "composite" && (
+            <div hidden={state.mode !== "composite"}>
               <section id="composite" aria-label="Composite API Builder" className="scroll-mt-20">
                 <CompositePanel
                   objects={state.objects}
@@ -1074,10 +1076,10 @@ export default function Home() {
                   onSessionExpired={handleSessionExpired}
                 />
               </section>
-            )}
+            </div>
 
             {/* ── GraphQL mode ── */}
-            {state.mode === "graphql" && (
+            <div hidden={state.mode !== "graphql"}>
               <section id="graphql" aria-label="GraphQL Query Builder" className="scroll-mt-20">
                 <GraphQLPanel
                   objects={state.objects}
@@ -1088,10 +1090,10 @@ export default function Home() {
                   onSessionExpired={handleSessionExpired}
                 />
               </section>
-            )}
+            </div>
 
             {/* ── SOQL mode ── */}
-            {state.mode === "soql" && (
+            <div hidden={state.mode !== "soql"}>
               <section id="soql" aria-label="SOQL Query Builder" className="scroll-mt-20">
                 <SoqlPanel
                   objects={state.objects}
@@ -1101,10 +1103,10 @@ export default function Home() {
                   onSessionExpired={handleSessionExpired}
                 />
               </section>
-            )}
+            </div>
 
             {/* ── Schema deep-dive mode ── */}
-            {state.mode === "schema" && (
+            <div hidden={state.mode !== "schema"}>
               <section id="schema" aria-label="Schema Deep Dive" className="scroll-mt-20">
                 <SchemaPanel
                   objects={state.objects}
@@ -1114,10 +1116,10 @@ export default function Home() {
                   onSessionExpired={handleSessionExpired}
                 />
               </section>
-            )}
+            </div>
 
             {/* ── REST explorer mode ── */}
-            {state.mode === "rest" && (
+            <div hidden={state.mode !== "rest"}>
               <section id="rest" aria-label="REST API Explorer" className="scroll-mt-20">
                 <RestExplorerPanel
                   instanceUrl={state.instanceUrl}
@@ -1127,7 +1129,7 @@ export default function Home() {
                   onSessionExpired={handleSessionExpired}
                 />
               </section>
-            )}
+            </div>
 
             {/* ── Single object mode ── */}
             {state.mode === "single" && (

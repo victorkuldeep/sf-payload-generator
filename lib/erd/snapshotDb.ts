@@ -14,7 +14,7 @@ export interface ErdSnapshot {
 
 const DB_NAME = "sf-payload-studio";
 const STORE = "erd-snapshots";
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const MAX_PER_ORG = 20;
 
 function openDb(): Promise<IDBDatabase> {
@@ -37,6 +37,9 @@ function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains("soql-queries")) {
         db.createObjectStore("soql-queries", { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains("rest-history")) {
+        db.createObjectStore("rest-history", { keyPath: "id" });
       }
     };
     req.onsuccess = () => resolve(req.result);
