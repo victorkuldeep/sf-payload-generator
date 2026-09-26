@@ -150,10 +150,9 @@ button, input, select, textarea, optgroup, option {
 .hero-title {
   font-family: var(--font-sans);
   font-weight: 800;
-  letter-spacing: -0.02em;
-  line-height: 0.98;
+  letter-spacing: -0.03em;
+  line-height: 1.02;
   color: var(--color-ink);
-  text-transform: uppercase;
 }
 .hero-title em { color: var(--color-accent); font-style: normal; }
 

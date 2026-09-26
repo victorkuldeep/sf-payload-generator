@@ -57,7 +57,7 @@ export function AppShell({
       <div className="flex-1 flex flex-col" id="main-content">
         {children}
       </div>
-      <AppFooter trail={trail} />
+      <AppFooter trail={trail} onNavigate={onNavigate} />
     </div>
   );
 }
