@@ -3,18 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import type { NavMode } from "./AppHeader";
 
-const STUDIO_LINKS: { label: string; mode: NavMode }[] = [
-  { label: "Single Object", mode: "builder" },
-  { label: "Composite", mode: "composite" },
-  { label: "SOQL", mode: "soql" },
-  { label: "GraphQL", mode: "graphql" },
-  { label: "Schema Map", mode: "schema" },
-  { label: "REST", mode: "rest" },
-];
-
-export function AppFooter({ trail, onNavigate }: { trail?: ReactNode; onNavigate: (mode: NavMode) => void }) {
+export function AppFooter({ trail }: { trail?: ReactNode }) {
   const year = new Date().getFullYear();
 
   return (
@@ -152,36 +142,7 @@ export function AppFooter({ trail, onNavigate }: { trail?: ReactNode; onNavigate
             </div>
           </div>
 
-          <div className="md:col-span-7 grid grid-cols-2 sm:grid-cols-3 gap-6">
-            <div className="space-y-2.5">
-              <span className="block font-mono text-[11px] font-semibold uppercase tracking-wider text-[var(--color-ink)]">
-                Toolkit
-              </span>
-              <nav aria-label="Toolkit">
-                <ul className="space-y-2 font-mono text-xs">
-                  {STUDIO_LINKS.map((l) => (
-                    <li key={l.mode}>
-                      <button
-                        type="button"
-                        onClick={() => onNavigate(l.mode)}
-                        className="text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:underline transition-colors cursor-pointer"
-                      >
-                        {l.label}
-                      </button>
-                    </li>
-                  ))}
-                  <li>
-                    <Link
-                      href="/json"
-                      className="text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:underline transition-colors"
-                    >
-                      JSON Studio
-                    </Link>
-                  </li>
-                </ul>
-              </nav>
-            </div>
-
+          <div className="md:col-span-7 grid grid-cols-2 sm:grid-cols-2 gap-6">
             <div className="space-y-2.5">
               <span className="block font-mono text-[11px] font-semibold uppercase tracking-wider text-[var(--color-ink)]">
                 Explore
@@ -189,13 +150,12 @@ export function AppFooter({ trail, onNavigate }: { trail?: ReactNode; onNavigate
               <nav aria-label="Explore">
                 <ul className="space-y-2 font-mono text-xs">
                   <li>
-                    <button
-                      type="button"
-                      onClick={() => onNavigate("home")}
-                      className="text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:underline transition-colors cursor-pointer"
+                    <Link
+                      href="/"
+                      className="text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:underline transition-colors"
                     >
                       Home
-                    </button>
+                    </Link>
                   </li>
                   <li>
                     <Link
@@ -204,6 +164,16 @@ export function AppFooter({ trail, onNavigate }: { trail?: ReactNode; onNavigate
                     >
                       Schema
                     </Link>
+                  </li>
+                  <li>
+                    <a
+                      href="https://excalidraw.com"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:underline transition-colors inline-flex items-center gap-1"
+                    >
+                      Excalidraw <span aria-hidden="true">↗</span>
+                    </a>
                   </li>
                   <li>
                     <a
@@ -243,6 +213,16 @@ export function AppFooter({ trail, onNavigate }: { trail?: ReactNode; onNavigate
                       className="text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:underline transition-colors inline-flex items-center gap-1"
                     >
                       Portfolio <span aria-hidden="true">↗</span>
+                    </a>
+                  </li>
+                  <li>
+                    <a
+                      href="https://research.kuldeepsingh.ai"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:underline transition-colors inline-flex items-center gap-1"
+                    >
+                      KS Research Lab <span aria-hidden="true">↗</span>
                     </a>
                   </li>
                   <li>
