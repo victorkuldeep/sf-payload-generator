@@ -1,23 +1,26 @@
 "use client";
 
 import { useState, useCallback, useRef, useMemo } from "react";
-import {
-  CompositeSubRequest,
-  SalesforceObject,
-  SalesforceDescribeResult,
-  CompositePayload,
-} from "@/lib/salesforce/types";
-import {
-  generateCompositePayload,
-  deriveReferenceId,
-  uniqueReferenceId,
-} from "@/lib/payload/generator";
-import { isSessionExpiredMessage } from "@/lib/salesforce/client";
+import type { SalesforceObject, SalesforceDescribeResult, SalesforceField } from "@/lib/salesforce/types";
 import { apiFetch } from "@/lib/api";
+import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import type { NewCollectionItem } from "@/lib/collection/types";
-import CompositeTree from "./CompositeTree";
-import CompositeRequestEditor from "./CompositeRequestEditor";
-import CodeBlock from "./ui/CodeBlock";
+import {
+  buildStudioPayload,
+  validateStudio,
+  fixExecutionOrder,
+  nextReferenceId,
+  emptyStudioRequest,
+  newStudioId,
+  type StudioDocument,
+  type StudioRequest,
+  type StudioFieldValue,
+  type FieldMode,
+  type StudioPayload,
+} from "@/lib/composite/studio";
+import StudioRequests, { type StudioRequestActions } from "./composite-studio/StudioRequests";
+import StudioGraph from "./composite-studio/StudioGraph";
+import StudioPayloadView from "./composite-studio/StudioPayload";
 import Button from "./ui/Button";
 
 interface CompositePanelProps {
@@ -29,27 +32,14 @@ interface CompositePanelProps {
   onSessionExpired?: () => void;
 }
 
-type ExportTab = "json" | "curl";
+type StudioScreen = "requests" | "graph" | "payload";
 
 const MAX_REQUESTS = 25;
-
-function buildEmptySubRequest(id: string): CompositeSubRequest {
-  return {
-    id,
-    referenceId: "",
-    method: "POST",
-    objectName: "",
-    describe: null,
-    selectedFieldNames: new Set(),
-    fieldValues: {},
-    recordId: "",
-  };
-}
+const API_VERSIONS = ["v66.0", "v65.0", "v64.0", "v63.0", "v62.0", "v61.0", "v60.0", "v59.0"];
 
 /**
- * Composite workbench: tree on the left (one row per request, nested by
- * @{ref} parentage), single-request editor on the right, payload + test
- * below. No card stack, no reorder arrows - order is execution order.
+ * Composite Studio shell: one canonical StudioDocument shared by the
+ * Requests / Graph / Payload screens. Screen switches never lose state.
  */
 export default function CompositePanel({
   objects,
@@ -59,16 +49,18 @@ export default function CompositePanel({
   onAddToCollection,
   onSessionExpired,
 }: CompositePanelProps) {
-  const counter = useRef(0);
-  const nextId = () => String(++counter.current);
-  const payloadRef = useRef<HTMLDivElement>(null);
-
-  const [subRequests, setSubRequests] = useState<CompositeSubRequest[]>([buildEmptySubRequest(nextId())]);
+  const [doc, setDoc] = useState<StudioDocument>(() => ({
+    name: "Untitled transaction",
+    apiVersion,
+    allOrNone: true,
+    requests: [emptyStudioRequest(newStudioId("req"))],
+    mappings: [],
+  }));
+  const [describes, setDescribes] = useState<Map<string, SalesforceDescribeResult>>(new Map());
+  const [screen, setScreen] = useState<StudioScreen>("requests");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [allOrNone, setAllOrNone] = useState(true);
-  const [generatedPayload, setGeneratedPayload] = useState<CompositePayload | null>(null);
-  const [activeTab, setActiveTab] = useState<ExportTab>("json");
+  const [payload, setPayload] = useState<StudioPayload | null>(null);
+  const [orderNotice, setOrderNotice] = useState<string | null>(null);
 
   // Test request state
   const [testLoading, setTestLoading] = useState(false);
@@ -76,169 +68,393 @@ export default function CompositePanel({
   const [testError, setTestError] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const selected = useMemo(
-    () => subRequests.find((sr) => sr.id === selectedId) ?? subRequests[0] ?? null,
-    [subRequests, selectedId]
-  );
-  const selectedIndex = useMemo(
-    () => (selected ? subRequests.findIndex((sr) => sr.id === selected.id) : -1),
-    [subRequests, selected]
-  );
-  const refIdCounts = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const sr of subRequests) {
-      if (!sr.referenceId) continue;
-      m.set(sr.referenceId, (m.get(sr.referenceId) ?? 0) + 1);
-    }
-    return m;
-  }, [subRequests]);
+  const issues = useMemo(() => validateStudio(doc, describes), [doc, describes]);
+  const errCount = issues.filter((i) => i.level === "error").length;
+  const warnCount = issues.filter((i) => i.level === "warning").length;
 
-  const updateSubRequest = useCallback((id: string, patch: Partial<CompositeSubRequest>) => {
-    setSubRequests((prev) =>
-      prev.map((sr) => (sr.id === id ? { ...sr, ...patch } : sr))
-    );
-    setGeneratedPayload(null);
+  const ver = doc.apiVersion.startsWith("v") ? doc.apiVersion : `v${doc.apiVersion}`;
+  const compositeEndpoint = `${instanceUrl}/services/data/${ver}/composite`;
+
+  const touch = useCallback(() => {
+    setPayload(null);
+    setTestResult(null);
+    setTestError(null);
+    setOrderNotice(null);
   }, []);
 
-  const removeSubRequest = useCallback(
-    (id: string) => {
-      setSubRequests((prev) => {
-        const idx = prev.findIndex((sr) => sr.id === id);
-        const next = prev.filter((sr) => sr.id !== id);
-        // Keep a selection: neighbour first, so the editor never blanks
-        // while requests remain.
-        if (id === (selected?.id ?? selectedId)) {
-          const fallback = next[Math.min(idx, next.length - 1)] ?? null;
-          setSelectedId(fallback ? fallback.id : null);
-        }
-        return next.length > 0 ? next : [buildEmptySubRequest(nextId())];
-      });
-      setCollapsed((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-      setGeneratedPayload(null);
-    },
-    [selected, selectedId]
-  );
-
-  const fetchDescribeFor = useCallback(
-    async (subReqId: string, objectName: string) => {
+  const fetchDescribe = useCallback(
+    async (objectName: string): Promise<SalesforceDescribeResult | null> => {
       const token = getToken();
-      if (!token) return;
+      if (!token) return null;
       try {
         const response = await apiFetch("/api/salesforce/describe", { instanceUrl, token, apiVersion, objectName });
         const data = (await response.json()) as SalesforceDescribeResult & { error?: string };
         if (response.ok) {
-          setSubRequests((prev) =>
-            prev.map((sr) => (sr.id === subReqId ? { ...sr, describe: data } : sr))
-          );
-        } else if (typeof data.error === "string" && isSessionExpiredMessage(data.error)) {
-          onSessionExpired?.();
+          setDescribes((prev) => new Map(prev).set(objectName, data));
+          return data;
         }
+        if (typeof data.error === "string" && isSessionExpiredMessage(data.error)) onSessionExpired?.();
       } catch (err) {
-        if (isSessionExpiredMessage(err instanceof Error ? err.message : "")) {
-          onSessionExpired?.();
-        }
-        // describe failed - leave describe: null, user can retry by re-picking
+        if (isSessionExpiredMessage(err instanceof Error ? err.message : "")) onSessionExpired?.();
       }
+      return null;
     },
     [instanceUrl, apiVersion, getToken, onSessionExpired]
   );
 
-  const handleDescribeObject = useCallback(
-    async (subReqId: string, objectName: string) => {
-      // Assign a unique referenceId (first use keeps the bare base).
-      setSubRequests((prev) => {
-        const taken = new Set(
-          prev.filter((sr) => sr.id !== subReqId).map((sr) => sr.referenceId).filter(Boolean)
-        );
-        const refId = uniqueReferenceId(deriveReferenceId(objectName), taken);
-        return prev.map((sr) =>
-          sr.id === subReqId
-            ? { ...sr, objectName, referenceId: refId, describe: null, selectedFieldNames: new Set(), fieldValues: {} }
-            : sr
-        );
-      });
-      await fetchDescribeFor(subReqId, objectName);
-    },
-    [fetchDescribeFor]
-  );
+  // ── request actions ──
 
-  const addSubRequest = useCallback(
+  const handleAddObject = useCallback(
     (objectName: string) => {
-      if (subRequests.length >= MAX_REQUESTS) return;
-      const id = nextId();
-      setSubRequests((prev) => [...prev, buildEmptySubRequest(id)]);
-      setSelectedId(id);
-      setGeneratedPayload(null);
-      void handleDescribeObject(id, objectName);
-    },
-    [subRequests.length, handleDescribeObject]
-  );
-
-  const duplicateSubRequest = useCallback(
-    (id: string) => {
-      if (subRequests.length >= MAX_REQUESTS) return;
-      const src = subRequests.find((sr) => sr.id === id);
-      if (!src) return;
-      const taken = new Set(subRequests.map((sr) => sr.referenceId).filter(Boolean));
-      const refId = uniqueReferenceId(deriveReferenceId(src.objectName || "request"), taken);
-      const clone: CompositeSubRequest = {
-        ...src,
-        id: nextId(),
-        referenceId: src.objectName ? refId : "",
-        selectedFieldNames: new Set(src.selectedFieldNames),
-        fieldValues: { ...src.fieldValues },
+      if (doc.requests.length >= MAX_REQUESTS) return;
+      const obj = objects.find((o) => o.name === objectName);
+      const id = newStudioId("req");
+      const taken = new Set(doc.requests.map((r) => r.referenceId).filter(Boolean));
+      const referenceId = nextReferenceId(obj?.label ?? objectName, taken);
+      const req: StudioRequest = {
+        ...emptyStudioRequest(id),
+        objectApiName: objectName,
+        objectLabel: obj?.label ?? objectName,
+        referenceId,
       };
-      setSubRequests((prev) => [...prev, clone]);
-      setSelectedId(clone.id);
-      setGeneratedPayload(null);
+      setDoc((p) => ({ ...p, requests: [...p.requests, req] }));
+      setSelectedId(id);
+      touch();
+      void fetchDescribe(objectName);
     },
-    [subRequests]
+    [doc.requests, objects, fetchDescribe, touch]
   );
 
-  const toggleCollapse = useCallback((id: string) => {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const handleDescribeObject = useCallback(
+    async (id: string, objectName: string) => {
+      const obj = objects.find((o) => o.name === objectName);
+      setDoc((p) => {
+        const taken = new Set(p.requests.filter((r) => r.id !== id).map((r) => r.referenceId).filter(Boolean));
+        const referenceId = nextReferenceId(obj?.label ?? objectName, taken);
+        return {
+          ...p,
+          requests: p.requests.map((r) =>
+            r.id === id
+              ? { ...r, objectApiName: objectName, objectLabel: obj?.label ?? objectName, referenceId, fields: [] }
+              : r
+          ),
+          // Changing object drops this request's mappings (targets may be invalid)
+          mappings: p.mappings.filter((m) => m.targetRequestId !== id),
+        };
+      });
+      touch();
+      await fetchDescribe(objectName);
+    },
+    [objects, fetchDescribe, touch]
+  );
+
+  const handleDuplicate = useCallback(
+    (id: string, withLinks: boolean) => {
+      if (doc.requests.length >= MAX_REQUESTS) return;
+      const src = doc.requests.find((r) => r.id === id);
+      if (!src) return;
+      const taken = new Set(doc.requests.map((r) => r.referenceId).filter(Boolean));
+      const cloneId = newStudioId("req");
+      const clone: StudioRequest = {
+        ...src,
+        id: cloneId,
+        displayName: src.displayName ? `${src.displayName} copy` : "",
+        referenceId: nextReferenceId(src.objectLabel || src.objectApiName || "request", taken),
+        fields: src.fields.map((f) => ({ ...f, mappingId: null, mode: f.mode === "reference" ? ("literal" as const) : f.mode })),
+        position: undefined,
+      };
+      // Duplicated literal values that embed the old expression stay as text.
+      if (withLinks) {
+        const idMap = new Map<string, string>();
+        setDoc((p) => {
+          const mappings = p.mappings.filter((m) => m.targetRequestId === id).map((m) => ({
+            ...m,
+            id: newStudioId("map"),
+            targetRequestId: cloneId,
+          }));
+          for (const m of mappings) idMap.set(m.id, m.id);
+          void idMap;
+          const fields = clone.fields.map((f) => {
+            const srcField = src.fields.find((x) => x.apiName === f.apiName);
+            const srcMapping = p.mappings.find((x) => x.id === srcField?.mappingId);
+            const cloned = mappings.find(
+              (x) => x.targetFieldApiName === f.apiName && x.sourceRequestId === srcMapping?.sourceRequestId
+            );
+            if (srcField?.mode === "reference" && srcMapping && cloned) {
+              return { ...f, mode: "reference" as const, mappingId: cloned.id };
+            }
+            return f;
+          });
+          return {
+            ...p,
+            requests: [...p.requests, { ...clone, fields }],
+            mappings: [...p.mappings, ...mappings],
+          };
+        });
+      } else {
+        setDoc((p) => ({ ...p, requests: [...p.requests, clone] }));
+      }
+      setSelectedId(cloneId);
+      touch();
+    },
+    [doc.requests, touch]
+  );
+
+  const handleDelete = useCallback(
+    (id: string) => {
+      setDoc((p) => {
+        const next = p.requests.filter((r) => r.id !== id);
+        return {
+          ...p,
+          requests: next.length > 0 ? next : [{ ...emptyStudioRequest(newStudioId("req")) }],
+          mappings: p.mappings.filter((m) => m.sourceRequestId !== id && m.targetRequestId !== id),
+        };
+      });
+      setSelectedId((prev) => {
+        if (prev !== id) return prev;
+        const idx = doc.requests.findIndex((r) => r.id === id);
+        const rest = doc.requests.filter((r) => r.id !== id);
+        return rest[Math.min(idx, rest.length - 1)]?.id ?? null;
+      });
+      touch();
+    },
+    [doc.requests, touch]
+  );
+
+  const handleMove = useCallback(
+    (id: string, dir: -1 | 1) => {
+      setDoc((p) => {
+        const idx = p.requests.findIndex((r) => r.id === id);
+        const j = idx + dir;
+        if (idx < 0 || j < 0 || j >= p.requests.length) return p;
+        const next = [...p.requests];
+        [next[idx], next[j]] = [next[j], next[idx]];
+        return { ...p, requests: next };
+      });
+      touch();
+    },
+    [touch]
+  );
+
+  const handleUpdateRequest = useCallback(
+    (id: string, patch: Partial<StudioRequest>) => {
+      setDoc((p) => ({ ...p, requests: p.requests.map((r) => (r.id === id ? { ...r, ...patch } : r)) }));
+      touch();
+    },
+    [touch]
+  );
+
+  // ── field actions ──
+
+  const handleAddFields = useCallback(
+    (requestId: string, fields: SalesforceField[]) => {
+      setDoc((p) => ({
+        ...p,
+        requests: p.requests.map((r) => {
+          if (r.id !== requestId) return r;
+          const have = new Set(r.fields.map((f) => f.apiName));
+          const rows: StudioFieldValue[] = fields
+            .filter((f) => !have.has(f.name))
+            .map((f) => ({
+              apiName: f.name,
+              fieldLabel: f.label,
+              fieldType: f.type,
+              mode: "literal" as const,
+              literal: "",
+              mappingId: null,
+            }));
+          return { ...r, fields: [...r.fields, ...rows] };
+        }),
+      }));
+      touch();
+    },
+    [touch]
+  );
+
+  const handleRemoveField = useCallback(
+    (requestId: string, apiName: string) => {
+      setDoc((p) => {
+        const req = p.requests.find((r) => r.id === requestId);
+        const field = req?.fields.find((f) => f.apiName === apiName);
+        return {
+          ...p,
+          requests: p.requests.map((r) =>
+            r.id === requestId ? { ...r, fields: r.fields.filter((f) => f.apiName !== apiName) } : r
+          ),
+          mappings: field?.mappingId ? p.mappings.filter((m) => m.id !== field.mappingId) : p.mappings,
+        };
+      });
+      touch();
+    },
+    [touch]
+  );
+
+  const handleSetLiteral = useCallback(
+    (requestId: string, apiName: string, value: unknown) => {
+      setDoc((p) => ({
+        ...p,
+        requests: p.requests.map((r) =>
+          r.id === requestId
+            ? { ...r, fields: r.fields.map((f) => (f.apiName === apiName ? { ...f, literal: value } : f)) }
+            : r
+        ),
+      }));
+      touch();
+    },
+    [touch]
+  );
+
+  const handleSetMode = useCallback(
+    (requestId: string, apiName: string, mode: "literal" | "reference" | "null") => {
+      setDoc((p) => ({
+        ...p,
+        requests: p.requests.map((r) => {
+          if (r.id !== requestId) return r;
+          return {
+            ...r,
+            fields: r.fields.map((f) => {
+              if (f.apiName !== apiName) return f;
+              if (f.mode === mode) return f;
+              // Leaving reference mode drops the mapping; the expression
+              // text stays as the literal so nothing silently vanishes.
+              if (f.mode === "reference" && mode === "literal") {
+                const m = p.mappings.find((x) => x.id === f.mappingId);
+                const src = m ? p.requests.find((x) => x.id === m.sourceRequestId) : undefined;
+                return {
+                  ...f,
+                  mode,
+                  mappingId: null,
+                  literal: src ? `@{${src.referenceId}.${m?.sourceProperty ?? "id"}}` : f.literal,
+                };
+              }
+              return { ...f, mode, mappingId: mode === "reference" ? f.mappingId : null };
+            }),
+          };
+        }),
+        mappings:
+          p.requests
+            .find((r) => r.id === requestId)
+            ?.fields.find((f) => f.apiName === apiName)?.mode === "reference" && mode !== "reference"
+            ? p.mappings.filter(
+                (m) =>
+                  m.id !==
+                  p.requests.find((r) => r.id === requestId)?.fields.find((f) => f.apiName === apiName)?.mappingId
+              )
+            : p.mappings,
+      }));
+      touch();
+    },
+    [touch]
+  );
+
+  // ── mapping actions (single source of truth for links) ──
+
+  const handleCreateMapping = useCallback(
+    (targetRequestId: string, targetField: string, sourceRequestId: string, sourceProperty: string) => {
+      const mappingId = newStudioId("map");
+      setDoc((p) => {
+        // One active mapping per destination field - replace, never stack.
+        const prev = p.requests
+          .find((r) => r.id === targetRequestId)
+          ?.fields.find((f) => f.apiName === targetField)?.mappingId;
+        return {
+          ...p,
+          mappings: [
+            ...p.mappings.filter((m) => m.id !== prev),
+            { id: mappingId, sourceRequestId, sourceProperty, targetRequestId, targetFieldApiName: targetField },
+          ],
+          requests: p.requests.map((r) =>
+            r.id === targetRequestId
+              ? {
+                  ...r,
+                  fields: r.fields.map((f) =>
+                    f.apiName === targetField ? { ...f, mode: "reference" as const, mappingId } : f
+                  ),
+                }
+              : r
+          ),
+        };
+      });
+      touch();
+    },
+    [touch]
+  );
+
+  const handleRemoveMapping = useCallback(
+    (mappingId: string, clearValue: boolean) => {
+      setDoc((p) => ({
+        ...p,
+        mappings: p.mappings.filter((m) => m.id !== mappingId),
+        requests: p.requests.map((r) => ({
+          ...r,
+          fields: r.fields.map((f) =>
+            f.mappingId === mappingId
+              ? { ...f, mode: "literal" as const, mappingId: null, literal: clearValue ? "" : f.literal }
+              : f
+          ),
+        })),
+      }));
+      touch();
+    },
+    [touch]
+  );
+
+  const handleFixOrder = useCallback(() => {
+    const { order, moved } = fixExecutionOrder(doc);
+    if (!moved) {
+      setOrderNotice("Order is already valid - nothing moved.");
+      return;
+    }
+    const byId = new Map(doc.requests.map((r) => [r.id, r]));
+    setDoc((p) => ({ ...p, requests: order.map((id) => byId.get(id)).filter((r): r is StudioRequest => Boolean(r)) }));
+    setOrderNotice("Reordered so every source executes before its dependents - independents kept their places.");
+    touch();
+  }, [doc, touch]);
+
+  const handlePosition = useCallback(
+    (id: string, pos: { x: number; y: number }) => {
+      setDoc((p) => ({ ...p, requests: p.requests.map((r) => (r.id === id ? { ...r, position: pos } : r)) }));
+    },
+    []
+  );
+
+  const handleResetLayout = useCallback(() => {
+    setDoc((p) => ({ ...p, requests: p.requests.map((r) => ({ ...r, position: undefined })) }));
   }, []);
 
-  const handleGenerate = () => {
-    const payload = generateCompositePayload(subRequests, apiVersion, allOrNone);
-    setGeneratedPayload(payload);
+  const gotoRequest = useCallback((id: string) => {
+    setSelectedId(id);
+    setScreen("requests");
+  }, []);
+
+  // ── generate / test / export ──
+
+  const handleGenerate = useCallback(() => {
+    setPayload(buildStudioPayload(doc));
     setTestResult(null);
     setTestError(null);
-    window.setTimeout(() => {
-      payloadRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }, 60);
-  };
+    setScreen("payload");
+  }, [doc]);
 
-  const handleSendTest = async () => {
+  const handleSendTest = useCallback(async () => {
     setShowConfirm(false);
     setTestLoading(true);
     setTestError(null);
     setTestResult(null);
-
     const token = getToken();
     if (!token) {
       setTestError("Session token unavailable. Please reconnect.");
       setTestLoading(false);
       return;
     }
-    if (!generatedPayload) return;
-
+    if (!payload) return;
     try {
       const response = await apiFetch("/api/salesforce/composite", {
         instanceUrl,
         token,
-        apiVersion,
-        allOrNone: generatedPayload.allOrNone,
-        compositeRequest: generatedPayload.compositeRequest,
+        apiVersion: doc.apiVersion,
+        allOrNone: payload.allOrNone,
+        compositeRequest: payload.compositeRequest,
       });
       const data = (await response.json()) as typeof testResult & { error?: string };
       if (!response.ok || data?.error) {
@@ -255,187 +471,183 @@ export default function CompositePanel({
     } finally {
       setTestLoading(false);
     }
-  };
+  }, [payload, doc.apiVersion, getToken, instanceUrl, onSessionExpired]);
 
-  const ver = apiVersion.startsWith("v") ? apiVersion : `v${apiVersion}`;
-  const compositeEndpoint = `${instanceUrl}/services/data/${ver}/composite`;
-
-  const jsonOutput = generatedPayload
-    ? JSON.stringify(generatedPayload, null, 2)
-    : "";
-
-  const curlOutput = generatedPayload
-    ? `curl -X POST \\\n  '${compositeEndpoint}' \\\n  -H 'Authorization: Bearer $SF_ACCESS_TOKEN' \\\n  -H 'Content-Type: application/json' \\\n  -d '${JSON.stringify(generatedPayload, null, 2)}'`
-    : "";
-
-  const handleDownload = () => {
-    if (!generatedPayload) return;
-    const blob = new Blob([jsonOutput], { type: "application/json" });
+  const handleDownload = useCallback(() => {
+    if (!payload) return;
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `composite_payload.json`;
+    a.download = `${doc.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-") || "composite"}_payload.json`;
     a.click();
     URL.revokeObjectURL(url);
+  }, [payload, doc.name]);
+
+  const handleAddToCollection = useCallback(() => {
+    if (!payload) return;
+    onAddToCollection({
+      name: `${doc.name} - ${payload.compositeRequest.length} sub-request${payload.compositeRequest.length === 1 ? "" : "s"}`,
+      method: "POST",
+      kind: "composite",
+      url: compositeEndpoint,
+      origin: instanceUrl,
+      body: payload,
+    });
+  }, [payload, doc.name, compositeEndpoint, instanceUrl, onAddToCollection]);
+
+  const actions: StudioRequestActions = {
+    onSelect: setSelectedId,
+    onAddObject: handleAddObject,
+    onDuplicate: handleDuplicate,
+    onDelete: handleDelete,
+    onMove: handleMove,
+    onUpdateRequest: handleUpdateRequest,
+    onDescribeObject: handleDescribeObject,
+    onAddFields: handleAddFields,
+    onRemoveField: handleRemoveField,
+    onSetLiteral: handleSetLiteral,
+    onSetMode: handleSetMode,
+    onCreateMapping: handleCreateMapping,
+    onRemoveMapping: handleRemoveMapping,
   };
+
+  const tabs: { id: "requests" | "graph" | "payload"; label: string }[] = [
+    { id: "requests", label: "Requests" },
+    { id: "graph", label: `Graph${doc.mappings.length > 0 ? ` · ${doc.mappings.length}` : ""}` },
+    { id: "payload", label: "Payload" },
+  ];
 
   return (
     <div className="space-y-4">
-      {/* Header controls */}
-      <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-4 py-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-4">
-            <h2 className="text-sm font-semibold text-ivory-950">Composite API Builder</h2>
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={allOrNone}
-                onChange={(e) => setAllOrNone(e.target.checked)}
-                className="h-4 w-4 rounded border-ivory-400 bg-white text-ivory-950"
-              />
-              <span className="text-sm text-ivory-800">allOrNone</span>
-            </label>
-          </div>
-          <Button size="sm" onClick={handleGenerate} disabled={subRequests.length === 0}>
-            Generate Composite Payload
+      {/* Transaction toolbar */}
+      <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <input
+            value={doc.name}
+            onChange={(e) => setDoc((p) => ({ ...p, name: e.target.value }))}
+            aria-label="Transaction name"
+            placeholder="Untitled transaction"
+            className="min-w-[140px] flex-1 rounded-lg border border-transparent px-2 py-1 text-[15px] font-semibold text-[#27241F] hover:border-[#E8E2D8] focus:border-[#A98450] focus:outline-none sm:max-w-[260px]"
+          />
+          <span className="flex items-center gap-1.5 text-[11px] text-[#777168]" title={instanceUrl}>
+            <span className="h-1.5 w-1.5 rounded-full bg-[#32815B]" aria-hidden="true" />
+            <span className="max-w-[180px] truncate font-mono">{instanceUrl.replace(/^https:\/\//, "")}</span>
+          </span>
+          <label className="flex items-center gap-1.5 text-[11px] text-[#777168]">
+            API
+            <select
+              value={doc.apiVersion}
+              onChange={(e) => {
+                setDoc((p) => ({ ...p, apiVersion: e.target.value }));
+                touch();
+              }}
+              className="cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-1.5 py-1 font-mono text-[11px] text-[#27241F]"
+              aria-label="API version"
+            >
+              {Array.from(new Set([doc.apiVersion, ...API_VERSIONS])).map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex cursor-pointer select-none items-center gap-1.5 text-[13px] text-[#27241F]">
+            <input
+              type="checkbox"
+              checked={doc.allOrNone}
+              onChange={(e) => {
+                setDoc((p) => ({ ...p, allOrNone: e.target.checked }));
+                touch();
+              }}
+              className="h-3.5 w-3.5 rounded"
+            />
+            allOrNone
+          </label>
+          <span className="font-mono text-[11px] text-[#777168]">
+            {doc.requests.length}/25
+          </span>
+          <button
+            onClick={() => setScreen("payload")}
+            title="Open validation"
+            className={`rounded-lg border px-2 py-1 font-mono text-[11px] cursor-pointer ${
+              errCount > 0
+                ? "border-red-300 bg-red-50 text-[#B84C42]"
+                : warnCount > 0
+                  ? "border-amber-300 bg-amber-50 text-[#B98335]"
+                  : "border-[#E8E2D8] text-[#32815B]"
+            }`}
+          >
+            {errCount > 0 ? `${errCount} error${errCount === 1 ? "" : "s"}` : warnCount > 0 ? `${warnCount} warning${warnCount === 1 ? "" : "s"}` : "valid"}
+          </button>
+          <span className="flex-1" />
+          <Button size="sm" onClick={handleGenerate} disabled={doc.requests.length === 0}>
+            Generate Payload
           </Button>
         </div>
-        <p className="mt-1 text-xs text-ivory-600">
-          Endpoint: <span className="font-mono">{compositeEndpoint}</span>
-          <span className="ml-3">·</span>
-          <span className="ml-3">Up to 25 sub-requests · reference earlier records with <code className="font-mono text-ivory-800">@&#123;referenceId.id&#125;</code></span>
-        </p>
-      </div>
-
-      {/* Workbench: tree + single-request editor */}
-      <div className="grid items-start gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-        <CompositeTree
-          subRequests={subRequests}
-          selectedId={selected?.id ?? null}
-          collapsed={collapsed}
-          onSelect={setSelectedId}
-          onToggleCollapse={toggleCollapse}
-          onDuplicate={duplicateSubRequest}
-          onRemove={removeSubRequest}
-          onAddObject={addSubRequest}
-          allObjects={objects}
-        />
-        {selected && (
-          <CompositeRequestEditor
-            key={selected.id}
-            subRequest={selected}
-            index={selectedIndex}
-            allObjects={objects}
-            priorSubRequests={selectedIndex > 0 ? subRequests.slice(0, selectedIndex) : []}
-            refIdTaken={(refIdCounts.get(selected.referenceId) ?? 0) > 1}
-            onUpdate={updateSubRequest}
-            onRemove={removeSubRequest}
-            onDescribeObject={handleDescribeObject}
-          />
-        )}
-      </div>
-
-      {/* Generated payload */}
-      {generatedPayload && (
-        <div ref={payloadRef} className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] scroll-mt-20">
-          <div className="border-b border-ivory-400 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-semibold text-ivory-900">Composite Payload</h3>
-                <span className="text-xs text-ivory-600">
-                  {generatedPayload.compositeRequest.length} sub-requests · allOrNone: {String(generatedPayload.allOrNone)}
-                </span>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="ghost" size="sm" onClick={handleDownload}>Download JSON</Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    if (!generatedPayload) return;
-                    const n = generatedPayload.compositeRequest.length;
-                    onAddToCollection({
-                      name: `Composite - ${n} sub-request${n === 1 ? "" : "s"}`,
-                      method: "POST",
-                      kind: "composite",
-                      url: compositeEndpoint,
-                      origin: instanceUrl,
-                      body: generatedPayload,
-                    });
-                  }}
-                  title="Choose a collection to stage this batch in"
-                >
-                  + Collection
-                </Button>
-              </div>
-            </div>
-
-            <div className="mt-3 flex border-b border-ivory-400 -mb-4">
-              {(["json", "curl"] as ExportTab[]).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-4 py-2 text-xs font-medium tracking-wide border-b-2 transition-colors cursor-pointer -mb-px ${
-                    activeTab === tab
-                      ? "border-ivory-950 text-ivory-950"
-                      : "border-transparent text-ivory-600 hover:text-ivory-950"
-                  }`}
-                >
-                  {tab === "json" ? "JSON" : "cURL"}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="p-4 space-y-4">
-            <CodeBlock code={activeTab === "json" ? jsonOutput : curlOutput} language={activeTab === "json" ? "json" : "bash"} maxHeight="500px" />
-
-            {/* Test send */}
-            <div className="border-t border-ivory-400 pt-4">
-              {!showConfirm ? (
-                <Button variant="danger" size="sm" onClick={() => setShowConfirm(true)} disabled={testLoading}>
-                  Send Composite Test Request
-                </Button>
-              ) : (
-                <div className="rounded border border-amber-300 bg-amber-50 p-3 space-y-3">
-                  <p className="text-sm text-amber-800">
-                    ⚠ This will execute {generatedPayload.compositeRequest.length} sub-request(s) against your Salesforce org{allOrNone ? " - all or none" : ""}. Confirm?
-                  </p>
-                  <div className="flex gap-2">
-                    <Button variant="danger" size="sm" onClick={handleSendTest} loading={testLoading}>
-                      Confirm Send
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setShowConfirm(false)}>
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {testError && (
-                <div className="mt-3 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700">
-                  {testError}
-                </div>
-              )}
-
-              {testResult && (
-                <div className="mt-3 space-y-2">
-                  <div className="flex items-center gap-3">
-                    <span className={`text-sm font-bold ${testResult.success ? "text-green-700" : "text-red-600"}`}>
-                      {testResult.status} {testResult.statusText}
-                    </span>
-                    <span className="text-xs text-ivory-600">{testResult.responseTime}ms</span>
-                  </div>
-                  <CodeBlock
-                    code={typeof testResult.body === "string" ? testResult.body : JSON.stringify(testResult.body, null, 2)}
-                    language="json"
-                    maxHeight="400px"
-                  />
-                </div>
-              )}
-            </div>
-          </div>
+        <div className="mt-2.5 flex border-b border-[#E8E2D8] -mb-3" role="tablist" aria-label="Composite Studio screens">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              role="tab"
+              aria-selected={screen === t.id}
+              onClick={() => setScreen(t.id)}
+              className={`px-4 py-2 text-[13px] font-medium transition-colors cursor-pointer ${
+                screen === t.id ? "text-[#27241F] underline underline-offset-8 decoration-[#A98450] decoration-2" : "text-[#A39B8E] hover:text-[#27241F]"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
+      </div>
+
+      {screen === "requests" && (
+        <StudioRequests
+          doc={doc}
+          objects={objects}
+          describes={describes}
+          selectedId={selectedId}
+          issues={issues}
+          actions={actions}
+        />
+      )}
+
+      {screen === "graph" && (
+        <StudioGraph
+          doc={doc}
+          describes={describes}
+          issues={issues}
+          onEditRequest={gotoRequest}
+          onDuplicate={handleDuplicate}
+          onDelete={handleDelete}
+          onPosition={handlePosition}
+          onResetLayout={handleResetLayout}
+          onCreateMapping={handleCreateMapping}
+          onRemoveMapping={handleRemoveMapping}
+          onAddRequest={() => setScreen("requests")}
+        />
+      )}
+
+      {screen === "payload" && (
+        <StudioPayloadView
+          doc={doc}
+          payload={payload}
+          issues={issues}
+          compositeEndpoint={compositeEndpoint}
+          test={{
+            loading: testLoading,
+            error: testError,
+            result: testResult,
+            confirming: showConfirm,
+            onAskSend: () => setShowConfirm(true),
+            onCancelSend: () => setShowConfirm(false),
+            onConfirmSend: handleSendTest,
+          }}
+          orderNotice={orderNotice}
+          onFixOrder={handleFixOrder}
+          onGotoRequest={gotoRequest}
+          onDownload={handleDownload}
+          onAddToCollection={handleAddToCollection}
+        />
       )}
     </div>
   );
