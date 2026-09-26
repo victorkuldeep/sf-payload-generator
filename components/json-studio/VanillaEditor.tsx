@@ -52,8 +52,8 @@ export function VanillaEditor({
       className="min-h-[480px] overflow-hidden rounded-xl border border-[#E8E2D8]"
       style={{
         // Ivory + bronze skin - scoped to the editor wrapper.
-        ["--jse-theme-color" as string]: "#A98450",
-        ["--jse-theme-color-highlight" as string]: "#8A6A3E",
+        ["--jse-theme-color" as string]: "#49381B",
+        ["--jse-theme-color-highlight" as string]: "#3A2C15",
         ["--jse-menu-color" as string]: "#FFFFFF",
         ["--jse-background-color" as string]: "#FAF8F2",
         ["--jse-panel-background" as string]: "#FFFFFF",
