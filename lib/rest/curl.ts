@@ -53,6 +53,20 @@ function tokenize(input: string): string[] {
       if (ch === "'") {
         quote = null;
         ansi = false;
+      } else if (ansi && ch === "\\" && i + 1 < src.length) {
+        const nxt = src[i + 1];
+        if (nxt === "n") cur += "\n";
+        else if (nxt === "t") cur += "\t";
+        else if (nxt === "r") cur += "\r";
+        else if (nxt === "'") cur += "'";
+        else if (nxt === "\\") cur += "\\";
+        else if (nxt === "x" && i + 3 < src.length) {
+          const hex = src.slice(i + 2, i + 4);
+          cur += String.fromCharCode(parseInt(hex, 16));
+          i += 2;
+        } else cur += nxt;
+        i++;
+        chunkHasContent = true;
       } else {
         cur += ch;
         chunkHasContent = true;
@@ -175,7 +189,7 @@ export function parseCurl(input: string): ParsedCurl {
     if (i === 0) continue; // the `curl` itself
     if (IGNORED_FLAGS.has(t) || IGNORED_FLAGS.has(low)) continue;
 
-    if (t === "-X" || t === "--request") {
+    if (t === "-X" || t === "--request" || t.startsWith("--request=")) {
       method = takeValue(i, t).toUpperCase();
       if (consumedValue(i)) i++;
       continue;
@@ -185,7 +199,7 @@ export function parseCurl(input: string): ParsedCurl {
       method = t.slice(2).toUpperCase();
       continue;
     }
-    if (t === "-H" || t === "--header") {
+    if (t === "-H" || t === "--header" || t.startsWith("--header=")) {
       const raw = takeValue(i, t);
       if (consumedValue(i)) i++;
       const h = splitHeader(raw);
@@ -203,14 +217,19 @@ export function parseCurl(input: string): ParsedCurl {
       t === "--data-raw" ||
       t === "--data-binary" ||
       t === "--data-ascii" ||
-      t === "--data-urlencode"
+      t === "--data-urlencode" ||
+      t.startsWith("--data=") ||
+      t.startsWith("--data-raw=") ||
+      t.startsWith("--data-binary=") ||
+      t.startsWith("--data-ascii=") ||
+      t.startsWith("--data-urlencode=")
     ) {
       const payload = takeValue(i, t);
       if (consumedValue(i)) i++;
       bodies.push(payload);
       continue;
     }
-    if (t === "-u" || t === "--user") {
+    if (t === "-u" || t === "--user" || t.startsWith("--user=")) {
       const creds = takeValue(i, t);
       if (consumedValue(i)) i++;
       if (!hasAuthHeader) {
@@ -227,25 +246,25 @@ export function parseCurl(input: string): ParsedCurl {
       }
       continue;
     }
-    if (t === "-A" || t === "--user-agent") {
+    if (t === "-A" || t === "--user-agent" || t.startsWith("--user-agent=")) {
       const v = takeValue(i, t);
       if (consumedValue(i)) i++;
       headers.push({ key: "User-Agent", value: v });
       continue;
     }
-    if (t === "-e" || t === "--referer") {
+    if (t === "-e" || t === "--referer" || t.startsWith("--referer=")) {
       const v = takeValue(i, t);
       if (consumedValue(i)) i++;
       headers.push({ key: "Referer", value: v });
       continue;
     }
-    if (t === "-b" || t === "--cookie") {
+    if (t === "-b" || t === "--cookie" || t.startsWith("--cookie=")) {
       const v = takeValue(i, t);
       if (consumedValue(i)) i++;
       headers.push({ key: "Cookie", value: v });
       continue;
     }
-    if (t === "--url") {
+    if (t === "--url" || t.startsWith("--url=")) {
       url = takeValue(i, t);
       if (consumedValue(i)) i++;
       continue;

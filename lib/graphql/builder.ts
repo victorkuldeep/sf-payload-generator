@@ -99,7 +99,8 @@ const MAX_FIRST = 2000;
 export { MAX_BLOCKS };
 
 function clampFirst(n: number): number {
-  return Math.min(Math.max(Math.floor(n) || 10, 1), MAX_FIRST);
+  if (!Number.isFinite(n)) return 10;
+  return Math.min(Math.max(Math.floor(n), 1), MAX_FIRST);
 }
 
 function renderLeaf(f: QueryLeaf, indent: string): string {
