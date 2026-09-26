@@ -292,11 +292,11 @@ function HomeHero({
     <section
       aria-label="Welcome"
       aria-roledescription="carousel"
-      className="arch-card hero-mesh overflow-hidden"
+      className="hero-mesh overflow-hidden"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
-      <div className="grid items-center gap-12 px-6 sm:px-12 pt-12 sm:pt-16 pb-10 lg:grid-cols-2">
+      <div className="grid items-stretch gap-10 px-1 sm:px-2 pt-5 pb-8 lg:grid-cols-[1fr_1.08fr]">
         {/* Fixed frame - text moves inside, page length never shifts */}
         <div key={idx} className="hero-slide min-h-[540px] flex flex-col justify-center">
           <div className="flex items-center gap-2 flex-wrap">
@@ -380,9 +380,9 @@ function HomeHero({
             </div>
           )}
         </div>
-        <div className="relative mx-auto w-full">
-          <div className="rounded-2xl bg-[#0c0d14] p-2 shadow-[0_32px_80px_-32px_rgba(12,13,20,0.7)]">
-            <div className="relative aspect-video overflow-hidden rounded-xl bg-[#0c0d14]">
+        <div className="relative mx-auto w-full flex flex-col justify-center">
+          <div className="rounded-2xl bg-[#0c0d14] p-2 shadow-[0_32px_80px_-32px_rgba(12,13,20,0.7)] w-full">
+            <div className="relative min-h-[420px] lg:min-h-[480px] overflow-hidden rounded-xl bg-[#0c0d14]">
               {HERO_IMAGES.map((img, i) => (
                 <div
                   key={img.src}

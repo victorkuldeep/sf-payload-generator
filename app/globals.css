@@ -164,7 +164,7 @@ button, input, select, textarea, optgroup, option {
 /* ── Hero dotted mesh (research-lab language): warm sand base, bronze dots,
  * faint survey grid, contour curves top-right ── */
 .hero-mesh {
-  background-color: #F5F1E8;
+  background-color: transparent;
   background-image:
     radial-gradient(circle at 100% 0%, rgba(73, 55, 27, 0.05) 18%, transparent 19%),
     radial-gradient(circle at 100% 0%, rgba(73, 55, 27, 0.05) 34%, transparent 35%),
