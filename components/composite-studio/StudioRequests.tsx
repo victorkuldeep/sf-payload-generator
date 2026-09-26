@@ -9,6 +9,7 @@ import type {
 import {
   getWritableFields,
   getActivePicklistValues,
+  isRequiredField,
 } from "@/lib/salesforce/metadata";
 import { rankObjects } from "@/lib/search/rank";
 import type {
@@ -413,6 +414,11 @@ function FieldSection({
     () => (describe ? getWritableFields(describe.fields, operation) : []),
     [describe, operation]
   );
+  // Mandatory fields are locked rows - removing one corrupts the request.
+  const requiredSet = useMemo(
+    () => new Set(writable.filter((f) => isRequiredField(f, operation)).map((f) => f.name)),
+    [writable, operation]
+  );
   const added = useMemo(() => new Set(request.fields.map((f) => f.apiName)), [request.fields]);
 
   const candidates = useMemo(() => {
@@ -513,6 +519,7 @@ function FieldSection({
               request={request}
               field={f}
               pickValues={pickValues}
+              locked={requiredSet.has(f.apiName)}
               issue={fieldIssue(f.apiName)}
               actions={actions}
             />
@@ -530,6 +537,7 @@ function FieldRow({
   request,
   field,
   pickValues,
+  locked,
   issue,
   actions,
 }: {
@@ -537,6 +545,8 @@ function FieldRow({
   request: StudioRequest;
   field: StudioFieldValue;
   pickValues: string[];
+  /** Mandatory fields cannot be removed - it would corrupt the request. */
+  locked: boolean;
   issue: StudioIssue | undefined;
   actions: StudioRequestActions;
 }) {
@@ -570,6 +580,7 @@ function FieldRow({
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="truncate text-[13px] font-medium text-[#27241F]">{field.fieldLabel}</span>
             <span className="rounded border border-[#E8E2D8] bg-[#F8F6F0] px-1 font-mono text-[10px] text-[#777168]">{field.fieldType}</span>
+            {locked && <Badge variant="error">Required</Badge>}
             {mapping && <Badge variant="success">⬦ link</Badge>}
           </div>
           <p className="truncate font-mono text-[11px] text-[#A39B8E]">{field.apiName}</p>
@@ -610,13 +621,26 @@ function FieldRow({
             <option value="reference">Ref</option>
             <option value="null">Null</option>
           </select>
-          <button
-            onClick={() => actions.onRemoveField(request.id, field.apiName)}
-            aria-label={`Remove ${field.apiName}`}
-            className="shrink-0 rounded-md p-1.5 text-[13px] leading-none text-[#A39B8E] hover:text-[#B84C42] hover:bg-red-50 transition-colors cursor-pointer"
-          >
-            ×
-          </button>
+          {locked ? (
+            <span
+              className="shrink-0 rounded-md p-1.5 leading-none text-[#A98450]"
+              title="Required field - cannot be removed"
+              aria-label={`${field.apiName} is required and cannot be removed`}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+                <rect x="4" y="10" width="16" height="11" rx="2" />
+                <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+              </svg>
+            </span>
+          ) : (
+            <button
+              onClick={() => actions.onRemoveField(request.id, field.apiName)}
+              aria-label={`Remove ${field.apiName}`}
+              className="shrink-0 rounded-md p-1.5 text-[13px] leading-none text-[#A39B8E] hover:text-[#B84C42] hover:bg-red-50 transition-colors cursor-pointer"
+            >
+              ×
+            </button>
+          )}
         </div>
       </div>
 

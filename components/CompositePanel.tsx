@@ -294,6 +294,14 @@ export default function CompositePanel({
 
   const handleRemoveField = useCallback(
     (requestId: string, apiName: string) => {
+      // Mandatory fields are structural - refusing beats a corrupt request.
+      const req = doc.requests.find((r) => r.id === requestId);
+      const desc = req ? describes.get(req.objectApiName) : undefined;
+      const meta = desc?.fields.find((f) => f.name === apiName);
+      if (req && meta) {
+        const operation = req.method === "PATCH" ? "PATCH" : "POST";
+        if (isRequiredField(meta, operation)) return;
+      }
       setDoc((p) => {
         const req = p.requests.find((r) => r.id === requestId);
         const field = req?.fields.find((f) => f.apiName === apiName);
@@ -307,7 +315,7 @@ export default function CompositePanel({
       });
       touch();
     },
-    [touch]
+    [touch, doc.requests, describes]
   );
 
   const handleSetLiteral = useCallback(
