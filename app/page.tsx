@@ -296,7 +296,7 @@ function HomeHero({
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
-      <div className="grid items-stretch gap-10 px-1 sm:px-2 pt-5 pb-8 lg:grid-cols-[1fr_1.08fr]">
+      <div className="grid items-stretch gap-6 px-1 sm:px-2 pt-5 pb-8 lg:grid-cols-[1fr_1.35fr]">
         {/* Fixed frame - text moves inside, page length never shifts */}
         <div key={idx} className="hero-slide min-h-[540px] flex flex-col justify-center">
           <div className="flex items-center gap-2 flex-wrap">
