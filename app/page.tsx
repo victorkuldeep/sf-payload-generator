@@ -280,10 +280,11 @@ function HomeHero({
 
   const slide = HERO_SLIDES[idx];
   const HERO_IMAGES = [
-    { src: "/hero/img1.webp", alt: "Studio visual 1" },
-    { src: "/hero/img2.webp", alt: "Studio visual 2" },
-    { src: "/hero/img3.webp", alt: "Studio visual 3" },
-    { src: "/hero/img4.webp", alt: "Studio visual 4" },
+    { src: "/hero/builder-home.webp", alt: "Single-object payload builder" },
+    { src: "/hero/api-studio.webp", alt: "Composite API studio" },
+    { src: "/hero/graphql.webp", alt: "GraphQL query builder" },
+    { src: "/hero/schema-studio.webp", alt: "Schema ERD studio" },
+    { src: "/hero/json-workbench.webp", alt: "JSON workbench comparator" },
   ];
   const heroImgIdx = idx % HERO_IMAGES.length;
 
