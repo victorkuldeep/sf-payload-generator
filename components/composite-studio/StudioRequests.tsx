@@ -485,18 +485,52 @@ function FieldSection({
           <div className="max-h-56 overflow-y-auto px-2 pb-2">
             {candidates.map((f) => {
               const on = picked.has(f.name);
+              const isPick = (f.type === "picklist" || f.type === "multipicklist") && (f.picklistValues ?? []).length > 0;
+              const refs = f.referenceTo ?? [];
               return (
-                <label key={f.name} className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors ${on ? "bg-[#211F1B] text-white" : "hover:bg-white text-[#27241F]"}`}>
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    onChange={() => setPicked((p) => { const n = new Set(p); if (n.has(f.name)) n.delete(f.name); else n.add(f.name); return n; })}
-                    className="h-3.5 w-3.5 rounded"
-                  />
+                <div
+                  key={f.name}
+                  onClick={() => setPicked((p) => { const n = new Set(p); if (n.has(f.name)) n.delete(f.name); else n.add(f.name); return n; })}
+                  className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors ${on ? "bg-[#211F1B] text-white" : "hover:bg-white text-[#27241F]"}`}
+                  role="checkbox"
+                  aria-checked={on}
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === " " || e.key === "Enter") {
+                      e.preventDefault();
+                      setPicked((p) => { const n = new Set(p); if (n.has(f.name)) n.delete(f.name); else n.add(f.name); return n; });
+                    }
+                  }}
+                >
+                  <span
+                    className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border text-[10px] leading-none ${
+                      on ? "border-white bg-white text-[#211F1B]" : "border-[#A39B8E] text-transparent"
+                    }`}
+                    aria-hidden="true"
+                  >
+                    ✓
+                  </span>
                   <span className="min-w-0 flex-1 truncate font-medium">{f.label}</span>
-                  <span className={`truncate font-mono text-[11px] ${on ? "text-white/60" : "text-[#A39B8E]"}`}>{f.name}</span>
-                  <span className={`font-mono text-[10px] ${on ? "text-white/60" : "text-[#A39B8E]"}`}>{f.type}</span>
-                </label>
+                  <span className={`hidden truncate font-mono text-[11px] sm:inline ${on ? "text-white/60" : "text-[#A39B8E]"}`}>{f.name}</span>
+                  <span className={`shrink-0 rounded border px-1 font-mono text-[10px] ${on ? "border-white/30 text-white/70" : "border-[#E8E2D8] bg-[#F8F6F0] text-[#777168]"}`}>{f.type}</span>
+                  {f.type === "reference" && refs.length > 0 && (
+                    <span className={`max-w-[180px] shrink-0 truncate font-mono text-[10px] ${on ? "text-white/70" : "text-[#7A5C9E]"}`} title={`References ${refs.join(", ")}`}>
+                      → {refs.join(", ")}
+                    </span>
+                  )}
+                  {isPick && (
+                    <span onClick={(e) => e.stopPropagation()}>
+                      <PicklistValuesButton
+                        objectName={request.objectApiName}
+                        objectLabel={request.displayName || request.objectLabel || request.objectApiName}
+                        fieldName={f.name}
+                        fieldLabel={f.label}
+                        fieldType={f.type}
+                        values={f.picklistValues ?? []}
+                      />
+                    </span>
+                  )}
+                </div>
               );
             })}
             {candidates.length === 0 && <p className="px-2 py-3 text-[13px] text-[#A39B8E]">No fields match.</p>}
