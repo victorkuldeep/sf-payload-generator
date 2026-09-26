@@ -295,7 +295,7 @@ function HomeHero({
             <span className="hero-kicker__dot" aria-hidden="true" />
             Architect toolkit · API-first Salesforce
           </p>
-          <p className="mt-3 text-[10px] font-semibold uppercase tracking-[2px] text-[var(--color-accent-dark)]">
+          <p className="mt-3 font-mono text-[11px] font-semibold uppercase tracking-[2.4px] text-[var(--color-accent-dark)]">
             {slide.eyebrow}
           </p>
           <h1 className="hero-title mt-2 text-4xl sm:text-5xl xl:text-6xl text-ivory-950">

@@ -150,20 +150,25 @@ button, input, select, textarea, optgroup, option {
 .hero-title {
   font-family: var(--font-sans);
   font-weight: 800;
-  letter-spacing: -0.03em;
-  line-height: 1.02;
+  letter-spacing: -0.02em;
+  line-height: 0.98;
   color: var(--color-ink);
+  text-transform: uppercase;
 }
 .hero-title em { color: var(--color-accent); font-style: normal; }
 
-/* ── Hero dotted mesh (portfolio language): dot grid + faint survey lines ── */
+/* ── Hero dotted mesh (research-lab language): warm sand base, bronze dots,
+ * faint survey grid, contour curves top-right ── */
 .hero-mesh {
-  background-color: var(--color-surface);
+  background-color: #F5F1E8;
   background-image:
-    radial-gradient(circle, rgba(24, 20, 12, 0.12) 1px, transparent 1.3px),
-    linear-gradient(rgba(24, 20, 12, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(24, 20, 12, 0.05) 1px, transparent 1px);
-  background-size: 22px 22px, 88px 88px, 88px 88px;
+    radial-gradient(circle at 100% 0%, rgba(73, 55, 27, 0.05) 18%, transparent 19%),
+    radial-gradient(circle at 100% 0%, rgba(73, 55, 27, 0.05) 34%, transparent 35%),
+    radial-gradient(circle at 100% 0%, rgba(73, 55, 27, 0.04) 52%, transparent 53%),
+    radial-gradient(rgba(73, 55, 27, 0.13) 1px, transparent 1.3px),
+    linear-gradient(to right, rgba(73, 55, 27, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(73, 55, 27, 0.05) 1px, transparent 1px);
+  background-size: auto, auto, auto, 24px 24px, 44px 44px, 44px 44px;
 }
 .hero-kicker {
   display: inline-flex;
