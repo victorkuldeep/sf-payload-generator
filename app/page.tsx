@@ -289,19 +289,19 @@ function HomeHero({
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
-      <div className="grid items-center gap-8 px-6 sm:px-10 pt-8 sm:pt-10 pb-6 lg:grid-cols-2">
+      <div className="grid items-center gap-12 px-6 sm:px-12 pt-12 sm:pt-16 pb-10 lg:grid-cols-2">
         <div key={idx} className="hero-slide">
           <p className="hero-kicker">
             <span className="hero-kicker__dot" aria-hidden="true" />
             Architect toolkit · API-first Salesforce
           </p>
-          <p className="mt-3 font-mono text-[11px] font-semibold uppercase tracking-[2.4px] text-[var(--color-accent-dark)]">
+          <p className="mt-4 font-mono text-[11px] font-semibold uppercase tracking-[2.4px] text-[var(--color-accent-dark)]">
             {slide.eyebrow}
           </p>
-          <h1 className="hero-title mt-2 text-4xl sm:text-5xl xl:text-6xl text-ivory-950">
+          <h1 className="hero-title mt-3 text-5xl sm:text-6xl xl:text-7xl text-ivory-950">
             {slide.titleA} <em>{slide.titleEm}</em>
           </h1>
-          <p className="mt-4 max-w-xl text-sm leading-relaxed text-ivory-700">
+          <p className="mt-5 max-w-2xl text-[15px] leading-relaxed text-ivory-700">
             {slide.copy}
           </p>
           <div className="mt-6 flex flex-col sm:flex-row gap-3">
@@ -373,22 +373,9 @@ function HomeHero({
             width={1536}
             height={1024}
             priority
-            className="w-full max-w-[360px] ml-auto h-auto mix-blend-multiply drop-shadow-lg"
+            className="w-full max-w-[420px] ml-auto h-auto mix-blend-multiply drop-shadow-lg"
           />
         </div>
-      </div>
-      <div className="bronze-rule mx-6 sm:mx-10" aria-hidden="true" />
-      <div id="how-it-works" className="grid sm:grid-cols-3 gap-3 px-6 sm:px-10 py-6 scroll-mt-20">
-        {[
-          { t: "Table API payloads", d: "POST & PATCH bodies with type-correct values, required-field awareness and record-ID handling." },
-          { t: "Composite batches", d: "Multi-sObject graphs with reference IDs in a single Composite API call." },
-          { t: "Export anywhere", d: "JSON, cURL with $SF_ACCESS_TOKEN placeholder, JS fetch, or Apex HttpRequest." },
-        ].map((f) => (
-          <div key={f.t} className="rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-4">
-            <p className="text-xs font-semibold text-ivory-950">{f.t}</p>
-            <p className="mt-1 text-[11px] leading-relaxed text-ivory-600">{f.d}</p>
-          </div>
-        ))}
       </div>
     </section>
   );
