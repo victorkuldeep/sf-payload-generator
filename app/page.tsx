@@ -248,6 +248,13 @@ const HERO_SLIDES: {
   },
 ];
 
+const HERO_PHOTOS = [
+  "/kuldeep-profile.webp",
+  "/hero-dp.webp",
+  "/hero-pic4.webp",
+  "/hero-pic5.webp",
+];
+
 function HomeHero({
   connected,
   loadingConnect,
@@ -280,6 +287,7 @@ function HomeHero({
   }, [paused]);
 
   const slide = HERO_SLIDES[idx];
+  const photo = HERO_PHOTOS[idx % HERO_PHOTOS.length];
 
   return (
     <section
@@ -290,7 +298,8 @@ function HomeHero({
       onMouseLeave={() => setPaused(false)}
     >
       <div className="grid items-center gap-12 px-6 sm:px-12 pt-12 sm:pt-16 pb-10 lg:grid-cols-2">
-        <div key={idx} className="hero-slide">
+        {/* Fixed frame - text moves inside, page length never shifts */}
+        <div key={idx} className="hero-slide min-h-[540px] flex flex-col justify-center">
           <p className="hero-kicker">
             <span className="hero-kicker__dot" aria-hidden="true" />
             Architect toolkit · API-first Salesforce
@@ -298,7 +307,7 @@ function HomeHero({
           <p className="mt-4 font-mono text-[11px] font-semibold uppercase tracking-[2.4px] text-[var(--color-accent-dark)]">
             {slide.eyebrow}
           </p>
-          <h1 className="hero-title mt-3 text-5xl sm:text-6xl xl:text-7xl text-ivory-950">
+          <h1 className="hero-title hero-title--mono mt-3 text-5xl sm:text-6xl xl:text-7xl text-ivory-950">
             {slide.titleA} <em>{slide.titleEm}</em>
           </h1>
           <p className="mt-5 max-w-2xl text-[15px] leading-relaxed text-ivory-700">
@@ -366,15 +375,37 @@ function HomeHero({
             </div>
           )}
         </div>
-        <div className="relative">
-          <Image
-            src="/sf-payload-toolkit.webp"
-            alt="Salesforce sObject Payload Studio - payload builder preview"
-            width={1536}
-            height={1024}
-            priority
-            className="w-full max-w-[420px] ml-auto h-auto mix-blend-multiply drop-shadow-lg"
-          />
+        <div className="relative mx-auto w-fit">
+          <div className="rounded-full bg-white p-2.5 shadow-[0_24px_64px_-24px_rgba(24,20,12,0.45)] ring-1 ring-[var(--color-line)]">
+            <div key={photo} className="hero-slide overflow-hidden rounded-full" style={{ width: 300, height: 300 }}>
+              <Image
+                src={photo}
+                alt="Kuldeep Singh"
+                width={300}
+                height={300}
+                priority={idx === 0}
+                className="h-full w-full object-cover"
+              />
+            </div>
+          </div>
+          <span className="absolute -bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-[var(--color-line)] bg-white px-3 py-1 font-mono text-[10px] font-semibold tracking-[1.8px] text-[var(--color-ink)] shadow-sm">
+            <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-[#32815B]" aria-hidden="true" />
+            ARCHITECT TOOLKIT
+          </span>
+          <p className="mt-6 text-center text-[15px] font-bold text-ivory-950">Kuldeep Singh</p>
+          <p className="mt-0.5 text-center font-mono text-[10px] uppercase tracking-[2px] text-[var(--color-muted)]">
+            Principal Technical Architect
+          </p>
+          <p className="mt-1 text-center">
+            <a
+              href="https://victorkuldeep.com"
+              target="_blank"
+              rel="noreferrer"
+              className="font-mono text-xs text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:underline underline-offset-2 transition-colors"
+            >
+              victorkuldeep.com ↗
+            </a>
+          </p>
         </div>
       </div>
     </section>

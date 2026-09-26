@@ -35,6 +35,21 @@ export function AppFooter({ trail, onNavigate }: { trail?: ReactNode; onNavigate
       )}
 
       <div className="relative mx-auto w-full px-5 lg:px-8 pt-10 pb-6">
+        {/* Capabilities */}
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 pb-8">
+          {[
+            { t: "Table API payloads", d: "POST & PATCH bodies with type-correct values, required-field awareness and record-ID handling." },
+            { t: "Composite batches", d: "Multi-sObject graphs with reference IDs in a single Composite API call." },
+            { t: "JSON Studio", d: "Edit payloads in a tree and diff versions side by side, node by node." },
+            { t: "Export anywhere", d: "JSON, cURL with $SF_ACCESS_TOKEN placeholder, JS fetch, or Apex HttpRequest." },
+          ].map((f) => (
+            <div key={f.t} className="rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-4">
+              <p className="font-mono text-[11px] font-semibold uppercase tracking-wider text-[var(--color-ink)]">{f.t}</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-[var(--color-ink-soft)]">{f.d}</p>
+            </div>
+          ))}
+        </div>
+
         {/* Brand + nav grid */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-8 pb-8">
           <div className="md:col-span-5 space-y-4">
@@ -247,20 +262,6 @@ export function AppFooter({ trail, onNavigate }: { trail?: ReactNode; onNavigate
               </p>
             </div>
           </div>
-        </div>
-
-        {/* Capabilities */}
-        <div className="grid sm:grid-cols-3 gap-3 pb-8">
-          {[
-            { t: "Table API payloads", d: "POST & PATCH bodies with type-correct values, required-field awareness and record-ID handling." },
-            { t: "Composite batches", d: "Multi-sObject graphs with reference IDs in a single Composite API call." },
-            { t: "Export anywhere", d: "JSON, cURL with $SF_ACCESS_TOKEN placeholder, JS fetch, or Apex HttpRequest." },
-          ].map((f) => (
-            <div key={f.t} className="rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-4">
-              <p className="font-mono text-[11px] font-semibold uppercase tracking-wider text-[var(--color-ink)]">{f.t}</p>
-              <p className="mt-1 text-[11px] leading-relaxed text-[var(--color-ink-soft)]">{f.d}</p>
-            </div>
-          ))}
         </div>
 
         {/* Workflow track */}
