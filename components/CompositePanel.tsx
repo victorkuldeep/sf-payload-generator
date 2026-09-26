@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useMemo } from "react";
+import { useState, useCallback, useMemo } from "react";
 import type { SalesforceObject, SalesforceDescribeResult, SalesforceField } from "@/lib/salesforce/types";
 import { apiFetch } from "@/lib/api";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
@@ -15,7 +15,6 @@ import {
   type StudioDocument,
   type StudioRequest,
   type StudioFieldValue,
-  type FieldMode,
   type StudioPayload,
 } from "@/lib/composite/studio";
 import StudioRequests, { type StudioRequestActions } from "./composite-studio/StudioRequests";
