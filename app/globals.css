@@ -148,10 +148,13 @@ button, input, select, textarea, optgroup, option {
   letter-spacing: -0.02em;
 }
 .hero-title {
-  font-family: var(--font-inter), system-ui, sans-serif;
+  font-family: "Arial Narrow", "Bahnschrift Condensed", "Roboto Condensed", -apple-system, sans-serif;
+  font-size: clamp(48px, 6vw, 84px);
+  font-stretch: condensed;
   font-weight: 800;
-  letter-spacing: -0.04em;
-  line-height: 0.95;
+  letter-spacing: -0.05em;
+  line-height: 0.88;
+  text-transform: uppercase;
   color: var(--color-ink);
 }
 .hero-title em { color: var(--color-accent); font-style: normal; }

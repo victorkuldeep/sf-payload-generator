@@ -307,23 +307,29 @@ function HomeHero({
               {idx + 1} of {HERO_SLIDES.length}
             </span>
           </div>
-          <h1 className="hero-title hero-title--red mt-3 text-5xl sm:text-6xl xl:text-7xl text-ivory-950">
+          <h1 className="hero-title hero-title--red mt-3 text-ivory-950">
             {slide.titleA} <em>{slide.titleEm}</em>
           </h1>
           <p className="mt-5 max-w-2xl text-[15px] leading-relaxed text-ivory-700">
             {slide.copy}
           </p>
           <div className="mt-6 flex items-center gap-3">
-            <Button
-              size="lg"
+            <button
+              type="button"
               onClick={() => onJumpMode(slide.mode)}
-              className="bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent)]/90"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--color-accent)] text-white text-xs font-medium hover:bg-[var(--color-accent)]/90 transition-all cursor-pointer"
             >
-              Open {slide.cta} →
-            </Button>
-            <Button size="lg" variant="secondary" onClick={onConnect} loading={loadingConnect}>
+              <span>Open {slide.cta}</span>
+              <span aria-hidden="true">→</span>
+            </button>
+            <button
+              type="button"
+              onClick={onConnect}
+              disabled={loadingConnect}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--color-canvas)] border border-[var(--color-line)] text-xs font-medium text-[var(--color-ink)] hover:bg-[var(--color-surface-strong)] transition-colors cursor-pointer disabled:opacity-50"
+            >
               {connected ? "Switch org" : "Connect to Salesforce"}
-            </Button>
+            </button>
           </div>
           <div className="mt-5 flex items-center gap-3">
             <div className="flex items-center gap-1.5" role="tablist" aria-label="Hero slides">
@@ -374,7 +380,7 @@ function HomeHero({
             </div>
           )}
         </div>
-        <div className="relative mx-auto w-full max-w-[560px]">
+        <div className="relative mx-auto w-full">
           <div className="rounded-2xl bg-[#0c0d14] p-2 shadow-[0_32px_80px_-32px_rgba(12,13,20,0.7)]">
             <div className="relative aspect-video overflow-hidden rounded-xl bg-[#0c0d14]">
               {HERO_IMAGES.map((img, i) => (
