@@ -23,6 +23,7 @@ import { BootLoader } from "@/components/BootLoader";
 import { CollectionDrawer } from "@/components/CollectionDrawer";
 import { CollectionPicker } from "@/components/CollectionPicker";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import type { Collection, CollectionItem, NewCollectionItem } from "@/lib/collection/types";
 import { newItemId } from "@/lib/collection/types";
 import {
@@ -187,7 +188,7 @@ const HERO_SLIDES: {
   titleEm: string;
   copy: string;
   cta: string;
-  mode: Exclude<BuilderMode, "home">;
+  mode: Exclude<BuilderMode, "home"> | "json";
 }[] = [
   {
     eyebrow: "Metadata-driven REST payload builder",
@@ -198,12 +199,28 @@ const HERO_SLIDES: {
     mode: "single",
   },
   {
+    eyebrow: "Composite Studio",
+    titleA: "Requests, graph,",
+    titleEm: "payload.",
+    copy: "Compose multi-sObject batches with unique reference IDs - Requests, Graph and Payload screens on one canonical model.",
+    cta: "Composite",
+    mode: "composite",
+  },
+  {
     eyebrow: "SOQL query engine",
     titleA: "Ask anything,",
     titleEm: "explain everything.",
     copy: "Run SOQL with query plans, history, saved queries and CSV exports - Dev Console power without leaving the studio.",
     cta: "SOQL",
     mode: "soql",
+  },
+  {
+    eyebrow: "GraphQL query builder",
+    titleA: "One round trip,",
+    titleEm: "whole graph.",
+    copy: "Traverse lookup trees with value precision - live metadata, read-only, no mutations.",
+    cta: "GraphQL",
+    mode: "graphql",
   },
   {
     eyebrow: "Schema deep dive",
@@ -214,12 +231,20 @@ const HERO_SLIDES: {
     mode: "schema",
   },
   {
-    eyebrow: "Every Salesforce API",
-    titleA: "Composite, GraphQL,",
-    titleEm: "collections.",
-    copy: "Batch sObjects with reference IDs, traverse object graphs in one round trip, stage requests and export Postman collections.",
-    cta: "Composite API",
-    mode: "composite",
+    eyebrow: "Raw REST explorer",
+    titleA: "Any method,",
+    titleEm: "any endpoint.",
+    copy: "Send org-scoped or public calls with cURL paste, history and one-click collection staging.",
+    cta: "REST",
+    mode: "rest",
+  },
+  {
+    eyebrow: "JSON Studio",
+    titleA: "Diff payloads,",
+    titleEm: "node by node.",
+    copy: "Edit JSON in a tree and compare versions side by side - virtualized for the biggest context payloads.",
+    cta: "JSON",
+    mode: "json",
   },
 ];
 
@@ -236,7 +261,7 @@ function HomeHero({
   connectError: string | null;
   onConnect: () => void;
   onHowItWorks: () => void;
-  onJumpMode: (m: Exclude<BuilderMode, "home">) => void;
+  onJumpMode: (m: Exclude<BuilderMode, "home"> | "json") => void;
 }) {
   const [idx, setIdx] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -250,7 +275,7 @@ function HomeHero({
     ) {
       return;
     }
-    const t = window.setInterval(() => setIdx((i) => (i + 1) % HERO_SLIDES.length), 10000);
+    const t = window.setInterval(() => setIdx((i) => (i + 1) % HERO_SLIDES.length), 15000);
     return () => window.clearInterval(t);
   }, [paused]);
 
@@ -260,13 +285,17 @@ function HomeHero({
     <section
       aria-label="Welcome"
       aria-roledescription="carousel"
-      className="arch-card overflow-hidden"
+      className="arch-card hero-mesh overflow-hidden"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
       <div className="grid items-center gap-8 px-6 sm:px-10 pt-8 sm:pt-10 pb-6 lg:grid-cols-2">
         <div key={idx} className="hero-slide">
-          <p className="text-[10px] font-semibold uppercase tracking-[2px] text-[var(--color-accent-dark)]">
+          <p className="hero-kicker">
+            <span className="hero-kicker__dot" aria-hidden="true" />
+            Architect toolkit · API-first Salesforce
+          </p>
+          <p className="mt-3 text-[10px] font-semibold uppercase tracking-[2px] text-[var(--color-accent-dark)]">
             {slide.eyebrow}
           </p>
           <h1 className="hero-title mt-2 text-4xl sm:text-5xl xl:text-6xl text-ivory-950">
@@ -344,7 +373,7 @@ function HomeHero({
             width={1536}
             height={1024}
             priority
-            className="w-full max-w-[440px] ml-auto h-auto mix-blend-multiply drop-shadow-lg"
+            className="w-full max-w-[360px] ml-auto h-auto mix-blend-multiply drop-shadow-lg"
           />
         </div>
       </div>
@@ -366,6 +395,7 @@ function HomeHero({
 }
 
 export default function Home() {
+  const router = useRouter();
   const [state, setState] = useState<AppState>(initialState);
   const [loading, setLoading] = useState<LoadingState>({
     connect: false,
@@ -463,9 +493,13 @@ export default function Home() {
   );
 
   // Hero carousel jump links: offline visitors connect first, then land
-  // on the chosen builder automatically.
+  // on the chosen builder automatically. JSON Studio is standalone.
   const jumpToMode = useCallback(
-    (mode: Exclude<BuilderMode, "home">) => {
+    (mode: Exclude<BuilderMode, "home"> | "json") => {
+      if (mode === "json") {
+        router.push("/json");
+        return;
+      }
       if (!state.connected) {
         pendingModeRef.current = mode;
         openConnect();
@@ -473,7 +507,7 @@ export default function Home() {
       }
       goMode(mode);
     },
-    [state.connected, openConnect, goMode]
+    [state.connected, openConnect, goMode, router]
   );
 
   // On mount: restore session, seed modal prefill, decide on welcome,
