@@ -164,7 +164,7 @@ export default function CompositePanel({
         };
       });
       touch();
-      await fetchDescribe(subReqId, objectName);
+      await fetchDescribe(id, objectName);
     },
     [objects, fetchDescribe, touch]
   );
