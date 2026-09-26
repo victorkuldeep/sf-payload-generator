@@ -124,11 +124,11 @@ export function AppHeader({
         <nav className="hidden md:flex items-center gap-5 text-xs font-medium text-[var(--color-ink-soft)]" aria-label="Product">
           {renderNavItems()}
           <Link
-            href="/json-spike"
+            href="/json"
             className="hover:text-[var(--color-ink)] transition-colors"
-            title="JSON Lab - editor + A/B comparator spike"
+            title="JSON Studio - editor and A/B payload comparator"
           >
-            JSON Lab
+            JSON
           </Link>
           <a
             href="https://workbench.developerforce.com"
@@ -308,11 +308,11 @@ export function AppHeader({
       <nav className="md:hidden flex items-center gap-4 overflow-x-auto px-5 pb-2.5 text-xs font-medium text-[var(--color-ink-soft)]" aria-label="Product">
         {renderNavItems()}
         <Link
-          href="/json-spike"
+          href="/json"
           className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
-          title="JSON Lab - editor + A/B comparator spike"
+          title="JSON Studio - editor and A/B payload comparator"
         >
-          JSON Lab
+          JSON
         </Link>
         <a
           href="https://workbench.developerforce.com"

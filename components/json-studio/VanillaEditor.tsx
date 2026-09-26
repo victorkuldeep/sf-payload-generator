@@ -49,9 +49,8 @@ export function VanillaEditor({
   return (
     <div
       ref={hostRef}
-      className="jse-ivory min-h-[420px] overflow-hidden rounded-xl border border-[#E8E2D8]"
+      className="min-h-[480px] overflow-hidden rounded-xl border border-[#E8E2D8]"
       style={{
-        // Ivory override attempt - scoped to the spike wrapper.
         ["--jse-background-color" as string]: "#FAF8F2",
         ["--jse-panel-background" as string]: "#FFFFFF",
         ["--jse-main-background-color" as string]: "#FFFFFF",
