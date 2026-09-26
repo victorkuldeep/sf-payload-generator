@@ -1,17 +1,22 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useMemo } from "react";
 import {
   CompositeSubRequest,
   SalesforceObject,
   SalesforceDescribeResult,
   CompositePayload,
 } from "@/lib/salesforce/types";
-import { generateCompositePayload, deriveReferenceId } from "@/lib/payload/generator";
+import {
+  generateCompositePayload,
+  deriveReferenceId,
+  uniqueReferenceId,
+} from "@/lib/payload/generator";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import { apiFetch } from "@/lib/api";
 import type { NewCollectionItem } from "@/lib/collection/types";
-import CompositeSubRequestCard from "./CompositeSubRequest";
+import CompositeTree from "./CompositeTree";
+import CompositeRequestEditor from "./CompositeRequestEditor";
 import CodeBlock from "./ui/CodeBlock";
 import Button from "./ui/Button";
 
@@ -26,6 +31,8 @@ interface CompositePanelProps {
 
 type ExportTab = "json" | "curl";
 
+const MAX_REQUESTS = 25;
+
 function buildEmptySubRequest(id: string): CompositeSubRequest {
   return {
     id,
@@ -39,6 +46,11 @@ function buildEmptySubRequest(id: string): CompositeSubRequest {
   };
 }
 
+/**
+ * Composite workbench: tree on the left (one row per request, nested by
+ * @{ref} parentage), single-request editor on the right, payload + test
+ * below. No card stack, no reorder arrows - order is execution order.
+ */
 export default function CompositePanel({
   objects,
   instanceUrl,
@@ -49,8 +61,11 @@ export default function CompositePanel({
 }: CompositePanelProps) {
   const counter = useRef(0);
   const nextId = () => String(++counter.current);
+  const payloadRef = useRef<HTMLDivElement>(null);
 
   const [subRequests, setSubRequests] = useState<CompositeSubRequest[]>([buildEmptySubRequest(nextId())]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [allOrNone, setAllOrNone] = useState(true);
   const [generatedPayload, setGeneratedPayload] = useState<CompositePayload | null>(null);
   const [activeTab, setActiveTab] = useState<ExportTab>("json");
@@ -61,6 +76,23 @@ export default function CompositePanel({
   const [testError, setTestError] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
 
+  const selected = useMemo(
+    () => subRequests.find((sr) => sr.id === selectedId) ?? subRequests[0] ?? null,
+    [subRequests, selectedId]
+  );
+  const selectedIndex = useMemo(
+    () => (selected ? subRequests.findIndex((sr) => sr.id === selected.id) : -1),
+    [subRequests, selected]
+  );
+  const refIdCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const sr of subRequests) {
+      if (!sr.referenceId) continue;
+      m.set(sr.referenceId, (m.get(sr.referenceId) ?? 0) + 1);
+    }
+    return m;
+  }, [subRequests]);
+
   const updateSubRequest = useCallback((id: string, patch: Partial<CompositeSubRequest>) => {
     setSubRequests((prev) =>
       prev.map((sr) => (sr.id === id ? { ...sr, ...patch } : sr))
@@ -68,51 +100,33 @@ export default function CompositePanel({
     setGeneratedPayload(null);
   }, []);
 
-  const removeSubRequest = useCallback((id: string) => {
-    setSubRequests((prev) => prev.filter((sr) => sr.id !== id));
-    setGeneratedPayload(null);
-  }, []);
+  const removeSubRequest = useCallback(
+    (id: string) => {
+      setSubRequests((prev) => {
+        const idx = prev.findIndex((sr) => sr.id === id);
+        const next = prev.filter((sr) => sr.id !== id);
+        // Keep a selection: neighbour first, so the editor never blanks
+        // while requests remain.
+        if (id === (selected?.id ?? selectedId)) {
+          const fallback = next[Math.min(idx, next.length - 1)] ?? null;
+          setSelectedId(fallback ? fallback.id : null);
+        }
+        return next.length > 0 ? next : [buildEmptySubRequest(nextId())];
+      });
+      setCollapsed((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      setGeneratedPayload(null);
+    },
+    [selected, selectedId]
+  );
 
-  const addSubRequest = () => {
-    setSubRequests((prev) => [...prev, buildEmptySubRequest(nextId())]);
-    setGeneratedPayload(null);
-  };
-
-  const moveUp = (index: number) => {
-    if (index === 0) return;
-    setSubRequests((prev) => {
-      const next = [...prev];
-      [next[index - 1], next[index]] = [next[index], next[index - 1]];
-      return next;
-    });
-    setGeneratedPayload(null);
-  };
-
-  const moveDown = (index: number) => {
-    setSubRequests((prev) => {
-      if (index >= prev.length - 1) return prev;
-      const next = [...prev];
-      [next[index], next[index + 1]] = [next[index + 1], next[index]];
-      return next;
-    });
-    setGeneratedPayload(null);
-  };
-
-  const handleDescribeObject = useCallback(
+  const fetchDescribeFor = useCallback(
     async (subReqId: string, objectName: string) => {
       const token = getToken();
       if (!token) return;
-
-      // Optimistically update objectName and derive referenceId
-      const refId = deriveReferenceId(objectName);
-      setSubRequests((prev) =>
-        prev.map((sr) =>
-          sr.id === subReqId
-            ? { ...sr, objectName, referenceId: refId, describe: null, selectedFieldNames: new Set(), fieldValues: {} }
-            : sr
-        )
-      );
-
       try {
         const response = await apiFetch("/api/salesforce/describe", { instanceUrl, token, apiVersion, objectName });
         const data = (await response.json()) as SalesforceDescribeResult & { error?: string };
@@ -127,17 +141,81 @@ export default function CompositePanel({
         if (isSessionExpiredMessage(err instanceof Error ? err.message : "")) {
           onSessionExpired?.();
         }
-        // describe failed - leave describe: null, user can retry
+        // describe failed - leave describe: null, user can retry by re-picking
       }
     },
     [instanceUrl, apiVersion, getToken, onSessionExpired]
   );
+
+  const handleDescribeObject = useCallback(
+    async (subReqId: string, objectName: string) => {
+      // Assign a unique referenceId (first use keeps the bare base).
+      setSubRequests((prev) => {
+        const taken = new Set(
+          prev.filter((sr) => sr.id !== subReqId).map((sr) => sr.referenceId).filter(Boolean)
+        );
+        const refId = uniqueReferenceId(deriveReferenceId(objectName), taken);
+        return prev.map((sr) =>
+          sr.id === subReqId
+            ? { ...sr, objectName, referenceId: refId, describe: null, selectedFieldNames: new Set(), fieldValues: {} }
+            : sr
+        );
+      });
+      await fetchDescribeFor(subReqId, objectName);
+    },
+    [fetchDescribeFor]
+  );
+
+  const addSubRequest = useCallback(
+    (objectName: string) => {
+      if (subRequests.length >= MAX_REQUESTS) return;
+      const id = nextId();
+      setSubRequests((prev) => [...prev, buildEmptySubRequest(id)]);
+      setSelectedId(id);
+      setGeneratedPayload(null);
+      void handleDescribeObject(id, objectName);
+    },
+    [subRequests.length, handleDescribeObject]
+  );
+
+  const duplicateSubRequest = useCallback(
+    (id: string) => {
+      if (subRequests.length >= MAX_REQUESTS) return;
+      const src = subRequests.find((sr) => sr.id === id);
+      if (!src) return;
+      const taken = new Set(subRequests.map((sr) => sr.referenceId).filter(Boolean));
+      const refId = uniqueReferenceId(deriveReferenceId(src.objectName || "request"), taken);
+      const clone: CompositeSubRequest = {
+        ...src,
+        id: nextId(),
+        referenceId: src.objectName ? refId : "",
+        selectedFieldNames: new Set(src.selectedFieldNames),
+        fieldValues: { ...src.fieldValues },
+      };
+      setSubRequests((prev) => [...prev, clone]);
+      setSelectedId(clone.id);
+      setGeneratedPayload(null);
+    },
+    [subRequests]
+  );
+
+  const toggleCollapse = useCallback((id: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   const handleGenerate = () => {
     const payload = generateCompositePayload(subRequests, apiVersion, allOrNone);
     setGeneratedPayload(payload);
     setTestResult(null);
     setTestError(null);
+    window.setTimeout(() => {
+      payloadRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 60);
   };
 
   const handleSendTest = async () => {
@@ -218,59 +296,48 @@ export default function CompositePanel({
               <span className="text-sm text-ivory-800">allOrNone</span>
             </label>
           </div>
-          <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={addSubRequest} disabled={subRequests.length >= 25}>
-              + Add Sub-Request
-            </Button>
-            <Button size="sm" onClick={handleGenerate} disabled={subRequests.length === 0}>
-              Generate Composite Payload
-            </Button>
-          </div>
+          <Button size="sm" onClick={handleGenerate} disabled={subRequests.length === 0}>
+            Generate Composite Payload
+          </Button>
         </div>
         <p className="mt-1 text-xs text-ivory-600">
           Endpoint: <span className="font-mono">{compositeEndpoint}</span>
           <span className="ml-3">·</span>
-          <span className="ml-3">Up to 25 sub-requests · Reference earlier records with <code className="font-mono text-ivory-800">@&#123;referenceId.id&#125;</code></span>
+          <span className="ml-3">Up to 25 sub-requests · reference earlier records with <code className="font-mono text-ivory-800">@&#123;referenceId.id&#125;</code></span>
         </p>
       </div>
 
-      {/* Sub-request cards */}
-      <div className="space-y-3">
-        {subRequests.map((sr, idx) => (
-          <div key={sr.id} className="flex gap-2">
-            {/* Reorder controls */}
-            <div className="flex flex-col gap-1 pt-3">
-              <button
-                onClick={() => moveUp(idx)}
-                disabled={idx === 0}
-                className="rounded px-1.5 py-1 text-xs text-ivory-500 hover:bg-ivory-300 disabled:opacity-30 transition-colors"
-                aria-label="Move up"
-              >▲</button>
-              <button
-                onClick={() => moveDown(idx)}
-                disabled={idx === subRequests.length - 1}
-                className="rounded px-1.5 py-1 text-xs text-ivory-500 hover:bg-ivory-300 disabled:opacity-30 transition-colors"
-                aria-label="Move down"
-              >▼</button>
-            </div>
-            <div className="flex-1">
-              <CompositeSubRequestCard
-                index={idx}
-                subRequest={sr}
-                allObjects={objects}
-                priorSubRequests={subRequests.slice(0, idx)}
-                onUpdate={updateSubRequest}
-                onRemove={removeSubRequest}
-                onDescribeObject={handleDescribeObject}
-              />
-            </div>
-          </div>
-        ))}
+      {/* Workbench: tree + single-request editor */}
+      <div className="grid items-start gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+        <CompositeTree
+          subRequests={subRequests}
+          selectedId={selected?.id ?? null}
+          collapsed={collapsed}
+          onSelect={setSelectedId}
+          onToggleCollapse={toggleCollapse}
+          onDuplicate={duplicateSubRequest}
+          onRemove={removeSubRequest}
+          onAddObject={addSubRequest}
+          allObjects={objects}
+        />
+        {selected && (
+          <CompositeRequestEditor
+            key={selected.id}
+            subRequest={selected}
+            index={selectedIndex}
+            allObjects={objects}
+            priorSubRequests={selectedIndex > 0 ? subRequests.slice(0, selectedIndex) : []}
+            refIdTaken={(refIdCounts.get(selected.referenceId) ?? 0) > 1}
+            onUpdate={updateSubRequest}
+            onRemove={removeSubRequest}
+            onDescribeObject={handleDescribeObject}
+          />
+        )}
       </div>
 
       {/* Generated payload */}
       {generatedPayload && (
-        <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)]">
+        <div ref={payloadRef} className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] scroll-mt-20">
           <div className="border-b border-ivory-400 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
@@ -279,26 +346,28 @@ export default function CompositePanel({
                   {generatedPayload.compositeRequest.length} sub-requests · allOrNone: {String(generatedPayload.allOrNone)}
                 </span>
               </div>
-              <Button variant="ghost" size="sm" onClick={handleDownload}>Download JSON</Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  if (!generatedPayload) return;
-                  const n = generatedPayload.compositeRequest.length;
-                  onAddToCollection({
-                    name: `Composite - ${n} sub-request${n === 1 ? "" : "s"}`,
-                    method: "POST",
-                    kind: "composite",
-                    url: compositeEndpoint,
-                    origin: instanceUrl,
-                    body: generatedPayload,
-                  });
-                }}
-                title="Choose a collection to stage this batch in"
-              >
-                + Collection
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" onClick={handleDownload}>Download JSON</Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    if (!generatedPayload) return;
+                    const n = generatedPayload.compositeRequest.length;
+                    onAddToCollection({
+                      name: `Composite - ${n} sub-request${n === 1 ? "" : "s"}`,
+                      method: "POST",
+                      kind: "composite",
+                      url: compositeEndpoint,
+                      origin: instanceUrl,
+                      body: generatedPayload,
+                    });
+                  }}
+                  title="Choose a collection to stage this batch in"
+                >
+                  + Collection
+                </Button>
+              </div>
             </div>
 
             <div className="mt-3 flex border-b border-ivory-400 -mb-4">
@@ -306,7 +375,7 @@ export default function CompositePanel({
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`px-4 py-2 text-xs font-medium tracking-wide border-b-2 transition-colors -mb-px ${
+                  className={`px-4 py-2 text-xs font-medium tracking-wide border-b-2 transition-colors cursor-pointer -mb-px ${
                     activeTab === tab
                       ? "border-ivory-950 text-ivory-950"
                       : "border-transparent text-ivory-600 hover:text-ivory-950"

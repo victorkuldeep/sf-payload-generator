@@ -51,6 +51,61 @@ export function deriveReferenceId(objectName: string): string {
 }
 
 /**
+ * Makes a referenceId unique across the batch: first use keeps the bare
+ * base (`pricingRequest`), later clashes get `base_uuid_0`, `base_uuid_1`…
+ */
+export function uniqueReferenceId(base: string, taken: Set<string> | string[]): string {
+  const used = taken instanceof Set ? taken : new Set(taken);
+  const clean = (base || "").trim() || "request";
+  if (!used.has(clean)) return clean;
+  let n = 0;
+  while (used.has(`${clean}_uuid_${n}`)) n++;
+  return `${clean}_uuid_${n}`;
+}
+
+export interface CompositeTreeNode {
+  id: string;
+  depth: number;
+  children: string[];
+}
+
+/**
+ * Builds parent/child depth from `@{refId}` usage in field values.
+ * A request nests under the requests it references; depth is 1 + the
+ * deepest referenced depth. Only backward references count (a composite
+ * batch executes in order, so forward refs are invalid by definition).
+ */
+export function buildCompositeTree(
+  subRequests: Array<{ id: string; referenceId: string; fieldValues: Record<string, unknown> }>
+): Map<string, CompositeTreeNode> {
+  const indexByRef = new Map<string, number>();
+  subRequests.forEach((sr, i) => {
+    if (sr.referenceId && !indexByRef.has(sr.referenceId)) indexByRef.set(sr.referenceId, i);
+  });
+  const tree = new Map<string, CompositeTreeNode>();
+  subRequests.forEach((sr) => tree.set(sr.id, { id: sr.id, depth: 0, children: [] }));
+  const RE = /@\{([^}.]+)(?:\.[^}]*)?\}/g;
+  subRequests.forEach((sr, i) => {
+    const parentIdx = new Set<number>();
+    for (const v of Object.values(sr.fieldValues ?? {})) {
+      if (typeof v !== "string") continue;
+      RE.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = RE.exec(v)) !== null) {
+        const j = indexByRef.get(m[1]);
+        if (j !== undefined && j < i) parentIdx.add(j);
+      }
+    }
+    if (parentIdx.size === 0) return;
+    const node = tree.get(sr.id);
+    if (!node) return;
+    node.depth = 1 + Math.max(...[...parentIdx].map((j) => tree.get(subRequests[j].id)?.depth ?? 0));
+    for (const j of parentIdx) tree.get(subRequests[j].id)?.children.push(sr.id);
+  });
+  return tree;
+}
+
+/**
  * Builds the composite API payload from the ordered list of sub-requests.
  */
 export function generateCompositePayload(

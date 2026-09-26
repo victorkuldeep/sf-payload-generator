@@ -3,6 +3,8 @@ import type { SalesforceField } from "../salesforce/types";
 import {
   generatePayload,
   deriveReferenceId,
+  uniqueReferenceId,
+  buildCompositeTree,
   generateCompositePayload,
   generateEndpoint,
 } from "./generator";
@@ -210,5 +212,52 @@ describe("generateCompositePayload", () => {
       false
     );
     expect(payload.compositeRequest[0].body).toBeUndefined();
+  });
+});
+
+describe("uniqueReferenceId", () => {
+  it("keeps the bare base on first use", () => {
+    expect(uniqueReferenceId("pricingRequest", new Set())).toBe("pricingRequest");
+  });
+  it("appends a uuid counter on clash", () => {
+    expect(uniqueReferenceId("requestTerm", new Set(["requestTerm"]))).toBe("requestTerm_uuid_0");
+    expect(uniqueReferenceId("requestTerm", ["requestTerm", "requestTerm_uuid_0"])).toBe(
+      "requestTerm_uuid_1"
+    );
+  });
+  it("falls back for empty base", () => {
+    expect(uniqueReferenceId("", new Set())).toBe("request");
+  });
+});
+
+describe("buildCompositeTree", () => {
+  const sr = (id: string, referenceId: string, fieldValues: Record<string, unknown> = {}) => ({
+    id,
+    referenceId,
+    fieldValues,
+  });
+  it("roots stay at depth 0", () => {
+    const tree = buildCompositeTree([sr("1", "a"), sr("2", "b")]);
+    expect(tree.get("1")?.depth).toBe(0);
+    expect(tree.get("2")?.depth).toBe(0);
+  });
+  it("nests requests under the @{ref} they use", () => {
+    const tree = buildCompositeTree([
+      sr("1", "pricingRequest"),
+      sr("2", "requestTerm", { Pricing_Request__c: "@{pricingRequest.id}" }),
+      sr("3", "vendor", { Pricing_Request__c: "@{pricingRequest.id}", Term__c: "@{requestTerm.id}" }),
+    ]);
+    expect(tree.get("2")?.depth).toBe(1);
+    expect(tree.get("3")?.depth).toBe(2);
+    expect(tree.get("1")?.children).toEqual(["2", "3"]);
+    expect(tree.get("2")?.children).toEqual(["3"]);
+  });
+  it("ignores forward and unknown refs", () => {
+    const tree = buildCompositeTree([
+      sr("1", "a", { X__c: "@{b.id}" }),
+      sr("2", "b", { Y__c: "@{nope.id}" }),
+    ]);
+    expect(tree.get("1")?.depth).toBe(0);
+    expect(tree.get("2")?.depth).toBe(0);
   });
 });
