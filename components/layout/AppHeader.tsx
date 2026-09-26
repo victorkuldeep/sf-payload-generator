@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 export type NavMode = "home" | "builder" | "composite" | "soql" | "graphql" | "schema" | "rest";
 
@@ -15,8 +16,10 @@ interface AppHeaderProps {
   onDisconnect: () => void;
   onSearchClick: () => void;
   onNavigate: (mode: NavMode) => void;
-  /** Current mode - the matching tab renders underlined. */
-  activeMode: NavMode;
+  /** Current mode - the matching tab renders underlined. Omit on routes. */
+  activeMode?: NavMode;
+  /** Hide object search (routes without loaded metadata). */
+  hideSearch?: boolean;
   collectionCount: number;
   onCollectionClick: () => void;
 }
@@ -32,6 +35,7 @@ export function AppHeader({
   onSearchClick,
   onNavigate,
   activeMode,
+  hideSearch,
   collectionCount,
   onCollectionClick,
 }: AppHeaderProps) {
@@ -61,6 +65,12 @@ export function AppHeader({
     setMenuOpen(false);
     fn();
   };
+
+  const pathname = usePathname();
+  const jsonActive = pathname === "/json";
+  const jsonLinkClass = jsonActive
+    ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors"
+    : "hover:text-[var(--color-ink)] transition-colors";
 
   // Single product navigation (Home first). Desktop renders it inline;
   // mobile gets the same list as a scrollable row under the header.
@@ -125,7 +135,8 @@ export function AppHeader({
           {renderNavItems()}
           <Link
             href="/json"
-            className="hover:text-[var(--color-ink)] transition-colors"
+            aria-current={jsonActive ? "page" : undefined}
+            className={jsonLinkClass}
             title="JSON Studio - editor and A/B payload comparator"
           >
             JSON
@@ -159,7 +170,7 @@ export function AppHeader({
               </span>
             )}
           </button>
-          {connected && (
+          {connected && !hideSearch && (
             <button
               type="button"
               onClick={onSearchClick}
@@ -309,7 +320,8 @@ export function AppHeader({
         {renderNavItems()}
         <Link
           href="/json"
-          className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
+          aria-current={jsonActive ? "page" : undefined}
+          className={`${jsonLinkClass} whitespace-nowrap`}
           title="JSON Studio - editor and A/B payload comparator"
         >
           JSON

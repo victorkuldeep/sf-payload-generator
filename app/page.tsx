@@ -576,6 +576,19 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Deep route entry: /?mode=composite (from route headers) lands on that
+  // builder - connect first when offline, via the pending-mode flow.
+  useEffect(() => {
+    const m = new URLSearchParams(window.location.search).get("mode");
+    const valid = ["single", "composite", "soql", "graphql", "schema", "rest", "home"];
+    if (m && valid.includes(m)) {
+      history.replaceState(null, "", window.location.pathname);
+      if (m !== "home") jumpToMode(m as Exclude<BuilderMode, "home">);
+      else goMode("home");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Persisted collections + staged items live in IndexedDB - reload them
   // (fail-soft to memory). Legacy items without a collectionId are backfilled
   // into the default collection.

@@ -15,7 +15,7 @@ interface AppShellProps {
   onDisconnect: () => void;
   onSearchClick: () => void;
   onNavigate: (mode: NavMode) => void;
-  activeMode: NavMode;
+  activeMode?: NavMode;
   collectionCount: number;
   onCollectionClick: () => void;
   /** Builder progress trail — docked above the footer, null on home/schema. */
