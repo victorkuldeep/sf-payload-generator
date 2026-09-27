@@ -15,6 +15,7 @@ import {
 } from "@/lib/experience/assets";
 import { logChange } from "@/lib/experience/migrate";
 import { AddScreenDialog, EditScreenDialog, ReplaceImage } from "./ScreenDialogs";
+import { ComponentInspector } from "./ComponentInspector";
 import { ScreenCanvas } from "./ScreenCanvas";
 import type { Rect } from "@/lib/experience/geometry";
 import { deleteScreenCascade, reorderScreens, screenImpact } from "@/lib/experience/screens";
@@ -302,6 +303,10 @@ function ScreenDetail({
 
   const comps = exp.components.filter((c) => c.screenId === screen.id);
   const anns = exp.annotations.filter((a) => a.screenId === screen.id).sort((a, b) => a.zIndex - b.zIndex);
+  const selectedAnnotation = anns.find((a) => a.id === selectedAnn) ?? null;
+  const linkedComponent = selectedAnnotation?.componentId
+    ? (comps.find((c) => c.id === selectedAnnotation.componentId) ?? null)
+    : null;
 
   const mutateAnn = (fn: (list: typeof anns) => typeof anns, summary: string, entityId: string) => {
     onMutate((p) => {
@@ -419,8 +424,139 @@ function ScreenDetail({
         />
       )}
       <p className="mt-3 text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">
-        Components · {comps.length} (inspector arrives Sprint 4)
+        Components · {comps.length}
       </p>
+
+      {selectedAnnotation && !linkedComponent && (
+        <LinkComponentPanel
+          screenId={screen.id}
+          annotationId={selectedAnnotation.id}
+          defaultName={selectedAnnotation.label}
+          candidates={comps}
+          onMutate={onMutate}
+        />
+      )}
+
+      {selectedAnnotation && linkedComponent && (
+        <ComponentInspector
+          project={project}
+          component={linkedComponent}
+          annotationLabel={selectedAnnotation.label}
+          onMutate={onMutate}
+        />
+      )}
+
+      {!selectedAnnotation && comps.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {comps.map((c) => (
+            <li key={c.id} className="flex items-center gap-2 rounded-lg border border-[#F0EBE0] px-2 py-1.5 text-[12px]">
+              <span className="flex-1">
+                <span className="font-semibold text-[#27241F]">{c.name}</span>{" "}
+                <span className="font-mono text-[10px] text-[#A39B8E]">{c.componentType} · {c.status}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function LinkComponentPanel({
+  screenId,
+  annotationId,
+  defaultName,
+  candidates,
+  onMutate,
+}: {
+  screenId: string;
+  annotationId: string;
+  defaultName: string;
+  candidates: { id: string; name: string }[];
+  onMutate: (fn: (p: MappingProject) => MappingProject) => void;
+}) {
+  const [name, setName] = useState(defaultName.startsWith("Region ") ? "" : defaultName);
+  const [linkId, setLinkId] = useState("");
+
+  const link = () => {
+    if (!linkId) return;
+    const now = new Date().toISOString();
+    onMutate((p) => {
+      if (!p.experience) return p;
+      const next = {
+        ...p,
+        experience: {
+          ...p.experience,
+          annotations: p.experience.annotations.map((a) => (a.id === annotationId ? { ...a, componentId: linkId, updatedAt: now } : a)),
+          updatedAt: now,
+        },
+        updatedAt: now,
+      };
+      logChange(next, "annotation", annotationId, "linked", "Region linked to an existing component.", now);
+      return next;
+    });
+  };
+
+  const create = () => {
+    if (!name.trim()) return;
+    const now = new Date().toISOString();
+    const id = uid("comp");
+    onMutate((p) => {
+      if (!p.experience) return p;
+      const next = {
+        ...p,
+        experience: {
+          ...p.experience,
+          components: [
+            ...p.experience.components,
+            {
+              id, screenId, name: name.trim(), componentType: "custom" as const,
+              requirementIds: [], bindingIds: [], actionIds: [], stateIds: [],
+              status: "draft" as const, tags: [], createdAt: now, updatedAt: now,
+            },
+          ],
+          annotations: p.experience.annotations.map((a) => (a.id === annotationId ? { ...a, componentId: id, updatedAt: now } : a)),
+          updatedAt: now,
+        },
+        updatedAt: now,
+      };
+      logChange(next, "component", id, "created", `Component "${name.trim()}" created from a region.`, now);
+      return next;
+    });
+  };
+
+  return (
+    <div className="mt-3 rounded-xl border border-[#E8E2D8] bg-[#FAF8F2] p-3">
+      <p className="mb-2 text-[12px] font-semibold text-[#27241F]">Region has no component yet</p>
+      <div className="flex flex-wrap gap-2">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Component name (e.g. OrderLineItems)"
+          aria-label="New component name"
+          spellCheck={false}
+          className="min-w-[180px] flex-1 rounded-lg border border-[#E8E2D8] bg-white px-2 py-1.5 text-[12px] focus:border-[#A98450] focus:outline-none"
+        />
+        <Button size="sm" disabled={!name.trim()} onClick={create}>
+          Create component
+        </Button>
+      </div>
+      {candidates.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span className="text-[11px] text-[#777168]">or link to</span>
+          <select value={linkId} onChange={(e) => setLinkId(e.target.value)} aria-label="Existing component" className="cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-2 py-1.5 text-[12px]">
+            <option value="">choose…</option>
+            {candidates.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <Button size="sm" variant="ghost" disabled={!linkId} onClick={link}>
+            Link
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
