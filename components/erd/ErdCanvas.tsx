@@ -263,8 +263,8 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         panOnDrag={!laser}
-        panOnScroll
-        zoomOnScroll={false}
+        zoomOnScroll
+        zoomOnPinch
         nodesDraggable={!laser}
         nodesConnectable={false}
         elementsSelectable={!laser}

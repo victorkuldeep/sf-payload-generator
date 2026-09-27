@@ -901,6 +901,8 @@ export default function SchemaPanel({
     [rootName, focusName, graphSelected, pruneEnforced]
   );
 
+  // Eye toggles only take effect in manual mode - jump there automatically
+  // and scroll the Canvas-nodes list open so the user sees the control surface.
   const toggleHidden = useCallback((id: string) => {
     setHiddenIds((prev) => {
       const next = new Set(prev);
@@ -908,8 +910,10 @@ export default function SchemaPanel({
       else next.add(id);
       return next;
     });
-    // Eye toggles only take effect in manual mode - jump there automatically
-    setFilterMode((m) => (m === "manual" ? m : "manual"));
+    setFilterMode("manual");
+    window.setTimeout(() => {
+      document.getElementById("schema-canvas-nodes")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 60);
   }, []);
 
   const resetAll = useCallback(() => {
@@ -1218,10 +1222,10 @@ export default function SchemaPanel({
             {notice && <p className="text-[11px] leading-relaxed text-ivory-700">{notice}</p>}
 
             {describes.size > 0 && (
-              <details className="rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-canvas)]">
+              <details id="schema-canvas-nodes" className="rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-canvas)]">
                 <summary className="cursor-pointer list-none px-2.5 py-2 text-[11px] font-semibold text-ivory-900 hover:text-ivory-950">
                   Canvas nodes ({describes.size})
-                  <span className="ml-1 font-normal text-ivory-500">- eye to hide, tick + remove for bulk</span>
+                  <span className="ml-1 font-normal text-ivory-500">- eye to curate Manual mode, tick + remove for bulk</span>
                 </summary>
                 <ul className="max-h-44 space-y-0.5 overflow-y-auto border-t border-[var(--color-line-soft)] p-1.5">
                   {[...describes.keys()].sort().map((name) => {
@@ -1373,7 +1377,9 @@ export default function SchemaPanel({
                   f === "all" ? "Show everything on canvas"
                   : f === "standard" ? "Show standard objects only"
                   : f === "custom" ? "Show custom objects only"
-                  : "Show only eye-checked nodes"
+                  : hiddenIds.size === 0
+                    ? "Nothing hidden yet - hide nodes with the eye icon in Canvas nodes, then Manual keeps only the rest"
+                    : `Showing ${describes.size - hiddenIds.size} of ${describes.size} - eyes control what stays`
                 }
                 className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold capitalize transition-colors cursor-pointer ${
                   filterMode === f
@@ -1382,6 +1388,11 @@ export default function SchemaPanel({
                 }`}
               >
                 {f}
+                {f === "manual" && hiddenIds.size > 0 && (
+                  <span className="ml-1 font-mono text-[10px] opacity-70">
+                    {describes.size - hiddenIds.size}/{describes.size}
+                  </span>
+                )}
               </button>
             ))}
             <button
