@@ -9,6 +9,8 @@ import { FieldInspector } from "./FieldInspector";
 import { MappingTable } from "./MappingTable";
 import { RecordPlans } from "./RecordPlans";
 import { ExportDialog, ImportDialog } from "./ProjectExchange";
+import { DriftReview } from "./DriftReview";
+import { ReviewPanel } from "./ReviewPanel";
 import { useMappingMetadata } from "./useMappingMetadata";
 import { buildSnapshot } from "@/lib/mapping/snapshot";
 import { deleteProject, duplicateProject, listProjects, loadProject, saveProject, type ProjectSummary } from "@/lib/mapping/store";
@@ -33,6 +35,7 @@ export function MappingRoute() {
   const [snapshotBusy, setSnapshotBusy] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showReview, setShowReview] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const meta = useMappingMetadata();
@@ -132,6 +135,11 @@ export function MappingRoute() {
 
   const mappedCount = project?.mappings.length ?? 0;
 
+  const objectsUsed = useMemo(
+    () => [...new Set([...(project?.mappings.map((m) => m.objectName) ?? []), ...(project?.recordPlans.map((r) => r.objectName) ?? [])])],
+    [project]
+  );
+
   const activePlan = project?.recordPlans.find((p) => p.id === activePlanId) ?? null;
   const planMismatch =
     activePlan && picked && picked.objectName !== activePlan.objectName
@@ -186,11 +194,6 @@ export function MappingRoute() {
     );
   }
 
-  const objectsUsed = useMemo(
-    () => [...new Set([...project.mappings.map((m) => m.objectName), ...project.recordPlans.map((r) => r.objectName)])],
-    [project]
-  );
-
   return (
     <div className="space-y-3">
       {/* Project header */}
@@ -223,6 +226,9 @@ export function MappingRoute() {
           <Button size="sm" variant="ghost" onClick={() => void persist(project)}>
             Save
           </Button>
+          <Button size="sm" variant="ghost" onClick={() => setShowReview((v) => !v)} aria-pressed={showReview}>
+            Review
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => setShowExport(true)}>
             Export
           </Button>
@@ -242,7 +248,7 @@ export function MappingRoute() {
       {showExport && <ExportDialog project={project} onClose={() => setShowExport(false)} />}
 
       {/* Three-region workspace */}
-      <div className="grid items-start gap-3 xl:grid-cols-[23%_52%_25%] lg:grid-cols-[280px_minmax(0,1fr)]">
+      <div id="mapping-workspace" className="grid items-start gap-3 xl:grid-cols-[23%_52%_25%] lg:grid-cols-[280px_minmax(0,1fr)]">
         <div className="rounded-xl border border-[#E8E2D8] bg-white p-3">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">
             Source · {project.source?.paths.length ?? 0} paths
@@ -325,6 +331,50 @@ export function MappingRoute() {
           </div>
         </div>
       </div>
+
+      {/* Drift + review + handoff */}
+      <DriftReview
+        project={project}
+        connected={meta.connected}
+        objects={meta.objects}
+        loadDescribe={meta.loadDescribe}
+        onApplySnapshot={(snapshot, affected) =>
+          mutate((p) => {
+            const now = new Date().toISOString();
+            return {
+              ...p,
+              sfSnapshot: snapshot,
+              versions: [
+                ...p.versions,
+                {
+                  id: uid("ver"),
+                  label: `pre-refresh ${now}`,
+                  createdAt: now,
+                  summary: `Snapshot applied after drift check (${affected.length} findings). Previous snapshot ${p.sfSnapshot?.fingerprint ?? "none"}.`,
+                  mappings: p.mappings,
+                  decisions: p.decisions,
+                  recordPlans: p.recordPlans,
+                  relationships: p.relationships,
+                  fingerprint: p.sfSnapshot?.fingerprint ?? "",
+                },
+              ],
+            };
+          })
+        }
+      />
+
+      {showReview && (
+        <ReviewPanel
+          project={project}
+          onMutate={mutate}
+          onFocus={(path) => {
+            setSelectedSource(path);
+            if (path) {
+              document.getElementById("mapping-workspace")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -89,7 +89,7 @@ export function SfExplorer({
     <div className="space-y-2">
       {!connected && (
         <p className="rounded-lg border border-[#DCC99A] bg-[#F5EEDF] px-2.5 py-2 text-[11px] leading-relaxed text-[#8A6A2F]">
-          Not connected - browsing the project's saved metadata snapshot. Connect via Home to search live Salesforce schema.
+          Not connected - browsing the project&apos;s saved metadata snapshot. Connect via Home to search live Salesforce schema.
         </p>
       )}
       <input
@@ -114,8 +114,7 @@ export function SfExplorer({
             >
               <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[#27241F]">
                 {o.name}
-                <span className="block truncate text-[10px] text-[#A39B8E]">{o.label}</span>
-              </span>
+                <span className="block truncate text-[10px] text-[#A39B8E]">{o.label}</span>              </span>
               {o.custom && <span className="shrink-0 rounded border border-[#DCC99A] px-1 font-mono text-[9px] text-[#8A6A2F]">custom</span>}
               {!o.live && <span className="shrink-0 rounded border border-[#E8E2D8] px-1 font-mono text-[9px] text-[#A39B8E]">snapshot</span>}
             </button>

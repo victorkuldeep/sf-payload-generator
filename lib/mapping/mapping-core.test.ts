@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { checkLength, checkNumeric, checkType } from "./compatibility";
-import { buildSnapshot, diffSnapshots, fingerprintSnapshot } from "./snapshot";
+import { buildSnapshot, diffSnapshots } from "./snapshot";
 import type { SalesforceDescribeResult, SalesforceObject } from "../salesforce/types";
 
 describe("checkType", () => {
