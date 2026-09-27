@@ -8,6 +8,7 @@ import { SfExplorer } from "./SfExplorer";
 import { FieldInspector } from "./FieldInspector";
 import { MappingTable } from "./MappingTable";
 import { RecordPlans } from "./RecordPlans";
+import { ExportDialog, ImportDialog } from "./ProjectExchange";
 import { useMappingMetadata } from "./useMappingMetadata";
 import { buildSnapshot } from "@/lib/mapping/snapshot";
 import { deleteProject, duplicateProject, listProjects, loadProject, saveProject, type ProjectSummary } from "@/lib/mapping/store";
@@ -30,6 +31,8 @@ export function MappingRoute() {
   const [picked, setPicked] = useState<{ objectName: string; field: SnapshotField } | null>(null);
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
   const [snapshotBusy, setSnapshotBusy] = useState(false);
+  const [showExport, setShowExport] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const meta = useMappingMetadata();
@@ -149,9 +152,23 @@ export function MappingRoute() {
               <Button variant="ghost" onClick={() => setView("library")}>
                 Open Local Project ({library.length})
               </Button>
+              <Button variant="ghost" onClick={() => setShowImport(true)}>
+                Import Project Configuration
+              </Button>
             </div>
           )}
         </div>
+        {showImport && (
+          <ImportDialog
+            onClose={() => setShowImport(false)}
+            onImported={(p) => {
+              setShowImport(false);
+              setProject(p);
+              setSaveState("saved");
+              refreshLibrary();
+            }}
+          />
+        )}
 
         {view === "wizard" && (
           <ProjectWizard onCreate={(p) => { setProject(p); void persist(p); }} onCancel={() => setView("start")} />
@@ -206,6 +223,9 @@ export function MappingRoute() {
           <Button size="sm" variant="ghost" onClick={() => void persist(project)}>
             Save
           </Button>
+          <Button size="sm" variant="ghost" onClick={() => setShowExport(true)}>
+            Export
+          </Button>
           <Button
             size="sm"
             variant="ghost"
@@ -219,6 +239,7 @@ export function MappingRoute() {
           </Button>
         </div>
       </div>
+      {showExport && <ExportDialog project={project} onClose={() => setShowExport(false)} />}
 
       {/* Three-region workspace */}
       <div className="grid items-start gap-3 xl:grid-cols-[23%_52%_25%] lg:grid-cols-[280px_minmax(0,1fr)]">
