@@ -26,6 +26,17 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
               {" "}Independent utility. Not affiliated with Salesforce.
             </span>
           </div>
+          <span>
+            Designed &amp; Developed by{" "}
+            <a
+              href="https://www.linkedin.com/in/victorkuldeep/"
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium text-[var(--color-accent-dark)] hover:underline"
+            >
+              Kuldeep Singh
+            </a>
+          </span>
           <span className="text-[var(--color-accent-dark)] font-medium">
             Designed for architects.
           </span>
