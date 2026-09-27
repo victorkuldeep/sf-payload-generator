@@ -56,7 +56,7 @@ const ITEMS: ZigZagItem[] = [
  */
 export function HomeZigZag({ onOpen }: { onOpen: (t: ZigZagTarget) => void }) {
   return (
-    <section aria-label="Capabilities" className="mx-auto w-full max-w-6xl px-5 sm:px-8 pt-10 pb-4">
+    <section aria-label="Capabilities" className="w-full pt-10 pb-4">
       {ITEMS.map((item, i) => {
         const flip = i % 2 === 1;
         const num = String(i + 1).padStart(2, "0");
