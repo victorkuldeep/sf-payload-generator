@@ -23,6 +23,7 @@ const ROUTE_LINKS: { label: string; href: string }[] = [
   { label: "Schema", href: "/schema" },
   { label: "JSON", href: "/json" },
   { label: "Validate", href: "/validate" },
+  { label: "Mapping", href: "/mapping" },
   { label: "Contracts", href: "/contracts" },
   { label: "Architect", href: "/architect" },
 ];
