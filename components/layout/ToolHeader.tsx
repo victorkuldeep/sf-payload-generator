@@ -1,13 +1,15 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { listCollectionItems } from "@/lib/collection/db";
 
 /**
- * Slim shared chrome for tool routes (/schema uses its own canvas chrome,
- * /json and /contracts use this). Brand + route/mode links + Workbench.
- * Mode links land on /?mode= which the home page honors (connect first
- * when offline). No session state - routes own their connection UI.
+ * Shared route chrome (HARD RULE: identical right cluster to AppHeader).
+ * Brand + nav + Collection + Find + Connected pill, bridged to the
+ * tab-scoped session. Search opens where the object index lives (home);
+ * connect flows route home; disconnect applies inline and stays truthful.
  */
 
 const MODE_LINKS: { label: string; href: string }[] = [
@@ -24,8 +26,90 @@ const ROUTE_LINKS: { label: string; href: string }[] = [
   { label: "Contracts", href: "/contracts" },
 ];
 
+interface SessionView {
+  connected: boolean;
+  instanceUrl: string;
+  apiVersion: string;
+}
+
+const OFFLINE: SessionView = { connected: false, instanceUrl: "", apiVersion: "" };
+
 export function ToolHeader() {
   const pathname = usePathname();
+  const router = useRouter();
+  const [session, setSession] = useState<SessionView>(OFFLINE);
+  const [collectionCount, setCollectionCount] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [copiedOrg, setCopiedOrg] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const read = () => {
+      try {
+        const saved = JSON.parse(sessionStorage.getItem("sf_session") ?? "null") as {
+          instanceUrl?: string;
+          token?: string;
+          apiVersion?: string;
+        } | null;
+        if (saved?.token && saved?.instanceUrl) {
+          setSession({ connected: true, instanceUrl: saved.instanceUrl, apiVersion: saved.apiVersion ?? "" });
+        } else {
+          setSession(OFFLINE);
+        }
+      } catch {
+        setSession(OFFLINE);
+      }
+      listCollectionItems()
+        .then((items) => setCollectionCount(items.length))
+        .catch(() => setCollectionCount(0));
+    };
+    read();
+    window.addEventListener("storage", read);
+    window.addEventListener("focus", read);
+    return () => {
+      window.removeEventListener("storage", read);
+      window.removeEventListener("focus", read);
+    };
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as globalThis.Node)) {
+        setMenuOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
+  const disconnect = () => {
+    try {
+      sessionStorage.removeItem("sf_session");
+    } catch {
+      /* storage unavailable */
+    }
+    setSession(OFFLINE);
+    setMenuOpen(false);
+  };
+
+  const copyOrgUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(session.instanceUrl);
+      setCopiedOrg(true);
+      window.setTimeout(() => setCopiedOrg(false), 1600);
+    } catch {
+      /* clipboard unavailable */
+    }
+  };
+
   const linkCls = (href: string) =>
     pathname === href
       ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors"
@@ -33,7 +117,7 @@ export function ToolHeader() {
 
   return (
     <header className="sticky top-0 z-40 w-full bg-[var(--color-canvas)]/95 backdrop-blur-sm border-b border-[var(--color-line)]">
-      <div className="w-full px-5 flex items-center gap-3 h-[64px]">
+      <div className="w-full px-5 flex items-center justify-between h-[64px] gap-3">
         <Link href="/" className="sf-brand" aria-label="Salesforce sObject Payload Studio - home">
           <span className="sf-brand__title">
             <span className="sf-brand__lead">Salesforce</span>
@@ -41,6 +125,7 @@ export function ToolHeader() {
           </span>
           <span className="sf-brand__tagline">Architect Toolkit</span>
         </Link>
+
         <nav className="hidden md:flex items-center gap-5 text-xs font-medium text-[var(--color-ink-soft)]" aria-label="Product">
           <Link href="/" className={linkCls("/")}>Home</Link>
           {MODE_LINKS.map((l) => (
@@ -62,16 +147,179 @@ export function ToolHeader() {
             Workbench ↗
           </a>
         </nav>
-        <div className="flex-1" />
-        <nav className="md:hidden flex items-center gap-4 overflow-x-auto text-xs font-medium text-[var(--color-ink-soft)]" aria-label="Product">
-          <Link href="/" className={linkCls("/")}>Home</Link>
-          {ROUTE_LINKS.map((l) => (
-            <Link key={l.href} href={l.href} className={`${linkCls(l.href)} whitespace-nowrap`}>
-              {l.label}
-            </Link>
-          ))}
-        </nav>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => router.push("/")}
+            className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--color-surface)] border border-[var(--color-line)] text-xs text-[var(--color-muted)] hover:text-[var(--color-ink)] hover:border-[var(--color-accent)] transition-all cursor-pointer"
+            title={collectionCount === 0 ? "Staged request collection (empty, opens on home)" : `Open collection (${collectionCount} staged) on home`}
+            aria-label={`Request collection, ${collectionCount} staged requests`}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+              <path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Z" />
+            </svg>
+            <span className="hidden sm:inline">Collection</span>
+            {collectionCount > 0 && (
+              <span className="min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center rounded-full bg-ivory-950 text-ivory-100 text-[10px] font-bold">
+                {collectionCount > 99 ? "99+" : collectionCount}
+              </span>
+            )}
+          </button>
+          {session.connected && (
+            <button
+              type="button"
+              onClick={() => router.push("/")}
+              className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--color-surface)] border border-[var(--color-line)] text-xs text-[var(--color-muted)] hover:text-[var(--color-ink)] hover:border-[var(--color-accent)] transition-all cursor-pointer"
+              title="Find objects on home (Ctrl/⌘ K)"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+                <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
+              </svg>
+              <span>Find objects</span>
+              <kbd className="text-[10px] font-mono bg-[var(--color-canvas)] px-1.5 py-0.5 rounded border border-[var(--color-line)]">⌘K</kbd>
+            </button>
+          )}
+
+          <div className="relative" ref={menuRef}>
+            <div
+              className="flex items-center gap-2 pl-2.5 pr-1 py-1 rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] text-xs"
+              role="status"
+              aria-label={session.connected ? `Connected to ${session.instanceUrl}` : "Not connected"}
+              title={session.connected ? session.instanceUrl : "Not connected"}
+            >
+              <span
+                className={`status-dot ${session.connected ? "is-live" : ""}`}
+                style={{
+                  backgroundColor: session.connected ? "#4A7C59" : "#AEA48E",
+                  color: session.connected ? "#4A7C59" : "#AEA48E",
+                }}
+                aria-hidden="true"
+              />
+              {session.connected ? (
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen((v) => !v)}
+                  aria-expanded={menuOpen}
+                  aria-haspopup="menu"
+                  aria-label="Connection details and actions"
+                  className="flex items-center gap-1.5 pr-1 cursor-pointer"
+                  title="Org details, switch org, disconnect"
+                >
+                  <span className="font-bold tracking-wide bg-gradient-to-r from-bronze-600 via-[#C9A86A] to-bronze-600 bg-clip-text text-transparent">
+                    Connected
+                  </span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7A5C3A" strokeWidth="2.4" aria-hidden="true" className={`transition-transform ${menuOpen ? "rotate-180" : ""}`}>
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </button>
+              ) : (
+                <>
+                  <span className="font-medium text-[var(--color-muted)] hidden sm:inline">Offline</span>
+                  <button
+                    type="button"
+                    onClick={() => router.push("/")}
+                    className="px-2.5 py-0.5 rounded-full bg-ivory-950 text-ivory-100 hover:bg-bronze-600 transition-colors cursor-pointer font-semibold"
+                  >
+                    Connect
+                  </button>
+                </>
+              )}
+            </div>
+
+            {session.connected && menuOpen && (
+              <div
+                role="menu"
+                aria-label="Connection"
+                className="absolute right-0 top-full mt-2 w-80 overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] shadow-[0_16px_48px_-12px_rgba(24,20,12,0.35)]"
+              >
+                <div className="border-b border-[var(--color-line-soft)] px-3.5 py-2.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-success)]" aria-hidden="true" />
+                    <span className="text-[10px] font-semibold uppercase tracking-[1.6px] text-[var(--color-accent-dark)]">
+                      Live org
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <p className="min-w-0 flex-1 truncate font-mono text-xs font-semibold text-ivory-950" title={session.instanceUrl}>
+                      {session.instanceUrl.replace(/^https:\/\//, "")}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={copyOrgUrl}
+                      aria-label="Copy org URL"
+                      title="Copy org URL"
+                      className="shrink-0 rounded-md p-1 text-ivory-500 hover:text-bronze-600 hover:bg-ivory-200 transition-colors cursor-pointer"
+                    >
+                      {copiedOrg ? (
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" aria-hidden="true" className="text-green-600">
+                          <path d="m4 12.5 5 5L20 6.5" />
+                        </svg>
+                      ) : (
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                          <rect x="9" y="9" width="12" height="12" rx="2" />
+                          <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                  {session.apiVersion !== "" && (
+                    <p className="mt-1 font-inter text-[11px] text-ivory-600">{session.apiVersion}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 p-1.5">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push("/");
+                    }}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-xs text-ivory-800 hover:bg-ivory-200 transition-colors cursor-pointer"
+                    title="Find objects on home (⌘K)"
+                  >
+                    Find
+                    <kbd className="font-mono text-[10px] text-ivory-500">⌘K</kbd>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push("/");
+                    }}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold bg-ivory-950 text-ivory-100 hover:bg-bronze-600 transition-colors cursor-pointer"
+                    title="Connect a different org on home"
+                  >
+                    Switch org
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={disconnect}
+                    aria-label="Disconnect"
+                    title="Disconnect"
+                    className="flex items-center justify-center rounded-lg border border-red-400 p-2 text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+                      <path d="M12 3v8" />
+                      <path d="M6.3 6.5a8 8 0 1 0 11.4 0" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
+      <nav className="md:hidden flex items-center gap-4 overflow-x-auto px-5 pb-2.5 text-xs font-medium text-[var(--color-ink-soft)]" aria-label="Product">
+        <Link href="/" className={linkCls("/")}>Home</Link>
+        {ROUTE_LINKS.map((l) => (
+          <Link key={l.href} href={l.href} className={`${linkCls(l.href)} whitespace-nowrap`}>
+            {l.label}
+          </Link>
+        ))}
+      </nav>
     </header>
   );
 }

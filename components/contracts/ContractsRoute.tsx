@@ -56,6 +56,7 @@ export function ContractsRoute() {
   const [tab, setTab] = useState<ContractsTab>("profiles");
   const [notice, setNotice] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const studioRef = useRef<HTMLDivElement>(null);
 
   // Session restore + stored profiles load.
   useEffect(() => {
@@ -408,6 +409,41 @@ export function ContractsRoute() {
 
   return (
     <>
+      {!session && (
+        <section aria-label="Welcome" className="hero-mesh overflow-hidden rounded-xl border border-[var(--color-line)]">
+          <div className="px-6 sm:px-10 pt-10 sm:pt-12 pb-8 max-w-3xl">
+            <p className="hero-kicker">
+              <span className="hero-kicker__dot" aria-hidden="true" />
+              API Contract Studio
+            </p>
+            <h1 className="hero-title mt-3 text-4xl sm:text-5xl text-ivory-950">
+              Design contracts, <em>ship OpenAPI.</em>
+            </h1>
+            <p className="mt-4 max-w-xl text-sm leading-relaxed text-ivory-700">
+              Author profiles, map fields, compile deterministic OpenAPI 3.1 -
+              versions and compatibility included. Connect an org for live
+              metadata, or explore the seeded profiles right now.
+            </p>
+            <div className="mt-5 flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowConnect(true)}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--color-accent)] text-white text-xs font-medium hover:bg-[var(--color-accent)]/90 transition-all cursor-pointer"
+              >
+                Connect org
+              </button>
+              <button
+                type="button"
+                onClick={() => studioRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--color-canvas)] border border-[var(--color-line)] text-xs font-medium text-[var(--color-ink)] hover:bg-[var(--color-surface-strong)] transition-colors cursor-pointer"
+              >
+                Explore profiles →
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+      <div ref={studioRef} className="scroll-mt-20">
       <ContractsTabs
         tab={tab}
         setTab={setTab}
@@ -433,6 +469,7 @@ export function ContractsRoute() {
       onCreateFromTemplate={handleCreateFromTemplate}
       onRestoreRevision={handleRestoreRevision}
     />
+      </div>
       <input
         ref={fileRef}
         type="file"
