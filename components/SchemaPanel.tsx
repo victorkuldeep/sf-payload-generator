@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect, memo } from "react";
 import type { Node, Edge } from "@xyflow/react";
 import type {
   SalesforceObject,
@@ -81,7 +81,7 @@ type GraphDetail =
       };
     };
 
-function GraphDetailCard({
+function GraphDetailCardInner({
   detail,
   labels,
   erdCount,
@@ -291,7 +291,7 @@ function GraphDetailCard({
               </Button>
             </div>
             <p className="font-mono text-[10px] text-ivory-500">
-              p:/c: = generations ahead. Expand adds bubbles + describes on ERD canvas; Collapse prunes graph-only.
+              p:/c: = generations ahead. Expand grows graph bubbles only - ERD untouched until Add visible.
             </p>
           </>
         )}
@@ -311,6 +311,10 @@ function GraphDetailCard({
     </div>
   );
 }
+
+// Memo: family panel holds checkbox state - without this, every graph pan or
+// canvas tick would remount the card and wipe checked rows mid-selection.
+const GraphDetailCard = memo(GraphDetailCardInner);
 
 export default function SchemaPanel({
   objects,
@@ -505,23 +509,52 @@ export default function SchemaPanel({
     return { kind: "lite" as const, n };
   }, [graphSelected, view, describes, neighborMap]);
 
+  // In-flight describe de-dupe: concurrent callers for the same object
+  // share one promise. Combined with the describes-map check below, reopening
+  // a family panel never refires /describe for known objects.
+  const inflight = useRef(new Map<string, Promise<SalesforceDescribeResult>>());
+
   const fetchDescribe = useCallback(
     async (objectName: string): Promise<SalesforceDescribeResult> => {
-      const token = getToken();
-      if (!token) throw new Error("Session token unavailable. Please reconnect.");
-      const response = await apiFetch("/api/salesforce/describe", { instanceUrl, token, apiVersion, objectName });
-      const data = (await response.json()) as SalesforceDescribeResult & { error?: string };
-      if (!response.ok) {
-        const message =
-          typeof (data as unknown as { error?: unknown }).error === "string"
-            ? (data as unknown as { error: string }).error
-            : `Describe failed for ${objectName}`;
-        if (isSessionExpiredMessage(message)) onSessionExpired?.();
-        throw new Error(message);
+      const hit = inflight.current.get(objectName);
+      if (hit) return hit;
+      const run = (async () => {
+        const token = getToken();
+        if (!token) throw new Error("Session token unavailable. Please reconnect.");
+        const response = await apiFetch("/api/salesforce/describe", { instanceUrl, token, apiVersion, objectName });
+        const data = (await response.json()) as SalesforceDescribeResult & { error?: string };
+        if (!response.ok) {
+          const message =
+            typeof (data as unknown as { error?: unknown }).error === "string"
+              ? (data as unknown as { error: string }).error
+              : `Describe failed for ${objectName}`;
+          if (isSessionExpiredMessage(message)) onSessionExpired?.();
+          throw new Error(message);
+        }
+        return data;
+      })();
+      inflight.current.set(objectName, run);
+      try {
+        return await run;
+      } finally {
+        inflight.current.delete(objectName);
       }
-      return data;
     },
     [instanceUrl, apiVersion, getToken, onSessionExpired]
+  );
+
+  /** Cached describe: describes-map first (no network), then live fetch. */
+  const describeCached = useCallback(
+    async (objectName: string): Promise<SalesforceDescribeResult | null> => {
+      const known = describes.get(objectName);
+      if (known) return known;
+      try {
+        return await fetchDescribe(objectName);
+      } catch {
+        return null;
+      }
+    },
+    [describes, fetchDescribe]
   );
 
   const mergeDescribes = useCallback((fresh: SalesforceDescribeResult[]) => {
@@ -622,9 +655,8 @@ export default function SchemaPanel({
     []
   );
 
-  /** Fresh describes through the live /describe path - the ONLY way a family
-   * level can see beyond what is already on canvas. Never cache-only. */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  /** Fresh describes through the live /describe path (kept for the custom
+   * sweep below). Family panels prefer describeCached + familyCache. */
   const fetchDescribeSafe = useCallback(
     async (objectName: string): Promise<SalesforceDescribeResult | null> => {
       try {
@@ -909,18 +941,25 @@ export default function SchemaPanel({
   }, [focusName, rootName, busy, describes, labels, isCustomName, SYSTEM_OBJECTS]);
 
   // Family-tree expansion data: candidate children/parents for ONE node,
-  // with ahead-counts (p:/c:) computed from LIVE describe (cache + fetch).
-  // Used by the graph detail card ("Discover of <node>") and by expansion
-  // state below. Pure helper - no rendering.
+  // with ahead-counts (p:/c:) computed from describe (cache + fetch).
+  // Used by the graph detail card ("Discover of <node>"). Ahead-counts are
+  // CAPPED: at most 8 live fetches per panel open - the rest read 0/0 until
+  // expanded. Reopening a node reuses the per-node familyCache: zero calls.
+  const familyCache = useRef(new Map<string, (DiscoverCandidate & { parentCount: number; childCount: number })[]>());
   const familyCandidates = useCallback(async (apiName: string): Promise<{
     candidates: (DiscoverCandidate & { parentCount: number; childCount: number })[];
   }> => {
-    const d = describes.get(apiName) ?? (await fetchDescribeSafe(apiName));
+    const hit = familyCache.current.get(apiName);
+    if (hit) return { candidates: hit };
+    const d = await describeCached(apiName);
     if (!d) return { candidates: [] };
     const out: (DiscoverCandidate & { parentCount: number; childCount: number })[] = [];
     const seen = new Set<string>();
+    let liveBudget = 8;
     const aheadCounts = async (name: string): Promise<{ p: number; c: number }> => {
-      const dd = describes.get(name) ?? (await fetchDescribeSafe(name));
+      const cached = describes.get(name);
+      const dd = cached ?? (liveBudget > 0 ? await describeCached(name) : null);
+      if (!cached) liveBudget--;
       if (!dd) return { p: 0, c: 0 };
       const p = new Set<string>();
       for (const f of dd.fields ?? []) {
@@ -972,8 +1011,9 @@ export default function SchemaPanel({
         });
       }
     }
+    familyCache.current.set(apiName, out);
     return { candidates: out };
-  }, [describes, fetchDescribeSafe, labels, isCustomName, SYSTEM_OBJECTS]);
+  }, [describes, describeCached, labels, isCustomName, SYSTEM_OBJECTS]);
 
   // One-click custom sweep: every custom object linked to the root's
   // neighborhood, fetched live. Answers "show me all custom links" without
@@ -1054,21 +1094,24 @@ export default function SchemaPanel({
     }
   }, [rootName, busy, describes, labels, isCustomName, fetchDescribe, familyCandidates]);
 
-  /** Expand selected family members into the GRAPH ONLY (lite previews unless
-   * already described). fromApi anchors the generation so the tree reads
-   * Lead → Account → Contact instead of piling onto the root. Then describes
-   * the new names on the ERD canvas so a later "Add visible to ERD" - and the
-   * ERD view itself - already has their metadata. */
+  /** Expand selected family members into the GRAPH ONLY. Pure scouting:
+   * lite previews unless already described; NOTHING is added to the ERD
+   * canvas (use "Add visible to ERD" for that). fromApi anchors the
+   * generation so the tree reads Lead → Account → Asset. Edges hang off the
+   * source bubble: for children Account→Asset uses Account's own describe. */
   const expandFamily = useCallback(async (fromApi: string, names: string[]) => {
     if (busy || names.length === 0) return;
-    const fromDepth = (() => {
-      if (fromApi === rootName) return 1;
-      for (const [key] of expanded) {
-        const [, to] = key.split("::");
-        if (to === fromApi) return 3;
+    // True depth: walk attach-links back to the root.
+    const depthOfNode = (api: string): number => {
+      if (api === rootName) return 0;
+      for (const [, list] of expanded) {
+        for (const n of list) {
+          if (n.apiName === api && n.attachTo) return depthOfNode(n.attachTo) + 1;
+        }
       }
-      return 2;
-    })();
+      return 1; // level-1 neighborhood
+    };
+    const fromDepth = depthOfNode(fromApi);
     setBusy(`Expanding ${names.length} from ${fromApi}…`);
     try {
       const key = `${fromApi}::${names.slice().sort().join(",")}`;
@@ -1105,8 +1148,7 @@ export default function SchemaPanel({
         }
       }
       // Depth: one generation beyond the source node.
-      const srcDepth = fromApi === rootName ? 1 : 2;
-      for (const r of rows) r.depth = srcDepth + 1;
+      for (const r of rows) r.depth = fromDepth + 1;
       setExpanded((prev) => {
         const next = new Map(prev);
         const have = new Set([...next.values()].flat().map((n) => `${n.attachTo}::${n.apiName}`));
@@ -1115,21 +1157,13 @@ export default function SchemaPanel({
         next.set(key, [...(next.get(key) ?? []), ...freshRows]);
         return next;
       });
-      // Describe on the ERD canvas in the background: graph previews become
-      // solid, and ERD already knows them if the user switches views.
-      const missing = names.filter((n) => !describes.has(n)).slice(0, MAX_NEW_PER_ACTION);
-      if (missing.length > 0 && describes.size + missing.length <= MAX_NODES) {
-        try {
-          await addNames(missing);
-        } catch {
-          /* graph previews stand alone - ERD catch-up is best-effort */
-        }
-      }
+      // Graph-only: do NOT touch the ERD canvas here. Expanded names stay
+      // lite previews until the user hits "Add visible to ERD" or opens them.
       setGraphSelected(fromApi);
     } finally {
       setBusy(null);
     }
-  }, [busy, expanded, describes, labels, isCustomName, rootName, addNames]);
+  }, [busy, expanded, describes, labels, isCustomName, rootName]);
 
   /** Collapse one node's extended family out of the graph (ERD untouched). */
   const collapseFamily = useCallback((fromApi: string) => {

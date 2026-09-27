@@ -193,4 +193,44 @@ describe("buildGraphElements", () => {
     expect(bubble).toBeDefined();
     expect((bubble!.data as { loaded: boolean }).loaded).toBe(true);
   });
+
+  it("draws hundreds of neighbors with zero overflow (unbounded orbits)", () => {
+    const root = desc(
+      "Lead",
+      [],
+      Array.from({ length: 200 }, (_, i) => ({
+        childSObject: `Child${i}`,
+        field: "F",
+        cascadeDelete: false,
+        relationshipName: `R${i}`,
+      }))
+    );
+    const neighbors = rootNeighbors(root, labels, notCustom);
+    expect(neighbors.length).toBe(200);
+    const { nodes, overflow } = buildGraphElements(root, neighbors, new Set(["Lead"]), null, null);
+    expect(nodes.length).toBe(201); // root + every neighbor
+    expect(overflow).toBe(0);
+  });
+
+  it("links extended generations bubble-to-bubble (Account→Asset edge survives)", () => {
+    const root = desc("Lead", [], []);
+    const neighbors = [
+      { apiName: "Account", label: "Account", custom: false, role: "child" as const, via: "F", kind: "lookup" as const },
+      { apiName: "Asset", label: "Asset", custom: false, role: "child" as const, via: "AccountId", kind: "lookup" as const, attachTo: "Account", depth: 2 },
+    ];
+    const { nodes, edges } = buildGraphElements(root, neighbors, new Set(["Lead", "Account"]), null, null);
+    const assetNode = nodes.find((n) => (n.data as { apiName: string }).apiName === "Asset");
+    expect(assetNode).toBeDefined();
+    expect(assetNode!.id).toBe("x:Account:Asset");
+    // The edge must reference the REAL level-1 bubble id (p:/c:Account),
+    // never the bare "Account" name React Flow cannot resolve.
+    const link = edges.find((e) => e.id === "g|Account|Asset|AccountId");
+    expect(link).toBeDefined();
+    const srcId = String(link!.source);
+    const tgtId = String(link!.target);
+    const ids = new Set(nodes.map((n) => n.id));
+    expect(ids.has(srcId)).toBe(true);
+    expect(ids.has(tgtId)).toBe(true);
+    expect(tgtId).toBe("x:Account:Asset");
+  });
 });

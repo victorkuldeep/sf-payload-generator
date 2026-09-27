@@ -324,11 +324,13 @@ export function rootNeighbors(
 
 const BUBBLE_ROOT = 104;
 const BUBBLE_NODE = 80;
-const MAX_FAN = 64;
 
 // Scatter orbits: bubbles sit on concentric rings so dense fans never share
-// one crowded circle. Lane step clears two bubble diameters + margin.
-const ORBITS = [330, 475, 620];
+// one crowded circle. Orbits are UNBOUNDED - the ring list grows until every
+// neighbor has a slot, because the canvas scrolls/zooms and nothing may hide.
+// Lane step clears two bubble diameters + margin.
+const ORBIT_0 = 330;
+const ORBIT_STEP = 150;
 const ARC_DEG = 160;
 const MIN_GAP = 118;
 
@@ -366,13 +368,14 @@ export function buildGraphElements(
   spot: ErdSpotlight | null = null,
   pinned: Map<string, { x: number; y: number }> | null = null
 ): GraphElements {
-  const shown = neighbors.slice(0, MAX_FAN);
-  const overflow = Math.max(0, neighbors.length - shown.length);
+  const shown = neighbors;
+  const overflow = 0;
   // Full 1-level neighborhood + family-tree generations: every neighbor gets
   // a bubble. Described ones are solid; undescribed ones are dashed lite
   // previews that load on click. Depth-1 fans left/right off the root;
   // deeper generations extend outward from their attachTo node so chains
-  // read like a family tree instead of piling onto the root.
+  // read like a family tree instead of piling onto the root. Orbit rings
+  // grow without bound - the infinite canvas scrolls, nothing hides.
   const depthOf = (n: GraphNeighbor) => n.depth ?? 1;
   const level1 = shown.filter((n) => depthOf(n) <= 1);
   const deeper = shown.filter((n) => depthOf(n) > 1);
@@ -418,11 +421,24 @@ export function buildGraphElements(
     centerDeg: number,
     prefix: string
   ) => {
-    const taken: boolean[][] = ORBITS.map(() => []);
-    const slotAngles = ORBITS.map(orbitSlots);
+    // Unbounded rings: keep adding orbit lanes until every bubble lands.
+    // Hard cap at 40 lanes (~thousands of slots) as a degenerate guard;
+    // anything still unplaced past that is genuine overflow.
+    const taken: boolean[][] = [];
+    const slotAngles: number[][] = [];
+    const ringRadius = (o: number) => ORBIT_0 + o * ORBIT_STEP;
+    const ensureLane = (o: number) => {
+      while (taken.length <= o) {
+        const r = ringRadius(taken.length);
+        taken.push([]);
+        slotAngles.push(orbitSlots(r));
+      }
+    };
+    ensureLane(2);
     list.forEach((n) => {
       let placed: { x: number; y: number } | null = null;
-      for (let o = 0; o < ORBITS.length && !placed; o++) {
+      for (let o = 0; o < 40 && !placed; o++) {
+        ensureLane(o);
         const angles = slotAngles[o];
         // Start near the middle and alternate outward for a balanced fan
         const order = [...angles.keys()].sort((a, b) => {
@@ -433,14 +449,14 @@ export function buildGraphElements(
         for (const si of order) {
           if (taken[o][si]) continue;
           const rad = ((centerDeg + angles[si]) * Math.PI) / 180;
-          const p = { x: ORBITS[o] * Math.cos(rad), y: ORBITS[o] * Math.sin(rad) };
+          const p = { x: ringRadius(o) * Math.cos(rad), y: ringRadius(o) * Math.sin(rad) };
           if (occupied.some((q) => dist(p, q) < MIN_GAP)) continue;
           taken[o][si] = true;
           placed = p;
           break;
         }
       }
-      if (!placed) return; // no room even out here - counted as overflow below
+      if (!placed) return; // degenerate guard tripped - counted as overflow below
       occupied.push(placed);
       const loaded = described.has(n.apiName);
       nodes.push({
@@ -474,6 +490,17 @@ export function buildGraphElements(
   const before = nodes.length;
   const placedCenters = new Map<string, { x: number; y: number }>();
   placedCenters.set(root.name, { x: 0, y: 0 });
+  // Bubble id lookup: every placed node by bare apiName → its ACTUAL node id
+  // (root / p:X / c:X / x:FROM:X). Extended edges resolve through this so a
+  // generation hanging off a level-1 bubble (Account→Asset) links bubble to
+  // bubble instead of dangling at a bare name React Flow can't see.
+  const bubbleIdOf = (api: string): string => {
+    if (api === root.name) return root.name;
+    const found = nodes.slice(before).find((n) => (n.data as GraphBubbleData).apiName === api);
+    if (found) return found.id;
+    const l1 = nodes.slice(0, before).find((n) => (n.data as GraphBubbleData).apiName === api);
+    return l1 ? l1.id : api;
+  };
   place(parents, 180, "p");
   place(children, 0, "c");
   // Record level-1 centers so deeper generations can extend from them.
@@ -484,8 +511,10 @@ export function buildGraphElements(
   // Family-tree generations: fan each node's own parents/children outward
   // from its center (parents to its upper-left, children to its upper-right),
   // skipping anything already placed. Deterministic: sorted by apiName.
-  const EXTEND_R = 300;
-  const EXTEND_SPREAD = 52;
+  // Unbounded lanes: walk outward ring by ring until the slot is free.
+  const EXTEND_SPREAD = 96;
+  const EXTEND_R0 = 320;
+  const EXTEND_RSTEP = 130;
   const byAttach = new Map<string, GraphNeighbor[]>();
   for (const n of deeper) {
     const key = n.attachTo ?? root.name;
@@ -500,11 +529,16 @@ export function buildGraphElements(
     ordered.forEach((n, i) => {
       if (placedCenters.has(n.apiName)) return;
       const up = n.role === "parent";
-      // Parents arc up-left, children arc up-right of the attach node.
       const side = up ? -1 : 1;
-      const spread = (i - (ordered.length - 1) / 2) * EXTEND_SPREAD;
-      const p = { x: center.x + side * EXTEND_R * 0.9, y: center.y - EXTEND_R * 0.55 + spread };
-      if (occupied.some((q) => dist(p, q) < MIN_GAP)) return;
+      const spread0 = (i - (ordered.length - 1) / 2) * EXTEND_SPREAD;
+      // Walk outward until a free slot: same side, further rings.
+      let p: { x: number; y: number } | null = null;
+      for (let lane = 0; lane < 40 && !p; lane++) {
+        const r = EXTEND_R0 + lane * EXTEND_RSTEP;
+        const cand = { x: center.x + side * r * 0.9, y: center.y - r * 0.55 + spread0 };
+        if (!occupied.some((q) => dist(cand, q) < MIN_GAP)) p = cand;
+      }
+      if (!p) return; // degenerate guard - counted as overflow below
       occupied.push(p);
       placedCenters.set(n.apiName, p);
       const loaded = described.has(n.apiName);
@@ -526,8 +560,11 @@ export function buildGraphElements(
       });
       edges.push({
         id: `g|${attachApi}|${n.apiName}|${n.via}`,
-        source: up ? `x:${attachApi}:${n.apiName}` : attachApi === root.name ? root.name : attachApi,
-        target: up ? (attachApi === root.name ? root.name : attachApi) : `x:${attachApi}:${n.apiName}`,
+        // Node ids: level-1 bubbles are p:X/c:X; extended bubbles are
+        // x:FROM:X. Edges must point at the REAL bubble ids or React Flow
+        // silently drops the link (the missing Account→Asset link bug).
+        source: up ? `x:${attachApi}:${n.apiName}` : bubbleIdOf(attachApi),
+        target: up ? bubbleIdOf(attachApi) : `x:${attachApi}:${n.apiName}`,
         label: n.via,
         type: "erdEdge",
         data: { kind: n.kind, graphLink: true, target: n.apiName, loaded } as Record<string, unknown>,
