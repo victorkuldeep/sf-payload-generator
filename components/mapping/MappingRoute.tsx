@@ -14,6 +14,7 @@ import { ReviewPanel } from "./ReviewPanel";
 import { ensureExperience } from "@/lib/experience/migrate";
 import { ExperienceWorkspace } from "@/components/experience/ExperienceWorkspace";
 import { ApiCatalogPanel } from "@/components/experience/ApiCatalogPanel";
+import { DecisionsPanel } from "@/components/experience/DecisionsPanel";
 import { useMappingMetadata } from "./useMappingMetadata";
 import { buildSnapshot } from "@/lib/mapping/snapshot";
 import { deleteProject, duplicateProject, listProjects, loadProject, saveProject, type ProjectSummary } from "@/lib/mapping/store";
@@ -431,12 +432,7 @@ export function MappingRoute() {
       )}
 
       {module === "decisions" && (
-        <div className="rounded-xl border border-[#E8E2D8] bg-white p-8 text-center">
-          <p className="text-[14px] font-semibold text-[#27241F]">Architecture Decisions</p>
-          <p className="mx-auto mt-1 max-w-md text-[12px] text-[#777168]">
-            Decision register, assumptions and change history arrive in Sprint 8. Integration mapping decisions stay in the Overview Review panel.
-          </p>
-        </div>
+        <DecisionsPanel project={project} onMutate={mutate} />
       )}
 
       {module === "deliverables" && (
