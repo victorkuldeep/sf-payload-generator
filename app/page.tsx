@@ -1081,7 +1081,6 @@ export default function Home() {
       connecting={loading.connect}
       onConnectClick={openConnect}
       onDisconnect={handleDisconnect}
-      onSearchClick={() => setShowSearch(true)}
       onNavigate={handleNavigate}
       activeMode={state.mode === "single" ? "builder" : state.mode}
       footerVariant={state.mode === "home" ? "full" : "slim"}

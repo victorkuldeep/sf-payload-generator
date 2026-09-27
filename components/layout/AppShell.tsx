@@ -13,7 +13,6 @@ interface AppShellProps {
   connecting: boolean;
   onConnectClick: () => void;
   onDisconnect: () => void;
-  onSearchClick: () => void;
   onNavigate: (mode: NavMode) => void;
   activeMode?: NavMode;
   collectionCount: number;
@@ -33,7 +32,6 @@ export function AppShell({
   connecting,
   onConnectClick,
   onDisconnect,
-  onSearchClick,
   onNavigate,
   activeMode,
   footerVariant,
@@ -51,7 +49,6 @@ export function AppShell({
         connecting={connecting}
         onConnectClick={onConnectClick}
         onDisconnect={onDisconnect}
-        onSearchClick={onSearchClick}
         onNavigate={onNavigate}
         activeMode={activeMode}
         collectionCount={collectionCount}

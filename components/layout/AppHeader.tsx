@@ -14,12 +14,9 @@ interface AppHeaderProps {
   connecting: boolean;
   onConnectClick: () => void;
   onDisconnect: () => void;
-  onSearchClick: () => void;
   onNavigate: (mode: NavMode) => void;
   /** Current mode - the matching tab renders underlined. Omit on routes. */
   activeMode?: NavMode;
-  /** Hide object search (routes without loaded metadata). */
-  hideSearch?: boolean;
   collectionCount: number;
   onCollectionClick: () => void;
 }
@@ -32,10 +29,8 @@ export function AppHeader({
   connecting,
   onConnectClick,
   onDisconnect,
-  onSearchClick,
   onNavigate,
   activeMode,
-  hideSearch,
   collectionCount,
   onCollectionClick,
 }: AppHeaderProps) {
@@ -164,23 +159,6 @@ export function AppHeader({
           >
             Architect
           </Link>
-          <a
-            href="https://workbench.developerforce.com"
-            target="_blank"
-            rel="noreferrer"
-            className="hover:text-[var(--color-ink)] transition-colors"
-          >
-            Workbench ↗
-          </a>
-          <a
-            href="https://excalidraw.com"
-            target="_blank"
-            rel="noreferrer"
-            className="hover:text-[var(--color-ink)] transition-colors"
-            title="Excalidraw - sketch data models and flows"
-          >
-            Excalidraw ↗
-          </a>
         </nav>
 
         <div className="flex items-center gap-2">
@@ -202,20 +180,6 @@ export function AppHeader({
               </span>
             )}
           </button>
-          {connected && !hideSearch && (
-            <button
-              type="button"
-              onClick={onSearchClick}
-              className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--color-surface)] border border-[var(--color-line)] text-xs text-[var(--color-muted)] hover:text-[var(--color-ink)] hover:border-[var(--color-accent)] transition-all cursor-pointer"
-              title="Find objects (Ctrl/⌘ K)"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
-                <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
-              </svg>
-              <span>Find objects</span>
-              <kbd className="text-[10px] font-mono bg-[var(--color-canvas)] px-1.5 py-0.5 rounded border border-[var(--color-line)]">⌘K</kbd>
-            </button>
-          )}
 
           {/* Connectivity pill - status badge trigger, details live in the dropdown */}
           <div className="relative" ref={menuRef}>
@@ -313,16 +277,6 @@ export function AppHeader({
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={closeMenu(onSearchClick)}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-xs text-ivory-800 hover:bg-ivory-200 transition-colors cursor-pointer"
-                    title="Find objects (⌘K)"
-                  >
-                    Find
-                    <kbd className="font-mono text-[10px] text-ivory-500">⌘K</kbd>
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
                     onClick={closeMenu(onConnectClick)}
                     className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold bg-ivory-950 text-ivory-100 hover:bg-bronze-600 transition-colors cursor-pointer"
                     title="Connect a different org"
@@ -374,23 +328,6 @@ export function AppHeader({
         >
           Architect
         </Link>
-        <a
-          href="https://workbench.developerforce.com"
-          target="_blank"
-          rel="noreferrer"
-          className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
-        >
-          Workbench ↗
-        </a>
-        <a
-          href="https://excalidraw.com"
-          target="_blank"
-          rel="noreferrer"
-          className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
-          title="Excalidraw - sketch data models and flows"
-        >
-          Excalidraw ↗
-        </a>
       </nav>
     </header>
   );

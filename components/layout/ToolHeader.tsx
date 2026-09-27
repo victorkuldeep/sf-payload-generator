@@ -7,9 +7,8 @@ import { listCollectionItems } from "@/lib/collection/db";
 
 /**
  * Shared route chrome (HARD RULE: identical right cluster to AppHeader).
- * Brand + nav + Collection + Find + Connected pill, bridged to the
- * tab-scoped session. Search opens where the object index lives (home);
- * connect flows route home; disconnect applies inline and stays truthful.
+ * Brand + nav + Collection + Connected pill, bridged to the
+ * tab-scoped session. Search lives in Builder + global ⌘K on home.
  */
 
 const MODE_LINKS: { label: string; href: string }[] = [
@@ -139,23 +138,6 @@ export function ToolHeader() {
               {l.label}
             </Link>
           ))}
-          <a
-            href="https://workbench.developerforce.com"
-            target="_blank"
-            rel="noreferrer"
-            className="hover:text-[var(--color-ink)] transition-colors"
-          >
-            Workbench ↗
-          </a>
-          <a
-            href="https://excalidraw.com"
-            target="_blank"
-            rel="noreferrer"
-            className="hover:text-[var(--color-ink)] transition-colors"
-            title="Excalidraw - sketch data models and flows"
-          >
-            Excalidraw ↗
-          </a>
         </nav>
 
         <div className="flex items-center gap-2">
@@ -176,20 +158,6 @@ export function ToolHeader() {
               </span>
             )}
           </button>
-          {session.connected && (
-            <button
-              type="button"
-              onClick={() => router.push("/")}
-              className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--color-surface)] border border-[var(--color-line)] text-xs text-[var(--color-muted)] hover:text-[var(--color-ink)] hover:border-[var(--color-accent)] transition-all cursor-pointer"
-              title="Find objects on home (Ctrl/⌘ K)"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
-                <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
-              </svg>
-              <span>Find objects</span>
-              <kbd className="text-[10px] font-mono bg-[var(--color-canvas)] px-1.5 py-0.5 rounded border border-[var(--color-line)]">⌘K</kbd>
-            </button>
-          )}
 
           <div className="relative" ref={menuRef}>
             <div
@@ -278,19 +246,6 @@ export function ToolHeader() {
                   )}
                 </div>
                 <div className="flex items-center gap-1 p-1.5">
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      router.push("/");
-                    }}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-xs text-ivory-800 hover:bg-ivory-200 transition-colors cursor-pointer"
-                    title="Find objects on home (⌘K)"
-                  >
-                    Find
-                    <kbd className="font-mono text-[10px] text-ivory-500">⌘K</kbd>
-                  </button>
                   <button
                     type="button"
                     role="menuitem"
