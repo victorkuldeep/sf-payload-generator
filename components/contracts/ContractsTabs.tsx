@@ -10,6 +10,9 @@ import { ProfileManager } from "./ProfileManager";
 import { ContractDesigner } from "./ContractDesigner";
 import { ContractPreview } from "./ContractPreview";
 import { ContractValidate } from "./ContractValidate";
+import { ContractVersions } from "./ContractVersions";
+import { ContractCompare } from "./ContractCompare";
+import type { SeedKind } from "@/lib/contracts/seeds";
 
 export interface ContractsTabsProps {
   tab: ContractsTab;
@@ -33,6 +36,8 @@ export interface ContractsTabsProps {
   onImportFile: (file: File) => void;
   onPatchDraft: (id: string, patch: Partial<ContractProfile> | ((p: ContractProfile) => ContractProfile)) => void;
   onFetchDescribe: (objectName: string) => Promise<SalesforceDescribeResult | null>;
+  onCreateFromTemplate: (kind: SeedKind) => void;
+  onRestoreRevision: (profile: ContractProfile) => void;
 }
 
 /**
@@ -48,6 +53,8 @@ export function ContractsTabs(props: ContractsTabsProps) {
     { id: "designer", label: "Designer" },
     { id: "preview", label: "OpenAPI Preview" },
     { id: "validate", label: "Validate" },
+    { id: "versions", label: "Versions" },
+    { id: "compare", label: "Compare" },
   ];
 
   return (
@@ -119,6 +126,8 @@ export function ContractsTabs(props: ContractsTabsProps) {
       {tab === "designer" && <ContractDesigner {...props} />}
       {tab === "preview" && <ContractPreview {...props} />}
       {tab === "validate" && <ContractValidate {...props} />}
+      {tab === "versions" && <ContractVersions {...props} />}
+      {tab === "compare" && <ContractCompare {...props} />}
     </div>
   );
 }

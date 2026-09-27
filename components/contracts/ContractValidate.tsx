@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { diagnoseProfile } from "@/lib/contracts/diagnostics";
 import { adaptDescribe } from "@/lib/contracts/metadata-adapter";
+import { compileDraft } from "@/lib/contracts/compile-help";
+import Button from "../ui/Button";
 import type { ContractsTabsProps } from "./ContractsTabs";
 
 /**
@@ -24,11 +26,40 @@ export function ContractValidate(props: ContractsTabsProps) {
       try {
         for (const f of adaptDescribe(source as never).fields) meta.set(f.apiName, f);
       } catch {
-        /* corrupt snapshot */
+        /* corrupt snapshot - diagnostics flag unknown fields */
       }
     }
     return diagnoseProfile({ profile: draft, metaByName: meta, snapshotCapturedAt: snap?.capturedAt ?? null });
   }, [draft, describes, stored]);
+
+  const compiled = useMemo(
+    () => compileDraft(draft, describes, stored),
+    [draft, describes, stored]
+  );
+
+  const [scalar, setScalar] = useState<{ ran: boolean; valid: boolean; messages: string[] }>({
+    ran: false,
+    valid: false,
+    messages: [],
+  });
+  const [scalarBusy, setScalarBusy] = useState(false);
+
+  const runScalar = async () => {
+    if (!compiled) return;
+    setScalarBusy(true);
+    try {
+      const { validate } = await import("@scalar/openapi-parser");
+      const result = await validate(compiled.document);
+      const messages = (result.errors ?? []).map((e) =>
+        typeof e === "string" ? e : String((e as { message?: string }).message ?? JSON.stringify(e))
+      );
+      setScalar({ ran: true, valid: messages.length === 0, messages });
+    } catch (err) {
+      setScalar({ ran: true, valid: false, messages: [err instanceof Error ? err.message : "Scalar validation failed"] });
+    } finally {
+      setScalarBusy(false);
+    }
+  };
 
   if (!draft) {
     return (
@@ -74,8 +105,34 @@ export function ContractValidate(props: ContractsTabsProps) {
             {errors.length} blocking error{errors.length === 1 ? "" : "s"} - fix before publishing.
           </span>
         )}{" "}
-        Warnings never claim invalidity. Structural OpenAPI validation (Scalar parser) and
-        lint rules arrive with Versions in Phase 4.
+        Warnings never claim invalidity. Structural OpenAPI validation runs
+        on demand below (Scalar parser, lazy-loaded).
+      </div>
+      <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-[13px] font-semibold text-[#27241F]">Scalar structural validation</p>
+          <span className="flex-1" />
+          <Button size="sm" onClick={runScalar} disabled={!compiled || scalarBusy}>
+            {scalarBusy ? "Validating…" : scalar.ran ? "Re-run" : "Run validation"}
+          </Button>
+        </div>
+        {scalar.ran && (
+          <div className="mt-2">
+            {scalar.valid ? (
+              <p className="text-[13px] font-semibold text-[#32815B]">
+                Valid OpenAPI 3.1 - all references resolve.
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {scalar.messages.map((m, k) => (
+                  <p key={k} className="rounded-lg bg-red-50 px-2 py-1.5 font-mono text-[11px] text-red-700">
+                    {m}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
       <div className="grid items-start gap-4 lg:grid-cols-3">
         {group("Errors", errors, "text-[#B84C42]", "bg-[#B84C42]")}

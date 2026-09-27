@@ -13,11 +13,15 @@ import {
   type StoredContractProfile,
 } from "@/lib/contracts/persistence";
 import { newStudioId } from "@/lib/composite/studio";
+import { compileContract } from "@/lib/contracts/openapi-compiler";
+import { adaptDescribe } from "@/lib/contracts/metadata-adapter";
+import { summarizeProfileChange, saveRevision, listRevisions, deleteRevisionsForProfile } from "@/lib/contracts/revisions";
+import { instantiateTemplate, type SeedKind } from "@/lib/contracts/seeds";
 import type { ContractProfile } from "@/lib/contracts/types";
 import { ConnectModal } from "@/components/ConnectModal";
 import { ContractsTabs } from "./ContractsTabs";
 
-export type ContractsTab = "profiles" | "designer" | "preview" | "validate";
+export type ContractsTab = "profiles" | "designer" | "preview" | "validate" | "versions" | "compare";
 
 function readSession(): { instanceUrl: string; token: string; apiVersion: string } | null {
   try {
@@ -199,9 +203,50 @@ export function ContractsRoute() {
       } catch {
         setNotice("IndexedDB unavailable - changes kept in memory only.");
       }
-      setStored((prev) => (prev.some((s) => s.id === id) ? prev.map((s) => (s.id === id ? record : s)) : [...prev, record]));
-      setDrafts((prev) => new Map(prev).set(id, record.profile));
-      setNotice(`Saved revision ${record.profile.revision}.`);
+      // Revision log: compile with live-or-snapshot metadata, append when
+      // the document hash moved. The bumped revision lands in BOTH states
+      // so save-then-clean holds.
+      let bumped: number | null = null;
+      try {
+        const prevStored = stored.find((s) => s.id === id) ?? null;
+        const source = describes.get(record.profile.targetObjectApiName) ?? (record.snapshot?.describe as SalesforceDescribeResult | undefined) ?? null;
+        if (source) {
+          const meta = new Map(adaptDescribe(source).fields.map((f) => [f.apiName, f]));
+          const compiled = compileContract({
+            profile: record.profile,
+            metaByName: meta,
+            snapshotCapturedAt: record.snapshot?.capturedAt ?? null,
+          });
+          const history = await listRevisions(id).catch(() => []);
+          if (history[0]?.hash !== compiled.hash) {
+            bumped = (history[0]?.revision ?? 0) + 1;
+            await saveRevision({
+              id: newStudioId("rev"),
+              profileId: id,
+              revision: bumped,
+              hash: compiled.hash,
+              summary: summarizeProfileChange(prevStored?.profile ?? null, record.profile),
+              compiler: "contracts-1",
+              generatedAt: Date.now(),
+              snapshotRef: record.profile.metadataSnapshotRef,
+              profile: { ...record.profile, revision: bumped },
+              document: compiled.document as Record<string, unknown>,
+            }).catch(() => undefined);
+          }
+        }
+      } catch {
+        /* revisions are best-effort */
+      }
+      if (bumped !== null) {
+        const withRev = { ...record, profile: { ...record.profile, revision: bumped } };
+        setStored((prev) => (prev.some((s) => s.id === id) ? prev.map((s) => (s.id === id ? withRev : s)) : [...prev, withRev]));
+        setDrafts((prev) => new Map(prev).set(id, withRev.profile));
+        setNotice(`Saved revision ${bumped}.`);
+      } else {
+        setStored((prev) => (prev.some((s) => s.id === id) ? prev.map((s) => (s.id === id ? record : s)) : [...prev, record]));
+        setDrafts((prev) => new Map(prev).set(id, record.profile));
+        setNotice(`Saved revision ${record.profile.revision}.`);
+      }
       window.setTimeout(() => setNotice(null), 2500);
     },
     [drafts, describes, stored]
@@ -246,6 +291,35 @@ export function ContractsRoute() {
     [objects, session, fetchDescribe]
   );
 
+  const handleCreateFromTemplate = useCallback(
+    (kind: SeedKind) => {
+      const id = newStudioId("prof");
+      const now = Date.now();
+      const template = instantiateTemplate(kind, id, now);
+      const profile: ContractProfile = {
+        ...template,
+        orgId: session ? new URL(session.instanceUrl).host : "",
+        salesforceApiVersion: session?.apiVersion ?? "v66.0",
+      };
+      setDrafts((prev) => new Map(prev).set(id, profile));
+      setActiveId(id);
+      setTab("designer");
+      if (session) void fetchDescribe(profile.targetObjectApiName);
+    },
+    [session, fetchDescribe]
+  );
+
+  const handleRestoreRevision = useCallback(
+    (profile: ContractProfile) => {
+      setDrafts((prev) => new Map(prev).set(profile.id, { ...profile, updatedAt: Date.now() }));
+      setActiveId(profile.id);
+      setTab("designer");
+      setNotice(`Restored revision ${profile.revision} into drafts - Save to keep it.`);
+      window.setTimeout(() => setNotice(null), 3000);
+    },
+    []
+  );
+
   const handleDuplicate = useCallback(
     (id: string) => {
       const src = drafts.get(id);
@@ -272,6 +346,11 @@ export function ContractsRoute() {
     async (id: string) => {
       try {
         await deleteStoredProfile(id);
+      } catch {
+        /* ignore */
+      }
+      try {
+        await deleteRevisionsForProfile(id);
       } catch {
         /* ignore */
       }
@@ -349,9 +428,11 @@ export function ContractsRoute() {
         onDelete={handleDelete}
         onExport={handleExport}
         onImportFile={handleImportFile}
-        onPatchDraft={patchDraft}
-        onFetchDescribe={fetchDescribe}
-      />
+      onPatchDraft={patchDraft}
+      onFetchDescribe={fetchDescribe}
+      onCreateFromTemplate={handleCreateFromTemplate}
+      onRestoreRevision={handleRestoreRevision}
+    />
       <input
         ref={fileRef}
         type="file"

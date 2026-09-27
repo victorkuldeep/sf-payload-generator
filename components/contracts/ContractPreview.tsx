@@ -1,8 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { compileContract } from "@/lib/contracts/openapi-compiler";
-import { adaptDescribe } from "@/lib/contracts/metadata-adapter";
+import { compileDraft } from "@/lib/contracts/compile-help";
 import CodeBlock from "../ui/CodeBlock";
 import Button from "../ui/Button";
 import type { ContractsTabsProps } from "./ContractsTabs";
@@ -15,25 +14,10 @@ export function ContractPreview(props: ContractsTabsProps) {
 
   const draft = activeId ? (drafts.get(activeId) ?? null) : null;
 
-  const compiled = useMemo(() => {
-    if (!draft) return null;
-    const desc = describes.get(draft.targetObjectApiName);
-    const snap = stored.find((s) => s.id === draft.id)?.snapshot ?? null;
-    const meta = new Map();
-    const source = desc ?? (snap ? (snap.describe as never) : null);
-    if (source && typeof source === "object" && "fields" in (source as object)) {
-      try {
-        for (const f of adaptDescribe(source as never).fields) meta.set(f.apiName, f);
-      } catch {
-        /* corrupt snapshot */
-      }
-    }
-    return compileContract({
-      profile: draft,
-      metaByName: meta,
-      snapshotCapturedAt: snap?.capturedAt ?? null,
-    });
-  }, [draft, describes, stored]);
+  const compiled = useMemo(
+    () => compileDraft(draft, describes, stored),
+    [draft, describes, stored]
+  );
 
   if (!draft || !compiled) {
     return (

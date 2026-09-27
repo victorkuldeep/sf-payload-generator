@@ -84,6 +84,25 @@ export function ProfileManager(props: ContractsTabsProps) {
           onChange={(e) => setSearch(e.target.value)}
           aria-label="Search profiles"
         />
+        <span className="flex items-center gap-1 text-[11px] text-[#A39B8E]">
+          Template:
+          {(
+            [
+              ["acquisition", "Acquisition"],
+              ["enrichment", "Enrichment"],
+              ["bff", "BFF Intake"],
+            ] as const
+          ).map(([kind, label]) => (
+            <button
+              key={kind}
+              onClick={() => props.onCreateFromTemplate(kind)}
+              className="rounded-md border border-[#E8E2D8] bg-white px-1.5 py-0.5 text-[11px] hover:border-[#A98450] hover:text-[#27241F] transition-colors cursor-pointer"
+              title={`New profile from the ${label} template`}
+            >
+              {label}
+            </button>
+          ))}
+        </span>
         <span className="text-[11px] text-[#A39B8E]" title="New profile needs a connected org for metadata">
           {session ? "New from:" : "Connect to create"}
         </span>

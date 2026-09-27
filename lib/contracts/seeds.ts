@@ -1,5 +1,4 @@
 import type { ContractFieldConfig, ContractProfile, OperationConfig } from "./types";
-
 const now = 1758412800000; // fixed seed timestamp (deterministic fixtures)
 
 function field(
@@ -118,6 +117,77 @@ export function seedLeadEnrichment(): ContractProfile {
     revision: 1,
     createdAt: now,
     updatedAt: now,
+    metadataSnapshotRef: null,
+    metadataCapturedAt: null,
+  };
+}
+
+/** BFF Lead Intake: middleware-facing custom contract (template). */
+export function seedBffLeadIntake(): ContractProfile {
+  return {
+    id: "profile-bff-lead-intake",
+    name: "BFF Lead Intake",
+    description: "Web experience intake through the BFF middleware layer.",
+    targetObjectApiName: "Lead",
+    orgId: "seed-org",
+    consumer: "Web Experience",
+    direction: "inbound",
+    apiTitle: "BFF Lead Intake API",
+    apiVersion: "1.0.0",
+    salesforceApiVersion: "v66.0",
+    baseUrl: "https://bff.example.com",
+    resourcePath: "/v1/leads/intake",
+    operations: [
+      op("POST", true, "intakeLead", "Intake a lead"),
+      op("PATCH", false, "updateLead", "Update a lead"),
+    ],
+    fields: [
+      field("FirstName", "first_name", "First Name", ["POST"], {
+        mapping: { externalName: "first_name", targetField: "FirstName", transform: "trim", direction: "inbound", ownership: "consumer" },
+      }),
+      field("LastName", "last_name", "Last Name", ["POST"], {
+        integrationRequired: true,
+        mapping: { externalName: "last_name", targetField: "LastName", transform: "trim", direction: "inbound", ownership: "consumer" },
+      }),
+      field("Company", "company", "Company", ["POST"], {
+        integrationRequired: true,
+      }),
+      field("Email", "email_address", "Email", ["POST"]),
+    ],
+    security: { type: "api-key", description: "BFF API key header (placeholder, no secrets exported)." },
+    revision: 1,
+    createdAt: now,
+    updatedAt: now,
+    metadataSnapshotRef: null,
+    metadataCapturedAt: null,
+  };
+}
+
+export type SeedKind = "acquisition" | "enrichment" | "bff";
+
+export function seedByKind(kind: SeedKind): ContractProfile {
+  if (kind === "enrichment") return seedLeadEnrichment();
+  if (kind === "bff") return seedBffLeadIntake();
+  return seedLeadAcquisition();
+}
+
+/** Fresh editable copy of a seed template (new identity + timestamps). */
+export function instantiateTemplate(kind: SeedKind, id: string, at = Date.now()): ContractProfile {
+  const seed = seedByKind(kind);
+  return {
+    ...seed,
+    id,
+    fields: seed.fields.map((f) => ({
+      ...f,
+      operations: [...f.operations],
+      mapping: f.mapping
+        ? { ...f.mapping, enumMap: f.mapping.enumMap ? { ...f.mapping.enumMap } : undefined }
+        : undefined,
+    })),
+    operations: seed.operations.map((o) => ({ ...o, tags: [...o.tags] })),
+    revision: 1,
+    createdAt: at,
+    updatedAt: at,
     metadataSnapshotRef: null,
     metadataCapturedAt: null,
   };
