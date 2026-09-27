@@ -12,6 +12,9 @@ export interface Diagnostic {
   code: string;
   path: string;
   message: string;
+  requestId?: string;
+  mappingId?: string;
+  fieldApiName?: string;
 }
 
 export interface DiagnoseInput {

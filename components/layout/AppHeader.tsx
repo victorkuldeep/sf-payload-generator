@@ -82,8 +82,7 @@ export function AppHeader({
     { id: "graphql", label: "GraphQL", title: connected ? "Go to GraphQL query builder" : "Connect to open GraphQL" },
     { id: "schema", label: "Schema", title: connected ? "Go to schema deep dive" : "Connect to open the ERD" },
     { id: "rest", label: "REST", title: connected ? "Go to REST explorer" : "Connect to open REST explorer" },
-  ];
-  const navLinkClass =
+  ];  const navLinkClass =
     "hover:text-[var(--color-ink)] hover:underline underline-offset-4 transition-colors cursor-pointer whitespace-nowrap";
 
   const renderNavItems = () => (
@@ -140,6 +139,18 @@ export function AppHeader({
             title="JSON Studio - editor and A/B payload comparator"
           >
             JSON
+          </Link>
+          <Link
+            href="/contracts"
+            aria-current={pathname === "/contracts" ? "page" : undefined}
+            className={
+              pathname === "/contracts"
+                ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors"
+                : "hover:text-[var(--color-ink)] transition-colors"
+            }
+            title="API Contract Studio - OpenAPI profiles"
+          >
+            Contracts
           </Link>
           <a
             href="https://workbench.developerforce.com"
@@ -325,6 +336,14 @@ export function AppHeader({
           title="JSON Studio - editor and A/B payload comparator"
         >
           JSON
+        </Link>
+        <Link
+          href="/contracts"
+          aria-current={pathname === "/contracts" ? "page" : undefined}
+          className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
+          title="API Contract Studio - OpenAPI profiles"
+        >
+          Contracts
         </Link>
         <a
           href="https://workbench.developerforce.com"
