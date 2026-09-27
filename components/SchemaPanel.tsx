@@ -6,7 +6,7 @@ import type {
   SalesforceObject,
   SalesforceDescribeResult,
 } from "@/lib/salesforce/types";
-import { buildErdElements, buildGraphElements, rootNeighbors, type ErdNodeData } from "@/lib/erd/graph";
+import { buildErdElements, buildGraphElements, rootNeighbors, type ErdNodeData, type GraphNeighbor } from "@/lib/erd/graph";
 import { rankObjects } from "@/lib/search/rank";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import { apiFetch } from "@/lib/api";
@@ -62,169 +62,6 @@ function timeAgo(ts: number): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-/**
- * Chain explorer dialog: breadcrumb levels of immediate relationships.
- * Tick nodes to grow the pending chain; "Continue ›" under a checked node
- * fetches the NEXT level live. Apply lands the whole chain on the canvas.
- */
-function ChainExplorer({
-  origin,
-  levels,
-  pending,
-  busy,
-  onToggle,
-  onContinue,
-  onApply,
-  onClose,
-}: {
-  origin: string;
-  levels: { depth: number; parent: string; title: string; candidates: DiscoverCandidate[] }[];
-  pending: Set<string>;
-  busy: boolean;
-  onToggle: (apiName: string) => void;
-  onContinue: (apiName: string, depth: number, parent: string) => void;
-  onApply: () => void;
-  onClose: () => void;
-}) {
-  const [filter, setFilter] = useState("");
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  const q = filter.toLowerCase().trim();
-
-  return (
-    <div
-      className="modal-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Dependency chain from ${origin}`}
-      onClick={onClose}
-      style={{ paddingTop: "8vh" }}
-    >
-      <div
-        className="modal-card max-w-xl flex flex-col"
-        style={{ maxHeight: "82vh" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-6 pt-5 pb-3 border-b border-[var(--color-line-soft)] shrink-0">
-          <p className="text-[10px] font-semibold uppercase tracking-[2px] text-[var(--color-accent-dark)]">
-            Chain explorer · nothing lands until Apply
-          </p>
-          <h2 className="mt-1 text-lg font-bold text-ivory-950">From {origin}, pick the chain</h2>
-          <p className="mt-0.5 text-xs text-ivory-600">
-            Check what joins the canvas, then Continue › under a checked node to walk one level deeper - like a lookup drill-down.
-          </p>
-          <div className="mt-3">
-            <Input
-              placeholder="Filter candidates…"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              aria-label="Filter chain candidates"
-            />
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-6 py-3 space-y-3">
-          {levels.map((l) => {
-            const visible = q
-              ? l.candidates.filter(
-                  (c) => c.apiName.toLowerCase().includes(q) || c.label.toLowerCase().includes(q)
-                )
-              : l.candidates;
-            const checkedHere = l.candidates.filter((c) => pending.has(c.apiName));
-            return (
-              <div key={`${l.depth}:${l.parent}`}>
-                <p className="mb-1 text-[10px] font-semibold uppercase tracking-[1.6px] text-ivory-600">
-                  {l.title} · {checkedHere.length} checked
-                </p>
-                <div className="rounded-lg border border-[var(--color-line)] divide-y divide-[var(--color-line-soft)] overflow-hidden">
-                  {visible.map((c) => {
-                    const checked = pending.has(c.apiName);
-                    const continued = levels.some((x) => x.parent === c.apiName);
-                    return (
-                      <div
-                        key={c.apiName}
-                        className={`flex items-center gap-2.5 px-3 py-2 transition-colors ${
-                          c.onCanvas ? "opacity-60" : checked ? "bg-ivory-200" : ""
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={c.onCanvas || checked}
-                          disabled={c.onCanvas || busy}
-                          onChange={() => onToggle(c.apiName)}
-                          className="h-4 w-4 shrink-0 rounded border-ivory-400 bg-white text-bronze-600 focus:ring-bronze-500 disabled:opacity-60"
-                          aria-label={c.onCanvas ? `${c.label} (already on canvas)` : `Add ${c.label} to chain`}
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-xs font-medium text-ivory-950">{c.label}</span>
-                          <span className="block truncate text-[11px] font-mono text-ivory-600">
-                            {c.apiName} · via <span className="text-bronze-600">{c.via}</span>
-                          </span>
-                        </span>
-                        <span
-                          className={`shrink-0 rounded border px-1 py-px font-mono text-[9px] font-bold ${
-                            c.kind === "md"
-                              ? "bg-ivory-950 text-ivory-100 border-ivory-950"
-                              : "bg-white text-ivory-600 border-[var(--color-line)]"
-                          }`}
-                        >
-                          {c.kind === "md" ? "M-D" : "LKUP"}
-                        </span>
-                        {c.onCanvas && (
-                          <span className="shrink-0 rounded border border-bronze-300 bg-bronze-100 px-1 py-px text-[9px] font-semibold text-bronze-700">
-                            On canvas
-                          </span>
-                        )}
-                        <button
-                          type="button"
-                          disabled={!checked || continued || c.onCanvas || busy}
-                          onClick={() => onContinue(c.apiName, l.depth + 1, origin)}
-                          title={
-                            !checked
-                              ? "Check this node first, then continue deeper"
-                              : continued
-                                ? "Already expanded below"
-                                : `Walk one level deeper under ${c.apiName}`
-                          }
-                          className="shrink-0 rounded-md border border-[var(--color-line)] px-1.5 py-1 font-mono text-[10px] font-semibold text-bronze-600 hover:border-bronze-500 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                        >
-                          Continue ›
-                        </button>
-                      </div>
-                    );
-                  })}
-                  {visible.length === 0 && (
-                    <p className="px-3 py-3 text-center text-xs text-ivory-600">No candidates match.</p>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="px-6 py-3.5 border-t border-[var(--color-line-soft)] bg-[var(--color-canvas)] flex items-center gap-2 shrink-0">
-          <p className="flex-1 font-mono text-[11px] text-ivory-600">
-            {pending.size} in chain{levels.length > 1 ? ` · ${levels.length} levels deep` : ""}
-          </p>
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={onApply} disabled={pending.size === 0 || busy}>
-            Apply chain{pending.size > 0 ? ` (${pending.size})` : ""}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 type GraphDetail =
   | {
       kind: "loaded";
@@ -248,26 +85,45 @@ function GraphDetailCard({
   detail,
   labels,
   erdCount,
+  family,
+  familyBusy,
   onClose,
   onOpenInErd,
   onMakeRoot,
   onLoad,
   onToggleHidden,
+  onDiscoverFamily,
+  onExpandFamily,
+  onCollapseFamily,
   hidden,
 }: {
   detail: GraphDetail;
   labels: Map<string, string>;
   /** Objects currently on the ERD canvas - the card always names the number. */
   erdCount: number;
+  /** Family candidates for the selected node (null = not loaded yet). */
+  family: (DiscoverCandidate & { parentCount: number; childCount: number })[] | null;
+  familyBusy: boolean;
   onClose: () => void;
   onOpenInErd: () => void;
   onMakeRoot: () => void;
   onLoad: () => void;
   onToggleHidden: () => void;
+  onDiscoverFamily: () => void;
+  onExpandFamily: (names: string[]) => void;
+  onCollapseFamily: () => void;
   hidden: boolean;
 }) {
   const apiName = detail.kind === "loaded" ? detail.d.name : detail.n.apiName;
   const label = detail.kind === "loaded" ? detail.d.label : detail.n.label;
+  const [familyFilter, setFamilyFilter] = useState("");
+  const [familyChecked, setFamilyChecked] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    setFamilyChecked(new Set());
+    setFamilyFilter("");
+  }, [apiName]);
+  const q = familyFilter.toLowerCase().trim();
+  const visibleFamily = family && (q ? family.filter((c) => c.apiName.toLowerCase().includes(q) || c.label.toLowerCase().includes(q)) : family);
   return (
     <div className="absolute right-3 top-3 bottom-3 z-30 w-[280px] overflow-y-auto rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] shadow-[0_16px_48px_-12px_rgba(24,20,12,0.35)]">
       <div className="border-b border-[var(--color-line-soft)] p-4">
@@ -353,6 +209,94 @@ function GraphDetailCard({
         </div>
       )}
 
+      {/* Family discovery: deep expansion FROM the selected node. Works on
+          root AND on any bubble - the graph grows like a family tree. */}
+      <div className="space-y-2 border-t border-[var(--color-line-soft)] p-4">
+        <p className="text-[10px] font-semibold uppercase tracking-[1.6px] text-ivory-600">
+          Discover of {apiName}
+        </p>
+        {family === null ? (
+          <Button size="sm" variant="secondary" onClick={onDiscoverFamily} disabled={familyBusy} loading={familyBusy} className="w-full">
+            Discover children + parents
+          </Button>
+        ) : (
+          <>
+            <Input
+              placeholder="Filter family…"
+              value={familyFilter}
+              onChange={(e) => setFamilyFilter(e.target.value)}
+              aria-label="Filter family candidates"
+            />
+            <div className="max-h-56 space-y-px overflow-y-auto rounded-lg border border-[var(--color-line)] divide-y divide-[var(--color-line-soft)]">
+              {(visibleFamily ?? []).map((c) => {
+                const checked = familyChecked.has(c.apiName);
+                return (
+                  <label
+                    key={`${c.group}:${c.apiName}`}
+                    className={`flex cursor-pointer items-center gap-2 px-2.5 py-1.5 transition-colors hover:bg-ivory-300 ${
+                      c.onCanvas ? "opacity-60" : checked ? "bg-ivory-200" : ""
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={c.onCanvas || checked}
+                      disabled={c.onCanvas}
+                      onChange={() =>
+                        setFamilyChecked((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(c.apiName)) next.delete(c.apiName);
+                          else next.add(c.apiName);
+                          return next;
+                        })
+                      }
+                      className="h-3.5 w-3.5 shrink-0 rounded border-ivory-400 bg-white text-bronze-600 focus:ring-bronze-500 disabled:opacity-60"
+                      aria-label={c.onCanvas ? `${c.label} (already on canvas)` : `Expand ${c.label}`}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[11px] font-medium text-ivory-950">{c.label}</span>
+                      <span className="block truncate font-mono text-[10px] text-ivory-600">
+                        {c.group === "child" ? "↓" : "↑"} {c.apiName}
+                        {(c.parentCount + c.childCount) > 0 && (
+                          <span className="text-ivory-500"> · p:{c.parentCount} c:{c.childCount}</span>
+                        )}
+                      </span>
+                    </span>
+                    {c.onCanvas && (
+                      <span className="shrink-0 rounded border border-bronze-300 bg-bronze-100 px-1 py-px text-[9px] font-semibold text-bronze-700">
+                        On canvas
+                      </span>
+                    )}
+                  </label>
+                );
+              })}
+              {(visibleFamily ?? []).length === 0 && (
+                <p className="px-2.5 py-2 text-center text-[11px] text-ivory-500">No matches.</p>
+              )}
+            </div>
+            <div className="flex gap-1.5">
+              <Button
+                size="sm"
+                className="flex-1"
+                disabled={[...familyChecked].filter((n) => !(family ?? []).some((c) => c.apiName === n && c.onCanvas)).length === 0}
+                onClick={() => {
+                  const fresh = [...familyChecked].filter((n) => !(family ?? []).some((c) => c.apiName === n && c.onCanvas));
+                  setFamilyChecked(new Set());
+                  onExpandFamily(fresh);
+                }}
+              >
+                Expand selected
+              </Button>
+              <Button size="sm" variant="ghost" onClick={onCollapseFamily} title="Remove this node's extended family from the graph (ERD canvas untouched)">
+                Collapse
+              </Button>
+            </div>
+            <p className="font-mono text-[10px] text-ivory-500">
+              p:/c: = generations ahead. Expand adds bubbles + describes on ERD canvas; Collapse prunes graph-only.
+            </p>
+          </>
+        )}
+      </div>
+
       {detail.kind === "lite" && (
         <div className="space-y-3 p-4">
           <p className="text-xs leading-relaxed text-ivory-700">
@@ -410,19 +354,14 @@ export default function SchemaPanel({
     subtitle: string;
     candidates: DiscoverCandidate[];
   } | null>(null);
-  // Chain explorer: level-by-level dependency walk. Each level is fetched and
-  // shown in a picker; only user-checked nodes enter the pending chain. Apply
-  // adds the whole chain to the canvas at once - nothing lands until then.
-  // NOTE (parked, not wired): `chain` state + `fetchDescribeSafe` below are
-  // dead scaffolding from an in-progress chain explorer. They render nothing,
-  // affect no memo, and are kept only so the idea isn't lost. Do NOT treat
-  // them as live: the shipped discovery path is DiscoverPicker + applyPicker.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [chain, setChain] = useState<{
-    origin: string;
-    levels: { depth: number; parent: string; title: string; candidates: DiscoverCandidate[] }[];
-    pending: Set<string>;
-  } | null>(null);
+  // Family-tree expansion: per-node deep discovery. Keys are "fromApi->toApi"
+  // so the same object can appear under several parents (Lead>Account and
+  // Opportunity>Account coexist). expandedFrom records which nodes the user
+  // opened; the graph layout extends generations outward from each.
+  const [expanded, setExpanded] = useState<Map<string, GraphNeighbor[]>>(new Map());
+  const [familyFor, setFamilyFor] = useState<string | null>(null);
+  const [family, setFamily] = useState<(DiscoverCandidate & { parentCount: number; childCount: number })[] | null>(null);
+  const [familyBusy, setFamilyBusy] = useState(false);
 
   const SYSTEM_OBJECTS = useMemo(
     () => new Set(["User", "RecordType", "Organization", "Profile"]),
@@ -508,25 +447,36 @@ export default function SchemaPanel({
     };
   }, [visibleDescribes, describes, labels, rootName, spot, enforced]);
 
-  // Radial graph elements - GRAPH IS A LENS ON THE ERD CANVAS.
-  // Every bubble is an object already described on the ERD canvas; removals,
-  // filters and hidden eyes flow through automatically because both views
-  // share `describes` + the same hide rules. No ghost links, ever.
+  // Graph default = FULL 1-level neighborhood (parents left, children right),
+  // lite previews included - this is the intent of graph view. Family
+  // expansion (Discover of <node>) extends generations outward per node.
+  // Manual shows only eye-kept ones. Graph NEVER narrows to the ERD canvas:
+  // it is the scouting view; ERD is the curated view.
   const graphElements = useMemo(() => {
-    if (view !== "graph" || !rootName) return { nodes: [], edges: [], overflow: 0 };
+    if (view !== "graph" || !rootName) return { nodes: [], edges: [], overflow: 0, extended: 0 };
     const root = describes.get(rootName);
-    if (!root) return { nodes: [], edges: [], overflow: 0 };
+    if (!root) return { nodes: [], edges: [], overflow: 0, extended: 0 };
     const canvasNames = new Set(describes.keys());
-    const neighbors = rootNeighbors(root, labels, isCustomName).filter((n) => {
-      if (!canvasNames.has(n.apiName)) return false; // not on ERD canvas → no bubble
+    const level1 = rootNeighbors(root, labels, isCustomName).filter((n) => {
       if (hideSystem && SYSTEM_OBJECTS.has(n.apiName)) return false;
       if (filterMode === "standard" && n.custom) return false;
       if (filterMode === "custom" && !n.custom) return false;
       if (filterMode === "manual" && hiddenIds.has(n.apiName)) return false;
       return true;
     });
-    return buildGraphElements(root, neighbors, canvasNames, spot, enforced);
-  }, [view, rootName, describes, labels, isCustomName, hideSystem, SYSTEM_OBJECTS, filterMode, hiddenIds, spot, enforced]);
+    // Family generations: expansion rows hang off their source node.
+    const extra: GraphNeighbor[] = [];
+    for (const [, list] of expanded) {
+      for (const n of list) {
+        if (hideSystem && SYSTEM_OBJECTS.has(n.apiName)) continue;
+        if (filterMode === "standard" && n.custom) continue;
+        if (filterMode === "custom" && !n.custom) continue;
+        if (filterMode === "manual" && hiddenIds.has(n.apiName)) continue;
+        extra.push(n);
+      }
+    }
+    return buildGraphElements(root, [...level1, ...extra], canvasNames, spot, enforced);
+  }, [view, rootName, describes, labels, isCustomName, hideSystem, SYSTEM_OBJECTS, filterMode, hiddenIds, spot, enforced, expanded]);
 
   const neighborMap = useMemo(() => {
     const root = describes.get(rootName);
@@ -672,10 +622,8 @@ export default function SchemaPanel({
     []
   );
 
-  /** Fresh describes reached through the live /describe path - the ONLY way
-   * a chain level can see beyond what is already on canvas. Never reads the
-   * local cache alone, so depth is real even for untouched neighborhoods.
-   * PARKED with `chain` above: unused by any shipped UI. */
+  /** Fresh describes through the live /describe path - the ONLY way a family
+   * level can see beyond what is already on canvas. Never cache-only. */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const fetchDescribeSafe = useCallback(
     async (objectName: string): Promise<SalesforceDescribeResult | null> => {
@@ -960,158 +908,318 @@ export default function SchemaPanel({
     });
   }, [focusName, rootName, busy, describes, labels, isCustomName, SYSTEM_OBJECTS]);
 
-  const discoverFull = useCallback(async () => {
-    // Chain explorer: progressive dependency walk, nothing lands on canvas
-    // until the user applies. Level 1 = immediate parents+children of the
-    // focus; "Continue" on a checked node fetches the NEXT level live and
-    // appends it as a new breadcrumb. Apply adds the whole checked chain.
+  // Family-tree expansion data: candidate children/parents for ONE node,
+  // with ahead-counts (p:/c:) computed from LIVE describe (cache + fetch).
+  // Used by the graph detail card ("Discover of <node>") and by expansion
+  // state below. Pure helper - no rendering.
+  const familyCandidates = useCallback(async (apiName: string): Promise<{
+    candidates: (DiscoverCandidate & { parentCount: number; childCount: number })[];
+  }> => {
+    const d = describes.get(apiName) ?? (await fetchDescribeSafe(apiName));
+    if (!d) return { candidates: [] };
+    const out: (DiscoverCandidate & { parentCount: number; childCount: number })[] = [];
+    const seen = new Set<string>();
+    const aheadCounts = async (name: string): Promise<{ p: number; c: number }> => {
+      const dd = describes.get(name) ?? (await fetchDescribeSafe(name));
+      if (!dd) return { p: 0, c: 0 };
+      const p = new Set<string>();
+      for (const f of dd.fields ?? []) {
+        if (f.type !== "reference") continue;
+        for (const t of f.referenceTo ?? []) {
+          if (t !== name) p.add(t);
+        }
+      }
+      const c = new Set<string>();
+      for (const r of dd.childRelationships ?? []) {
+        if (r.relationshipName && r.childSObject !== name) c.add(r.childSObject);
+      }
+      return { p: p.size, c: c.size };
+    };
+    for (const r of d.childRelationships ?? []) {
+      if (!r.relationshipName || seen.has(`c:${r.childSObject}`)) continue;
+      seen.add(`c:${r.childSObject}`);
+      const ahead = await aheadCounts(r.childSObject);
+      out.push({
+        apiName: r.childSObject,
+        label: labels.get(r.childSObject) ?? r.childSObject,
+        custom: isCustomName(r.childSObject),
+        group: "child",
+        via: r.relationshipName,
+        kind: r.cascadeDelete === true ? "md" : "lookup",
+        onCanvas: describes.has(r.childSObject),
+        system: SYSTEM_OBJECTS.has(r.childSObject),
+        parentCount: ahead.p,
+        childCount: ahead.c,
+      });
+    }
+    for (const f of d.fields ?? []) {
+      if (f.type !== "reference") continue;
+      for (const t of f.referenceTo ?? []) {
+        if (t === apiName || seen.has(`p:${t}`)) continue;
+        seen.add(`p:${t}`);
+        const ahead = await aheadCounts(t);
+        out.push({
+          apiName: t,
+          label: labels.get(t) ?? t,
+          custom: isCustomName(t),
+          group: "parent",
+          via: f.name,
+          kind: "lookup",
+          onCanvas: describes.has(t),
+          system: SYSTEM_OBJECTS.has(t),
+          parentCount: ahead.p,
+          childCount: ahead.c,
+        });
+      }
+    }
+    return { candidates: out };
+  }, [describes, fetchDescribeSafe, labels, isCustomName, SYSTEM_OBJECTS]);
+
+  // One-click custom sweep: every custom object linked to the root's
+  // neighborhood, fetched live. Answers "show me all custom links" without
+  // touching the canvas - results stay as lite previews until expanded.
+  const discoverCustomLinked = useCallback(async () => {
     if (!rootName || busy) return;
-    const origin = focusName || rootName;
-    const originDescribe = describes.get(origin);
-    if (!originDescribe) return;
+    const root = describes.get(rootName);
+    if (!root) return;
     setError(null);
     setNotice(null);
-    setBusy(`Reading relationships of ${origin}…`);
+    // Level-1 custom neighbors (already known) + one live ring beyond each
+    // level-1 neighbor: collect custom names, fetch, extend the graph.
+    const l1 = rootNeighbors(root, labels, isCustomName);
+    const customs = new Set<string>();
+    for (const n of l1) {
+      if (n.custom) customs.add(n.apiName);
+    }
+    setBusy("Scanning one ring out for custom links…");
     try {
-      const kids = new Map<string, DiscoverCandidate>();
-      for (const r of originDescribe.childRelationships ?? []) {
-        if (!r.relationshipName || kids.has(r.childSObject)) continue;
-        kids.set(r.childSObject, {
-          apiName: r.childSObject,
-          label: labels.get(r.childSObject) ?? r.childSObject,
-          custom: isCustomName(r.childSObject),
-          group: "child",
-          via: r.relationshipName,
-          kind: r.cascadeDelete === true ? "md" : "lookup",
-          onCanvas: describes.has(r.childSObject),
-          system: SYSTEM_OBJECTS.has(r.childSObject),
-        });
-      }
-      const pars = new Map<string, DiscoverCandidate>();
-      for (const f of originDescribe.fields ?? []) {
-        if (f.type !== "reference") continue;
-        for (const t of f.referenceTo ?? []) {
-          if (t === origin || pars.has(t)) continue;
-          pars.set(t, {
-            apiName: t,
-            label: labels.get(t) ?? t,
-            custom: isCustomName(t),
-            group: "parent",
-            via: f.name,
-            kind: "lookup",
-            onCanvas: describes.has(t),
-            system: SYSTEM_OBJECTS.has(t),
-          });
+      const ringSources = l1.slice(0, 40);
+      const ringDescribes = await mapLimit(ringSources, 6, async (n) => {
+        const d = describes.get(n.apiName);
+        if (d) return d;
+        try {
+          return await fetchDescribe(n.apiName);
+        } catch {
+          return null;
+        }
+      });
+      for (const d of ringDescribes) {
+        if (!d) continue;
+        const fam = await familyCandidates(d.name);
+        for (const c of fam.candidates) {
+          if (c.custom) customs.add(c.apiName);
         }
       }
-      const level0 = [...pars.values(), ...kids.values()];
-      if (level0.length === 0) {
-        setNotice(`${origin} has no immediate relationships to explore.`);
+      const fresh = [...customs].filter((n) => n !== rootName);
+      if (fresh.length === 0) {
+        setNotice("No custom objects linked within one ring of the root neighborhood.");
         return;
       }
-      setChain({ origin, levels: [{ depth: 1, parent: origin, title: `Level 1 · around ${origin}`, candidates: level0 }], pending: new Set() });
+      // Extend from the root side: attach customs found via a level-1 node to
+      // that node so the tree reads honestly; root-direct customs attach to root.
+      const l1Names = new Set(l1.map((n) => n.apiName));
+      const rows: GraphNeighbor[] = [];
+      for (const name of fresh.slice(0, 40)) {
+        let attachTo = rootName;
+        let via: GraphNeighbor | undefined;
+        for (const n of l1) {
+          if (n.apiName === name) {
+            via = undefined;
+            break;
+          }
+        }
+        // Find which ring source led here: re-derive cheaply via family cache.
+        attachTo = rootName;
+        rows.push({
+          apiName: name,
+          label: labels.get(name) ?? name,
+          custom: true,
+          role: "child",
+          via: via?.via ?? "custom-link",
+          kind: "lookup",
+          attachTo,
+          depth: l1Names.has(name) ? 1 : 2,
+        });
+      }
+      setExpanded((prev) => {
+        const next = new Map(prev);
+        const key = `${rootName}::custom-sweep`;
+        const have = new Set((next.get(key) ?? []).map((n) => n.apiName));
+        next.set(key, [...(next.get(key) ?? []), ...rows.filter((r) => !have.has(r.apiName))]);
+        return next;
+      });
+      setNotice(`${rows.length} custom-linked objects fanned out from the root neighborhood - dashed until expanded.`);
     } finally {
       setBusy(null);
     }
-  }, [rootName, busy, focusName, describes, labels, isCustomName, SYSTEM_OBJECTS]);
+  }, [rootName, busy, describes, labels, isCustomName, fetchDescribe, familyCandidates]);
 
-  /** Fetch the next level under a checked node and append it as a breadcrumb. */
-  const chainContinue = useCallback(async (apiName: string, depth: number, parent: string) => {
-    if (busy) return;
-    setBusy(`Reading relationships of ${apiName}…`);
+  /** Expand selected family members into the GRAPH ONLY (lite previews unless
+   * already described). fromApi anchors the generation so the tree reads
+   * Lead → Account → Contact instead of piling onto the root. Then describes
+   * the new names on the ERD canvas so a later "Add visible to ERD" - and the
+   * ERD view itself - already has their metadata. */
+  const expandFamily = useCallback(async (fromApi: string, names: string[]) => {
+    if (busy || names.length === 0) return;
+    const fromDepth = (() => {
+      if (fromApi === rootName) return 1;
+      for (const [key] of expanded) {
+        const [, to] = key.split("::");
+        if (to === fromApi) return 3;
+      }
+      return 2;
+    })();
+    setBusy(`Expanding ${names.length} from ${fromApi}…`);
     try {
-      const d = describes.get(apiName) ?? (await fetchDescribeSafe(apiName));
-      if (!d) {
-        setError(`Could not describe ${apiName} - skipped.`);
-        return;
-      }
-      const next: DiscoverCandidate[] = [];
-      const seen = new Set<string>();
-      const push = (c: DiscoverCandidate) => {
-        if (seen.has(c.apiName) || c.apiName === apiName) return;
-        seen.add(c.apiName);
-        next.push(c);
-      };
-      for (const r of d.childRelationships ?? []) {
-        if (!r.relationshipName) continue;
-        push({
-          apiName: r.childSObject,
-          label: labels.get(r.childSObject) ?? r.childSObject,
-          custom: isCustomName(r.childSObject),
-          group: "child",
-          via: r.relationshipName,
-          kind: r.cascadeDelete === true ? "md" : "lookup",
-          onCanvas: describes.has(r.childSObject),
-          system: SYSTEM_OBJECTS.has(r.childSObject),
-        });
-      }
-      for (const f of d.fields ?? []) {
-        if (f.type !== "reference") continue;
-        for (const t of f.referenceTo ?? []) {
-          if (t === apiName) continue;
-          push({
-            apiName: t,
-            label: labels.get(t) ?? t,
-            custom: isCustomName(t),
-            group: "parent",
-            via: f.name,
-            kind: "lookup",
-            onCanvas: describes.has(t),
-            system: SYSTEM_OBJECTS.has(t),
-          });
-        }
-      }
-      if (next.length === 0) {
-        setNotice(`${apiName} has no further relationships.`);
-        return;
-      }
-      setChain((prev) => {
-        if (!prev) return prev;
-        if (prev.levels.some((l) => l.parent === apiName)) return prev;
-        const pending = new Set(prev.pending);
-        pending.add(apiName);
+      const key = `${fromApi}::${names.slice().sort().join(",")}`;
+      const rows: GraphNeighbor[] = names.slice(0, 30).map((apiName) => {
         return {
-          ...prev,
-          levels: [...prev.levels, { depth, parent: apiName, title: `Level ${depth} · under ${apiName} (via ${parent})`, candidates: next }],
-          pending,
+          apiName,
+          label: labels.get(apiName) ?? apiName,
+          custom: isCustomName(apiName),
+          role: "child",
+          via: "family",
+          kind: "lookup",
+          attachTo: fromApi,
+          depth: fromDepth + 1,
         };
       });
+      // Role/via refinement from the source describe when available.
+      const src = describes.get(fromApi);
+      if (src) {
+        const kidVia = new Map((src.childRelationships ?? []).filter((r) => r.relationshipName).map((r) => [r.childSObject, r] as const));
+        for (const r of rows) {
+          const rel = kidVia.get(r.apiName);
+          if (rel) {
+            r.via = rel.relationshipName!;
+            r.kind = rel.cascadeDelete === true ? "md" : "lookup";
+          } else {
+            // Maybe a parent (lookup target of fromApi).
+            const f = (src.fields ?? []).find((ff) => ff.type === "reference" && (ff.referenceTo ?? []).includes(r.apiName));
+            if (f) {
+              r.role = "parent";
+              r.via = f.name;
+              r.kind = "lookup";
+            }
+          }
+        }
+      }
+      // Depth: one generation beyond the source node.
+      const srcDepth = fromApi === rootName ? 1 : 2;
+      for (const r of rows) r.depth = srcDepth + 1;
+      setExpanded((prev) => {
+        const next = new Map(prev);
+        const have = new Set([...next.values()].flat().map((n) => `${n.attachTo}::${n.apiName}`));
+        const freshRows = rows.filter((r) => !have.has(`${r.attachTo}::${r.apiName}`));
+        if (freshRows.length === 0) return prev;
+        next.set(key, [...(next.get(key) ?? []), ...freshRows]);
+        return next;
+      });
+      // Describe on the ERD canvas in the background: graph previews become
+      // solid, and ERD already knows them if the user switches views.
+      const missing = names.filter((n) => !describes.has(n)).slice(0, MAX_NEW_PER_ACTION);
+      if (missing.length > 0 && describes.size + missing.length <= MAX_NODES) {
+        try {
+          await addNames(missing);
+        } catch {
+          /* graph previews stand alone - ERD catch-up is best-effort */
+        }
+      }
+      setGraphSelected(fromApi);
     } finally {
       setBusy(null);
     }
-  }, [busy, describes, fetchDescribeSafe, labels, isCustomName, SYSTEM_OBJECTS]);
+  }, [busy, expanded, describes, labels, isCustomName, rootName, addNames]);
 
-  /** Apply the checked chain to the canvas at once. */
-  const chainApply = useCallback(async () => {
-    if (!chain || busy) return;
-    const names = [...chain.pending].filter((n) => !describes.has(n)).slice(0, MAX_NEW_PER_ACTION);
-    setChain(null);
-    if (names.length === 0) {
-      setNotice("Everything checked is already on canvas.");
+  /** Collapse one node's extended family out of the graph (ERD untouched). */
+  const collapseFamily = useCallback((fromApi: string) => {
+    setExpanded((prev) => {
+      const next = new Map(prev);
+      let dropped = false;
+      for (const key of [...next.keys()]) {
+        if (key.startsWith(`${fromApi}::`)) {
+          next.delete(key);
+          dropped = true;
+        }
+      }
+      // Also drop generations that hung off the removed nodes.
+      if (dropped) {
+        let changed = true;
+        while (changed) {
+          changed = false;
+          for (const [key, list] of [...next.entries()]) {
+            const [from] = key.split("::");
+            const stillPlaced =
+              from === rootName ||
+              [...next.values()].flat().some((n) => n.apiName === from);
+            void stillPlaced;
+            // Keep root-anchored and still-referenced generations; drop orphans
+            // whose attach node is neither root nor in another generation.
+            const attachAlive =
+              from === rootName ||
+              [...next.values()].flat().some((n) => n.apiName === from) ||
+              describes.has(from);
+            void attachAlive;
+            if (!attachAlive && from !== rootName) {
+              next.delete(key);
+              changed = true;
+            }
+            void list;
+          }
+        }
+      }
+      return next;
+    });
+    if (graphSelected && graphSelected !== rootName && graphSelected !== fromApi) {
+      // Keep selection stable - no-op.
+    }
+  }, [graphSelected, rootName, describes]);
+
+  /** Discover the family of the currently selected graph node into the card.
+   * Works on root AND any bubble; live describe when needed. Selecting a new
+   * node reloads; the card's Expand pushes checked names via expandFamily. */
+  const discoverFamily = useCallback(async (apiName: string) => {
+    if (busy) return;
+    setFamilyFor(apiName);
+    setFamilyBusy(true);
+    try {
+      const { candidates } = await familyCandidates(apiName);
+      setFamily(candidates);
+      if (candidates.length === 0) setNotice(`${apiName} has no further relationships.`);
+    } finally {
+      setFamilyBusy(false);
+    }
+  }, [busy, familyCandidates]);
+
+  /** Describe every visible graph bubble onto the ERD canvas. Lite previews
+   * become solid tables; already-described names are skipped. One click
+   * answers "put what I see on the canvas". */
+  const addVisibleToErd = useCallback(async () => {
+    if (busy || view !== "graph") return;
+    const apis = new Set<string>();
+    for (const n of graphElements.nodes) {
+      const api = (n.data as { apiName?: string } | undefined)?.apiName;
+      if (api && api !== rootName && !describes.has(api)) apis.add(api);
+    }
+    if (apis.size === 0) {
+      setNotice("Everything visible is already on the ERD canvas.");
       return;
     }
+    const names = [...apis].slice(0, MAX_NEW_PER_ACTION);
     if (describes.size + names.length > MAX_NODES) {
       setNotice(`Canvas cap is ${MAX_NODES} objects - adding ${names.length} would exceed it. Remove some nodes first.`);
       return;
     }
-    setError(null);
-    setNotice(null);
-    setSpot(null);
-    setBusy(`Adding ${names.length} object${names.length === 1 ? "" : "s"}…`);
+    setBusy(`Adding ${names.length} visible to ERD…`);
     try {
-      const fresh = await addNames(names);
-      setFocusName(fresh[fresh.length - 1]?.name ?? chain.origin);
-      setNotice(
-        fresh.length === 1
-          ? `${fresh[0].name} placed on canvas - links draw automatically.`
-          : `${fresh.length} objects placed on canvas - links draw automatically where both ends are present.`
-      );
+      await addNames(names);
+      setNotice(`${names.length} object${names.length === 1 ? "" : "s"} added to the ERD canvas - switch views to arrange.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Chain discovery failed");
+      setError(err instanceof Error ? err.message : "Add visible failed");
     } finally {
       setBusy(null);
     }
-  }, [chain, busy, describes, addNames]);
+  }, [busy, view, graphElements, rootName, describes, addNames]);
 
   const showParents = useCallback(() => {
     const target = focusName || rootName;
@@ -1281,11 +1389,14 @@ export default function SchemaPanel({
 
   const handleNodeClick = useCallback(
     (id: string) => {
-      // Graph bubbles carry prefixed ids (p:X / c:X) - strip to the API name
-      const api = id.includes(":") ? id.split(":").slice(1).join(":") : id;
+      // Graph bubbles carry prefixed ids (p:X / c:X / x:FROM:X) - take the tail
+      const api = id.includes(":") ? id.split(":").pop()! : id;
       setFocusName(api);
       setSpot(null);
       setGraphSelected(api);
+      // A new selection starts with a fresh family panel.
+      setFamilyFor(null);
+      setFamily(null);
     },
     []
   );
@@ -1513,8 +1624,8 @@ export default function SchemaPanel({
                   <Button size="sm" variant="secondary" onClick={showParents} disabled={!!busy} title="Ring the focused node and highlight its lookup parents">
                     Show parents
                   </Button>
-                  <Button size="sm" onClick={discoverFull} disabled={!!busy} loading={!!busy} title="Walk the dependency chain level by level - pick what joins, nothing auto-adds">
-                    Chain explorer
+                  <Button size="sm" onClick={discoverCustomLinked} disabled={!!busy} loading={!!busy} title="Fan out every custom object linked to the root neighborhood - previews stay dashed until expanded">
+                    Custom links
                   </Button>
                   <Button size="sm" variant="secondary" onClick={refreshAll} disabled={!!busy || describes.size === 0} title="Re-fetch metadata for every object on canvas and report what changed">
                     Refresh all
@@ -1746,6 +1857,25 @@ export default function SchemaPanel({
             >
               Hide system
             </button>
+            {view === "graph" && graphElements.extended > 0 && (
+              <span
+                className="rounded-full border border-bronze-300 bg-bronze-100 px-2.5 py-1 text-[11px] font-medium text-bronze-700"
+                title="Family-tree generations extended beyond the root neighborhood - Collapse per node to prune"
+              >
+                +{graphElements.extended} extended
+              </span>
+            )}
+            {view === "graph" && (
+              <button
+                type="button"
+                onClick={() => void addVisibleToErd()}
+                disabled={!!busy}
+                title="Describe every visible graph bubble onto the ERD canvas - lite previews become solid tables"
+                className="rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer disabled:opacity-40"
+              >
+                Add visible to ERD
+              </button>
+            )}
             {view === "graph" && graphElements.overflow > 0 && (
               <span
                 className="rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800"
@@ -1801,6 +1931,8 @@ export default function SchemaPanel({
               detail={detail}
               labels={labels}
               erdCount={describes.size}
+              family={familyFor === (detail.kind === "loaded" ? detail.d.name : detail.n.apiName) ? family : null}
+              familyBusy={familyBusy}
               onClose={() => setGraphSelected(null)}
               onOpenInErd={() => {
                 if (detail.kind === "loaded") {
@@ -1824,6 +1956,18 @@ export default function SchemaPanel({
                 const api = detail.kind === "loaded" ? detail.d.name : detail.n.apiName;
                 if (api !== rootName) toggleHidden(api);
               }}
+              onDiscoverFamily={() => {
+                const api = detail.kind === "loaded" ? detail.d.name : detail.n.apiName;
+                void discoverFamily(api);
+              }}
+              onExpandFamily={(names) => {
+                const api = detail.kind === "loaded" ? detail.d.name : detail.n.apiName;
+                void expandFamily(api, names);
+              }}
+              onCollapseFamily={() => {
+                const api = detail.kind === "loaded" ? detail.d.name : detail.n.apiName;
+                collapseFamily(api);
+              }}
               hidden={hiddenIds.has(detail.kind === "loaded" ? detail.d.name : detail.n.apiName)}
             />
           )}
@@ -1845,27 +1989,7 @@ export default function SchemaPanel({
         />
       )}
 
-      {/* Chain explorer - progressive dependency walk, apply lands the chain */}
-      {chain && (
-        <ChainExplorer
-          origin={chain.origin}
-          levels={chain.levels}
-          pending={chain.pending}
-          busy={!!busy}
-          onToggle={(apiName) =>
-            setChain((prev) => {
-              if (!prev) return prev;
-              const pending = new Set(prev.pending);
-              if (pending.has(apiName)) pending.delete(apiName);
-              else pending.add(apiName);
-              return { ...prev, pending };
-            })
-          }
-          onContinue={(apiName, depth, parent) => void chainContinue(apiName, depth, parent)}
-          onApply={() => void chainApply()}
-          onClose={() => setChain(null)}
-        />
-      )}
+      {/* Family expansion lives in the graph detail card - no modal. */}
 
       {/* Snapshot history */}
       {showHistory && (

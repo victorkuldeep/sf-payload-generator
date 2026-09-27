@@ -270,6 +270,10 @@ export interface GraphNeighbor {
   /** Lookup field (child side) or relationship driving the link. */
   via: string;
   kind: ErdEdgeKind;
+  /** Family-tree link: which already-placed node this hangs off. Defaults to root. */
+  attachTo?: string;
+  /** Generation depth from the root (1 = immediate neighborhood). */
+  depth?: number;
 }
 
 /**
@@ -343,6 +347,8 @@ export interface GraphElements {
   edges: Edge[];
   /** Neighbors left out for lack of room - panel surfaces the count. */
   overflow: number;
+  /** Family-tree nodes placed beyond level 1. */
+  extended: number;
 }
 
 /**
@@ -362,11 +368,16 @@ export function buildGraphElements(
 ): GraphElements {
   const shown = neighbors.slice(0, MAX_FAN);
   const overflow = Math.max(0, neighbors.length - shown.length);
-  const parents = shown.filter((n) => n.role === "parent" && described.has(n.apiName));
-  const children = shown.filter((n) => n.role === "child" && described.has(n.apiName));
-  // Only described neighbors get bubbles: the graph shows objects with real
-  // metadata on canvas, never ghost links to removed ones. Undescribed names
-  // still count toward overflow so the badge stays honest.
+  // Full 1-level neighborhood + family-tree generations: every neighbor gets
+  // a bubble. Described ones are solid; undescribed ones are dashed lite
+  // previews that load on click. Depth-1 fans left/right off the root;
+  // deeper generations extend outward from their attachTo node so chains
+  // read like a family tree instead of piling onto the root.
+  const depthOf = (n: GraphNeighbor) => n.depth ?? 1;
+  const level1 = shown.filter((n) => depthOf(n) <= 1);
+  const deeper = shown.filter((n) => depthOf(n) > 1);
+  const parents = level1.filter((n) => n.role === "parent");
+  const children = level1.filter((n) => n.role === "child");
 
   const nodes: Node<GraphBubbleData>[] = [
     {
@@ -431,6 +442,7 @@ export function buildGraphElements(
       }
       if (!placed) return; // no room even out here - counted as overflow below
       occupied.push(placed);
+      const loaded = described.has(n.apiName);
       nodes.push({
         id: `${prefix}:${n.apiName}`,
         type: "graphBubble",
@@ -440,7 +452,7 @@ export function buildGraphElements(
           apiName: n.apiName,
           custom: n.custom,
           role: n.role,
-          loaded: true,
+          loaded,
           childCount: 0,
           isJunction: false,
           dimmed: spot != null && spot.focus !== n.apiName && !spot.related.has(n.apiName),
@@ -454,19 +466,78 @@ export function buildGraphElements(
         target: isParentSide ? root.name : `${prefix}:${n.apiName}`,
         label: n.via,
         type: "erdEdge",
-        data: { kind: n.kind, graphLink: true, target: n.apiName, loaded: true } as Record<string, unknown>,
+        data: { kind: n.kind, graphLink: true, target: n.apiName, loaded } as Record<string, unknown>,
       });
     });
   };
 
   const before = nodes.length;
+  const placedCenters = new Map<string, { x: number; y: number }>();
+  placedCenters.set(root.name, { x: 0, y: 0 });
   place(parents, 180, "p");
   place(children, 0, "c");
-  // Only placed bubbles count - undescribed names never reached place(),
-  // so unplaced measures orbit-room pressure only.
-  const unplaced = parents.length + children.length - (nodes.length - before);
+  // Record level-1 centers so deeper generations can extend from them.
+  for (const n of nodes.slice(before)) {
+    const api = (n.data as GraphBubbleData).apiName;
+    placedCenters.set(api, { x: n.position.x + BUBBLE_NODE / 2, y: n.position.y + BUBBLE_NODE / 2 });
+  }
+  // Family-tree generations: fan each node's own parents/children outward
+  // from its center (parents to its upper-left, children to its upper-right),
+  // skipping anything already placed. Deterministic: sorted by apiName.
+  const EXTEND_R = 300;
+  const EXTEND_SPREAD = 52;
+  const byAttach = new Map<string, GraphNeighbor[]>();
+  for (const n of deeper) {
+    const key = n.attachTo ?? root.name;
+    if (!byAttach.has(key)) byAttach.set(key, []);
+    byAttach.get(key)!.push(n);
+  }
+  let extended = 0;
+  for (const [attachApi, list] of [...byAttach.entries()].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    const center = placedCenters.get(attachApi);
+    if (!center) continue;
+    const ordered = [...list].sort((a, b) => (a.apiName < b.apiName ? -1 : 1));
+    ordered.forEach((n, i) => {
+      if (placedCenters.has(n.apiName)) return;
+      const up = n.role === "parent";
+      // Parents arc up-left, children arc up-right of the attach node.
+      const side = up ? -1 : 1;
+      const spread = (i - (ordered.length - 1) / 2) * EXTEND_SPREAD;
+      const p = { x: center.x + side * EXTEND_R * 0.9, y: center.y - EXTEND_R * 0.55 + spread };
+      if (occupied.some((q) => dist(p, q) < MIN_GAP)) return;
+      occupied.push(p);
+      placedCenters.set(n.apiName, p);
+      const loaded = described.has(n.apiName);
+      nodes.push({
+        id: `x:${attachApi}:${n.apiName}`,
+        type: "graphBubble",
+        position: { x: p.x - BUBBLE_NODE / 2, y: p.y - BUBBLE_NODE / 2 },
+        data: {
+          label: n.label,
+          apiName: n.apiName,
+          custom: n.custom,
+          role: n.role,
+          loaded,
+          childCount: 0,
+          isJunction: false,
+          dimmed: spot != null && spot.focus !== n.apiName && !spot.related.has(n.apiName),
+          spotlight: spot != null && spot.focus === n.apiName,
+        },
+      });
+      edges.push({
+        id: `g|${attachApi}|${n.apiName}|${n.via}`,
+        source: up ? `x:${attachApi}:${n.apiName}` : attachApi === root.name ? root.name : attachApi,
+        target: up ? (attachApi === root.name ? root.name : attachApi) : `x:${attachApi}:${n.apiName}`,
+        label: n.via,
+        type: "erdEdge",
+        data: { kind: n.kind, graphLink: true, target: n.apiName, loaded } as Record<string, unknown>,
+      });
+      extended++;
+    });
+  }
+  const unplaced = shown.length - (nodes.length - before);
 
-  return { nodes, edges, overflow: overflow + unplaced };
+  return { nodes, edges, overflow: overflow + unplaced, extended };
 }
 
 export function layoutErd(

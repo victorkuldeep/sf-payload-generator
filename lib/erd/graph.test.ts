@@ -145,7 +145,7 @@ describe("buildGraphElements", () => {
   const labels = new Map<string, string>();
   const notCustom = () => false;
 
-  it("drops bubbles for removed (undescribed) neighbors - no ghost links", () => {
+  it("shows removed neighbors as dashed lite previews (ghost fix lives in the panel filter)", () => {
     const root = desc(
       "DandBCompany",
       [],
@@ -156,13 +156,29 @@ describe("buildGraphElements", () => {
     );
     const neighbors = rootNeighbors(root, labels, notCustom);
     expect(neighbors.map((n) => n.apiName).sort()).toEqual(["Kept", "Removed"]);
-    // Only Kept is described (still on canvas) - Removed was bulk-removed.
+    // Ghost-link fix lives in SchemaPanel's neighbor filter (removed names
+    // never reach the builder). The builder itself renders every neighbor it
+    // is given: described = solid, undescribed = dashed lite preview.
     const described = new Set(["DandBCompany", "Kept"]);
     const { nodes, edges } = buildGraphElements(root, neighbors, described, null, null);
     const ids = nodes.map((n) => n.id);
     expect(ids).toContain("c:Kept");
-    expect(ids).not.toContain("c:Removed");
-    expect(edges.some((e) => String(e.target).includes("Removed") || String(e.source).includes("Removed"))).toBe(false);
+    expect(ids).toContain("c:Removed");
+    const lite = nodes.find((n) => n.id === "c:Removed");
+    expect((lite!.data as { loaded: boolean }).loaded).toBe(false);
+    expect(edges.some((e) => String(e.target).includes("Removed") || String(e.source).includes("Removed"))).toBe(true);
+  });
+
+  it("extends family-tree generations outward from their attach node", () => {
+    const root = desc("Lead", [], []);
+    const neighbors = [
+      { apiName: "Account", label: "Account", custom: false, role: "child" as const, via: "F", kind: "lookup" as const },
+      { apiName: "Contact", label: "Contact", custom: false, role: "child" as const, via: "F", kind: "lookup" as const, attachTo: "Account", depth: 2 },
+    ];
+    const { nodes, edges, extended } = buildGraphElements(root, neighbors, new Set(["Lead", "Account", "Contact"]), null, null);
+    expect(extended).toBe(1);
+    expect(nodes.map((n) => n.id)).toContain("x:Account:Contact");
+    expect(edges.some((e) => e.id === "g|Account|Contact|F")).toBe(true);
   });
 
   it("renders every described bubble loaded (no dashed ghosts)", () => {
