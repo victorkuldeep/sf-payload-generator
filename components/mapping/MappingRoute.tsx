@@ -7,10 +7,11 @@ import { SourceExplorer } from "./SourceExplorer";
 import { SfExplorer } from "./SfExplorer";
 import { FieldInspector } from "./FieldInspector";
 import { MappingTable } from "./MappingTable";
+import { RecordPlans } from "./RecordPlans";
 import { useMappingMetadata } from "./useMappingMetadata";
 import { buildSnapshot } from "@/lib/mapping/snapshot";
 import { deleteProject, duplicateProject, listProjects, loadProject, saveProject, type ProjectSummary } from "@/lib/mapping/store";
-import type { MappingProject, MappingRow, SnapshotField } from "@/lib/mapping/types";
+import type { MappingProject, MappingRow, RecordPlan, RelationshipDef, SnapshotField } from "@/lib/mapping/types";
 
 function uid(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -27,6 +28,7 @@ export function MappingRoute() {
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
   const [picked, setPicked] = useState<{ objectName: string; field: SnapshotField } | null>(null);
+  const [activePlanId, setActivePlanId] = useState<string | null>(null);
   const [snapshotBusy, setSnapshotBusy] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -92,7 +94,7 @@ export function MappingRoute() {
       const row: MappingRow = {
         id: uid("row"),
         sourcePath,
-        planId: null,
+        planId: activePlanId,
         objectName: picked.objectName,
         fieldName: picked.field.name,
         kind: "direct",
@@ -126,6 +128,12 @@ export function MappingRoute() {
   };
 
   const mappedCount = project?.mappings.length ?? 0;
+
+  const activePlan = project?.recordPlans.find((p) => p.id === activePlanId) ?? null;
+  const planMismatch =
+    activePlan && picked && picked.objectName !== activePlan.objectName
+      ? `Field is on ${picked.objectName}, but the active plan (${activePlan.name}) targets ${activePlan.objectName}. Switch plans or pick a ${activePlan.objectName} field.`
+      : null;
 
   if (!project) {
     return (
@@ -227,11 +235,43 @@ export function MappingRoute() {
 
         <div className="rounded-xl border border-[#E8E2D8] bg-white p-3">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">Mapping table</p>
+          <div className="mb-3">
+            <RecordPlans
+              project={project}
+              activePlanId={activePlanId}
+              onActivePlan={setActivePlanId}
+              onAddPlan={(plan: RecordPlan) => {
+                mutate((p) => ({ ...p, recordPlans: [...p.recordPlans, plan] }));
+                setActivePlanId(plan.id);
+              }}
+              onRemovePlan={(id) =>
+                mutate((p) => ({
+                  ...p,
+                  recordPlans: p.recordPlans.filter((r) => r.id !== id),
+                  relationships: p.relationships.filter((r) => r.childPlanId !== id && r.parentPlanId !== id),
+                  mappings: p.mappings.map((m) => (m.planId === id ? { ...m, planId: null } : m)),
+                }))
+              }
+              onAddRelationship={(rel: RelationshipDef) =>
+                mutate((p) => ({
+                  ...p,
+                  relationships: p.relationships.some((r) => r.id === rel.id)
+                    ? p.relationships.map((r) => (r.id === rel.id ? rel : r))
+                    : [...p.relationships, rel],
+                }))
+              }
+              onRemoveRelationship={(id) => mutate((p) => ({ ...p, relationships: p.relationships.filter((r) => r.id !== id) }))}
+              onToggleConfirm={(id) =>
+                mutate((p) => ({ ...p, relationships: p.relationships.map((r) => (r.id === id ? { ...r, confirmed: !r.confirmed } : r)) }))
+              }
+            />
+          </div>
           <MappingTable
             project={project}
             selectedSource={selectedSource}
             onSelectSource={setSelectedSource}
             pendingTarget={picked}
+            planMismatch={planMismatch}
             onConfirmMap={confirmMap}
             onUpdateRow={(id, patch) => mutate((p) => ({ ...p, mappings: p.mappings.map((m) => (m.id === id ? { ...m, ...patch, updatedAt: new Date().toISOString() } : m)) }))}
             onRemoveRow={(id) => mutate((p) => ({ ...p, mappings: p.mappings.filter((m) => m.id !== id) }))}

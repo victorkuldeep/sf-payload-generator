@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Button from "../ui/Button";
 import { analyzeRow } from "@/lib/mapping/diagnostics";
-import type { MappingProject, MappingRow, MappingStatus, SnapshotField } from "@/lib/mapping/types";
+import type { EnumValueMap, MappingProject, MappingRow, MappingStatus, SnapshotField } from "@/lib/mapping/types";
 
 const STATUS_STYLES: Record<MappingStatus, string> = {
   unmapped: "bg-[#F5F1E8] text-[#777168] border-[#E8E2D8]",
@@ -28,6 +28,7 @@ export function MappingTable({
   selectedSource,
   onSelectSource,
   pendingTarget,
+  planMismatch,
   onConfirmMap,
   onUpdateRow,
   onRemoveRow,
@@ -36,6 +37,7 @@ export function MappingTable({
   selectedSource: string | null;
   onSelectSource: (pathId: string | null) => void;
   pendingTarget: PendingTarget | null;
+  planMismatch: string | null;
   onConfirmMap: (sourcePath: string) => void;
   onUpdateRow: (id: string, patch: Partial<MappingRow>) => void;
   onRemoveRow: (id: string) => void;
@@ -103,6 +105,11 @@ export function MappingTable({
             </Button>
           </span>
         </div>
+      )}
+      {selectedSource && planMismatch && (
+        <p role="alert" className="rounded-xl border border-[#E0C491] bg-[#F3EADB] px-3 py-2 text-[11px] text-[#9A5B13]">
+          {planMismatch}
+        </p>
       )}
 
       <div className="flex flex-wrap items-center gap-2">
@@ -278,6 +285,7 @@ function RowEditor({
           />
         </label>
       )}
+      {row.kind === "enum" && <EnumEditor row={row} project={project} onPatch={onPatch} />}
       <label className="mb-2 block text-[11px] text-[#777168]">
         Rationale
         <input
@@ -313,6 +321,114 @@ function RowEditor({
           Clear mapping
         </button>
       </div>
+    </div>
+  );
+}
+
+/** Explicit source→picklist value correspondence. Nothing is auto-substituted. */
+function EnumEditor({
+  row,
+  project,
+  onPatch,
+}: {
+  row: MappingRow;
+  project: MappingProject;
+  onPatch: (patch: Partial<MappingRow>) => void;
+}) {
+  const field = project.sfSnapshot?.objects
+    .find((o) => o.name === row.objectName)
+    ?.fields.find((f) => f.name === row.fieldName);
+  const active = field?.picklistValues.filter((p) => p.active) ?? [];
+  const entries = row.enumMap ?? [];
+
+  const setEntries = (next: EnumValueMap[]) => onPatch({ enumMap: next });
+
+  return (
+    <div className="mb-2 rounded-lg border border-[#F0EBE0] bg-[#FAF8F2] p-2">
+      <p className="mb-1.5 text-[11px] font-semibold text-[#27241F]">
+        Value mapping · {active.length > 0 ? `${active.length} active target values` : "no picklist metadata - enter target values manually"}
+      </p>
+      {entries.length === 0 && (
+        <p className="mb-1.5 text-[11px] text-[#A39B8E]">No correspondences yet. Each source value needs an explicit target.</p>
+      )}
+      <ul className="space-y-1.5">
+        {entries.map((e, i) => (
+          <li key={i} className="flex flex-wrap items-center gap-1.5">
+            <input
+              defaultValue={e.sourceValue}
+              onBlur={(ev) => {
+                const next = [...entries];
+                next[i] = { ...next[i], sourceValue: ev.target.value };
+                setEntries(next);
+              }}
+              placeholder="source value"
+              aria-label="Source value"
+              spellCheck={false}
+              className="w-28 rounded-md border border-[#E8E2D8] bg-white px-1.5 py-1 font-mono text-[11px] focus:border-[#A98450] focus:outline-none"
+            />
+            <span aria-hidden="true" className="text-[#A39B8E]">→</span>
+            {active.length > 0 ? (
+              <select
+                value={e.targetValue}
+                onChange={(ev) => {
+                  const next = [...entries];
+                  next[i] = { ...next[i], targetValue: ev.target.value };
+                  setEntries(next);
+                }}
+                aria-label="Target picklist value"
+                className="cursor-pointer rounded-md border border-[#E8E2D8] bg-white px-1.5 py-1 font-mono text-[11px]"
+              >
+                <option value="">choose…</option>
+                {active.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.value}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                defaultValue={e.targetValue}
+                onBlur={(ev) => {
+                  const next = [...entries];
+                  next[i] = { ...next[i], targetValue: ev.target.value };
+                  setEntries(next);
+                }}
+                placeholder="target value"
+                aria-label="Target value"
+                spellCheck={false}
+                className="w-28 rounded-md border border-[#E8E2D8] bg-white px-1.5 py-1 font-mono text-[11px] focus:border-[#A98450] focus:outline-none"
+              />
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                const next = [...entries];
+                next[i] = { ...next[i], decided: !next[i].decided };
+                setEntries(next);
+              }}
+              aria-pressed={e.decided}
+              className={`rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-semibold cursor-pointer ${e.decided ? "border-[#BFD9C6] bg-[#E9F3EC] text-[#2F7D4F]" : "border-[#E8E2D8] bg-white text-[#777168]"}`}
+            >
+              {e.decided ? "decided" : "open"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEntries(entries.filter((_, j) => j !== i))}
+              aria-label="Remove value mapping"
+              className="rounded px-1 text-[#B3261E] hover:bg-[#F9E8E6] cursor-pointer"
+            >
+              ✕
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button
+        type="button"
+        onClick={() => setEntries([...entries, { sourceValue: "", targetValue: "", decided: false }])}
+        className="mt-1.5 rounded-md border border-[#E8E2D8] bg-white px-2 py-1 text-[11px] font-semibold text-[#777168] hover:text-[#27241F] cursor-pointer"
+      >
+        + Add correspondence
+      </button>
     </div>
   );
 }
