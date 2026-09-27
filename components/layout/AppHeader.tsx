@@ -152,6 +152,18 @@ export function AppHeader({
           >
             Contracts
           </Link>
+          <Link
+            href="/architect"
+            aria-current={pathname === "/architect" ? "page" : undefined}
+            className={
+              pathname === "/architect"
+                ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors"
+                : "hover:text-[var(--color-ink)] transition-colors"
+            }
+            title="API Contract Architect - design custom APIs"
+          >
+            Architect
+          </Link>
           <a
             href="https://workbench.developerforce.com"
             target="_blank"
@@ -353,6 +365,14 @@ export function AppHeader({
           title="API Contract Studio - OpenAPI profiles"
         >
           Contracts
+        </Link>
+        <Link
+          href="/architect"
+          aria-current={pathname === "/architect" ? "page" : undefined}
+          className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
+          title="API Contract Architect - design custom APIs"
+        >
+          Architect
         </Link>
         <a
           href="https://workbench.developerforce.com"

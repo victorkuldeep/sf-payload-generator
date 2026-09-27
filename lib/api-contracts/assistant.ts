@@ -107,3 +107,88 @@ export function mergeSuggestions(project: ApiProject, suggestions: Decision[]): 
 }
 
 export { newDecisionId };
+
+/**
+ * Project-gap facilitation for the orchestrator: missing intent, parties,
+ * boundary and dangling schema references. Same rules as above - proposed
+ * only, stable ids, architect decides.
+ */
+export function suggestProjectGaps(project: import("./types").ApiProject): import("./types").Decision[] {
+  const out: import("./types").Decision[] = [];
+  const propose = (
+    id: string,
+    topic: string,
+    question: string,
+    options: string[],
+    rationale: string,
+    relatedOps: string[] = []
+  ) => {
+    out.push({
+      id,
+      topic,
+      question,
+      options,
+      chosen: "",
+      rationale,
+      owner: "",
+      status: "proposed",
+      suggested: true,
+      relatedOps,
+      createdAt: 0,
+      revision: project.version,
+    });
+  };
+
+  if (!project.intent.purpose.trim()) {
+    propose(
+      "sug-gap-purpose",
+      "Business intent",
+      "What business problem does this API solve?",
+      ["Write purpose", "Defer"],
+      "An unnamed purpose fails architecture review.",
+    );
+  }
+  if (!project.consumer.system.trim() || !project.provider.system.trim()) {
+    propose(
+      "sug-gap-parties",
+      "Consumer & provider",
+      "Which systems consume and provide this API?",
+      ["Name both parties", "Defer"],
+      "Ownership cannot be reviewed without named parties.",
+    );
+  }
+  if (project.boundary.resources.length === 0) {
+    propose(
+      "sug-gap-boundary",
+      "API boundary",
+      "Which business resources does this API expose?",
+      ["List resources", "Defer"],
+      "Unbounded APIs drift into full-object exposure.",
+    );
+  }
+  for (const op of project.operations) {
+    for (const ref of [op.requestSchema, op.responseSchema]) {
+      if (ref && !project.schemas.some((s) => s.name === ref)) {
+        propose(
+          `sug-gap-schema-${op.id}-${ref}`,
+          "Schema reference",
+          `Schema "${ref}" (used by ${op.operationId}) does not exist - create a shell?`,
+          ["Create empty shell", "Pick another", "Defer"],
+          "Dangling references break generation.",
+          [op.id],
+        );
+      }
+    }
+    if (!op.description) {
+      propose(
+        `sug-gap-opdesc-${op.id}`,
+        "Documentation",
+        `Describe ${op.method} ${op.route} in one paragraph?`,
+        ["Write description", "Defer"],
+        "Undocumented operations fail review.",
+        [op.id],
+      );
+    }
+  }
+  return out;
+}

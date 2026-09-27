@@ -1,0 +1,21 @@
+import { ToolHeader } from "@/components/layout/ToolHeader";
+import { AppFooter } from "@/components/layout/AppFooter";
+import { ArchitectRoute } from "@/components/architect/ArchitectRoute";
+
+export const metadata = {
+  title: "API Contract Architect",
+  description: "Design custom APIs from Salesforce data models - intent, operations, schemas, review.",
+  robots: { index: false, follow: false },
+};
+
+export default function ArchitectPage() {
+  return (
+    <div className="flex flex-col min-h-screen">
+      <ToolHeader />
+      <main className="mx-auto w-full max-w-[1400px] px-5 py-6 flex-1">
+        <ArchitectRoute />
+      </main>
+      <AppFooter variant="slim" />
+    </div>
+  );
+}
