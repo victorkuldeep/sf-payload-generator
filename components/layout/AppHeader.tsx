@@ -160,6 +160,15 @@ export function AppHeader({
           >
             Workbench ↗
           </a>
+          <a
+            href="https://excalidraw.com"
+            target="_blank"
+            rel="noreferrer"
+            className="hover:text-[var(--color-ink)] transition-colors"
+            title="Excalidraw - sketch data models and flows"
+          >
+            Excalidraw ↗
+          </a>
         </nav>
 
         <div className="flex items-center gap-2">
@@ -352,6 +361,15 @@ export function AppHeader({
           className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
         >
           Workbench ↗
+        </a>
+        <a
+          href="https://excalidraw.com"
+          target="_blank"
+          rel="noreferrer"
+          className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
+          title="Excalidraw - sketch data models and flows"
+        >
+          Excalidraw ↗
         </a>
       </nav>
     </header>

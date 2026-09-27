@@ -146,6 +146,15 @@ export function ToolHeader() {
           >
             Workbench ↗
           </a>
+          <a
+            href="https://excalidraw.com"
+            target="_blank"
+            rel="noreferrer"
+            className="hover:text-[var(--color-ink)] transition-colors"
+            title="Excalidraw - sketch data models and flows"
+          >
+            Excalidraw ↗
+          </a>
         </nav>
 
         <div className="flex items-center gap-2">
