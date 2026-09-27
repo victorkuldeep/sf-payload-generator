@@ -3,6 +3,14 @@
 import { useState } from "react";
 import Button from "../ui/Button";
 import { getAssetRecord, saveAssetRecord } from "@/lib/experience/assets";
+import {
+  apiCatalogCsv,
+  buildWordPack,
+  downloadExperienceWorkbook,
+  downloadText,
+  screenApiMatrixCsv,
+  screenApiMatrixTsv,
+} from "@/lib/experience/deliverables";
 import { logChange } from "@/lib/experience/migrate";
 import {
   downloadBlob,
@@ -27,6 +35,8 @@ export function DeliverablesPanel({
   onImported: (p: MappingProject) => void;
 }) {
   const [exportBusy, setExportBusy] = useState(false);
+  const [docBusy, setDocBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [inspecting, setInspecting] = useState(false);
   const [checked, setChecked] = useState<InspectResult | null>(null);
   const [checkedFile, setCheckedFile] = useState<File | null>(null);
@@ -93,6 +103,7 @@ export function DeliverablesPanel({
 
   return (
     <div className="grid items-start gap-3 lg:grid-cols-2">
+      <div className="space-y-3">
       <div className="rounded-xl border border-[#E8E2D8] bg-white p-4">
         <p className="text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">Export portable ZIP</p>
         <p className="mt-1 text-[12px] text-[#777168]">
@@ -104,6 +115,85 @@ export function DeliverablesPanel({
             {exportBusy ? "Packaging…" : "Download .zip"}
           </Button>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-[#E8E2D8] bg-white p-4">
+        <p className="text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">Architecture documents</p>
+        <p className="mt-1 text-[12px] text-[#777168]">
+          Client-ready outputs with stable IDs. Proposed items stay labeled proposed.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          <Button
+            size="sm"
+            disabled={docBusy}
+            onClick={() =>
+              void (async () => {
+                setDocBusy(true);
+                try {
+                  const blob = await buildWordPack(project, async (key) => {
+                    try {
+                      return (await getAssetRecord(key))?.blob ?? null;
+                    } catch {
+                      return null;
+                    }
+                  });
+                  const safe = project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `${safe}-architecture-pack.docx`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                } finally {
+                  setDocBusy(false);
+                }
+              })()
+            }
+          >
+            {docBusy ? "Building…" : "Word pack (.docx)"}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => downloadExperienceWorkbook(project)}>
+            Excel workbook (.xlsx)
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              const safe = project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
+              downloadText(apiCatalogCsv(project), `${safe}-api-catalog.csv`, "text/csv");
+            }}
+          >
+            API CSV
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              const safe = project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
+              downloadText(screenApiMatrixCsv(project), `${safe}-screen-api-matrix.csv`, "text/csv");
+            }}
+          >
+            Matrix CSV
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() =>
+              void (async () => {
+                try {
+                  await navigator.clipboard.writeText(screenApiMatrixTsv(project).text);
+                  setCopied(true);
+                  window.setTimeout(() => setCopied(false), 1600);
+                } catch {
+                  /* clipboard unavailable */
+                }
+              })()
+            }
+          >
+            {copied ? "Copied" : "Copy matrix"}
+          </Button>
+        </div>
+      </div>
       </div>
 
       <div className="rounded-xl border border-[#E8E2D8] bg-white p-4">
