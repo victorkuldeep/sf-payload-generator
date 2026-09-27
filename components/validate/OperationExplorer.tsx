@@ -56,14 +56,27 @@ export function OperationExplorer({
   return (
     <div className="space-y-3">
       <div className="flex flex-col gap-2">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search path, operationId, summary…"
-          aria-label="Search operations"
-          spellCheck={false}
-          className="w-full rounded-lg border border-[#E8E2D8] bg-white px-2.5 py-1.5 text-[12px] focus:border-[#A98450] focus:outline-none"
-        />
+        <div className="relative">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search path, operationId, summary…"
+            aria-label="Search operations"
+            spellCheck={false}
+            className="w-full rounded-lg border border-[#E8E2D8] bg-white px-2.5 py-1.5 pr-7 text-[12px] focus:border-[#A98450] focus:outline-none"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              aria-label="Clear search - show all operations"
+              title="Clear search - show all operations"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded px-1 font-mono text-[12px] text-[#A39B8E] hover:text-[#27241F] cursor-pointer"
+            >
+              ✕
+            </button>
+          )}
+        </div>
         <div className="flex flex-wrap gap-1.5" aria-label="Filter by HTTP method">
           {methods.map((m) => (
             <button

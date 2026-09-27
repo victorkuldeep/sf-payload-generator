@@ -81,8 +81,10 @@ export function ValidateStudio() {
       const loaded = await loadContract(fileName, text, byteSize);
       setContract(loaded);
       setIsSample(sample);
-      setSelectedOpId(null);
-      setDirection("request");
+      // Auto-select the first operation so the workspace is alive immediately.
+      const first = loaded.operations[0] ?? null;
+      setSelectedOpId(first?.id ?? null);
+      setDirection(first?.request?.contentTypes.some((c) => c.supported) ? "request" : "response");
       setStatusCode("");
       setMediaType("");
       setReport(null);
