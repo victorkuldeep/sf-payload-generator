@@ -427,7 +427,7 @@ export function MappingRoute() {
       )}
 
       {module === "apis" && project.apiCatalog && (
-        <ApiCatalogPanel project={project} onMutate={mutate} />
+        <ApiCatalogPanel project={project} onMutate={mutate} onOpenIntegration={() => switchModule("overview")} />
       )}
 
       {module === "decisions" && (

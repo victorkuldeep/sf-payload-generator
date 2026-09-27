@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Button from "../ui/Button";
 import { logChange } from "@/lib/experience/migrate";
+import { DependencyPanel } from "./DependencyPanel";
 import { findDuplicateOperations, normalizeOperationKey, operationUsage, orphanOperations } from "@/lib/experience/apiCatalog";
 import type { MappingProject } from "@/lib/mapping/types";
 import type { ApiCatalog, ApiLayer, ApiLifecycle, APIOperation, HttpMethod } from "@/lib/experience/types";
@@ -21,9 +22,11 @@ const LAYERS: ApiLayer[] = ["frontend", "bff", "salesforce", "middleware", "exte
 export function ApiCatalogPanel({
   project,
   onMutate,
+  onOpenIntegration,
 }: {
   project: MappingProject;
   onMutate: (fn: (p: MappingProject) => MappingProject) => void;
+  onOpenIntegration: () => void;
 }) {
   const catalog: ApiCatalog = project.apiCatalog!;
   const bindings = project.experience?.bindings ?? [];
@@ -33,6 +36,7 @@ export function ApiCatalogPanel({
   const [scope, setScope] = useState<"all" | "used" | "orphan">("all");
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<APIOperation | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   const touchCatalog = (fn: (c: ApiCatalog) => ApiCatalog, summary: string, entityId: string) => {
     onMutate((p) => {
@@ -131,6 +135,9 @@ export function ApiCatalogPanel({
                     {usedTotal === 0 ? <span className="text-[#A39B8E]">orphan</span> : `${usage.screens} screens · ${usage.components} comps`}
                   </td>
                   <td className="px-2.5 py-1.5 text-right">
+                    <button type="button" onClick={() => setDetailId(detailId === o.id ? null : o.id)} aria-pressed={detailId === o.id} className="rounded px-1.5 py-0.5 font-mono text-[11px] text-[#777168] hover:text-[#27241F] cursor-pointer">
+                      deps
+                    </button>
                     <button type="button" onClick={() => setEditing(o)} className="rounded px-1.5 py-0.5 font-mono text-[11px] text-[#A98450] hover:bg-[#F5EEDF] cursor-pointer">
                       edit
                     </button>
@@ -148,6 +155,14 @@ export function ApiCatalogPanel({
           </tbody>
         </table>
       </div>
+      {detailId && catalog.operations.some((o) => o.id === detailId) && (
+        <DependencyPanel
+          project={project}
+          operation={catalog.operations.find((o) => o.id === detailId)!}
+          onMutate={onMutate}
+          onOpenIntegration={onOpenIntegration}
+        />
+      )}
 
       {showAdd && (
         <OperationDialog
