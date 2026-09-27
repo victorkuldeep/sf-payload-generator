@@ -54,36 +54,36 @@ export function JsonEditorPane() {
   };
 
   return (
-    <div className="grid items-start gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+    <div className={`grid items-start gap-4 ${sourceOpen ? "lg:grid-cols-[320px_minmax(0,1fr)]" : "lg:grid-cols-[44px_minmax(0,1fr)]"}`}>
       <div className="rounded-xl border border-[#E8E2D8] bg-white p-3">
-        <button
-          type="button"
-          onClick={() => setSourceOpen((v) => !v)}
-          aria-expanded={sourceOpen}
-          title={sourceOpen ? "Collapse source panel" : "Expand source panel"}
-          className="mb-1.5 flex w-full cursor-pointer items-center gap-1.5 text-left"
-        >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.4"
-            aria-hidden="true"
-            className={`shrink-0 text-[#A39B8E] transition-transform ${sourceOpen ? "" : "-rotate-90"}`}
-          >
-            <path d="m6 9 6 6 6-6" />
-          </svg>
-          <span className="text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">
-            Source
-          </span>
-          {!sourceOpen && size && (
-            <span className="ml-auto font-mono text-[11px] text-[#A39B8E]">{size}</span>
-          )}
-        </button>
-        {sourceOpen && (
+        {sourceOpen ? (
           <>
+            <button
+              type="button"
+              onClick={() => setSourceOpen(false)}
+              aria-expanded={true}
+              title="Collapse source panel sideways"
+              className="mb-1.5 flex w-full cursor-pointer items-center gap-1.5 text-left"
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.4"
+                aria-hidden="true"
+                className="shrink-0 text-[#A39B8E] transition-transform"
+              >
+                <path d="m14 6-6 6 6 6" />
+              </svg>
+              <span className="text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">
+                Source
+              </span>
+              {size && (
+                <span className="ml-auto font-mono text-[11px] text-[#A39B8E]">{size}</span>
+              )}
+            </button>
             <textarea
               value={raw}
               onChange={(e) => setRaw(e.target.value)}
@@ -107,6 +107,30 @@ export function JsonEditorPane() {
             </div>
             {size && <p className="mt-2 font-mono text-[11px] text-[#A39B8E]">{size} · tree/text via editor menu</p>}
           </>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setSourceOpen(true)}
+            aria-expanded={false}
+            title="Expand source panel"
+            className="flex w-full cursor-pointer flex-col items-center gap-2 py-1"
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.4"
+              aria-hidden="true"
+              className="shrink-0 text-[#A39B8E]"
+            >
+              <path d="m10 6 6 6-6 6" />
+            </svg>
+            <span className="text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]" style={{ writingMode: "vertical-rl" }}>
+              Source
+            </span>
+          </button>
         )}
       </div>
 
