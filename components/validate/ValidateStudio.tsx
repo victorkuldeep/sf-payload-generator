@@ -614,8 +614,11 @@ export function ValidateStudio() {
         <div className="rounded-xl border border-[#E8E2D8] bg-white p-4">
           <details>
             <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">
-              Support matrix · OpenAPI {contract.version ?? "?"}
+              Support matrix · for this contract (OpenAPI {contract.version ?? "?"})
             </summary>
+            <p className="mt-1 text-[11px] text-[#A39B8E]">
+              Both OpenAPI 3.0.x and 3.1.x are supported — this matrix follows the loaded contract.
+            </p>
             <table className="mt-2 w-full text-left text-[11px]">
               <tbody>
                 {supportMatrix(contract.version ?? "3.0.0").map((row) => (
