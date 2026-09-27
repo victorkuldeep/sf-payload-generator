@@ -33,8 +33,7 @@ export function JsonCompare() {
   const [laser, setLaser] = useState(false);
   const laserHostRef = useRef<HTMLDivElement>(null);
   useLaser(laser, setLaser);
-  const [aOpen, setAOpen] = useState(true);
-  const [bOpen, setBOpen] = useState(true);
+  const [inputsOpen, setInputsOpen] = useState(true);
   const viewerRef = useRef<ViewerRef | null>(null);
 
   const compare = () => {
@@ -46,8 +45,7 @@ export function JsonCompare() {
     setPair({ a: ra.value as object, b: rb.value as object });
     setBlocks(null);
     setCurrent(0);
-    setAOpen(false);
-    setBOpen(false);
+    setInputsOpen(false);
   };
 
   const loadSample = () => {
@@ -77,39 +75,30 @@ export function JsonCompare() {
 
   return (
     <div className="space-y-4">
-      <div
-        className={`grid items-start gap-4 ${
-          aOpen && bOpen
-            ? "lg:grid-cols-2"
-            : aOpen
-              ? "lg:grid-cols-[minmax(0,1fr)_44px]"
-              : bOpen
-                ? "lg:grid-cols-[44px_minmax(0,1fr)]"
-                : "lg:grid-cols-[44px_44px] lg:justify-start"
-        }`}
-      >
-        {(
-          [
-            { label: "Payload A", short: "A", text: aText, set: setAText, err: aErr, open: aOpen, setOpen: setAOpen },
-            { label: "Payload B", short: "B", text: bText, set: setBText, err: bErr, open: bOpen, setOpen: setBOpen },
-          ] as const
-        ).map((side) =>
-          side.open ? (
+      {inputsOpen ? (
+        <div className="grid items-start gap-4 lg:grid-cols-2">
+          {(
+            [
+              { label: "Payload A", text: aText, set: setAText, err: aErr },
+              { label: "Payload B", text: bText, set: setBText, err: bErr },
+            ] as const
+          ).map((side) => (
             <div key={side.label} className="rounded-xl border border-[#E8E2D8] bg-white p-3">
-              <button
-                type="button"
-                onClick={() => side.setOpen(false)}
-                aria-expanded={true}
-                title={`Collapse ${side.label} sideways`}
-                className="mb-1.5 flex w-full cursor-pointer items-center gap-1.5 text-left"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true" className="shrink-0 text-[#A39B8E]">
-                  <path d="m14 6-6 6 6 6" />
-                </svg>
+              <div className="mb-1.5 flex items-center gap-1.5">
                 <span className="text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">
                   {side.label}
                 </span>
-              </button>
+                <span className="flex-1" />
+                <button
+                  type="button"
+                  onClick={() => setInputsOpen(false)}
+                  aria-expanded={true}
+                  title="Collapse both inputs - focus the diff"
+                  className="rounded-md p-1 text-[#A39B8E] hover:bg-[#F5F1E8] hover:text-[#27241F] transition-colors cursor-pointer"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true"><path d="m18 15-6-6-6 6" /></svg>
+                </button>
+              </div>
               <textarea
                 value={side.text}
                 onChange={(e) => side.set(e.target.value)}
@@ -124,26 +113,24 @@ export function JsonCompare() {
                 </p>
               )}
             </div>
-          ) : (
-            <div key={side.label} className="rounded-xl border border-[#E8E2D8] bg-white p-3">
-              <button
-                type="button"
-                onClick={() => side.setOpen(true)}
-                aria-expanded={false}
-                title={`Expand ${side.label}`}
-                className="flex w-full cursor-pointer flex-col items-center gap-2 py-1"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true" className="shrink-0 text-[#A39B8E]">
-                  <path d="m10 6 6 6-6 6" />
-                </svg>
-                <span className="text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]" style={{ writingMode: "vertical-rl" }}>
-                  {side.short}
-                </span>
-              </button>
-            </div>
-          )
-        )}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setInputsOpen(true)}
+          aria-expanded={false}
+          title="Expand payload inputs"
+          className="flex w-full cursor-pointer items-center gap-2 rounded-xl border border-[#E8E2D8] bg-white px-3 py-2 text-left transition-colors hover:border-[#A98450]"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true" className="shrink-0 text-[#A39B8E]"><path d="m6 9 6 6 6-6" /></svg>
+          <span className="text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">
+            Payloads A · B
+          </span>
+          {sizes && <span className="font-mono text-[11px] text-[#A39B8E]">{sizes}</span>}
+          <span className="ml-auto text-[11px] text-[#A98450]">Expand to edit</span>
+        </button>
+      )}
 
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[#E8E2D8] bg-white px-3 py-2.5">
         <Button size="sm" onClick={compare} disabled={aText.trim() === "" || bText.trim() === ""}>
