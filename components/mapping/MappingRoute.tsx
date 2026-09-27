@@ -16,6 +16,7 @@ import { ExperienceWorkspace } from "@/components/experience/ExperienceWorkspace
 import { ApiCatalogPanel } from "@/components/experience/ApiCatalogPanel";
 import { DecisionsPanel } from "@/components/experience/DecisionsPanel";
 import { DeliverablesPanel } from "@/components/experience/DeliverablesPanel";
+import { SnapshotsPanel } from "@/components/experience/SnapshotsPanel";
 import { useMappingMetadata } from "./useMappingMetadata";
 import { buildSnapshot } from "@/lib/mapping/snapshot";
 import { deleteProject, duplicateProject, listProjects, loadProject, saveProject, type ProjectSummary } from "@/lib/mapping/store";
@@ -433,7 +434,15 @@ export function MappingRoute() {
       )}
 
       {module === "decisions" && (
-        <DecisionsPanel project={project} onMutate={mutate} />
+        <div className="space-y-3">
+          <DecisionsPanel project={project} onMutate={mutate} />
+          <SnapshotsPanel
+            project={project}
+            onMutate={mutate}
+            onOpenScreen={() => switchModule("experience")}
+            onOpenApis={() => switchModule("apis")}
+          />
+        </div>
       )}
 
       {module === "deliverables" && (

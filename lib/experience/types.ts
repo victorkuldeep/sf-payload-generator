@@ -295,8 +295,7 @@ export interface ChangeLogEntry {
 }
 
 /** Empty module shell - every array starts empty, never null. */
-export function blankExperienceModule(id: string, now: string): ExperienceModule {
-  return {
+export function blankExperienceModule(id: string, now: string): ExperienceModule {  return {
     id, version: 1, screens: [], assets: [], components: [], annotations: [],
     actions: [], journeys: [], transitions: [], bindings: [],
     requirements: [], states: [], createdAt: now, updatedAt: now,
@@ -305,4 +304,18 @@ export function blankExperienceModule(id: string, now: string): ExperienceModule
 
 export function blankApiCatalog(id: string, now: string): ApiCatalog {
   return { id, version: 1, operations: [], dependencies: [], updatedAt: now };
+}
+
+/**
+ * Named architecture snapshot: consistent module records at a point in
+ * time. Image binaries stay in IDB by storage key - never duplicated.
+ */
+export interface ArchitectureSnapshot {
+  id: string;
+  label: string;
+  createdAt: string;
+  experience: ExperienceModule;
+  apiCatalog: ApiCatalog | null;
+  archDecisions: ArchitectureDecision[];
+  assumptions: Assumption[];
 }

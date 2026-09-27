@@ -9,6 +9,7 @@
 import type {
   ApiCatalog,
   ArchitectureDecision,
+  ArchitectureSnapshot,
   Assumption,
   ChangeLogEntry,
   ExperienceModule,
@@ -226,6 +227,8 @@ export interface MappingProject {
   archDecisions?: ArchitectureDecision[];
   assumptions?: Assumption[];
   changeLog?: ChangeLogEntry[];
+  /** Named architecture snapshots (binaries stay in IDB by key). */
+  experienceSnapshots?: ArchitectureSnapshot[];
   /** Optional architect display name for change log. Never auto-filled. */
   authorName?: string;
   extensions: Record<string, unknown>;
