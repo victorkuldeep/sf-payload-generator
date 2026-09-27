@@ -283,7 +283,7 @@ export function ValidateStudio() {
         {/* Left: operation explorer */}
         <div className="rounded-xl border border-[#E8E2D8] bg-white p-3">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">
-            Operation · {contract.operations.length}
+            Operations · {contract.operations.length}
           </p>
           <OperationExplorer operations={contract.operations} selectedId={selectedOpId} onSelect={selectOperation} />
         </div>
