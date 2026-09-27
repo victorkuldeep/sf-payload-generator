@@ -16,8 +16,8 @@ export function JsonStudio() {
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
             <h2 className="text-[15px] font-semibold text-[#27241F]">JSON Studio</h2>
-            <p className="text-xs text-[#777168]">Edit payloads, then diff versions node by node.</p>
           </div>
+          <p className="hidden text-xs text-[#777168] sm:block">Edit payloads, then diff versions node by node.</p>
         </div>
         <div className="mt-2 flex" role="tablist" aria-label="JSON Studio screens">
           {(

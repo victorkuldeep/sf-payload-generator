@@ -13,6 +13,7 @@ export function JsonEditorPane() {
   const [loadId, setLoadId] = useState(0);
   const [live, setLive] = useState<unknown>(null);
   const [copied, setCopied] = useState(false);
+  const [sourceOpen, setSourceOpen] = useState(true);
 
   const load = () => {
     const r = parseJsonInput(raw);
@@ -24,6 +25,7 @@ export function JsonEditorPane() {
     setDoc(r.value as object);
     setLive(r.value);
     setLoadId((n) => n + 1);
+    setSourceOpen(false);
   };
 
   const current = live ?? doc;
@@ -54,31 +56,58 @@ export function JsonEditorPane() {
   return (
     <div className="grid items-start gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
       <div className="rounded-xl border border-[#E8E2D8] bg-white p-3">
-        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">
-          Source
-        </p>
-        <textarea
-          value={raw}
-          onChange={(e) => setRaw(e.target.value)}
-          placeholder='Paste JSON here… {"allOrNone": true, …}'
-          rows={12}
-          spellCheck={false}
-          className="w-full rounded-lg border border-[#E8E2D8] p-2 font-mono text-xs focus:border-[#A98450] focus:outline-none"
-        />
-        {error && (
-          <p className="mt-1.5 rounded-lg border border-red-300 bg-red-50 px-2 py-1.5 font-mono text-[11px] text-red-700" role="alert">
-            {error}
-          </p>
+        <button
+          type="button"
+          onClick={() => setSourceOpen((v) => !v)}
+          aria-expanded={sourceOpen}
+          title={sourceOpen ? "Collapse source panel" : "Expand source panel"}
+          className="mb-1.5 flex w-full cursor-pointer items-center gap-1.5 text-left"
+        >
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.4"
+            aria-hidden="true"
+            className={`shrink-0 text-[#A39B8E] transition-transform ${sourceOpen ? "" : "-rotate-90"}`}
+          >
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+          <span className="text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">
+            Source
+          </span>
+          {!sourceOpen && size && (
+            <span className="ml-auto font-mono text-[11px] text-[#A39B8E]">{size}</span>
+          )}
+        </button>
+        {sourceOpen && (
+          <>
+            <textarea
+              value={raw}
+              onChange={(e) => setRaw(e.target.value)}
+              placeholder='Paste JSON here… {"allOrNone": true, …}'
+              rows={12}
+              spellCheck={false}
+              className="w-full rounded-lg border border-[#E8E2D8] p-2 font-mono text-xs focus:border-[#A98450] focus:outline-none"
+            />
+            {error && (
+              <p className="mt-1.5 rounded-lg border border-red-300 bg-red-50 px-2 py-1.5 font-mono text-[11px] text-red-700" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="mt-2 flex gap-1.5">
+              <Button size="sm" onClick={load} disabled={raw.trim() === ""}>
+                Load into editor
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => { setRaw(""); setError(null); }}>
+                Clear
+              </Button>
+            </div>
+            {size && <p className="mt-2 font-mono text-[11px] text-[#A39B8E]">{size} · tree/text via editor menu</p>}
+          </>
         )}
-        <div className="mt-2 flex gap-1.5">
-          <Button size="sm" onClick={load} disabled={raw.trim() === ""}>
-            Load into editor
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => { setRaw(""); setError(null); }}>
-            Clear
-          </Button>
-        </div>
-        {size && <p className="mt-2 font-mono text-[11px] text-[#A39B8E]">{size} · tree/text via editor menu</p>}
       </div>
 
       <div>
