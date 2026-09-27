@@ -2,13 +2,45 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useState } from "react";
 import type { ReactNode } from "react";
+import { SupportDialog } from "./SupportDialog";
 
 export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "full" | "slim" }) {
   const year = new Date().getFullYear();
+  const [supportOpen, setSupportOpen] = useState(false);
+
+  const coffeeButton = (
+    <button
+      type="button"
+      onClick={() => setSupportOpen(true)}
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--color-canvas)] border border-[var(--color-line)] text-[var(--color-ink)] hover:border-[var(--color-accent)] hover:bg-[var(--color-surface-strong)] transition-all cursor-pointer font-medium"
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" className="h-3.5 w-3.5 text-[var(--color-accent)]">
+        <path d="M4 8h12v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8Z" />
+        <path d="M16 9h2a2 2 0 0 1 0 4h-2M7 4c0 1-1 1.5-1 2.5M11 4c0 1-1 1.5-1 2.5" />
+      </svg>
+      <span>Buy me a coffee</span>
+    </button>
+  );
+
+  const credit = (
+    <span>
+      Designed &amp; developed by{" "}
+      <a
+        href="https://www.linkedin.com/in/victorkuldeep/"
+        target="_blank"
+        rel="noreferrer"
+        className="underline hover:text-[var(--color-ink)] text-[var(--color-ink-soft)] transition-colors"
+      >
+        Kuldeep Singh
+      </a>
+    </span>
+  );
 
   if (variant === "slim") {
     return (
+      <>
       <footer className="w-full border-t border-[var(--color-line)] bg-[#F5F1E8]/60 mt-auto relative overflow-hidden">
         <div
           aria-hidden="true"
@@ -19,33 +51,30 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
             <div className="w-full max-w-3xl">{trail}</div>
           </div>
         )}
-        <div className="relative mx-auto w-full px-5 lg:px-8 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 font-mono text-[11px] text-[var(--color-muted)]">
-          <div>
-            <span>© {year} sObject Studio.</span>
-            <span className="block sm:inline text-[10px]">
-              {" "}Independent utility. Not affiliated with Salesforce.
-            </span>
+        <div className="relative mx-auto w-full px-5 lg:px-8 py-4 grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-3 font-mono text-[11px] text-[var(--color-muted)]">
+          <div className="flex items-center gap-2 justify-self-center sm:justify-self-start">
+            <Link href="/" className="font-semibold text-[var(--color-ink)] hover:text-[var(--color-accent)] transition-colors">
+              sObject Studio
+            </Link>
+            <span aria-hidden="true">•</span>
+            <span className="hidden lg:inline">For Architects · API-First Teams · Salesforce Practitioners</span>
           </div>
-          <span>
-            Designed &amp; Developed by{" "}
-            <a
-              href="https://www.linkedin.com/in/victorkuldeep/"
-              target="_blank"
-              rel="noreferrer"
-              className="font-medium text-[var(--color-accent-dark)] hover:underline"
-            >
-              Kuldeep Singh
-            </a>
-          </span>
-          <span className="text-[var(--color-accent-dark)] font-medium">
-            Designed for architects.
-          </span>
+          <div className="flex items-center gap-4 justify-self-center">
+            {credit}
+            {coffeeButton}
+          </div>
+          <small className="text-[10px] justify-self-center sm:justify-self-end text-center sm:text-right">
+            © {year} · Independent utility. Not affiliated with Salesforce.
+          </small>
         </div>
       </footer>
+      <SupportDialog open={supportOpen} onClose={() => setSupportOpen(false)} />
+      </>
     );
   }
 
   return (
+    <>
     <footer
       aria-label="Site footer"
       className="w-full border-t border-[var(--color-line)] bg-[#F5F1E8]/60 mt-auto relative overflow-hidden"
@@ -65,7 +94,7 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
       <div className="relative mx-auto w-full px-5 lg:px-8 pt-10 pb-6">
         {/* Brand + nav grid */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-8 pb-8">
-          <div className="md:col-span-5 space-y-4">
+          <div className="md:col-span-4 space-y-4">
             <div>
               <p className="text-sm font-bold text-[var(--color-ink)]">
                 sObject <span className="bg-gradient-to-r from-bronze-600 via-[#C9A86A] to-bronze-600 bg-clip-text text-transparent">Studio</span>
@@ -165,7 +194,7 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
             </div>
           </div>
 
-          <div className="md:col-span-7 grid grid-cols-2 sm:grid-cols-2 gap-6">
+          <div className="md:col-span-8 grid grid-cols-2 sm:grid-cols-3 gap-6">
             <div className="space-y-2.5">
               <span className="block font-mono text-[11px] font-semibold uppercase tracking-wider text-[var(--color-ink)]">
                 Explore
@@ -264,6 +293,28 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
                 Token lives in session memory only. Calls proxied server-side.
               </p>
             </div>
+            <div className="space-y-2.5 col-span-2 sm:col-span-1">
+              <span className="block font-mono text-[11px] font-semibold uppercase tracking-wider text-[var(--color-ink)]">
+                Explore other Tools
+              </span>
+              <nav aria-label="Other tools">
+                <ul className="space-y-2 font-mono text-xs">
+                  <li>
+                    <a
+                      href="http://tmf.victorkuldeep.com/"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:underline transition-colors inline-flex items-center gap-1"
+                    >
+                      TMF API Toolkit <span aria-hidden="true">↗</span>
+                    </a>
+                  </li>
+                </ul>
+              </nav>
+              <p className="pt-1 text-[11px] font-mono leading-relaxed text-[var(--color-muted)]">
+                TMF API Intelligence Toolkit for architects &amp; API-first teams.
+              </p>
+            </div>
           </div>
         </div>
 
@@ -287,19 +338,26 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
           </span>
         </div>
 
-        {/* Bottom bar */}
-        <div className="pt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 font-mono text-[11px] text-[var(--color-muted)]">
-          <div>
-            <span>© {year} sObject Studio.</span>
-            <span className="block sm:inline text-[10px]">
-              {" "}Independent utility. Not affiliated with Salesforce.
-            </span>
+        {/* Bottom bar - balanced 3-zone, credit dead-center */}
+        <div className="pt-4 grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-3 font-mono text-[11px] text-[var(--color-muted)]">
+          <div className="flex items-center gap-2 justify-self-center sm:justify-self-start">
+            <Link href="/" className="font-semibold text-[var(--color-ink)] hover:text-[var(--color-accent)] transition-colors">
+              sObject Studio
+            </Link>
+            <span aria-hidden="true">•</span>
+            <span className="hidden lg:inline">For Architects · API-First Teams · Salesforce Practitioners</span>
           </div>
-          <span className="text-[var(--color-accent-dark)] font-medium">
-            Designed for architects.
-          </span>
+          <div className="flex items-center gap-4 justify-self-center">
+            {credit}
+            {coffeeButton}
+          </div>
+          <small className="text-[10px] justify-self-center sm:justify-self-end text-center sm:text-right">
+            © {year} · Independent utility. Not affiliated with Salesforce.
+          </small>
         </div>
       </div>
     </footer>
+    <SupportDialog open={supportOpen} onClose={() => setSupportOpen(false)} />
+    </>
   );
 }
