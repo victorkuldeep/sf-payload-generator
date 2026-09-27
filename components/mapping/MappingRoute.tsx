@@ -11,6 +11,7 @@ import { RecordPlans } from "./RecordPlans";
 import { ExportDialog, ImportDialog } from "./ProjectExchange";
 import { DriftReview } from "./DriftReview";
 import { ReviewPanel } from "./ReviewPanel";
+import { ensureExperience } from "@/lib/experience/migrate";
 import { useMappingMetadata } from "./useMappingMetadata";
 import { buildSnapshot } from "@/lib/mapping/snapshot";
 import { deleteProject, duplicateProject, listProjects, loadProject, saveProject, type ProjectSummary } from "@/lib/mapping/store";
@@ -36,6 +37,7 @@ export function MappingRoute() {
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showReview, setShowReview] = useState(false);
+  const [module, setModule] = useState<"overview" | "experience" | "apis" | "decisions" | "deliverables">("overview");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const meta = useMappingMetadata();
@@ -130,6 +132,14 @@ export function MappingRoute() {
       mutate((p) => ({ ...p, sfSnapshot: snapshot }));
     } finally {
       setSnapshotBusy(false);
+    }
+  };
+
+  const switchModule = (m: typeof module) => {
+    setModule(m);
+    // Lazy migration: experience structures materialize on first open.
+    if (m !== "overview") {
+      mutate((p) => ensureExperience(p, new Date().toISOString()));
     }
   };
 
@@ -247,6 +257,38 @@ export function MappingRoute() {
       </div>
       {showExport && <ExportDialog project={project} onClose={() => setShowExport(false)} />}
 
+      {/* Module navigation - one project, five workspaces */}
+      <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Project modules">
+        {(
+          [
+            ["overview", "Overview"],
+            ["experience", "Experience"],
+            ["apis", "API Catalog"],
+            ["decisions", "Decisions"],
+            ["deliverables", "Deliverables"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            role="tab"
+            aria-selected={module === id}
+            onClick={() => switchModule(id)}
+            className={`rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors cursor-pointer ${
+              module === id
+                ? "border-[#211F1B] bg-[#211F1B] text-white"
+                : "border-[#E8E2D8] bg-white text-[#777168] hover:text-[#27241F]"
+            }`}
+          >
+            {label}
+            {id === "experience" && project.experience && project.experience.screens.length > 0 && (
+              <span className="ml-1.5 font-mono text-[10px] opacity-70">{project.experience.screens.length}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {module === "overview" && (
+      <>
       {/* Three-region workspace */}
       <div id="mapping-workspace" className="grid items-start gap-3 xl:grid-cols-[23%_52%_25%] lg:grid-cols-[280px_minmax(0,1fr)]">
         <div className="rounded-xl border border-[#E8E2D8] bg-white p-3">
@@ -375,6 +417,50 @@ export function MappingRoute() {
           }}
         />
       )}
+      </>
+      )}
+
+      {module === "experience" && (
+        <ExperiencePlaceholder />
+      )}
+
+      {module === "apis" && (
+        <div className="rounded-xl border border-[#E8E2D8] bg-white p-8 text-center">
+          <p className="text-[14px] font-semibold text-[#27241F]">API Catalog</p>
+          <p className="mx-auto mt-1 max-w-md text-[12px] text-[#777168]">
+            Shared backend operations arrive in Sprint 5. The catalog will live here, referenced by screen bindings.
+          </p>
+        </div>
+      )}
+
+      {module === "decisions" && (
+        <div className="rounded-xl border border-[#E8E2D8] bg-white p-8 text-center">
+          <p className="text-[14px] font-semibold text-[#27241F]">Architecture Decisions</p>
+          <p className="mx-auto mt-1 max-w-md text-[12px] text-[#777168]">
+            Decision register, assumptions and change history arrive in Sprint 8. Integration mapping decisions stay in the Overview Review panel.
+          </p>
+        </div>
+      )}
+
+      {module === "deliverables" && (
+        <div className="rounded-xl border border-[#E8E2D8] bg-white p-8 text-center">
+          <p className="text-[14px] font-semibold text-[#27241F]">Deliverables</p>
+          <p className="mx-auto mt-1 max-w-md text-[12px] text-[#777168]">
+            Portable ZIP packages, the Word architecture pack and the experience workbook arrive in Sprints 9-10.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExperiencePlaceholder() {
+  return (
+    <div className="rounded-xl border border-[#E8E2D8] bg-white p-8 text-center">
+      <p className="text-[14px] font-semibold text-[#27241F]">Experience Mapping</p>
+      <p className="mx-auto mt-1 max-w-md text-[12px] text-[#777168]">
+        Screen inventory, canvas and annotations arrive in Sprints 2-3. The project record is already experience-ready.
+      </p>
     </div>
   );
 }

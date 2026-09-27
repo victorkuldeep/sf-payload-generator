@@ -6,8 +6,19 @@
  * No secrets ever enter this model.
  */
 
+import type {
+  ApiCatalog,
+  ArchitectureDecision,
+  Assumption,
+  ChangeLogEntry,
+  ExperienceModule,
+} from "../experience/types";
+
 export const MAPPING_FORMAT = "sobject-studio-mapping-project";
 export const MAPPING_FORMAT_VERSION = 1;
+
+/** Project schema version: 1 = integration-only, 2 = + experience/api/decisions. */
+export const MAPPING_SCHEMA_VERSION = 2;
 
 export type LifecycleStatus = "draft" | "in-progress" | "in-review" | "approved" | "archived";
 
@@ -198,6 +209,8 @@ export interface MappingProject {
   status: LifecycleStatus;
   createdAt: string;
   updatedAt: string;
+  /** Schema version of this record. Absent on pre-experience projects (= 1). */
+  schemaVersion?: number;
   source: SourceSnapshot | null;
   sfSnapshot: SalesforceSnapshot | null;
   recordPlans: RecordPlan[];
@@ -205,6 +218,14 @@ export interface MappingProject {
   mappings: MappingRow[];
   decisions: Decision[];
   versions: ProjectVersion[];
+  /** Optional Experience Mapping module - same project identity, same record. */
+  experience?: ExperienceModule;
+  /** Project-level shared API catalog. */
+  apiCatalog?: ApiCatalog;
+  /** Architecture decisions / assumptions / change history. */
+  archDecisions?: ArchitectureDecision[];
+  assumptions?: Assumption[];
+  changeLog?: ChangeLogEntry[];
   /** Optional architect display name for change log. Never auto-filled. */
   authorName?: string;
   extensions: Record<string, unknown>;
@@ -241,6 +262,7 @@ export function blankProject(init: {
     status: "draft",
     createdAt: init.now,
     updatedAt: init.now,
+    schemaVersion: MAPPING_SCHEMA_VERSION,
     source: null,
     sfSnapshot: null,
     recordPlans: [],
