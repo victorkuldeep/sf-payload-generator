@@ -9,6 +9,7 @@ import { newStudioId } from "@/lib/composite/studio";
 import Button from "../ui/Button";
 import Input from "../ui/Input";
 import { AssistantPanel } from "./AssistantPanel";
+import { SchemaWorkbench } from "./SchemaWorkbench";
 
 export interface OrchestratorProps {
   session: { instanceUrl: string; token: string; apiVersion: string } | null;
@@ -132,6 +133,7 @@ export function Orchestrator(props: OrchestratorProps) {
             stageId={stageId}
             objects={props.objects}
             describes={props.describes}
+            stored={props.stored}
             session={props.session}
             onPatchDraft={props.onPatchDraft}
             onFetchDescribe={props.onFetchDescribe}
@@ -229,6 +231,7 @@ function StageBody(props: {
   stageId: string;
   objects: SalesforceObject[];
   describes: Map<string, SalesforceDescribeResult>;
+  stored: StoredApiProject[];
   session: { instanceUrl: string; token: string; apiVersion: string } | null;
   onPatchDraft: (id: string, patch: Partial<ApiProject> | ((p: ApiProject) => ApiProject)) => void;
   onFetchDescribe: (objectName: string) => Promise<SalesforceDescribeResult | null>;
@@ -239,7 +242,19 @@ function StageBody(props: {
   if (stageId === "parties") return <PartiesStage {...props} draft={draft} />;
   if (stageId === "boundary") return <BoundaryStage {...props} draft={draft} />;
   if (stageId === "operations") return <OperationsStage {...props} draft={draft} />;
-  return <RoutesStage {...props} draft={draft} />;
+  if (stageId === "routes") return <RoutesStage {...props} draft={draft} />;
+  return (
+    <SchemaWorkbench
+      draft={draft}
+      objects={props.objects}
+      describes={props.describes}
+      snapshots={props.stored.find((s) => s.id === draft.id)?.snapshots ?? []}
+      session={props.session}
+      onPatchDraft={props.onPatchDraft}
+      onFetchDescribe={props.onFetchDescribe}
+      onConnect={props.onConnect}
+    />
+  );
 }
 
 type StageProps = {

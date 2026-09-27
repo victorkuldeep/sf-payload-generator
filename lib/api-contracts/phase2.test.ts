@@ -6,8 +6,8 @@ import { seedAcquisitionProject, seedEnrichmentProject } from "./seeds";
 import type { StoredApiProject } from "./persistence";
 
 describe("stages", () => {
-  it("lists the Phase-2 backbone in order", () => {
-    expect(STAGES.map((s) => s.id)).toEqual(["intent", "parties", "boundary", "operations", "routes"]);
+  it("lists the backbone in order", () => {
+    expect(STAGES.map((s) => s.id)).toEqual(["intent", "parties", "boundary", "operations", "routes", "schemas"]);
   });
   it("seed acquisition completes intent/parties/boundary, blocks nowhere structural", () => {
     const st = stageStatus(seedAcquisitionProject());

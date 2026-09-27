@@ -20,6 +20,7 @@ export const STAGES: StageDef[] = [
   { id: "boundary", n: 3, title: "API boundary", purpose: "Resources exposed, objects involved, what stays hidden." },
   { id: "operations", n: 4, title: "Operations", purpose: "Inventory of capabilities with summaries and schemas." },
   { id: "routes", n: 5, title: "Routes", purpose: "Methods, paths, parameters - validated, never invented." },
+  { id: "schemas", n: 6, title: "Schemas", purpose: "Request/response models from metadata, architect-owned." },
 ];
 
 export interface StageStatus {
@@ -74,12 +75,22 @@ export function stageStatus(project: ApiProject): StageStatus[] {
   }
 
   const done = (b: string[]) => b.length === 0;
+
+  const schemaBlockers: string[] = [];
+  if (project.schemas.length === 0) {
+    schemaBlockers.push("No schemas defined.");
+  }
+  for (const s of project.schemas) {
+    if (s.properties.length === 0) schemaBlockers.push(`Schema "${s.name}" has no properties.`);
+  }
+
   return [
     { id: "intent", complete: done(intentBlockers), blockers: intentBlockers },
     { id: "parties", complete: done(partiesBlockers), blockers: partiesBlockers },
     { id: "boundary", complete: done(boundaryBlockers), blockers: boundaryBlockers },
     { id: "operations", complete: done(opsBlockers), blockers: opsBlockers },
     { id: "routes", complete: done(routesBlockers), blockers: routesBlockers },
+    { id: "schemas", complete: done(schemaBlockers), blockers: schemaBlockers },
   ];
 }
 

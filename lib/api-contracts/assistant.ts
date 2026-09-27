@@ -192,3 +192,65 @@ export function suggestProjectGaps(project: import("./types").ApiProject): impor
   }
   return out;
 }
+
+/**
+ * Schema-design facilitation: undescribed properties, unmapped required
+ * properties, empty schemas. Proposed only, stable ids.
+ */
+export function suggestSchemaGaps(project: import("./types").ApiProject): import("./types").Decision[] {
+  const out: import("./types").Decision[] = [];
+  for (const s of project.schemas) {
+    if (s.properties.length === 0) {
+      out.push({
+        id: `sug-schema-empty-${s.name}`,
+        topic: "Schema design",
+        question: `Schema "${s.name}" has no properties - add from metadata?`,
+        options: ["Browse fields", "Defer"],
+        chosen: "",
+        rationale: "Empty schemas generate empty objects.",
+        owner: "",
+        status: "proposed",
+        suggested: true,
+        relatedOps: project.operations.filter((o) => o.requestSchema === s.name || o.responseSchema === s.name).map((o) => o.id),
+        createdAt: 0,
+        revision: project.version,
+      });
+      continue;
+    }
+    const undescribed = s.properties.filter((p) => !p.description.trim());
+    if (undescribed.length > 0) {
+      out.push({
+        id: `sug-schema-desc-${s.name}`,
+        topic: "Documentation",
+        question: `${undescribed.length} propert${undescribed.length === 1 ? "y" : "ies"} in "${s.name}" lack descriptions - document them?`,
+        options: ["Document now", "Defer"],
+        chosen: "",
+        rationale: "Undescribed properties fail review.",
+        owner: "",
+        status: "proposed",
+        suggested: true,
+        relatedOps: [],
+        createdAt: 0,
+        revision: project.version,
+      });
+    }
+    const unmappedRequired = s.properties.filter((p) => p.required && !p.mapping && !p.readOnly);
+    if (unmappedRequired.length > 0) {
+      out.push({
+        id: `sug-schema-unmapped-${s.name}`,
+        topic: "Mapping",
+        question: `${unmappedRequired.map((p) => p.externalName).join(", ")} required but unmapped - map to Salesforce?`,
+        options: ["Map now", "Intentionally unmapped", "Defer"],
+        chosen: "",
+        rationale: "Required properties without provenance need an explicit decision.",
+        owner: "",
+        status: "proposed",
+        suggested: true,
+        relatedOps: [],
+        createdAt: 0,
+        revision: project.version,
+      });
+    }
+  }
+  return out;
+}

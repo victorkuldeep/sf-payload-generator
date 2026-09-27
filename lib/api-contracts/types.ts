@@ -112,6 +112,7 @@ export interface PropertyMapping {
   ownership: Ownership;
   default?: unknown;
   nullHandling?: string;
+  notes?: string;
 }
 
 export interface SchemaDef {
