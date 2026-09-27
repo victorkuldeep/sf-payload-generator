@@ -423,7 +423,7 @@ export function MappingRoute() {
       )}
 
       {module === "experience" && project.experience && (
-        <ExperienceWorkspace project={project} onMutate={mutate} />
+        <ExperienceWorkspace project={project} onMutate={mutate} onOpenApis={() => switchModule("apis")} />
       )}
 
       {module === "apis" && project.apiCatalog && (

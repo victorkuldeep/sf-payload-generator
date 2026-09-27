@@ -16,6 +16,8 @@ import {
 import { logChange } from "@/lib/experience/migrate";
 import { AddScreenDialog, EditScreenDialog, ReplaceImage } from "./ScreenDialogs";
 import { ComponentInspector } from "./ComponentInspector";
+import { CoveragePanel } from "./CoveragePanel";
+import { JourneyPanel } from "./JourneyPanel";
 import { ScreenCanvas } from "./ScreenCanvas";
 import type { Rect } from "@/lib/experience/geometry";
 import { deleteScreenCascade, reorderScreens, screenImpact } from "@/lib/experience/screens";
@@ -73,13 +75,15 @@ function useAssetUrls(keys: string[]): Map<string, string> {
   return new Map(cache.current);
 }
 
-/** Experience workspace: screen inventory now, canvas in Sprint 3. */
+/** Experience workspace: inventory, canvas, journeys, coverage. */
 export function ExperienceWorkspace({
   project,
   onMutate,
+  onOpenApis,
 }: {
   project: MappingProject;
   onMutate: (fn: (p: MappingProject) => MappingProject) => void;
+  onOpenApis: () => void;
 }) {
   const exp = project.experience!;
   const [query, setQuery] = useState("");
@@ -121,6 +125,7 @@ export function ExperienceWorkspace({
   };
 
   return (
+    <div className="space-y-3">
     <div className="grid items-start gap-3 lg:grid-cols-[300px_minmax(0,1fr)]">
       {/* Screen inventory */}
       <div className="rounded-xl border border-[#E8E2D8] bg-white p-3">
@@ -224,6 +229,11 @@ export function ExperienceWorkspace({
         )}
       </div>
 
+      <div className="grid items-start gap-3 lg:grid-cols-2">
+        <JourneyPanel project={project} onMutate={onMutate} onOpenScreen={setSelectedId} />
+        <CoveragePanel project={project} onOpenScreen={setSelectedId} onOpenApis={onOpenApis} />
+      </div>
+
       {showAdd && (
         <AddScreenDialog
           projectId={project.id}
@@ -261,6 +271,7 @@ export function ExperienceWorkspace({
           }}
         />
       )}
+    </div>
     </div>
   );
 }
