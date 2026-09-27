@@ -15,6 +15,7 @@ import { ensureExperience } from "@/lib/experience/migrate";
 import { ExperienceWorkspace } from "@/components/experience/ExperienceWorkspace";
 import { ApiCatalogPanel } from "@/components/experience/ApiCatalogPanel";
 import { DecisionsPanel } from "@/components/experience/DecisionsPanel";
+import { DeliverablesPanel } from "@/components/experience/DeliverablesPanel";
 import { useMappingMetadata } from "./useMappingMetadata";
 import { buildSnapshot } from "@/lib/mapping/snapshot";
 import { deleteProject, duplicateProject, listProjects, loadProject, saveProject, type ProjectSummary } from "@/lib/mapping/store";
@@ -436,12 +437,14 @@ export function MappingRoute() {
       )}
 
       {module === "deliverables" && (
-        <div className="rounded-xl border border-[#E8E2D8] bg-white p-8 text-center">
-          <p className="text-[14px] font-semibold text-[#27241F]">Deliverables</p>
-          <p className="mx-auto mt-1 max-w-md text-[12px] text-[#777168]">
-            Portable ZIP packages, the Word architecture pack and the experience workbook arrive in Sprints 9-10.
-          </p>
-        </div>
+        <DeliverablesPanel
+          project={project}
+          onImported={(p) => {
+            setProject(p);
+            setSaveState("saved");
+            refreshLibrary();
+          }}
+        />
       )}
     </div>
   );
