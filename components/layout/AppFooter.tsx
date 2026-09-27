@@ -21,7 +21,7 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
         )}
         <div className="relative mx-auto w-full px-5 lg:px-8 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 font-mono text-[11px] text-[var(--color-muted)]">
           <div>
-            <span>© {year} Salesforce sObject Payload Studio.</span>
+            <span>© {year} sObject Studio.</span>
             <span className="block sm:inline text-[10px]">
               {" "}Independent utility. Not affiliated with Salesforce.
             </span>
@@ -57,10 +57,10 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
           <div className="md:col-span-5 space-y-4">
             <div>
               <p className="text-sm font-bold text-[var(--color-ink)]">
-                Salesforce sObject Payload Studio
+                sObject <span className="bg-gradient-to-r from-bronze-600 via-[#C9A86A] to-bronze-600 bg-clip-text text-transparent">Studio</span>
               </p>
               <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[2px] text-[var(--color-muted)]">
-                Architect Toolkit
+                Salesforce API Workbench
               </p>
             </div>
             <p className="max-w-sm text-xs leading-relaxed text-[var(--color-ink-soft)]">
@@ -272,14 +272,14 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
             ))}
           </div>
           <span className="text-[10px] uppercase tracking-widest text-[var(--color-muted)] shrink-0 hidden lg:block">
-            Architect Toolkit
+            API Workbench
           </span>
         </div>
 
         {/* Bottom bar */}
         <div className="pt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 font-mono text-[11px] text-[var(--color-muted)]">
           <div>
-            <span>© {year} Salesforce sObject Payload Studio.</span>
+            <span>© {year} sObject Studio.</span>
             <span className="block sm:inline text-[10px]">
               {" "}Independent utility. Not affiliated with Salesforce.
             </span>

@@ -22,13 +22,13 @@ export function WelcomeModal({ open, onConnect, onExplore }: WelcomeModalProps) 
       <div className="modal-card max-w-2xl">
         <div className="px-6 sm:px-8 pt-7 pb-5 border-b border-[var(--color-line-soft)]">
           <p className="text-[10px] font-semibold uppercase tracking-[2px] text-[var(--color-accent-dark)]">
-            Salesforce Architect Toolkit
+            Salesforce API Workbench
           </p>
           <h2 id="welcome-title" className="hero-title mt-2 text-4xl sm:text-5xl">
             Payloads without <em>the grunt work.</em>
           </h2>
           <p className="mt-3 text-sm leading-relaxed text-ivory-700 max-w-lg">
-            Welcome to <strong className="text-ivory-950">Salesforce sObject Payload Studio</strong> - connect
+            Welcome to <strong className="text-ivory-950">sObject Studio</strong> - connect
             to any org, describe live sObjects, and generate accurate REST payloads for
             single records and Composite API batches. No manual field copy-paste.
           </p>

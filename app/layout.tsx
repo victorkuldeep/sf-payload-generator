@@ -25,8 +25,8 @@ export const metadata: Metadata = {
     process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
   ),
   title: {
-    default: "Salesforce sObject Payload Studio - Architect Toolkit",
-    template: "%s - Salesforce sObject Payload Studio",
+    default: "sObject Studio - Salesforce API Workbench",
+    template: "%s - sObject Studio",
   },
   description:
     "Metadata-driven Salesforce REST payload builder. Connect live, describe any sObject, generate Table API + Composite payloads and export to JSON, cURL, JS or Apex.",
