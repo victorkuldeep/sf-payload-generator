@@ -217,13 +217,17 @@ export function JsonCompare() {
           aria-label="Ignore paths"
           className="min-w-[180px] flex-1 rounded-lg border border-[#E8E2D8] px-2 py-1 font-mono text-[11px] focus:border-[#A98450] focus:outline-none sm:max-w-[260px]"
         />
-        {pair && resultView === "side" && (
+        {pair && (
           <>
             <span className="mx-1 hidden h-5 w-px bg-[#E8E2D8] sm:inline-block" aria-hidden="true" />
-            <Button variant="ghost" size="sm" onClick={() => step(-1)}>← Prev</Button>
-            <Button variant="ghost" size="sm" onClick={() => step(1)}>Next →</Button>
-            <Button variant="ghost" size="sm" onClick={() => viewerRef.current?.expandAll()}>Expand all</Button>
-            <Button variant="ghost" size="sm" onClick={() => viewerRef.current?.collapseAll()}>Collapse all</Button>
+            {resultView === "side" && (
+              <>
+                <Button variant="ghost" size="sm" onClick={() => step(-1)}>← Prev</Button>
+                <Button variant="ghost" size="sm" onClick={() => step(1)}>Next →</Button>
+                <Button variant="ghost" size="sm" onClick={() => viewerRef.current?.expandAll()}>Expand all</Button>
+                <Button variant="ghost" size="sm" onClick={() => viewerRef.current?.collapseAll()}>Collapse all</Button>
+              </>
+            )}
             <LaserButton active={laser} onToggle={() => setLaser((v) => !v)} />
           </>
         )}
@@ -279,8 +283,10 @@ export function JsonCompare() {
             )}
           </div>
 
+          {/* Laser covers every result view - side-by-side, summary, tree, graph, engineering */}
+          <div ref={laserHostRef} className="relative">
           {resultView === "side" && pair && (
-          <div ref={laserHostRef} className="relative overflow-hidden rounded-xl border border-[#E8E2D8]">
+          <div className="overflow-hidden rounded-xl border border-[#E8E2D8]">
             <VirtualizedDiffViewer
               ref={viewerRef as never}
               oldValue={pair.a}
@@ -302,7 +308,6 @@ export function JsonCompare() {
               }}
               getDiffData={(d: [unknown[], unknown[]]) => setBlocks(d[0].length + d[1].length)}
             />
-            <LaserOverlay active={laser && resultView === "side"} hostRef={laserHostRef} />
           </div>
           )}
 
@@ -372,6 +377,8 @@ export function JsonCompare() {
               )}
             </div>
           )}
+            <LaserOverlay active={laser} hostRef={laserHostRef} />
+          </div>
         </>
       )}
     </div>

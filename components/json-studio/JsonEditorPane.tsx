@@ -21,6 +21,7 @@ export function JsonEditorPane() {
   const [reveal, setReveal] = useState<{ path: (string | number)[]; nonce: number } | null>(null);
   const [laser, setLaser] = useState(false);
   const laserHostRef = useRef<HTMLDivElement>(null);
+  const graphHostRef = useRef<HTMLDivElement>(null);
   useLaser(laser, setLaser);
 
   const load = () => {
@@ -184,13 +185,16 @@ export function JsonEditorPane() {
                 <LaserOverlay active={laser && view === "editor"} hostRef={laserHostRef} />
               </div>
             ) : (
-              <JsonGraph
-                doc={graphDoc}
-                onRevealInTree={(path) => {
-                  setReveal({ path, nonce: Date.now() });
-                  setView("editor");
-                }}
-              />
+              <div ref={graphHostRef} className="relative">
+                <JsonGraph
+                  doc={graphDoc}
+                  onRevealInTree={(path) => {
+                    setReveal({ path, nonce: Date.now() });
+                    setView("editor");
+                  }}
+                />
+                <LaserOverlay active={laser} hostRef={graphHostRef} />
+              </div>
             )}
           </>
         )}

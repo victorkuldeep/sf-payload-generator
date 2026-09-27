@@ -32,6 +32,7 @@ export function LaserOverlay({
   hostRef: React.RefObject<HTMLElement | null>;
 }) {
   const [strokes, setStrokes] = useState<Stroke[]>([]);
+  const [pencil, setPencil] = useState<{ x: number; y: number } | null>(null);
   const strokeId = useRef(0);
   const drawing = useRef(false);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -44,6 +45,8 @@ export function LaserOverlay({
     const onWheel = (e: WheelEvent) => {
       if (!scrollerRef.current) scrollerRef.current = findScroller(hostRef.current);
       const scroller = scrollerRef.current;
+      // No inner scroller (e.g. canvas panes that pan via transform):
+      // let the page scroll naturally instead of swallowing the wheel.
       if (!scroller) return;
       e.preventDefault();
       scroller.scrollTop += e.deltaY;
@@ -68,20 +71,22 @@ export function LaserOverlay({
     <svg
       ref={svgRef}
       className="absolute inset-0 h-full w-full touch-none"
-      style={{ cursor: "crosshair", zIndex: 30 }}
+      style={{ cursor: "none", zIndex: 30 }}
       onPointerDown={(e) => {
         drawing.current = true;
         (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
         const id = ++strokeId.current;
         const p = relPos(e);
+        setPencil(p);
         setStrokes((prev) => [...prev.slice(-11), { id, pts: [p] }]);
         window.setTimeout(() => {
           setStrokes((prev) => prev.filter((s) => s.id !== id));
         }, 1600);
       }}
       onPointerMove={(e) => {
-        if (!drawing.current) return;
         const p = relPos(e);
+        if (e.pointerType === "mouse" || e.pointerType === "pen") setPencil(p);
+        if (!drawing.current) return;
         setStrokes((prev) => {
           if (prev.length === 0) return prev;
           const last = prev[prev.length - 1];
@@ -93,8 +98,16 @@ export function LaserOverlay({
       }}
       onPointerLeave={() => {
         drawing.current = false;
+        setPencil(null);
       }}
     >
+      {pencil && (
+        <g transform={`translate(${pencil.x} ${pencil.y}) rotate(-45)`} pointerEvents="none">
+          <rect x="-3" y="-19" width="6" height="12" rx="1" fill="#A98450" />
+          <polygon points="-3,-7 3,-7 0,0" fill="#E8DCC8" />
+          <circle cx="0" cy="-1.5" r="1.6" fill="#ef4444" />
+        </g>
+      )}
       {strokes.map((s) => (
         <g key={s.id}>
           <polyline
