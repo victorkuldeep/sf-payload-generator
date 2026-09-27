@@ -57,15 +57,15 @@ export function ProjectWizard({
     "w-full rounded-lg border border-[#E8E2D8] bg-white px-2.5 py-1.5 text-[13px] focus:border-[#A98450] focus:outline-none";
 
   return (
-    <div className="mx-auto max-w-xl rounded-xl border border-[#E8E2D8] bg-white p-5">
-      <div className="mb-4 flex items-center gap-2 font-mono text-[11px] text-[#A39B8E]" aria-label="Setup progress">
-        {["Project details", "Source JSON"].map((label, i) => (
-          <span key={label} className="flex items-center gap-2">
-            <span className={`rounded-full px-2 py-0.5 ${i === step ? "bg-[#211F1B] text-white" : i < step ? "bg-[#E9F3EC] text-[#2F7D4F]" : "bg-[#F5F1E8] text-[#A39B8E]"}`}>
+    <div className="mx-auto max-w-2xl rounded-2xl border border-[#E8E2D8] bg-white p-6 sm:p-8 shadow-[0_2px_24px_rgba(169,132,80,0.08)]">
+      <div className="mb-6 flex items-center gap-3 text-[15px]" aria-label="Setup progress">
+        {["Project Details", "Source JSON"].map((label, i) => (
+          <span key={label} className="flex items-center gap-2.5">
+            <span className={`flex h-8 w-8 items-center justify-center rounded-full font-mono text-[13px] font-bold ${i === step ? "bg-[#211F1B] text-white" : i < step ? "bg-[#E9F3EC] text-[#2F7D4F]" : "bg-[#F5F1E8] text-[#A39B8E]"}`}>
               {i + 1}
             </span>
-            <span className={i === step ? "text-[#27241F] font-semibold" : ""}>{label}</span>
-            {i === 0 && <span aria-hidden="true">→</span>}
+            <span className={i === step ? "text-[#27241F] font-semibold" : "text-[#A39B8E]"}>{label}</span>
+            {i === 0 && <span aria-hidden="true" className="text-[#D8CFC0]">→</span>}
           </span>
         ))}
       </div>
