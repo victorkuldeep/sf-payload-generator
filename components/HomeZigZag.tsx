@@ -1,7 +1,7 @@
 "use client";
 
 export type ZigZagTarget =
-  | { kind: "mode"; mode: "single" | "composite" }
+  | { kind: "mode"; mode: "single" | "composite" | "soql" | "graphql" | "schema" | "rest" }
   | { kind: "route"; href: "/json" | "/contracts" };
 
 interface ZigZagItem {
@@ -26,6 +26,34 @@ const ITEMS: ZigZagItem[] = [
     copy: "Multi-sObject graphs with unique reference IDs in a single Composite API call.",
     cta: "Composite",
     target: { kind: "mode", mode: "composite" },
+  },
+  {
+    titleA: "Ask anything,",
+    titleEm: "explain everything.",
+    copy: "Plans, history, saved queries and CSV exports - Dev Console power, zero context switching.",
+    cta: "SOQL",
+    target: { kind: "mode", mode: "soql" },
+  },
+  {
+    titleA: "One round trip,",
+    titleEm: "whole graph.",
+    copy: "Walk lookup trees with value precision. Live metadata, read-only, no mutations.",
+    cta: "GraphQL",
+    target: { kind: "mode", mode: "graphql" },
+  },
+  {
+    titleA: "See the model,",
+    titleEm: "not just the fields.",
+    copy: "Any org as an ERD - discover relationships, present with the laser, export hi-res PNG.",
+    cta: "Schema Map",
+    target: { kind: "mode", mode: "schema" },
+  },
+  {
+    titleA: "Any method,",
+    titleEm: "any endpoint.",
+    copy: "Org-scoped or public REST calls with cURL paste, history and one-click collection staging.",
+    cta: "REST",
+    target: { kind: "mode", mode: "rest" },
   },
   {
     titleA: "Diff versions,",
