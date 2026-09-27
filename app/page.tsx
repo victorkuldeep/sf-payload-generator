@@ -22,6 +22,8 @@ import { SessionExpiredModal } from "@/components/SessionExpiredModal";
 import { BootLoader } from "@/components/BootLoader";
 import { CollectionDrawer } from "@/components/CollectionDrawer";
 import { CollectionPicker } from "@/components/CollectionPicker";
+import { HomeZigZag, type ZigZagTarget } from "@/components/HomeZigZag";
+import { PrivacyBanner } from "@/components/PrivacyBanner";
 import { useRouter } from "next/navigation";
 import type { Collection, CollectionItem, NewCollectionItem } from "@/lib/collection/types";
 import { newItemId } from "@/lib/collection/types";
@@ -187,7 +189,7 @@ const HERO_SLIDES: {
   titleEm: string;
   copy: string;
   cta: string;
-  mode: Exclude<BuilderMode, "home"> | "json";
+  mode: Exclude<BuilderMode, "home"> | "json" | "contracts";
 }[] = [
   {
     eyebrow: "Metadata-driven payload builder",
@@ -245,6 +247,14 @@ const HERO_SLIDES: {
     cta: "JSON",
     mode: "json",
   },
+  {
+    eyebrow: "API Contract Studio",
+    titleA: "Design contracts,",
+    titleEm: "ship OpenAPI.",
+    copy: "Author profiles, map fields, compile deterministic OpenAPI 3.1 - versions and compatibility included.",
+    cta: "Contracts",
+    mode: "contracts",
+  },
 ];
 
 function HomeHero({
@@ -260,7 +270,7 @@ function HomeHero({
   connectError: string | null;
   onConnect: () => void;
   onHowItWorks: () => void;
-  onJumpMode: (m: Exclude<BuilderMode, "home"> | "json") => void;
+  onJumpMode: (m: Exclude<BuilderMode, "home"> | "json" | "contracts") => void;
 }) {
   const [idx, setIdx] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -527,9 +537,13 @@ export default function Home() {
   // Hero carousel jump links: offline visitors connect first, then land
   // on the chosen builder automatically. JSON Studio is standalone.
   const jumpToMode = useCallback(
-    (mode: Exclude<BuilderMode, "home"> | "json") => {
+    (mode: Exclude<BuilderMode, "home"> | "json" | "contracts") => {
       if (mode === "json") {
         router.push("/json");
+        return;
+      }
+      if (mode === "contracts") {
+        router.push("/contracts");
         return;
       }
       if (!state.connected) {
@@ -540,6 +554,18 @@ export default function Home() {
       goMode(mode);
     },
     [state.connected, openConnect, goMode, router]
+  );
+
+  // Zig-zag capability opener: modes via jump flow, routes direct.
+  const openZigZag = useCallback(
+    (t: ZigZagTarget) => {
+      if (t.kind === "route") {
+        router.push(t.href);
+        return;
+      }
+      jumpToMode(t.mode);
+    },
+    [router, jumpToMode]
   );
 
   // On mount: restore session, seed modal prefill, decide on welcome,
@@ -580,10 +606,10 @@ export default function Home() {
   // builder - connect first when offline, via the pending-mode flow.
   useEffect(() => {
     const m = new URLSearchParams(window.location.search).get("mode");
-    const valid = ["single", "composite", "soql", "graphql", "schema", "rest", "home"];
+    const valid = ["single", "composite", "soql", "graphql", "schema", "rest", "home", "json", "contracts"];
     if (m && valid.includes(m)) {
       history.replaceState(null, "", window.location.pathname);
-      if (m !== "home") jumpToMode(m as Exclude<BuilderMode, "home">);
+      if (m !== "home") jumpToMode(m as Exclude<BuilderMode, "home"> | "json" | "contracts");
       else goMode("home");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1082,26 +1108,34 @@ export default function Home() {
     >
       <main className="mx-auto w-full px-5 py-6 space-y-5">
         {!state.connected ? (
-          <HomeHero
-            connected={false}
-            loadingConnect={loading.connect}
-            connectError={errors.connect}
-            onConnect={openConnect}
-            onHowItWorks={() => setShowHowItWorks(true)}
-            onJumpMode={jumpToMode}
-          />
+          <>
+            <HomeHero
+              connected={false}
+              loadingConnect={loading.connect}
+              connectError={errors.connect}
+              onConnect={openConnect}
+              onHowItWorks={() => setShowHowItWorks(true)}
+              onJumpMode={jumpToMode}
+            />
+            <HomeZigZag onOpen={openZigZag} />
+            <PrivacyBanner />
+          </>
         ) : (
           <>
             {/* ── Connected home: the same home hero ── */}
             {state.mode === "home" && (
-              <HomeHero
-                connected
-                loadingConnect={loading.connect}
-                connectError={errors.connect}
-                onConnect={openConnect}
-                onHowItWorks={() => setShowHowItWorks(true)}
-                onJumpMode={jumpToMode}
-              />
+              <>
+                <HomeHero
+                  connected
+                  loadingConnect={loading.connect}
+                  connectError={errors.connect}
+                  onConnect={openConnect}
+                  onHowItWorks={() => setShowHowItWorks(true)}
+                  onJumpMode={jumpToMode}
+                />
+                <HomeZigZag onOpen={openZigZag} />
+                <PrivacyBanner />
+              </>
             )}
 
             {/* ── Builder modes stay mounted (hidden when inactive) so work
