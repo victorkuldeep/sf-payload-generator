@@ -3,7 +3,10 @@
 import { useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { parseJsonInput, formatBytes, samplePair, COMPARE_KEY_PRESETS } from "@/lib/json/studio";
+import { compareDocuments, type FindingCategory } from "@/lib/json/compare";
 import { LaserButton, LaserOverlay, useLaser } from "./LaserOverlay";
+import { CATEGORY_META, CompareSummary, TreeDiff, EngineeringTable } from "./CompareFindings";
+import { CompareGraph } from "./CompareGraph";
 import Button from "../ui/Button";
 
 const VirtualizedDiffViewer = dynamic(
@@ -34,6 +37,9 @@ export function JsonCompare() {
   const laserHostRef = useRef<HTMLDivElement>(null);
   useLaser(laser, setLaser);
   const [inputsOpen, setInputsOpen] = useState(true);
+  const [resultView, setResultView] = useState<"side" | "summary" | "tree" | "graph" | "engineering">("side");
+  const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
+  const [catFilter, setCatFilter] = useState<Set<FindingCategory> | null>(null);
   const viewerRef = useRef<ViewerRef | null>(null);
 
   const compare = () => {
@@ -45,9 +51,9 @@ export function JsonCompare() {
     setPair({ a: ra.value as object, b: rb.value as object });
     setBlocks(null);
     setCurrent(0);
+    setSelectedFindingId(null);
     setInputsOpen(false);
   };
-
   const loadSample = () => {
     const s = samplePair();
     setAText(s.a);
@@ -62,6 +68,31 @@ export function JsonCompare() {
     const sb = new Blob([JSON.stringify(pair.b)]).size;
     return `${formatBytes(sa)} vs ${formatBytes(sb)}`;
   }, [pair]);
+
+  // Canonical findings: same options as the legacy viewer, so every new
+  // view agrees with it by construction. Legacy defaults preserved.
+  const result = useMemo(() => {
+    if (!pair) return null;
+    return compareDocuments(pair.a, pair.b, {
+      strategy,
+      arrayMode: compareKey !== "" ? "key" : "lcs",
+      matchKey: compareKey,
+      ignorePaths: ignorePaths.split(",").map((s) => s.trim()).filter(Boolean),
+    });
+  }, [pair, strategy, compareKey, ignorePaths]);
+
+  const toggleCat = (cat: FindingCategory) => {
+    setCatFilter((prev) => {
+      if (prev !== null && prev.has(cat)) {
+        const next = new Set(prev);
+        next.delete(cat);
+        return next.size === 0 ? null : next;
+      }
+      const next = new Set(prev ?? []);
+      next.add(cat);
+      return next;
+    });
+  };
 
   const step = (dir: 1 | -1) => {
     const r = viewerRef.current;
@@ -186,7 +217,7 @@ export function JsonCompare() {
           aria-label="Ignore paths"
           className="min-w-[180px] flex-1 rounded-lg border border-[#E8E2D8] px-2 py-1 font-mono text-[11px] focus:border-[#A98450] focus:outline-none sm:max-w-[260px]"
         />
-        {pair && (
+        {pair && resultView === "side" && (
           <>
             <span className="mx-1 hidden h-5 w-px bg-[#E8E2D8] sm:inline-block" aria-hidden="true" />
             <Button variant="ghost" size="sm" onClick={() => step(-1)}>← Prev</Button>
@@ -208,8 +239,47 @@ export function JsonCompare() {
       ) : (
         <>
           <p className="font-mono text-[11px] text-[#A39B8E]">
-            {sizes}{blocks !== null ? ` · ${blocks} changed lines` : ""}{current > 0 ? ` · at change ${current}` : ""}
+            {sizes}{blocks !== null && resultView === "side" ? ` · ${blocks} changed lines` : ""}{current > 0 && resultView === "side" ? ` · at change ${current}` : ""}
+            {result && resultView !== "side" ? ` · ${result.findings.length} findings` : ""}
           </p>
+
+          {/* Result views - one canonical findings model underneath */}
+          <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Comparison result views">
+            {(
+              [
+                ["side", "Side-by-side"],
+                ["summary", "Summary"],
+                ["tree", "Tree Diff"],
+                ["graph", "Graph Diff"],
+                ["engineering", "Engineering"],
+              ] as const
+            ).map(([v, label]) => (
+              <button
+                key={v}
+                role="tab"
+                aria-selected={resultView === v}
+                onClick={() => setResultView(v)}
+                className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors cursor-pointer ${
+                  resultView === v
+                    ? "border-[#211F1B] bg-[#211F1B] text-white"
+                    : "border-[#E8E2D8] bg-white text-[#777168] hover:text-[#27241F]"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+            {catFilter !== null && (
+              <button
+                onClick={() => setCatFilter(null)}
+                className="rounded-lg border border-[#D8C7A9] bg-[#F5F1E8] px-2.5 py-1.5 text-[11px] font-semibold text-[#A98450] hover:text-[#27241F] cursor-pointer"
+                title="Clear category filter"
+              >
+                Filter: {[...catFilter].join(", ")} ✕
+              </button>
+            )}
+          </div>
+
+          {resultView === "side" && pair && (
           <div ref={laserHostRef} className="relative overflow-hidden rounded-xl border border-[#E8E2D8]">
             <VirtualizedDiffViewer
               ref={viewerRef as never}
@@ -232,8 +302,76 @@ export function JsonCompare() {
               }}
               getDiffData={(d: [unknown[], unknown[]]) => setBlocks(d[0].length + d[1].length)}
             />
-            <LaserOverlay active={laser} hostRef={laserHostRef} />
+            <LaserOverlay active={laser && resultView === "side"} hostRef={laserHostRef} />
           </div>
+          )}
+
+          {result && resultView === "summary" && (
+            <CompareSummary
+              result={result}
+              onFilterCategory={(cat) => {
+                setCatFilter(new Set([cat]));
+                setResultView("engineering");
+              }}
+            />
+          )}
+
+          {result && resultView === "tree" && pair && (
+            <TreeDiff
+              result={result}
+              filter={catFilter}
+              selectedId={selectedFindingId}
+              onSelect={setSelectedFindingId}
+            />
+          )}
+
+          {result && resultView === "graph" && pair && (
+            <CompareGraph
+              a={pair.a}
+              b={pair.b}
+              findings={result.findings}
+              filter={catFilter}
+              selectedId={selectedFindingId}
+              onSelect={setSelectedFindingId}
+            />
+          )}
+
+          {result && resultView === "engineering" && (
+            <EngineeringTable
+              result={result}
+              filter={catFilter}
+              selectedId={selectedFindingId}
+              onSelect={setSelectedFindingId}
+            />
+          )}
+
+          {result && resultView !== "side" && (
+            <div className="flex flex-wrap gap-1.5" aria-label="Filter by change category">
+              <span className="self-center font-mono text-[11px] text-[#A39B8E]">show:</span>
+              {CATEGORY_META.map((c) => {
+                const on = catFilter === null || catFilter.has(c.cat);
+                return (
+                  <button
+                    key={c.cat}
+                    onClick={() => toggleCat(c.cat)}
+                    aria-pressed={on}
+                    title={`Toggle ${c.label}`}
+                    className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors cursor-pointer ${
+                      on ? "border-[#E8E2D8] bg-white" : "border-[#E8E2D8] bg-[#F5F1E8] opacity-50"
+                    }`}
+                  >
+                    <span className={`h-1.5 w-1.5 rounded-full ${c.dot}`} aria-hidden="true" />
+                    <span className={on ? "text-[#27241F]" : "text-[#A39B8E]"}>{c.label}</span>
+                  </button>
+                );
+              })}
+              {catFilter !== null && (
+                <button onClick={() => setCatFilter(null)} className="text-[11px] text-[#A98450] hover:underline cursor-pointer">
+                  all
+                </button>
+              )}
+            </div>
+          )}
         </>
       )}
     </div>

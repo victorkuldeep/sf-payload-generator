@@ -1,8 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { parseJsonInput, formatJson, formatBytes } from "@/lib/json/studio";
+import { buildDocument } from "@/lib/json/document";
 import { VanillaEditor } from "./VanillaEditor";
+import { JsonGraph } from "./JsonGraph";
 import { LaserButton, LaserOverlay, useLaser } from "./LaserOverlay";
 import Button from "../ui/Button";
 
@@ -15,6 +17,8 @@ export function JsonEditorPane() {
   const [live, setLive] = useState<unknown>(null);
   const [copied, setCopied] = useState(false);
   const [sourceOpen, setSourceOpen] = useState(true);
+  const [view, setView] = useState<"editor" | "graph">("editor");
+  const [reveal, setReveal] = useState<{ path: (string | number)[]; nonce: number } | null>(null);
   const [laser, setLaser] = useState(false);
   const laserHostRef = useRef<HTMLDivElement>(null);
   useLaser(laser, setLaser);
@@ -34,6 +38,7 @@ export function JsonEditorPane() {
 
   const current = live ?? doc;
   const size = current ? formatBytes(new Blob([formatJson(current)]).size) : null;
+  const graphDoc = useMemo(() => (current ? buildDocument(current) : null), [current]);
 
   const copy = async () => {
     if (!current) return;
@@ -148,15 +153,45 @@ export function JsonEditorPane() {
           </div>
         ) : (
           <>
-            <div className="mb-2 flex gap-1.5">
+            <div className="mb-2 flex flex-wrap items-center gap-1.5">
+              <div className="flex rounded-lg border border-[#E8E2D8] overflow-hidden" role="tablist" aria-label="Editor view">
+                {(["editor", "graph"] as const).map((v) => (
+                  <button
+                    key={v}
+                    role="tab"
+                    aria-selected={view === v}
+                    onClick={() => setView(v)}
+                    className={`px-3 py-1.5 text-[11px] font-semibold transition-colors cursor-pointer ${
+                      view === v ? "bg-[#211F1B] text-white" : "bg-white text-[#777168] hover:text-[#27241F]"
+                    }`}
+                  >
+                    {v === "editor" ? "Editor" : "Graph"}
+                  </button>
+                ))}
+              </div>
               <Button variant="ghost" size="sm" onClick={copy}>{copied ? "Copied" : "Copy formatted"}</Button>
               <Button variant="ghost" size="sm" onClick={download}>Download</Button>
               <LaserButton active={laser} onToggle={() => setLaser((v) => !v)} />
             </div>
-            <div ref={laserHostRef} className="relative">
-              <VanillaEditor key={loadId} value={doc} onChange={setLive} />
-              <LaserOverlay active={laser} hostRef={laserHostRef} />
-            </div>
+            {view === "editor" || !graphDoc ? (
+              <div ref={laserHostRef} className="relative">
+                <VanillaEditor
+                  key={loadId}
+                  value={doc}
+                  onChange={setLive}
+                  reveal={reveal}
+                />
+                <LaserOverlay active={laser && view === "editor"} hostRef={laserHostRef} />
+              </div>
+            ) : (
+              <JsonGraph
+                doc={graphDoc}
+                onRevealInTree={(path) => {
+                  setReveal({ path, nonce: Date.now() });
+                  setView("editor");
+                }}
+              />
+            )}
           </>
         )}
       </div>

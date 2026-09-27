@@ -7,20 +7,31 @@ import { useEffect, useRef } from "react";
 export function VanillaEditor({
   value,
   onChange,
+  reveal,
 }: {
   value: unknown;
   onChange?: (value: unknown) => void;
+  /** Reveal a tree path (graph → editor sync). Bumped nonce re-triggers. */
+  reveal?: { path: (string | number)[]; nonce: number } | null;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const editorRef = useRef<{ destroy: () => void } | null>(null);
+  const editorRef = useRef<{
+    destroy: () => void;
+    updateProps?: (props: { mode?: string }) => void;
+    select?: (sel: unknown) => void;
+  } | null>(null);
+  const selectRef = useRef<((path: (string | number)[]) => unknown) | null>(null);
+  const modeRef = useRef<{ tree: string } | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      const { createJSONEditor, Mode } = await import("vanilla-jsoneditor");
+      const { createJSONEditor, Mode, createValueSelection } = await import("vanilla-jsoneditor");
       if (!alive || !hostRef.current || editorRef.current) return;
+      modeRef.current = Mode as unknown as { tree: string };
+      selectRef.current = createValueSelection as unknown as (path: (string | number)[]) => unknown;
       const editor = createJSONEditor({
         target: hostRef.current,
         props: {
@@ -32,7 +43,11 @@ export function VanillaEditor({
           },
         },
       });
-      editorRef.current = editor as unknown as { destroy: () => void };
+      editorRef.current = editor as unknown as {
+        destroy: () => void;
+        updateProps?: (props: { mode?: string }) => void;
+        select?: (sel: unknown) => void;
+      };
     })();
     return () => {
       alive = false;
@@ -45,6 +60,17 @@ export function VanillaEditor({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Graph → editor reveal: switch to tree mode and select the node.
+  useEffect(() => {
+    if (!reveal || !editorRef.current || !modeRef.current || !selectRef.current) return;
+    try {
+      editorRef.current.updateProps?.({ mode: modeRef.current.tree });
+      editorRef.current.select?.(selectRef.current(reveal.path));
+    } catch {
+      /* reveal is best-effort */
+    }
+  }, [reveal]);
 
   return (
     <div
