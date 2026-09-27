@@ -12,6 +12,7 @@ import { ExportDialog, ImportDialog } from "./ProjectExchange";
 import { DriftReview } from "./DriftReview";
 import { ReviewPanel } from "./ReviewPanel";
 import { ensureExperience } from "@/lib/experience/migrate";
+import { ExperienceWorkspace } from "@/components/experience/ExperienceWorkspace";
 import { useMappingMetadata } from "./useMappingMetadata";
 import { buildSnapshot } from "@/lib/mapping/snapshot";
 import { deleteProject, duplicateProject, listProjects, loadProject, saveProject, type ProjectSummary } from "@/lib/mapping/store";
@@ -420,8 +421,8 @@ export function MappingRoute() {
       </>
       )}
 
-      {module === "experience" && (
-        <ExperiencePlaceholder />
+      {module === "experience" && project.experience && (
+        <ExperienceWorkspace project={project} onMutate={mutate} />
       )}
 
       {module === "apis" && (
@@ -450,17 +451,6 @@ export function MappingRoute() {
           </p>
         </div>
       )}
-    </div>
-  );
-}
-
-function ExperiencePlaceholder() {
-  return (
-    <div className="rounded-xl border border-[#E8E2D8] bg-white p-8 text-center">
-      <p className="text-[14px] font-semibold text-[#27241F]">Experience Mapping</p>
-      <p className="mx-auto mt-1 max-w-md text-[12px] text-[#777168]">
-        Screen inventory, canvas and annotations arrive in Sprints 2-3. The project record is already experience-ready.
-      </p>
     </div>
   );
 }
