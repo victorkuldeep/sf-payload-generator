@@ -4,8 +4,8 @@
  * their last-known label as historical context.
  */
 
-import type { MappingProject } from "../mapping/types";
 import type { BackendDependency } from "./types";
+import type { SnapshotObject } from "../mapping/types";
 
 export interface IntegrityProblem {
   dependencyId: string;
@@ -13,14 +13,32 @@ export interface IntegrityProblem {
   message: string;
 }
 
+/**
+ * Extra workspace-wide lookup scope. Omitted = single-project behavior
+ * (unchanged). A workspace root passes aggregated child snapshots,
+ * mapping rows and plans so references resolve across children.
+ */
+export interface CrossScope {
+  snapshots?: SnapshotObject[];
+  mappings?: { id: string; sourcePath: string; objectName: string; fieldName: string }[];
+  plans?: { id: string; name?: string; objectName?: string }[];
+}
+
+interface CheckProject {
+  apiCatalog?: { operations: { id: string }[]; dependencies: BackendDependency[] } | null;
+  sfSnapshot?: { objects: SnapshotObject[] } | null;
+  mappings?: { id: string }[];
+  recordPlans?: { id: string }[];
+}
+
 /** Check every backend dependency against live project state. */
-export function checkDependencies(project: MappingProject): IntegrityProblem[] {
+export function checkDependencies(project: CheckProject, extra?: CrossScope): IntegrityProblem[] {
   const out: IntegrityProblem[] = [];
   const deps = project.apiCatalog?.dependencies ?? [];
-  const ops = new Set(project.apiCatalog?.operations.map((o) => o.id) ?? []);
-  const snapshotObjects = new Map((project.sfSnapshot?.objects ?? []).map((o) => [o.name, o]));
-  const mappingRows = new Map(project.mappings.map((m) => [m.id, m]));
-  const plans = new Set(project.recordPlans.map((p) => p.id));
+  const ops = new Set((project.apiCatalog?.operations ?? []).map((o) => o.id));
+  const snapshotObjects = new Map((extra?.snapshots ?? project.sfSnapshot?.objects ?? []).map((o) => [o.name, o]));
+  const mappingRows = new Map((extra?.mappings ?? project.mappings ?? []).map((m) => [m.id, m]));
+  const plans = new Set((extra?.plans ?? project.recordPlans ?? []).map((p) => p.id));
 
   for (const d of deps) {
     if (!ops.has(d.operationId)) {
@@ -64,11 +82,21 @@ export interface LineageNode {
 }
 
 /** Component lineage: requirement → binding → operation → dependencies. */
-export function componentLineage(project: MappingProject, componentId: string): LineageNode[] {
+export function componentLineage(
+  project: {
+    experience?: {
+      requirements: { id: string; componentId?: string; name: string }[];
+      bindings: { id: string; componentId?: string; operationId: string; requestRequirementIds: string[]; responseRequirementIds: string[] }[];
+    } | null;
+    apiCatalog?: { operations: { id: string; name: string; operationKey: string }[]; dependencies: BackendDependency[] } | null;
+  },
+  componentId: string,
+  extra?: CrossScope
+): LineageNode[] {
   const exp = project.experience;
   if (!exp) return [];
   const ops = new Map(project.apiCatalog?.operations.map((o) => [o.id, o]) ?? []);
-  const broken = new Set(checkDependencies(project).map((p) => p.dependencyId));
+  const broken = new Set(checkDependencies(project as CheckProject, extra).map((p) => p.dependencyId));
   const out: LineageNode[] = [];
   for (const req of exp.requirements.filter((r) => r.componentId === componentId)) {
     const bindings = exp.bindings.filter(

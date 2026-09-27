@@ -37,6 +37,12 @@ export interface Screen {
   userRole?: string;
   deviceContext?: "desktop" | "tablet" | "mobile" | "responsive";
   assetId?: string;
+  /** Agreed endpoint powering this screen, e.g. "POST /leads". */
+  endpoint?: string;
+  /** Child integration mapping id whose payload feeds this screen. */
+  payloadMappingId?: string;
+  /** Architect / workshop notes about this screen's contract. */
+  notes?: string;
   canvas: { sourceWidth: number; sourceHeight: number; aspectRatio: number };
   componentIds: string[];
   actionIds: string[];

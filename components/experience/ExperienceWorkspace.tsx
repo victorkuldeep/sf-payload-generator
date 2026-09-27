@@ -21,7 +21,7 @@ import { JourneyPanel } from "./JourneyPanel";
 import { ScreenCanvas } from "./ScreenCanvas";
 import type { Rect } from "@/lib/experience/geometry";
 import { deleteScreenCascade, reorderScreens, screenImpact } from "@/lib/experience/screens";
-import type { MappingProject } from "@/lib/mapping/types";
+import type { StudioProject } from "@/lib/studio/types";
 import type { Screen, ScreenAsset } from "@/lib/experience/types";
 
 function uid(prefix: string): string {
@@ -29,7 +29,7 @@ function uid(prefix: string): string {
 }
 
 /** Stamp project + experience updatedAt. */
-function touch(p: MappingProject): MappingProject {
+function touch(p: StudioProject): StudioProject {
   const now = new Date().toISOString();
   if (p.experience) p.experience.updatedAt = now;
   p.updatedAt = now;
@@ -78,12 +78,17 @@ function useAssetUrls(keys: string[]): Map<string, string> {
 /** Experience workspace: inventory, canvas, journeys, coverage. */
 export function ExperienceWorkspace({
   project,
+  payloadChoices,
   onMutate,
   onOpenApis,
+  onOpenMapping,
 }: {
-  project: MappingProject;
-  onMutate: (fn: (p: MappingProject) => MappingProject) => void;
+  project: StudioProject;
+  /** Child integration mappings (id + label) for screen→payload links. */
+  payloadChoices: { id: string; label: string }[];
+  onMutate: (fn: (p: StudioProject) => StudioProject) => void;
   onOpenApis: () => void;
+  onOpenMapping: (mappingId: string) => void;
 }) {
   const exp = project.experience!;
   const [query, setQuery] = useState("");
@@ -224,7 +229,9 @@ export function ExperienceWorkspace({
           <ScreenDetail
             project={project}
             screen={selected}
+            payloadChoices={payloadChoices}
             onMutate={onMutate}
+            onOpenMapping={onOpenMapping}
           />
         )}
       </div>
@@ -279,11 +286,15 @@ export function ExperienceWorkspace({
 function ScreenDetail({
   project,
   screen,
+  payloadChoices,
   onMutate,
+  onOpenMapping,
 }: {
-  project: MappingProject;
+  project: StudioProject;
   screen: Screen;
-  onMutate: (fn: (p: MappingProject) => MappingProject) => void;
+  payloadChoices: { id: string; label: string }[];
+  onMutate: (fn: (p: StudioProject) => StudioProject) => void;
+  onOpenMapping: (mappingId: string) => void;
 }) {
   const exp = project.experience!;
   const asset = exp.assets.find((a) => a.screenId === screen.id);
@@ -360,6 +371,80 @@ function ScreenDetail({
         {screen.route ?? "no route"} · {screen.status}
         {asset ? ` · ${asset.width}×${asset.height} · ${(asset.byteSize / 1024).toFixed(0)} KB` : " · no image"}
       </p>
+
+      {/* Screen → endpoint + payload contract */}
+      <div className="mt-2 grid gap-2 rounded-xl border border-[#F0EBE0] bg-[#FAF8F2] p-2.5 sm:grid-cols-2">
+        <label className="block text-[11px] text-[#777168]">
+          Endpoint (agreed)
+          <input
+            defaultValue={screen.endpoint ?? ""}
+            onBlur={(e) => {
+              const endpoint = e.target.value.trim() || undefined;
+              onMutate((p) => {
+                if (!p.experience) return p;
+                const now = new Date().toISOString();
+                return touch({ ...p, experience: { ...p.experience, screens: p.experience.screens.map((s) => (s.id === screen.id ? { ...s, endpoint, updatedAt: now } : s)) } });
+              });
+            }}
+            placeholder="POST /leads"
+            spellCheck={false}
+            className="mt-1 w-full rounded-lg border border-[#E8E2D8] bg-white px-2 py-1.5 font-mono text-[12px] focus:border-[#A98450] focus:outline-none"
+          />
+        </label>
+        <label className="block text-[11px] text-[#777168]">
+          Payload mapping
+          <span className="mt-1 flex gap-1.5">
+            <select
+              value={screen.payloadMappingId ?? ""}
+              onChange={(e) => {
+                const payloadMappingId = e.target.value || undefined;
+                onMutate((p) => {
+                  if (!p.experience) return p;
+                  const now = new Date().toISOString();
+                  const next = touch({ ...p, experience: { ...p.experience, screens: p.experience.screens.map((s) => (s.id === screen.id ? { ...s, payloadMappingId, updatedAt: now } : s)) } });
+                  logChange(next, "screen", screen.id, "payload-linked", `Screen "${screen.name}" linked to a payload mapping.`, now);
+                  return next;
+                });
+              }}
+              aria-label="Payload integration mapping"
+              className="w-full cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-2 py-1.5 font-mono text-[12px]"
+            >
+              <option value="">none…</option>
+              {payloadChoices.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+            {screen.payloadMappingId && (
+              <button
+                type="button"
+                onClick={() => onOpenMapping(screen.payloadMappingId!)}
+                title="Open the linked integration mapping"
+                className="shrink-0 rounded-lg border border-[#E8E2D8] bg-white px-2 py-1.5 font-mono text-[11px] text-[#A98450] hover:underline cursor-pointer"
+              >
+                open ↗
+              </button>
+            )}
+          </span>
+        </label>
+        <label className="block text-[11px] text-[#777168] sm:col-span-2">
+          Notes
+          <input
+            defaultValue={screen.notes ?? ""}
+            onBlur={(e) => {
+              const notes = e.target.value.trim() || undefined;
+              onMutate((p) => {
+                if (!p.experience) return p;
+                return touch({ ...p, experience: { ...p.experience, screens: p.experience.screens.map((s) => (s.id === screen.id ? { ...s, notes, updatedAt: new Date().toISOString() } : s)) } });
+              });
+            }}
+            placeholder="Workshop notes about this screen's contract…"
+            spellCheck={false}
+            className="mt-1 w-full rounded-lg border border-[#E8E2D8] bg-white px-2 py-1.5 text-[12px] focus:border-[#A98450] focus:outline-none"
+          />
+        </label>
+      </div>
       {imgUrl && asset ? (
         <div className="mt-3">
           <ScreenCanvas
@@ -484,7 +569,7 @@ function LinkComponentPanel({
   annotationId: string;
   defaultName: string;
   candidates: { id: string; name: string }[];
-  onMutate: (fn: (p: MappingProject) => MappingProject) => void;
+  onMutate: (fn: (p: StudioProject) => StudioProject) => void;
 }) {
   const [name, setName] = useState(defaultName.startsWith("Region ") ? "" : defaultName);
   const [linkId, setLinkId] = useState("");

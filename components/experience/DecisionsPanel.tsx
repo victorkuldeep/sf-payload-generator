@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Button from "../ui/Button";
 import { logChange } from "@/lib/experience/migrate";
-import type { MappingProject } from "@/lib/mapping/types";
+import type { StudioProject } from "@/lib/studio/types";
 import type { ArchitectureDecision, ArchitectureDecisionStatus, Assumption } from "@/lib/experience/types";
 
 function uid(prefix: string): string {
@@ -20,8 +20,8 @@ export function DecisionsPanel({
   project,
   onMutate,
 }: {
-  project: MappingProject;
-  onMutate: (fn: (p: MappingProject) => MappingProject) => void;
+  project: StudioProject;
+  onMutate: (fn: (p: StudioProject) => StudioProject) => void;
 }) {
   const decisions = project.archDecisions ?? [];
   const assumptions = project.assumptions ?? [];
@@ -29,7 +29,7 @@ export function DecisionsPanel({
   const [tab, setTab] = useState<"decisions" | "questions" | "history">("decisions");
 
   const mutateArch = (
-    fn: (p: MappingProject) => MappingProject,
+    fn: (p: StudioProject) => StudioProject,
     entityType: string,
     entityId: string,
     changeType: string,
@@ -97,9 +97,9 @@ function DecisionList({
   decisions,
   onMutate,
 }: {
-  project: MappingProject;
+  project: StudioProject;
   decisions: ArchitectureDecision[];
-  onMutate: (fn: (p: MappingProject) => MappingProject, entityType: string, entityId: string, changeType: string, summary: string) => void;
+  onMutate: (fn: (p: StudioProject) => StudioProject, entityType: string, entityId: string, changeType: string, summary: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -199,9 +199,9 @@ function QuestionList({
   assumptions,
   onMutate,
 }: {
-  project: MappingProject;
+  project: StudioProject;
   assumptions: Assumption[];
-  onMutate: (fn: (p: MappingProject) => MappingProject, entityType: string, entityId: string, changeType: string, summary: string) => void;
+  onMutate: (fn: (p: StudioProject) => StudioProject, entityType: string, entityId: string, changeType: string, summary: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState("");

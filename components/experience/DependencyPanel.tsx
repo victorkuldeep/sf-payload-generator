@@ -4,7 +4,8 @@ import { useMemo, useState } from "react";
 import Button from "../ui/Button";
 import { logChange } from "@/lib/experience/migrate";
 import { checkDependencies } from "@/lib/experience/bridge";
-import type { MappingProject } from "@/lib/mapping/types";
+import type { StudioProject } from "@/lib/studio/types";
+import type { SnapshotObject } from "@/lib/mapping/types";
 import type { APIOperation, BackendDependency, DependencyKind } from "@/lib/experience/types";
 
 function uid(prefix: string): string {
@@ -18,15 +19,31 @@ const KINDS: DependencyKind[] = ["salesforce-object", "salesforce-field", "integ
 
 /** Backend dependencies for one operation + integrity display. */
 export function DependencyPanel({
-  project,
+  projectId,
+  snapshotObjects,
+  integrationChoices,
+  dependencies,
+  operations,
   operation,
   onMutate,
   onOpenIntegration,
+  brokenFor,
 }: {
-  project: MappingProject;
+  /** Workspace root id (stored on references). */
+  projectId: string;
+  /** Aggregated snapshot objects across child mappings. */
+  snapshotObjects: SnapshotObject[];
+  /** Mapping rows + record plans across child mappings. */
+  integrationChoices: { id: string; label: string }[];
+  /** All catalog dependencies (filtered to this operation internally). */
+  dependencies: BackendDependency[];
+  /** Other catalog operations (for api-operation chaining). */
+  operations: APIOperation[];
   operation: APIOperation;
-  onMutate: (fn: (p: MappingProject) => MappingProject) => void;
+  onMutate: (fn: (p: StudioProject) => StudioProject) => void;
   onOpenIntegration: () => void;
+  /** Broken-dependency messages computed by the parent scope. */
+  brokenFor: Map<string, string>;
 }) {
   const [kind, setKind] = useState<DependencyKind>("salesforce-object");
   const [objName, setObjName] = useState("");
@@ -36,13 +53,10 @@ export function DependencyPanel({
   const [notes, setNotes] = useState("");
 
   const deps = useMemo(
-    () => (project.apiCatalog?.dependencies ?? []).filter((d) => d.operationId === operation.id),
-    [project, operation.id]
+    () => (dependencies ?? []).filter((d) => d.operationId === operation.id),
+    [dependencies, operation.id]
   );
-  const problems = useMemo(() => {
-    const all = checkDependencies(project);
-    return new Map(all.map((p) => [p.dependencyId, p.message]));
-  }, [project]);
+  const problems = brokenFor;
 
   const mutateDeps = (fn: (list: BackendDependency[]) => BackendDependency[], summary: string, entityId: string) => {
     onMutate((p) => {
@@ -54,13 +68,8 @@ export function DependencyPanel({
     });
   };
 
-  const snapshotObjects = project.sfSnapshot?.objects ?? [];
   const fieldsFor = objName ? (snapshotObjects.find((o) => o.name === objName)?.fields ?? []) : [];
-  const integrationChoices = [
-    ...project.recordPlans.map((r) => ({ id: r.id, label: `plan: ${r.name} → ${r.objectName}` })),
-    ...project.mappings.map((m) => ({ id: m.id, label: `map: ${m.sourcePath} → ${m.objectName}.${m.fieldName || "?"}` })),
-  ];
-  const otherOps = (project.apiCatalog?.operations ?? []).filter((o) => o.id !== operation.id);
+  const otherOps = operations.filter((o) => o.id !== operation.id);
 
   const add = () => {
     const now = new Date().toISOString();
@@ -75,7 +84,7 @@ export function DependencyPanel({
       depLabel = depLabel || `${objName}.${fieldName}`;
     } else if (kind === "integration-mapping" && artifactId) {
       const choice = integrationChoices.find((c) => c.id === artifactId);
-      reference = { projectId: project.id, artifactId, label: choice?.label };
+      reference = { projectId, artifactId, label: choice?.label };
       depLabel = depLabel || choice?.label || artifactId;
     } else if (kind === "api-operation" && artifactId) {
       const op = otherOps.find((o) => o.id === artifactId);

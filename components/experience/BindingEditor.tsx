@@ -4,7 +4,7 @@ import { useState } from "react";
 import Button from "../ui/Button";
 import { logChange } from "@/lib/experience/migrate";
 import { normalizeOperationKey } from "@/lib/experience/apiCatalog";
-import type { MappingProject } from "@/lib/mapping/types";
+import type { StudioProject } from "@/lib/studio/types";
 import type {
   APIBinding,
   BindingTrigger,
@@ -27,10 +27,10 @@ export function BindingEditor({
   bindings,
   onMutate,
 }: {
-  project: MappingProject;
+  project: StudioProject;
   component: UIComponent;
   bindings: APIBinding[];
-  onMutate: (fn: (p: MappingProject) => MappingProject) => void;
+  onMutate: (fn: (p: StudioProject) => StudioProject) => void;
 }) {
   const catalog = project.apiCatalog!;
   const requirements = project.experience!.requirements.filter((r) => r.componentId === component.id);

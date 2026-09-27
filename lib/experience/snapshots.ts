@@ -5,21 +5,27 @@
  * and are never duplicated per snapshot.
  */
 
-import type { MappingProject } from "../mapping/types";
-import type { ApiCatalog, ArchitectureSnapshot, ExperienceModule } from "./types";
+import type { ApiCatalog, ArchitectureDecision, ArchitectureSnapshot, Assumption, ExperienceModule } from "./types";
 
 export type { ArchitectureSnapshot };
 
-export function takeSnapshot(project: MappingProject, id: string, label: string, now: string): ArchitectureSnapshot {
+export interface SnapshotScope {
+  experience?: ExperienceModule | null;
+  apiCatalog?: ApiCatalog | null;
+  archDecisions?: ArchitectureDecision[];
+  assumptions?: Assumption[];
+}
+
+export function takeSnapshot(scope: SnapshotScope, id: string, label: string, now: string): ArchitectureSnapshot {
   const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
   return {
     id,
     label,
     createdAt: now,
-    experience: project.experience ? clone(project.experience) : clone(blankExp()),
-    apiCatalog: project.apiCatalog ? clone(project.apiCatalog) : null,
-    archDecisions: clone(project.archDecisions ?? []),
-    assumptions: clone(project.assumptions ?? []),
+    experience: scope.experience ? clone(scope.experience) : clone(blankExp()),
+    apiCatalog: scope.apiCatalog ? clone(scope.apiCatalog) : null,
+    archDecisions: clone(scope.archDecisions ?? []),
+    assumptions: clone(scope.assumptions ?? []),
   };
 }
 
@@ -75,8 +81,14 @@ export interface ImpactNode {
 }
 
 /** Trace an API operation change to every dependent artifact (direct links only). */
-export function operationImpact(project: MappingProject, operationId: string): ImpactNode[] {
-  const exp = project.experience;
+export function operationImpact(
+  scope: {
+    experience?: ExperienceModule | null;
+    apiCatalog?: { operations: { id: string; method: string; path: string; name: string }[]; dependencies: { id: string; operationId: string; label: string }[] } | null;
+  },
+  operationId: string
+): ImpactNode[] {
+  const exp = scope.experience;
   const out: ImpactNode[] = [];
   if (!exp) return out;
   const bindings = exp.bindings.filter((b) => b.operationId === operationId);
@@ -89,26 +101,32 @@ export function operationImpact(project: MappingProject, operationId: string): I
   for (const r of exp.requirements.filter((x) => bindings.some((b) => b.requestRequirementIds.includes(x.id) || b.responseRequirementIds.includes(x.id)))) {
     out.push({ kind: "requirement", id: r.id, label: r.name });
   }
-  for (const d of (project.apiCatalog?.dependencies ?? []).filter((x) => x.operationId === operationId)) {
+  for (const d of (scope.apiCatalog?.dependencies ?? []).filter((x) => x.operationId === operationId)) {
     out.push({ kind: "dependency", id: d.id, label: d.label });
   }
   return out;
 }
 
-/** Trace an integration artifact (mapping row / plan / field) to experience artifacts. */
-export function integrationImpact(project: MappingProject, artifactId: string): ImpactNode[] {
+/** Trace an integration artifact (mapping row / plan) to experience artifacts. */
+export function integrationImpact(
+  scope: {
+    experience?: ExperienceModule | null;
+    apiCatalog?: { operations: { id: string; method: string; path: string; name: string }[]; dependencies: { id: string; operationId: string; label: string; reference?: { artifactId?: string } }[] } | null;
+  },
+  artifactId: string,
+  artifactLabel?: string
+): ImpactNode[] {
   const out: ImpactNode[] = [];
-  const exp = project.experience;
+  const exp = scope.experience;
   if (!exp) return out;
-  const depOps = new Set((project.apiCatalog?.dependencies ?? []).filter((d) => d.reference?.artifactId === artifactId).map((d) => d.operationId));
+  const depOps = new Set((scope.apiCatalog?.dependencies ?? []).filter((d) => d.reference?.artifactId === artifactId).map((d) => d.operationId));
   for (const opId of depOps) {
-    const op = project.apiCatalog?.operations.find((o) => o.id === opId);
+    const op = scope.apiCatalog?.operations.find((o) => o.id === opId);
     out.push({ kind: "operation", id: opId, label: op ? `${op.method} ${op.path}` : opId });
-    for (const n of operationImpact(project, opId)) {
+    for (const n of operationImpact(scope, opId)) {
       if (!out.some((x) => x.kind === n.kind && x.id === n.id)) out.push(n);
     }
   }
-  const row = project.mappings.find((m) => m.id === artifactId);
-  if (row) out.push({ kind: "mapping", id: row.id, label: `${row.sourcePath} → ${row.objectName}.${row.fieldName}` });
+  out.push({ kind: "mapping", id: artifactId, label: artifactLabel ?? artifactId });
   return out;
 }

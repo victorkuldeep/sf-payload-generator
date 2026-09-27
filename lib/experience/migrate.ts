@@ -7,34 +7,31 @@
  */
 
 import { blankApiCatalog, blankExperienceModule } from "./types";
-import { MAPPING_SCHEMA_VERSION, type MappingProject } from "../mapping/types";
+import type { WorkspaceScope } from "../studio/types";
 
 function uid(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** Ensure the Experience module exists. Returns the project (mutated in place). */
-export function ensureExperience(project: MappingProject, now: string): MappingProject {
-  if (!project.experience) {
-    project.experience = blankExperienceModule(uid("exp"), now);
+/** Ensure the Experience module exists. Returns the scope (mutated in place). */
+export function ensureExperience<T extends WorkspaceScope>(scope: T, now: string): T {
+  if (!scope.experience) {
+    scope.experience = blankExperienceModule(uid("exp"), now);
   }
-  if (!project.apiCatalog) {
-    project.apiCatalog = blankApiCatalog(uid("api"), now);
+  if (!scope.apiCatalog) {
+    scope.apiCatalog = blankApiCatalog(uid("api"), now);
   }
-  if (!project.archDecisions) project.archDecisions = [];
-  if (!project.assumptions) project.assumptions = [];
-  if (!project.changeLog) project.changeLog = [];
-  if (!project.schemaVersion || project.schemaVersion < MAPPING_SCHEMA_VERSION) {
-    project.schemaVersion = MAPPING_SCHEMA_VERSION;
-    logChange(project, "project", project.id, "migration", `Migrated to schema v${MAPPING_SCHEMA_VERSION} (experience-ready).`, now, "migration");
-  }
-  project.updatedAt = now;
-  return project;
+  if (!scope.archDecisions) scope.archDecisions = [];
+  if (!scope.assumptions) scope.assumptions = [];
+  if (!scope.changeLog) scope.changeLog = [];
+  if (!scope.experienceSnapshots) scope.experienceSnapshots = [];
+  scope.updatedAt = now;
+  return scope;
 }
 
 /** Append a change-history entry. Meaningful edits only - never keystrokes. */
-export function logChange(
-  project: MappingProject,
+export function logChange<T extends { changeLog?: import("./types").ChangeLogEntry[] }>(
+  scope: T,
   entityType: string,
   entityId: string,
   changeType: string,
@@ -42,8 +39,8 @@ export function logChange(
   now: string,
   origin: "manual" | "import" | "migration" | "system" = "manual"
 ): void {
-  if (!project.changeLog) project.changeLog = [];
-  project.changeLog.push({
+  if (!scope.changeLog) scope.changeLog = [];
+  scope.changeLog.push({
     id: uid("chg"),
     timestamp: now,
     entityType,

@@ -15,24 +15,37 @@ import { ensureExperience } from "@/lib/experience/migrate";
 import { ExperienceWorkspace } from "@/components/experience/ExperienceWorkspace";
 import { ApiCatalogPanel } from "@/components/experience/ApiCatalogPanel";
 import { DecisionsPanel } from "@/components/experience/DecisionsPanel";
-import { DeliverablesPanel } from "@/components/experience/DeliverablesPanel";
 import { SnapshotsPanel } from "@/components/experience/SnapshotsPanel";
+import { WorkspaceDeliverables } from "@/components/experience/WorkspaceDeliverables";
 import { useMappingMetadata } from "./useMappingMetadata";
 import { buildSnapshot } from "@/lib/mapping/snapshot";
 import { deleteProject, duplicateProject, listProjects, loadProject, saveProject, type ProjectSummary } from "@/lib/mapping/store";
-import type { MappingProject, MappingRow, RecordPlan, RelationshipDef, SnapshotField } from "@/lib/mapping/types";
+import type { MappingProject, MappingRow, RecordPlan, RelationshipDef, SnapshotField, SnapshotObject } from "@/lib/mapping/types";
+import { attachMapping, detachMapping, upgradeToWorkspace } from "@/lib/studio/upgrade";
+import { blankStudio, type StudioProject } from "@/lib/studio/types";
+import { deleteStudio, listStudios, loadStudio, saveStudio, type StudioSummary } from "@/lib/studio/store";
 
 function uid(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 type SaveState = "saved" | "saving" | "unsaved" | "error";
-type View = "start" | "wizard" | "library";
+type View = "start" | "ws-wizard" | "library";
+type Module = "mappings" | "experience" | "apis" | "decisions" | "deliverables";
 
-/** Mapping Studio route: start screen, library, and active workspace. */
+/**
+ * Mapping Studio route.
+ *
+ * Workspace root (PROJECT umbrella, e.g. "Accenture") containing many
+ * child Integration Mappings (TMF622, TMF764, …) plus one Experience
+ * workspace. Standalone mappings keep working and can attach/upgrade.
+ */
 export function MappingRoute() {
   const [view, setView] = useState<View>("start");
-  const [project, setProject] = useState<MappingProject | null>(null);
+  const [studios, setStudios] = useState<StudioSummary[]>([]);
+  const [studio, setStudio] = useState<StudioProject | null>(null);
+  const [child, setChild] = useState<MappingProject | null>(null);
+  const [childMaps, setChildMaps] = useState<MappingProject[]>([]);
   const [library, setLibrary] = useState<ProjectSummary[]>([]);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
@@ -42,59 +55,184 @@ export function MappingRoute() {
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showReview, setShowReview] = useState(false);
-  const [module, setModule] = useState<"overview" | "experience" | "apis" | "decisions" | "deliverables">("overview");
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showChildWizard, setShowChildWizard] = useState(false);
+  const [confirmDeleteWs, setConfirmDeleteWs] = useState(false);
+  const [confirmDeleteChild, setConfirmDeleteChild] = useState(false);
+  const [module, setModule] = useState<Module>("mappings");
+  const [wsName, setWsName] = useState("");
+  const [wsCustomer, setWsCustomer] = useState("");
+  const studioTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const childTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const meta = useMappingMetadata();
 
-  const refreshLibrary = useCallback(() => {
-    void listProjects()
-      .then(setLibrary)
-      .catch(() => setLibrary([]));
+  const refreshAll = useCallback(() => {
+    void listStudios().then(setStudios).catch(() => setStudios([]));
+    void listProjects().then(setLibrary).catch(() => setLibrary([]));
   }, []);
 
   useEffect(() => {
-    refreshLibrary();
-  }, [refreshLibrary]);
+    refreshAll();
+  }, [refreshAll]);
 
-  const persist = useCallback(async (next: MappingProject, state: SaveState = "saved") => {
+  // ---- studio persistence ----
+  const persistStudio = useCallback(async (next: StudioProject) => {
     setSaveState("saving");
     try {
-      await saveProject({ ...next, updatedAt: new Date().toISOString() });
-      setSaveState(state === "saved" ? "saved" : "unsaved");
-      refreshLibrary();
+      await saveStudio({ ...next, updatedAt: new Date().toISOString() });
+      setSaveState("saved");
+      refreshAll();
     } catch {
       setSaveState("error");
     }
-  }, [refreshLibrary]);
+  }, [refreshAll]);
 
-  const mutate = useCallback(
-    (fn: (p: MappingProject) => MappingProject) => {
-      setProject((prev) => {
+  const mutateStudio = useCallback(
+    (fn: (p: StudioProject) => StudioProject) => {
+      setStudio((prev) => {
         if (!prev) return prev;
         const next = fn(prev);
-        if (saveTimer.current) clearTimeout(saveTimer.current);
+        if (studioTimer.current) clearTimeout(studioTimer.current);
         setSaveState("unsaved");
-        saveTimer.current = setTimeout(() => void persist(next), 900);
+        studioTimer.current = setTimeout(() => void persistStudio(next), 900);
         return next;
       });
     },
-    [persist]
+    [persistStudio]
   );
 
-  const openProject = async (id: string) => {
-    const p = await loadProject(id).catch(() => undefined);
-    if (!p) return;
-    setProject(p);
+  // ---- child persistence ----
+  const persistChild = useCallback(async (next: MappingProject) => {
+    setSaveState("saving");
+    try {
+      await saveProject({ ...next, updatedAt: new Date().toISOString() });
+      setSaveState("saved");
+      refreshAll();
+      setChildMaps((prev) => prev.map((c) => (c.id === next.id ? { ...next, updatedAt: new Date().toISOString() } : c)));
+    } catch {
+      setSaveState("error");
+    }
+  }, [refreshAll]);
+
+  const mutateChild = useCallback(
+    (fn: (p: MappingProject) => MappingProject) => {
+      setChild((prev) => {
+        if (!prev) return prev;
+        const next = fn(prev);
+        if (childTimer.current) clearTimeout(childTimer.current);
+        setSaveState("unsaved");
+        childTimer.current = setTimeout(() => void persistChild(next), 900);
+        return next;
+      });
+    },
+    [persistChild]
+  );
+
+  // ---- open / load ----
+  const openStudio = useCallback(async (id: string) => {
+    const w = await loadStudio(id).catch(() => undefined);
+    if (!w) return;
+    setStudio(w);
+    setChild(null);
+    setModule("mappings");
+    setSaveState("saved");
+    const maps: MappingProject[] = [];
+    for (const mid of w.mappingIds) {
+      const m = await loadProject(mid).catch(() => undefined);
+      if (m) maps.push(m);
+    }
+    setChildMaps(maps);
+  }, []);
+
+  const openChild = useCallback(async (id: string) => {
+    const m = await loadProject(id).catch(() => undefined);
+    if (!m) return;
+    setChild(m);
     setSelectedSource(null);
     setPicked(null);
+    setActivePlanId(null);
     setSaveState("saved");
+  }, []);
+
+  const createWorkspace = () => {
+    if (!wsName.trim()) return;
+    const now = new Date().toISOString();
+    const ws = blankStudio({ id: uid("ws"), name: wsName.trim(), customer: wsCustomer.trim() || undefined, now });
+    void persistStudio(ws).then(() => {
+      setStudio(ws);
+      setChildMaps([]);
+      setModule("mappings");
+    });
+    setWsName("");
+    setWsCustomer("");
+    setView("start");
   };
 
+  const upgradeStandalone = async (id: string) => {
+    const p = await loadProject(id).catch(() => undefined);
+    if (!p) return;
+    const now = new Date().toISOString();
+    const { root, child: upgraded } = upgradeToWorkspace(p, now);
+    await saveProject(upgraded).catch(() => undefined);
+    await persistStudio(root);
+    setLibrary((prev) => prev.filter((s) => s.id !== id));
+    await deleteProject(id).catch(() => undefined);
+    refreshAll();
+    void openStudio(root.id);
+  };
+
+  const attachExisting = async (id: string) => {
+    if (!studio) return;
+    const now = new Date().toISOString();
+    const next = attachMapping(studio, id, now);
+    await persistStudio(next);
+    setStudio(next);
+    const m = await loadProject(id).catch(() => undefined);
+    if (m) setChildMaps((prev) => (prev.some((c) => c.id === id) ? prev : [...prev, m]));
+  };
+
+  const deleteWorkspace = async () => {
+    if (!studio) return;
+    await deleteStudio(studio.id).catch(() => undefined);
+    setStudio(null);
+    setChild(null);
+    setChildMaps([]);
+    setConfirmDeleteWs(false);
+    refreshAll();
+  };
+
+  const deleteChildMapping = async () => {
+    if (!child) return;
+    await deleteProject(child.id).catch(() => undefined);
+    if (studio) {
+      const next = detachMapping(studio, child.id, new Date().toISOString());
+      await persistStudio(next);
+      setStudio(next);
+      setChildMaps((prev) => prev.filter((c) => c.id !== child.id));
+    } else {
+      setChildMaps([]);
+    }
+    setChild(null);
+    setConfirmDeleteChild(false);
+    refreshAll();
+  };
+
+  const deleteChildById = async (id: string) => {
+    await deleteProject(id).catch(() => undefined);
+    if (studio) {
+      const next = detachMapping(studio, id, new Date().toISOString());
+      await persistStudio(next);
+      setStudio(next);
+    }
+    setChildMaps((prev) => prev.filter((c) => c.id !== id));
+    refreshAll();
+  };
+
+  // ---- child mapping actions (integration workspace) ----
   const confirmMap = (sourcePath: string) => {
     if (!picked) return;
     const now = new Date().toISOString();
-    mutate((p) => {
+    mutateChild((p) => {
       const existing = p.mappings.find((m) => m.sourcePath === sourcePath);
       if (existing) {
         return {
@@ -120,10 +258,10 @@ export function MappingRoute() {
   };
 
   const captureSnapshot = async () => {
-    if (!project || !meta.session) return;
+    if (!child || !meta.session) return;
     setSnapshotBusy(true);
     try {
-      const names = [...new Set([...project.mappings.map((m) => m.objectName), ...project.recordPlans.map((r) => r.objectName)])];
+      const names = [...new Set([...child.mappings.map((m) => m.objectName), ...child.recordPlans.map((r) => r.objectName)])];
       if (names.length === 0) return;
       const entries = [];
       for (const name of names) {
@@ -132,141 +270,411 @@ export function MappingRoute() {
         if (describe && objMeta) entries.push({ meta: objMeta, describe });
       }
       if (entries.length === 0) return;
-      const now = new Date().toISOString();
-      const snapshot = buildSnapshot(uid("snap"), entries, undefined, now);
-      mutate((p) => ({ ...p, sfSnapshot: snapshot }));
+      const snapshot = buildSnapshot(uid("snap"), entries, undefined, new Date().toISOString());
+      mutateChild((p) => ({ ...p, sfSnapshot: snapshot }));
     } finally {
       setSnapshotBusy(false);
     }
   };
 
-  const switchModule = (m: typeof module) => {
+  const switchModule = (m: Module) => {
     setModule(m);
-    // Lazy migration: experience structures materialize on first open.
-    if (m !== "overview") {
-      mutate((p) => ensureExperience(p, new Date().toISOString()));
+    if (m !== "mappings") {
+      mutateStudio((p) => ensureExperience(p, new Date().toISOString()));
     }
   };
 
-  const mappedCount = project?.mappings.length ?? 0;
+  // ---- cross-child aggregation for root scopes ----
+  const cross = useMemo(() => {
+    const snapMap = new Map<string, SnapshotObject>();
+    for (const c of childMaps) {
+      for (const o of c.sfSnapshot?.objects ?? []) {
+        if (!snapMap.has(o.name)) snapMap.set(o.name, o);
+      }
+    }
+    return {
+      snapshots: [...snapMap.values()],
+      mappings: childMaps.flatMap((c) =>
+        c.mappings.map((m) => ({ id: m.id, sourcePath: m.sourcePath, objectName: m.objectName, fieldName: m.fieldName }))
+      ),
+      plans: childMaps.flatMap((c) => c.recordPlans.map((r) => ({ id: r.id, name: `${c.name} / ${r.name}`, objectName: r.objectName }))),
+    };
+  }, [childMaps]);
 
-  const objectsUsed = useMemo(
-    () => [...new Set([...(project?.mappings.map((m) => m.objectName) ?? []), ...(project?.recordPlans.map((r) => r.objectName) ?? [])])],
-    [project]
+  const payloadChoices = useMemo(
+    () => childMaps.map((c) => ({ id: c.id, label: `${c.name}${c.sourceApi ? ` · ${c.sourceApi}` : ""}` })),
+    [childMaps]
   );
 
-  const activePlan = project?.recordPlans.find((p) => p.id === activePlanId) ?? null;
+  const artifactChoices = useMemo(
+    () => [
+      ...cross.mappings.map((m) => ({ id: m.id, label: `map: ${m.sourcePath} → ${m.objectName}.${m.fieldName || "?"}` })),
+      ...cross.plans.map((r) => ({ id: r.id, label: `plan: ${r.name}` })),
+    ],
+    [cross]
+  );
+
+  const childObjectsUsed = useMemo(
+    () => (child ? [...new Set([...child.mappings.map((m) => m.objectName), ...child.recordPlans.map((r) => r.objectName)])] : []),
+    [child]
+  );
+
+  const activePlan = child?.recordPlans.find((p) => p.id === activePlanId) ?? null;
   const planMismatch =
     activePlan && picked && picked.objectName !== activePlan.objectName
       ? `Field is on ${picked.objectName}, but the active plan (${activePlan.name}) targets ${activePlan.objectName}. Switch plans or pick a ${activePlan.objectName} field.`
       : null;
 
-  if (!project) {
+  const saveBadge = (
+    <span
+      role="status"
+      className={`rounded-md border px-2 py-0.5 font-mono text-[10px] font-semibold ${
+        saveState === "saved"
+          ? "border-[#BFD9C6] bg-[#E9F3EC] text-[#2F7D4F]"
+          : saveState === "error"
+            ? "border-[#E5B8B2] bg-[#F9E8E6] text-[#B3261E]"
+            : "border-[#DCC99A] bg-[#F5EEDF] text-[#8A6A2F]"
+      }`}
+    >
+      {saveState === "saved" ? "Saved locally" : saveState === "saving" ? "Saving…" : saveState === "error" ? "Save failed — Retry" : "Unsaved changes"}
+    </span>
+  );
+
+  // ================= start screen =================
+  if (!studio) {
     return (
       <div className="space-y-4">
         <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-4 text-center">
-          <h2 className="text-[15px] font-semibold text-[#27241F]">Integration Mapping Studio</h2>
+          <h2 className="text-[15px] font-semibold text-[#27241F]">Mapping Studio</h2>
           <p className="mx-auto mt-1 max-w-xl text-xs text-[#777168]">
-            Map an external JSON payload to Salesforce objects and fields in a live workshop. Projects stay in your browser - export a portable file to share.
+            A project umbrella (e.g. Accenture) holding many integration mappings plus UI screen-to-payload mapping. Everything stays in your browser.
           </p>
           {view === "start" && (
             <div className="mt-4 flex flex-wrap justify-center gap-2">
-              <Button onClick={() => setView("wizard")}>New Mapping Project</Button>
+              <Button onClick={() => setView("ws-wizard")}>New Project</Button>
               <Button variant="ghost" onClick={() => setView("library")}>
-                Open Local Project ({library.length})
+                Standalone mappings ({library.length})
               </Button>
               <Button variant="ghost" onClick={() => setShowImport(true)}>
-                Import Project Configuration
+                Import mapping JSON
               </Button>
             </div>
           )}
         </div>
-        {showImport && (
-          <ImportDialog
-            onClose={() => setShowImport(false)}
-            onImported={(p) => {
-              setShowImport(false);
-              setProject(p);
-              setSaveState("saved");
-              refreshLibrary();
-            }}
-          />
+
+        {view === "start" && studios.length > 0 && (
+          <div className="rounded-xl border border-[#E8E2D8] bg-white p-4">
+            <p className="mb-2 text-[13px] font-semibold text-[#27241F]">Projects · {studios.length}</p>
+            <ul className="space-y-2">
+              {studios.map((s) => (
+                <li key={s.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-[#F0EBE0] px-3 py-2">
+                  <button type="button" onClick={() => void openStudio(s.id)} className="min-w-0 flex-1 cursor-pointer text-left">
+                    <span className="block truncate text-[13px] font-semibold text-[#27241F] hover:underline">
+                      {s.name}{s.customer ? ` · ${s.customer}` : ""}
+                    </span>
+                    <span className="block font-mono text-[10px] text-[#A39B8E]">
+                      {s.status} · {s.mappingCount} mappings · {s.screenCount} screens · {s.operationCount} APIs · {s.openDecisions} open decisions
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
 
-        {view === "wizard" && (
-          <ProjectWizard onCreate={(p) => { setProject(p); void persist(p); }} onCancel={() => setView("start")} />
+        {view === "ws-wizard" && (
+          <div className="mx-auto max-w-xl rounded-xl border border-[#E8E2D8] bg-white p-5">
+            <p className="mb-3 text-[14px] font-semibold text-[#27241F]">New project (umbrella)</p>
+            <label className="block text-[12px] font-semibold text-[#27241F]">
+              Project name
+              <input value={wsName} onChange={(e) => setWsName(e.target.value)} placeholder="Accenture" className="mt-1 w-full rounded-lg border border-[#E8E2D8] px-2.5 py-1.5 text-[13px] font-normal focus:border-[#A98450] focus:outline-none" />
+            </label>
+            <label className="mt-3 block text-[12px] font-semibold text-[#27241F]">
+              Customer (optional)
+              <input value={wsCustomer} onChange={(e) => setWsCustomer(e.target.value)} placeholder="Customer program" className="mt-1 w-full rounded-lg border border-[#E8E2D8] px-2.5 py-1.5 text-[13px] font-normal focus:border-[#A98450] focus:outline-none" />
+            </label>
+            <div className="mt-4 flex justify-between">
+              <Button variant="ghost" onClick={() => setView("start")}>
+                Cancel
+              </Button>
+              <Button disabled={!wsName.trim()} onClick={createWorkspace}>
+                Create project
+              </Button>
+            </div>
+          </div>
         )}
 
         {view === "library" && (
           <LibraryList
             library={library}
-            onOpen={(id) => void openProject(id)}
+            onOpen={(id) => void openChildStandalone(id)}
             onBack={() => setView("start")}
-            onChanged={refreshLibrary}
+            onChanged={refreshAll}
+            onUpgrade={(id) => void upgradeStandalone(id)}
+          />
+        )}
+
+        {showImport && (
+          <ImportDialog
+            onClose={() => setShowImport(false)}
+            onImported={() => {
+              setShowImport(false);
+              refreshAll();
+              setView("library");
+            }}
           />
         )}
       </div>
     );
   }
 
+  async function openChildStandalone(id: string) {
+    // Standalone mappings open directly in the integration workspace.
+    const m = await loadProject(id).catch(() => undefined);
+    if (!m) return;
+    setChild(m);
+    setChildMaps([m]);
+    setSaveState("saved");
+  }
+
+  // ================= child integration workspace =================
+  if (child) {
+    const inWorkspace = studio?.mappingIds.includes(child.id) ?? false;
+    return (
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
+          <div className="min-w-0">
+            <p className="font-mono text-[10px] text-[#A39B8E]">
+              {inWorkspace ? studio.name : "standalone"} / integration mapping
+            </p>
+            <p className="truncate text-[14px] font-semibold text-[#27241F]">{child.name}</p>
+            <p className="font-mono text-[10px] text-[#A39B8E]">
+              {child.sourceApi ?? "no source API"} → {child.targetSystem} · {child.status} · v{child.versions.length} · {child.mappings.length} mappings
+              {child.sfSnapshot ? ` · snapshot ${child.sfSnapshot.fingerprint}` : " · no metadata snapshot"}
+            </p>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            {saveBadge}
+            {saveState === "error" && (
+              <Button size="sm" variant="ghost" onClick={() => void persistChild(child)}>
+                Retry
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" onClick={() => void persistChild(child)}>
+              Save
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowReview((v) => !v)} aria-pressed={showReview}>
+              Review
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowExport(true)}>
+              Export
+            </Button>
+            {confirmDeleteChild ? (
+              <span className="flex items-center gap-1.5 text-[11px]">
+                <span className="font-semibold text-[#B3261E]">Delete mapping?</span>
+                <Button size="sm" variant="ghost" onClick={() => void deleteChildMapping()}>
+                  Yes
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteChild(false)}>
+                  No
+                </Button>
+              </span>
+            ) : (
+              <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteChild(true)}>
+                Delete
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" onClick={() => { setChild(null); setConfirmDeleteChild(false); }}>
+              {inWorkspace ? "← Mappings" : "← Close"}
+            </Button>
+          </div>
+        </div>
+        {showExport && <ExportDialog project={child} onClose={() => setShowExport(false)} />}
+
+        <div id="mapping-workspace" className="grid items-start gap-3 xl:grid-cols-[23%_52%_25%] lg:grid-cols-[280px_minmax(0,1fr)]">
+          <div className="rounded-xl border border-[#E8E2D8] bg-white p-3">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">
+              Source · {child.source?.paths.length ?? 0} paths
+            </p>
+            {child.source ? (
+              <SourceExplorer paths={child.source.paths} mappings={child.mappings} selected={selectedSource} onSelect={setSelectedSource} />
+            ) : (
+              <p className="text-[12px] text-[#A39B8E]">No source loaded.</p>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-[#E8E2D8] bg-white p-3">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">Mapping table</p>
+            <div className="mb-3">
+              <RecordPlans
+                project={child}
+                activePlanId={activePlanId}
+                onActivePlan={setActivePlanId}
+                onAddPlan={(plan: RecordPlan) => {
+                  mutateChild((p) => ({ ...p, recordPlans: [...p.recordPlans, plan] }));
+                  setActivePlanId(plan.id);
+                }}
+                onRemovePlan={(id) =>
+                  mutateChild((p) => ({
+                    ...p,
+                    recordPlans: p.recordPlans.filter((r) => r.id !== id),
+                    relationships: p.relationships.filter((r) => r.childPlanId !== id && r.parentPlanId !== id),
+                    mappings: p.mappings.map((m) => (m.planId === id ? { ...m, planId: null } : m)),
+                  }))
+                }
+                onAddRelationship={(rel: RelationshipDef) =>
+                  mutateChild((p) => ({
+                    ...p,
+                    relationships: p.relationships.some((r) => r.id === rel.id)
+                      ? p.relationships.map((r) => (r.id === rel.id ? rel : r))
+                      : [...p.relationships, rel],
+                  }))
+                }
+                onRemoveRelationship={(id) => mutateChild((p) => ({ ...p, relationships: p.relationships.filter((r) => r.id !== id) }))}
+                onToggleConfirm={(id) =>
+                  mutateChild((p) => ({ ...p, relationships: p.relationships.map((r) => (r.id === id ? { ...r, confirmed: !r.confirmed } : r)) }))
+                }
+              />
+            </div>
+            <MappingTable
+              project={child}
+              selectedSource={selectedSource}
+              onSelectSource={setSelectedSource}
+              pendingTarget={picked}
+              planMismatch={planMismatch}
+              onConfirmMap={confirmMap}
+              onUpdateRow={(id, patch) => mutateChild((p) => ({ ...p, mappings: p.mappings.map((m) => (m.id === id ? { ...m, ...patch, updatedAt: new Date().toISOString() } : m)) }))}
+              onRemoveRow={(id) => mutateChild((p) => ({ ...p, mappings: p.mappings.filter((m) => m.id !== id) }))}
+            />
+          </div>
+
+          <div className="space-y-3 lg:col-span-2 xl:col-span-1">
+            <div className="rounded-xl border border-[#E8E2D8] bg-white p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">Salesforce</p>
+                <Button size="sm" variant="ghost" disabled={!meta.connected || snapshotBusy || childObjectsUsed.length === 0} onClick={() => void captureSnapshot()} title={childObjectsUsed.length === 0 ? "Map a field first" : "Freeze current metadata for mapped objects"}>
+                  {snapshotBusy ? "Capturing…" : "Capture snapshot"}
+                </Button>
+              </div>
+              <SfExplorer
+                connected={meta.connected}
+                loading={meta.loading}
+                objects={meta.objects}
+                describes={meta.describes}
+                snapshotObjects={child.sfSnapshot?.objects ?? []}
+                onEnsureDescribe={(n) => void meta.loadDescribe(n)}
+                onPickField={(objectName, field) => setPicked({ objectName, field })}
+                activeObject={picked?.objectName ?? null}
+                activeField={picked?.field.name ?? null}
+              />
+            </div>
+            <div className="rounded-xl border border-[#E8E2D8] bg-white p-3">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">Inspector</p>
+              <FieldInspector objectName={picked?.objectName ?? null} field={picked?.field ?? null} />
+            </div>
+          </div>
+        </div>
+
+        <DriftReview
+          project={child}
+          connected={meta.connected}
+          objects={meta.objects}
+          loadDescribe={meta.loadDescribe}
+          onApplySnapshot={(snapshot, affected) =>
+            mutateChild((p) => {
+              const now = new Date().toISOString();
+              return {
+                ...p,
+                sfSnapshot: snapshot,
+                versions: [
+                  ...p.versions,
+                  {
+                    id: uid("ver"),
+                    label: `pre-refresh ${now}`,
+                    createdAt: now,
+                    summary: `Snapshot applied after drift check (${affected.length} findings). Previous snapshot ${p.sfSnapshot?.fingerprint ?? "none"}.`,
+                    mappings: p.mappings,
+                    decisions: p.decisions,
+                    recordPlans: p.recordPlans,
+                    relationships: p.relationships,
+                    fingerprint: p.sfSnapshot?.fingerprint ?? "",
+                  },
+                ],
+              };
+            })
+          }
+        />
+
+        {showReview && (
+          <ReviewPanel
+            project={child}
+            onMutate={mutateChild}
+            onFocus={(path) => {
+              setSelectedSource(path);
+              if (path) {
+                document.getElementById("mapping-workspace")?.scrollIntoView({ behavior: "smooth", block: "start" });
+              }
+            }}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // ================= workspace root =================
   return (
     <div className="space-y-3">
-      {/* Project header */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
         <div className="min-w-0">
-          <p className="truncate text-[14px] font-semibold text-[#27241F]">{project.name}</p>
+          <p className="font-mono text-[10px] text-[#A39B8E]">project{studio.customer ? ` · ${studio.customer}` : ""}</p>
+          <p className="truncate text-[14px] font-semibold text-[#27241F]">{studio.name}</p>
           <p className="font-mono text-[10px] text-[#A39B8E]">
-            {project.sourceApi ?? "no source API"} → {project.targetSystem} · {project.status} · v{project.versions.length} · {mappedCount} mappings
-            {project.sfSnapshot ? ` · snapshot ${project.sfSnapshot.fingerprint}` : " · no metadata snapshot"}
+            {studio.status} · {studio.mappingIds.length} mappings · {studio.experience?.screens.length ?? 0} screens · {studio.apiCatalog?.operations.length ?? 0} APIs
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <span
-            role="status"
-            className={`rounded-md border px-2 py-0.5 font-mono text-[10px] font-semibold ${
-              saveState === "saved"
-                ? "border-[#BFD9C6] bg-[#E9F3EC] text-[#2F7D4F]"
-                : saveState === "error"
-                  ? "border-[#E5B8B2] bg-[#F9E8E6] text-[#B3261E]"
-                  : "border-[#DCC99A] bg-[#F5EEDF] text-[#8A6A2F]"
-            }`}
-          >
-            {saveState === "saved" ? "Saved locally" : saveState === "saving" ? "Saving…" : saveState === "error" ? "Save failed — Retry" : "Unsaved changes"}
-          </span>
+          {saveBadge}
           {saveState === "error" && (
-            <Button size="sm" variant="ghost" onClick={() => void persist(project)}>
+            <Button size="sm" variant="ghost" onClick={() => void persistStudio(studio)}>
               Retry
             </Button>
           )}
-          <Button size="sm" variant="ghost" onClick={() => void persist(project)}>
+          <Button size="sm" variant="ghost" onClick={() => void persistStudio(studio)}>
             Save
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => setShowReview((v) => !v)} aria-pressed={showReview}>
-            Review
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setShowExport(true)}>
-            Export
-          </Button>
+          {confirmDeleteWs ? (
+            <span className="flex items-center gap-1.5 text-[11px]">
+              <span className="font-semibold text-[#B3261E]">Delete project? Mappings are kept.</span>
+              <Button size="sm" variant="ghost" onClick={() => void deleteWorkspace()}>
+                Yes
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteWs(false)}>
+                No
+              </Button>
+            </span>
+          ) : (
+            <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteWs(true)}>
+              Delete
+            </Button>
+          )}
           <Button
             size="sm"
             variant="ghost"
             onClick={() => {
-              setProject(null);
-              setView("library");
-              refreshLibrary();
+              setStudio(null);
+              setChildMaps([]);
+              refreshAll();
             }}
           >
             Close
           </Button>
         </div>
       </div>
-      {showExport && <ExportDialog project={project} onClose={() => setShowExport(false)} />}
 
-      {/* Module navigation - one project, five workspaces */}
       <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Project modules">
         {(
           [
-            ["overview", "Overview"],
+            ["mappings", `Mappings · ${studio.mappingIds.length}`],
             ["experience", "Experience"],
             ["apis", "API Catalog"],
             ["decisions", "Decisions"],
@@ -285,160 +693,53 @@ export function MappingRoute() {
             }`}
           >
             {label}
-            {id === "experience" && project.experience && project.experience.screens.length > 0 && (
-              <span className="ml-1.5 font-mono text-[10px] opacity-70">{project.experience.screens.length}</span>
+            {id === "experience" && studio.experience && studio.experience.screens.length > 0 && (
+              <span className="ml-1.5 font-mono text-[10px] opacity-70">{studio.experience.screens.length}</span>
             )}
           </button>
         ))}
       </div>
 
-      {module === "overview" && (
-      <>
-      {/* Three-region workspace */}
-      <div id="mapping-workspace" className="grid items-start gap-3 xl:grid-cols-[23%_52%_25%] lg:grid-cols-[280px_minmax(0,1fr)]">
-        <div className="rounded-xl border border-[#E8E2D8] bg-white p-3">
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">
-            Source · {project.source?.paths.length ?? 0} paths
-          </p>
-          {project.source ? (
-            <SourceExplorer paths={project.source.paths} mappings={project.mappings} selected={selectedSource} onSelect={setSelectedSource} />
-          ) : (
-            <p className="text-[12px] text-[#A39B8E]">No source loaded.</p>
-          )}
-        </div>
-
-        <div className="rounded-xl border border-[#E8E2D8] bg-white p-3">
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">Mapping table</p>
-          <div className="mb-3">
-            <RecordPlans
-              project={project}
-              activePlanId={activePlanId}
-              onActivePlan={setActivePlanId}
-              onAddPlan={(plan: RecordPlan) => {
-                mutate((p) => ({ ...p, recordPlans: [...p.recordPlans, plan] }));
-                setActivePlanId(plan.id);
-              }}
-              onRemovePlan={(id) =>
-                mutate((p) => ({
-                  ...p,
-                  recordPlans: p.recordPlans.filter((r) => r.id !== id),
-                  relationships: p.relationships.filter((r) => r.childPlanId !== id && r.parentPlanId !== id),
-                  mappings: p.mappings.map((m) => (m.planId === id ? { ...m, planId: null } : m)),
-                }))
-              }
-              onAddRelationship={(rel: RelationshipDef) =>
-                mutate((p) => ({
-                  ...p,
-                  relationships: p.relationships.some((r) => r.id === rel.id)
-                    ? p.relationships.map((r) => (r.id === rel.id ? rel : r))
-                    : [...p.relationships, rel],
-                }))
-              }
-              onRemoveRelationship={(id) => mutate((p) => ({ ...p, relationships: p.relationships.filter((r) => r.id !== id) }))}
-              onToggleConfirm={(id) =>
-                mutate((p) => ({ ...p, relationships: p.relationships.map((r) => (r.id === id ? { ...r, confirmed: !r.confirmed } : r)) }))
-              }
-            />
-          </div>
-          <MappingTable
-            project={project}
-            selectedSource={selectedSource}
-            onSelectSource={setSelectedSource}
-            pendingTarget={picked}
-            planMismatch={planMismatch}
-            onConfirmMap={confirmMap}
-            onUpdateRow={(id, patch) => mutate((p) => ({ ...p, mappings: p.mappings.map((m) => (m.id === id ? { ...m, ...patch, updatedAt: new Date().toISOString() } : m)) }))}
-            onRemoveRow={(id) => mutate((p) => ({ ...p, mappings: p.mappings.filter((m) => m.id !== id) }))}
-          />
-        </div>
-
-        <div className="space-y-3 lg:col-span-2 xl:col-span-1">
-          <div className="rounded-xl border border-[#E8E2D8] bg-white p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">Salesforce</p>
-              <Button size="sm" variant="ghost" disabled={!meta.connected || snapshotBusy || objectsUsed.length === 0} onClick={() => void captureSnapshot()} title={objectsUsed.length === 0 ? "Map a field first" : "Freeze current metadata for mapped objects"}>
-                {snapshotBusy ? "Capturing…" : "Capture snapshot"}
-              </Button>
-            </div>
-            <SfExplorer
-              connected={meta.connected}
-              loading={meta.loading}
-              objects={meta.objects}
-              describes={meta.describes}
-              snapshotObjects={project.sfSnapshot?.objects ?? []}
-              onEnsureDescribe={(n) => void meta.loadDescribe(n)}
-              onPickField={(objectName, field) => setPicked({ objectName, field })}
-              activeObject={picked?.objectName ?? null}
-              activeField={picked?.field.name ?? null}
-            />
-          </div>
-          <div className="rounded-xl border border-[#E8E2D8] bg-white p-3">
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">Inspector</p>
-            <FieldInspector objectName={picked?.objectName ?? null} field={picked?.field ?? null} />
-          </div>
-        </div>
-      </div>
-
-      {/* Drift + review + handoff */}
-      <DriftReview
-        project={project}
-        connected={meta.connected}
-        objects={meta.objects}
-        loadDescribe={meta.loadDescribe}
-        onApplySnapshot={(snapshot, affected) =>
-          mutate((p) => {
-            const now = new Date().toISOString();
-            return {
-              ...p,
-              sfSnapshot: snapshot,
-              versions: [
-                ...p.versions,
-                {
-                  id: uid("ver"),
-                  label: `pre-refresh ${now}`,
-                  createdAt: now,
-                  summary: `Snapshot applied after drift check (${affected.length} findings). Previous snapshot ${p.sfSnapshot?.fingerprint ?? "none"}.`,
-                  mappings: p.mappings,
-                  decisions: p.decisions,
-                  recordPlans: p.recordPlans,
-                  relationships: p.relationships,
-                  fingerprint: p.sfSnapshot?.fingerprint ?? "",
-                },
-              ],
-            };
-          })
-        }
-      />
-
-      {showReview && (
-        <ReviewPanel
-          project={project}
-          onMutate={mutate}
-          onFocus={(path) => {
-            setSelectedSource(path);
-            if (path) {
-              document.getElementById("mapping-workspace")?.scrollIntoView({ behavior: "smooth", block: "start" });
-            }
+      {module === "mappings" && (
+        <MappingsTab
+          studio={studio}
+          items={childMaps}
+          library={library}
+          onOpen={(id) => void openChild(id)}
+          onNew={() => setShowChildWizard(true)}
+          onAttach={(id) => void attachExisting(id)}
+          onDetach={(id) => {
+            const next = detachMapping(studio, id, new Date().toISOString());
+            void persistStudio(next).then(() => {
+              setStudio(next);
+              setChildMaps((prev) => prev.filter((c) => c.id !== id));
+            });
           }}
+          onDelete={(id) => void deleteChildById(id)}
         />
       )}
-      </>
+
+      {module === "experience" && studio.experience && (
+        <ExperienceWorkspace
+          project={studio}
+          payloadChoices={payloadChoices}
+          onMutate={mutateStudio}
+          onOpenApis={() => switchModule("apis")}
+          onOpenMapping={(id) => void openChild(id)}
+        />
       )}
 
-      {module === "experience" && project.experience && (
-        <ExperienceWorkspace project={project} onMutate={mutate} onOpenApis={() => switchModule("apis")} />
-      )}
-
-      {module === "apis" && project.apiCatalog && (
-        <ApiCatalogPanel project={project} onMutate={mutate} onOpenIntegration={() => switchModule("overview")} />
+      {module === "apis" && studio.apiCatalog && (
+        <ApiCatalogPanel project={studio} cross={cross} onMutate={mutateStudio} onOpenIntegration={() => switchModule("mappings")} />
       )}
 
       {module === "decisions" && (
         <div className="space-y-3">
-          <DecisionsPanel project={project} onMutate={mutate} />
+          <DecisionsPanel project={studio} onMutate={mutateStudio} />
           <SnapshotsPanel
-            project={project}
-            onMutate={mutate}
+            project={studio}
+            artifactChoices={artifactChoices}
+            onMutate={mutateStudio}
             onOpenScreen={() => switchModule("experience")}
             onOpenApis={() => switchModule("apis")}
           />
@@ -446,15 +747,141 @@ export function MappingRoute() {
       )}
 
       {module === "deliverables" && (
-        <DeliverablesPanel
-          project={project}
-          onImported={(p) => {
-            setProject(p);
-            setSaveState("saved");
-            refreshLibrary();
+        <WorkspaceDeliverables
+          root={studio}
+          childMaps={childMaps}
+          cross={cross}
+          onImported={(root, mappings) => {
+            setStudio(root);
+            setChildMaps(mappings);
+            setModule("mappings");
+            refreshAll();
           }}
         />
       )}
+
+      {showChildWizard && (
+        <ProjectWizard
+          onCreate={(p) => {
+            void (async () => {
+              await saveProject(p).catch(() => undefined);
+              if (studio) {
+                const next = attachMapping(studio, p.id, new Date().toISOString());
+                await persistStudio(next);
+                setStudio(next);
+              }
+              setChildMaps((prev) => [...prev, p]);
+              setShowChildWizard(false);
+              refreshAll();
+            })();
+          }}
+          onCancel={() => setShowChildWizard(false)}
+        />
+      )}
+    </div>
+  );
+
+  function setChildWizardForStudio() {
+    setShowChildWizard(true);
+  }
+}
+
+function MappingsTab({
+  studio,
+  items,
+  library,
+  onOpen,
+  onNew,
+  onAttach,
+  onDetach,
+  onDelete,
+}: {
+  studio: StudioProject;
+  items: MappingProject[];
+  library: ProjectSummary[];
+  onOpen: (id: string) => void;
+  onNew: () => void;
+  onAttach: (id: string) => void;
+  onDetach: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [attaching, setAttaching] = useState(false);
+  const attachable = library.filter((s) => !studio.mappingIds.includes(s.id));
+  const [confirmChildDelete, setConfirmChildDelete] = useState<string | null>(null);
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-xl border border-[#E8E2D8] bg-white p-4">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">
+            Integration mappings · {items.length}
+          </p>
+          <span className="flex gap-1.5">
+            <Button size="sm" variant="ghost" onClick={() => setAttaching((v) => !v)}>
+              {attaching ? "Cancel" : "Attach existing"}
+            </Button>
+            <Button size="sm" onClick={onNew}>
+              New mapping
+            </Button>
+          </span>
+        </div>
+        {attaching && (
+          <div className="mb-2 rounded-lg border border-[#F0EBE0] bg-[#FAF8F2] p-2.5">
+            {attachable.length === 0 ? (
+              <p className="text-[12px] text-[#A39B8E]">No standalone mappings to attach.</p>
+            ) : (
+              <ul className="space-y-1">
+                {attachable.map((s) => (
+                  <li key={s.id} className="flex items-center gap-2 text-[12px]">
+                    <span className="flex-1 truncate font-semibold text-[#27241F]">{s.name}</span>
+                    <Button size="sm" variant="ghost" onClick={() => { onAttach(s.id); setAttaching(false); }}>
+                      Attach
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+        {items.length === 0 && !attaching && (
+          <p className="py-4 text-center text-[13px] text-[#A39B8E]">
+            No mappings yet - create one per payload (TMF622, TMF764, …), each with its own source JSON and Salesforce field maps.
+          </p>
+        )}
+        <ul className="space-y-2">
+          {items.map((c) => (
+            <li key={c.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-[#F0EBE0] px-3 py-2">
+              <button type="button" onClick={() => onOpen(c.id)} className="min-w-0 flex-1 cursor-pointer text-left">
+                <span className="block truncate text-[13px] font-semibold text-[#27241F] hover:underline">{c.name}</span>
+                <span className="block font-mono text-[10px] text-[#A39B8E]">
+                  {c.sourceApi ?? "no source API"} · {c.mappings.length} mappings · {c.recordPlans.length} plans
+                  {c.sfSnapshot ? ` · snapshot ${c.sfSnapshot.fingerprint}` : " · no snapshot"}
+                </span>
+              </button>
+              {confirmChildDelete === c.id ? (
+                <span className="flex items-center gap-1.5 text-[11px]">
+                  <span className="font-semibold text-[#B3261E]">Delete mapping + its rows?</span>
+                  <Button size="sm" variant="ghost" onClick={() => { onDelete(c.id); setConfirmChildDelete(null); }}>
+                    Delete
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setConfirmChildDelete(null)}>
+                    Keep
+                  </Button>
+                </span>
+              ) : (
+                <>
+                  <Button size="sm" variant="ghost" onClick={() => onDetach(c.id)} title="Detach from project (mapping record kept)">
+                    Detach
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setConfirmChildDelete(c.id)}>
+                    Delete
+                  </Button>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }
@@ -464,11 +891,13 @@ function LibraryList({
   onOpen,
   onBack,
   onChanged,
+  onUpgrade,
 }: {
   library: ProjectSummary[];
   onOpen: (id: string) => void;
   onBack: () => void;
   onChanged: () => void;
+  onUpgrade?: (id: string) => void;
 }) {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -484,12 +913,12 @@ function LibraryList({
   return (
     <div className="rounded-xl border border-[#E8E2D8] bg-white p-4">
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-[13px] font-semibold text-[#27241F]">Local projects · {library.length}</p>
+        <p className="text-[13px] font-semibold text-[#27241F]">Standalone mappings · {library.length}</p>
         <Button size="sm" variant="ghost" onClick={onBack}>
           ← Start
         </Button>
       </div>
-      {library.length === 0 && <p className="py-6 text-center text-[13px] text-[#A39B8E]">No saved projects yet.</p>}
+      {library.length === 0 && <p className="py-6 text-center text-[13px] text-[#A39B8E]">No saved mappings yet.</p>}
       <ul className="space-y-2">
         {library.map((s) => (
           <li key={s.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-[#F0EBE0] px-3 py-2">
@@ -521,6 +950,11 @@ function LibraryList({
               </span>
             ) : (
               <>
+                {onUpgrade && (
+                  <Button size="sm" variant="ghost" onClick={() => onUpgrade(s.id)} title="Wrap in a new project umbrella">
+                    Upgrade to project
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="ghost"

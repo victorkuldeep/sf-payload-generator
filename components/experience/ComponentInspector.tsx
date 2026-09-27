@@ -4,7 +4,7 @@ import { useState } from "react";
 import Button from "../ui/Button";
 import { BindingEditor } from "./BindingEditor";
 import { logChange } from "@/lib/experience/migrate";
-import type { MappingProject } from "@/lib/mapping/types";
+import type { StudioProject } from "@/lib/studio/types";
 import type {
   ActionTrigger,
   ComponentType,
@@ -37,10 +37,10 @@ export function ComponentInspector({
   annotationLabel,
   onMutate,
 }: {
-  project: MappingProject;
+  project: StudioProject;
   component: UIComponent;
   annotationLabel?: string;
-  onMutate: (fn: (p: MappingProject) => MappingProject) => void;
+  onMutate: (fn: (p: StudioProject) => StudioProject) => void;
 }) {
   const [tab, setTab] = useState<Tab>("overview");
   const exp = project.experience!;
@@ -155,10 +155,10 @@ function RequirementEditor({
   requirements,
   onMutate,
 }: {
-  project: MappingProject;
+  project: StudioProject;
   component: UIComponent;
   requirements: UIDataRequirement[];
-  onMutate: (fn: (p: MappingProject) => MappingProject) => void;
+  onMutate: (fn: (p: StudioProject) => StudioProject) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -258,10 +258,10 @@ function ActionEditor({
   actions,
   onMutate,
 }: {
-  project: MappingProject;
+  project: StudioProject;
   component: UIComponent;
   actions: UIAction[];
-  onMutate: (fn: (p: MappingProject) => MappingProject) => void;
+  onMutate: (fn: (p: StudioProject) => StudioProject) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -333,10 +333,10 @@ function StateEditor({
   states,
   onMutate,
 }: {
-  project: MappingProject;
+  project: StudioProject;
   component: UIComponent;
   states: UIStateDefinition[];
-  onMutate: (fn: (p: MappingProject) => MappingProject) => void;
+  onMutate: (fn: (p: StudioProject) => StudioProject) => void;
 }) {
   const [kind, setKind] = useState<UIStateKind>("loading");
   const [behavior, setBehavior] = useState("");

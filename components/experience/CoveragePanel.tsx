@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { analyzeCoverage } from "@/lib/experience/coverage";
-import type { MappingProject } from "@/lib/mapping/types";
+import type { StudioProject } from "@/lib/studio/types";
 
 const SEV_STYLE: Record<string, string> = {
   blocking: "border-[#E5B8B2] bg-[#F9E8E6] text-[#B3261E]",
@@ -16,7 +16,7 @@ export function CoveragePanel({
   onOpenScreen,
   onOpenApis,
 }: {
-  project: MappingProject;
+  project: StudioProject;
   onOpenScreen: (screenId: string) => void;
   onOpenApis: () => void;
 }) {

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Button from "../ui/Button";
 import { logChange } from "@/lib/experience/migrate";
 import { compareSnapshots, integrationImpact, operationImpact, takeSnapshot } from "@/lib/experience/snapshots";
-import type { MappingProject } from "@/lib/mapping/types";
+import type { StudioProject } from "@/lib/studio/types";
 
 function uid(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -16,12 +16,15 @@ const inputCls =
 /** Named snapshots, A/B compare, and change-impact tracing. */
 export function SnapshotsPanel({
   project,
+  artifactChoices,
   onMutate,
   onOpenScreen,
   onOpenApis,
 }: {
-  project: MappingProject;
-  onMutate: (fn: (p: MappingProject) => MappingProject) => void;
+  project: StudioProject;
+  /** Mapping rows + plans across child mappings (labels included). */
+  artifactChoices: { id: string; label: string }[];
+  onMutate: (fn: (p: StudioProject) => StudioProject) => void;
   onOpenScreen: (screenId: string) => void;
   onOpenApis: () => void;
 }) {
@@ -50,7 +53,9 @@ export function SnapshotsPanel({
   }, [snaps, compareA, compareB]);
 
   const opImpact = impactOp ? operationImpact(project, impactOp) : [];
-  const artifactImpact = impactArtifact ? integrationImpact(project, impactArtifact) : [];
+  const artifactImpact = impactArtifact
+    ? integrationImpact(project, impactArtifact, artifactChoices.find((c) => c.id === impactArtifact)?.label)
+    : [];
 
   const goNode = (kind: string, id: string) => {
     if (kind === "screen") onOpenScreen(id);
@@ -147,11 +152,8 @@ export function SnapshotsPanel({
           Integration artifact change affects…
           <select value={impactArtifact} onChange={(e) => { setImpactArtifact(e.target.value); setImpactOp(""); }} aria-label="Artifact for impact" className={`${inputCls} mt-1 cursor-pointer font-mono`}>
             <option value="">choose mapping or plan…</option>
-            {project.mappings.map((m) => (
-              <option key={m.id} value={m.id}>map: {m.sourcePath} → {m.objectName}.{m.fieldName}</option>
-            ))}
-            {project.recordPlans.map((r) => (
-              <option key={r.id} value={r.id}>plan: {r.name} → {r.objectName}</option>
+            {artifactChoices.map((c) => (
+              <option key={c.id} value={c.id}>{c.label}</option>
             ))}
           </select>
         </label>

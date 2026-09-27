@@ -7,7 +7,23 @@
 import { AlignmentType, Document, HeadingLevel, ImageRun, Packer, Paragraph, Table, TableCell, TableRow, TextRun } from "docx";
 import * as XLSX from "xlsx";
 import { analyzeCoverage } from "./coverage";
-import type { MappingProject } from "../mapping/types";
+import type { WorkspaceScope } from "../studio/types";
+
+/** Document scope: satisfied by a workspace root or a standalone mapping. */
+export interface DocScope extends WorkspaceScope {
+  name: string;
+  status: string;
+  description?: string;
+  sourceSystem?: string;
+  sourceApi?: string;
+  targetSystem?: string;
+}
+
+/** Cross-child integration data for workspace-level documents. */
+export interface DocCross {
+  mappings: { id: string; sourcePath: string; objectName: string; fieldName: string }[];
+  plans: { id: string; name: string; sourcePath?: string; objectName: string }[];
+}
 
 const LIMIT =
   "Design-time architecture record - agreed correspondence and constraints, not proof of runtime behavior. Salesforce validation rules, flows, triggers, permissions and data state may impose additional requirements.";
@@ -34,25 +50,25 @@ function matrixTable(header: string[], rows: string[][]): Table {
 }
 
 export async function buildWordPack(
-  project: MappingProject,
+  scope: DocScope,
   loadBlob: (storageKey: string) => Promise<Blob | null>
 ): Promise<Blob> {
-  const exp = project.experience;
-  const ops = new Map((project.apiCatalog?.operations ?? []).map((o) => [o.id, o]));
+  const exp = scope.experience;
+  const ops = new Map((scope.apiCatalog?.operations ?? []).map((o) => [o.id, o]));
   const children: (Paragraph | Table)[] = [];
   const h = (text: string, level: (typeof HeadingLevel)[keyof typeof HeadingLevel] = HeadingLevel.HEADING_1) =>
     children.push(new Paragraph({ text, heading: level }));
   const p = (text: string) => children.push(new Paragraph({ children: [new TextRun({ text, size: 20 })] }));
 
   // Cover + overview.
-  children.push(new Paragraph({ text: project.name, heading: HeadingLevel.TITLE }));
+  children.push(new Paragraph({ text: scope.name, heading: HeadingLevel.TITLE }));
   p(`Architecture pack · exported ${new Date().toISOString().slice(0, 10)} · sObject Studio Experience Mapping`);
   h("Project overview", HeadingLevel.HEADING_1);
   children.push(kvTable([
-    ["Description", project.description ?? "—"],
-    ["Source", `${project.sourceSystem ?? "—"} / ${project.sourceApi ?? "—"}`],
-    ["Target", project.targetSystem],
-    ["Status", project.status],
+    ["Description", scope.description ?? "—"],
+    ["Source", `${scope.sourceSystem ?? "—"} / ${scope.sourceApi ?? "—"}`],
+    ["Target", scope.targetSystem ?? "—"],
+    ["Status", scope.status],
   ]));
   h("Scope and limitations", HeadingLevel.HEADING_1);
   p(LIMIT);
@@ -141,7 +157,7 @@ export async function buildWordPack(
 
   // API catalog + matrix.
   h("API catalog", HeadingLevel.HEADING_1);
-  const allOps = project.apiCatalog?.operations ?? [];
+  const allOps = scope.apiCatalog?.operations ?? [];
   children.push(
     matrixTable(
       ["Operation", "Method", "Path", "Layer", "Owner", "Lifecycle", "Status"],
@@ -160,7 +176,7 @@ export async function buildWordPack(
 
   // Dependencies + integration refs.
   h("Backend ownership", HeadingLevel.HEADING_1);
-  const deps = project.apiCatalog?.dependencies ?? [];
+  const deps = scope.apiCatalog?.dependencies ?? [];
   if (deps.length === 0) p("No backend dependencies recorded.");
   else {
     children.push(
@@ -179,16 +195,16 @@ export async function buildWordPack(
 
   // Decisions + questions + coverage + history.
   h("Open questions", HeadingLevel.HEADING_1);
-  const open = (project.assumptions ?? []).filter((a) => a.status === "open");
+  const open = (scope.assumptions ?? []).filter((a) => a.status === "open");
   p(open.length === 0 ? "None open." : open.map((a) => `• ${a.question}${a.owner ? ` (owner: ${a.owner})` : ""}`).join("\n"));
   h("Architecture decisions", HeadingLevel.HEADING_1);
-  const decs = project.archDecisions ?? [];
+  const decs = scope.archDecisions ?? [];
   if (decs.length === 0) p("None recorded.");
   else {
     children.push(matrixTable(["Decision", "Status", "Outcome"], decs.map((d) => [d.title, d.status, d.decision ?? "—"])));
   }
   h("Coverage and gaps", HeadingLevel.HEADING_1);
-  const { counts, findings } = analyzeCoverage(project);
+  const { counts, findings } = analyzeCoverage(scope);
   children.push(kvTable([
     ["Screens", `${counts.screensWithImages}/${counts.screens} with images`],
     ["Components bound", `${counts.componentsWithBindings}/${counts.components}`],
@@ -200,7 +216,7 @@ export async function buildWordPack(
     p(`[${f.severity}] ${f.message} → ${f.action}`);
   }
   h("Change history", HeadingLevel.HEADING_1);
-  for (const c of (project.changeLog ?? []).slice(-60)) {
+  for (const c of (scope.changeLog ?? []).slice(-60)) {
     p(`${c.timestamp.slice(0, 16).replace("T", " ")} · ${c.entityType}/${c.changeType} · ${c.summary}`);
   }
 
@@ -228,11 +244,11 @@ function styleSheet(ws: XLSX.WorkSheet): void {
   if (ws["!ref"]) ws["!autofilter"] = { ref: ws["!ref"] };
 }
 
-export function buildExperienceWorkbook(project: MappingProject): XLSX.WorkBook {
+export function buildExperienceWorkbook(scope: DocScope, cross?: DocCross): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();
-  const exp = project.experience;
-  const ops = new Map((project.apiCatalog?.operations ?? []).map((o) => [o.id, o]));
-  const { counts } = analyzeCoverage(project);
+  const exp = scope.experience;
+  const ops = new Map((scope.apiCatalog?.operations ?? []).map((o) => [o.id, o]));
+  const { counts } = analyzeCoverage(scope);
 
   const add = (name: string, rows: unknown[][]) => {
     const ws = XLSX.utils.aoa_to_sheet(rows.length > 0 ? rows : [["(empty)"]]);
@@ -241,9 +257,9 @@ export function buildExperienceWorkbook(project: MappingProject): XLSX.WorkBook 
   };
 
   add("Summary", [
-    ["Project", project.name],
-    ["Source", `${project.sourceSystem ?? ""} / ${project.sourceApi ?? ""}`],
-    ["Status", project.status],
+    ["Project", scope.name],
+    ["Source", `${scope.sourceSystem ?? ""} / ${scope.sourceApi ?? ""}`],
+    ["Status", scope.status],
     ["Exported", new Date().toISOString()],
     ["Screens", counts.screens],
     ["Components", counts.components],
@@ -276,7 +292,7 @@ export function buildExperienceWorkbook(project: MappingProject): XLSX.WorkBook 
   ]);
   add("API Catalog", [
     ["Id", "Name", "Method", "Path", "Layer", "Owner", "Lifecycle", "Request contract", "Response contract", "Status"],
-    ...(project.apiCatalog?.operations ?? []).map((o) => [o.id, o.name, o.method, o.path, o.layer, o.owner ?? "", o.lifecycle, o.requestContractId ?? "", o.responseContractId ?? "", o.status]),
+    ...(scope.apiCatalog?.operations ?? []).map((o) => [o.id, o.name, o.method, o.path, o.layer, o.owner ?? "", o.lifecycle, o.requestContractId ?? "", o.responseContractId ?? "", o.status]),
   ]);
   add("Data Requirements", [
     ["Id", "Screen", "Component", "Label", "Path", "Direction", "Required", "Status"],
@@ -284,41 +300,41 @@ export function buildExperienceWorkbook(project: MappingProject): XLSX.WorkBook 
   ]);
   add("Backend Dependencies", [
     ["Operation", "Label", "Kind", "Reference", "Status", "Notes"],
-    ...(project.apiCatalog?.dependencies ?? []).map((d) => [ops.get(d.operationId)?.name ?? d.operationId, d.label, d.kind, [d.reference?.objectApiName, d.reference?.fieldApiName].filter(Boolean).join(".") || d.reference?.artifactId || "", d.status, d.notes ?? ""]),
+    ...(scope.apiCatalog?.dependencies ?? []).map((d) => [ops.get(d.operationId)?.name ?? d.operationId, d.label, d.kind, [d.reference?.objectApiName, d.reference?.fieldApiName].filter(Boolean).join(".") || d.reference?.artifactId || "", d.status, d.notes ?? ""]),
   ]);
   add("Integration References", [
     ["Operation", "Label", "Source path", "Target", "Kind"],
-    ...(project.apiCatalog?.dependencies ?? [])
+    ...(scope.apiCatalog?.dependencies ?? [])
       .filter((d) => d.kind === "integration-mapping")
       .map((d) => {
-        const row = project.mappings.find((m) => m.id === d.reference?.artifactId);
-        const plan = project.recordPlans.find((r) => r.id === d.reference?.artifactId);
+        const row = cross?.mappings.find((m) => m.id === d.reference?.artifactId);
+        const plan = cross?.plans.find((r) => r.id === d.reference?.artifactId);
         return [ops.get(d.operationId)?.name ?? d.operationId, d.label, row?.sourcePath ?? plan?.sourcePath ?? "", row ? `${row.objectName}.${row.fieldName}` : (plan ? plan.objectName : ""), row ? "field-mapping" : "record-plan"];
       }),
   ]);
   add("Decisions", [
     ["Title", "Status", "Outcome", "Decided"],
-    ...(project.archDecisions ?? []).map((d) => [d.title, d.status, d.decision ?? "", d.decidedAt ?? ""]),
+    ...(scope.archDecisions ?? []).map((d) => [d.title, d.status, d.decision ?? "", d.decidedAt ?? ""]),
   ]);
   add("Assumptions", [
     ["Question", "Owner", "Status", "Resolution"],
-    ...(project.assumptions ?? []).map((a) => [a.question, a.owner ?? "", a.status, a.resolution ?? ""]),
+    ...(scope.assumptions ?? []).map((a) => [a.question, a.owner ?? "", a.status, a.resolution ?? ""]),
   ]);
-  const { findings } = analyzeCoverage(project);
+  const { findings } = analyzeCoverage(scope);
   add("Coverage Findings", [
     ["Severity", "Type", "Message", "Action"],
     ...findings.map((f) => [f.severity, f.type, f.message, f.action]),
   ]);
   add("Change Log", [
     ["Timestamp", "Entity", "Change", "Summary", "Origin"],
-    ...(project.changeLog ?? []).map((c) => [c.timestamp, `${c.entityType}:${c.entityId}`, c.changeType, c.summary, c.origin]),
+    ...(scope.changeLog ?? []).map((c) => [c.timestamp, `${c.entityType}:${c.entityId}`, c.changeType, c.summary, c.origin]),
   ]);
   return wb;
 }
 
-export function downloadExperienceWorkbook(project: MappingProject): void {
-  const safe = project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
-  XLSX.writeFile(buildExperienceWorkbook(project), `${safe}-experience.xlsx`);
+export function downloadExperienceWorkbook(scope: DocScope, cross?: DocCross): void {
+  const safe = scope.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
+  XLSX.writeFile(buildExperienceWorkbook(scope, cross), `${safe}-experience.xlsx`);
 }
 
 // ---------- CSV / TSV ----------
@@ -332,17 +348,17 @@ function toCsv(header: string[], rows: string[][]): string {
   return [header, ...rows].map((r) => r.map(csvEscape).join(",")).join("\n");
 }
 
-export function apiCatalogCsv(project: MappingProject): string {
-  const ops = project.apiCatalog?.operations ?? [];
+export function apiCatalogCsv(scope: DocScope): string {
+  const ops = scope.apiCatalog?.operations ?? [];
   return toCsv(
     ["Id", "Name", "Method", "Path", "Layer", "Owner", "Lifecycle", "Status"],
     ops.map((o) => [o.id, o.name, o.method, o.path, o.layer, o.owner ?? "", o.lifecycle, o.status])
   );
 }
 
-export function screenApiMatrixCsv(project: MappingProject): string {
-  const exp = project.experience;
-  const ops = new Map((project.apiCatalog?.operations ?? []).map((o) => [o.id, o]));
+export function screenApiMatrixCsv(scope: DocScope): string {
+  const exp = scope.experience;
+  const ops = new Map((scope.apiCatalog?.operations ?? []).map((o) => [o.id, o]));
   return toCsv(
     ["Screen", "Component", "Action", "Method", "Path", "Layer", "Owner", "Contract", "Status"],
     (exp?.bindings ?? []).map((b) => {
@@ -359,9 +375,9 @@ export function screenApiMatrixCsv(project: MappingProject): string {
   );
 }
 
-export function screenApiMatrixTsv(project: MappingProject): { text: string; count: number } {
-  const exp = project.experience;
-  const ops = new Map((project.apiCatalog?.operations ?? []).map((o) => [o.id, o]));
+export function screenApiMatrixTsv(scope: DocScope): { text: string; count: number } {
+  const exp = scope.experience;
+  const ops = new Map((scope.apiCatalog?.operations ?? []).map((o) => [o.id, o]));
   const header = ["Screen", "Component", "Action", "Method", "Path", "Layer", "Owner", "Contract", "Status"];
   const flat = (v: string) => v.replace(/\t/g, " ").replace(/\r?\n/g, " ");
   const lines = [header.join("\t")];

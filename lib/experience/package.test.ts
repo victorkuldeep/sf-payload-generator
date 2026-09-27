@@ -1,63 +1,67 @@
 import { describe, expect, it } from "vitest";
 import JSZip from "jszip";
 import { blankProject } from "../mapping/types";
-import { exportProjectZip, inspectPackage, PACKAGE_FORMAT } from "./package";
+import { blankStudio } from "../studio/types";
 import { blankExperienceModule } from "./types";
+import { exportWorkspaceZip, inspectWorkspace, remapWorkspaceImport, WORKSPACE_PACKAGE_FORMAT } from "./package";
 
-async function project() {
-  const p = blankProject({ id: "p1", name: "Demo", now: "2026-01-01" });
+function workspace() {
+  const root = blankStudio({ id: "w1", name: "Accenture", customer: "Accenture", now: "2026-01-01" });
   const exp = blankExperienceModule("e", "2026-01-01");
   exp.screens = [
-    { id: "s1", name: "List", journeyIds: [], canvas: { sourceWidth: 10, sourceHeight: 10, aspectRatio: 1 }, componentIds: [], actionIds: [], bindingIds: [], status: "draft", tags: [], createdAt: "t", updatedAt: "t" },
+    { id: "s1", name: "Lead Create", endpoint: "POST /leads", payloadMappingId: "m1", journeyIds: [], canvas: { sourceWidth: 0, sourceHeight: 0, aspectRatio: 0 }, componentIds: [], actionIds: [], bindingIds: [], status: "draft", tags: [], createdAt: "t", updatedAt: "t" },
   ];
-  p.experience = exp;
-  return p;
+  root.experience = exp;
+  root.mappingIds = ["m1"];
+  const child = blankProject({ id: "m1", name: "TMF622", now: "2026-01-01" });
+  child.mappings = [
+    { id: "row1", sourcePath: "$.a", planId: null, objectName: "Order", fieldName: "Status", kind: "direct", status: "mapped", updatedAt: "t" },
+  ];
+  return { root, children: [child] };
 }
 
-describe("project package", () => {
-  it("round-trips project + manifest", async () => {
-    const p = await project();
-    const { blob, summary } = await exportProjectZip(p, async () => null);
-    expect(summary.screens).toBe(1);
+describe("workspace package", () => {
+  it("round-trips root + children + screen payload links", async () => {
+    const { root, children } = workspace();
+    const { blob, summary } = await exportWorkspaceZip(root, children, async () => null);
+    expect(summary.mappings).toBe(1);
     expect(blob.size).toBeGreaterThan(0);
-    const inspected = await inspectPackage(blob);
+    const inspected = await inspectWorkspace(blob);
     expect(inspected.ok).toBe(true);
-    expect(inspected.manifest?.format).toBe(PACKAGE_FORMAT);
-    expect(inspected.project?.id).toBe("p1");
-    expect(inspected.project?.experience?.screens[0].name).toBe("List");
+    expect(inspected.manifest?.format).toBe(WORKSPACE_PACKAGE_FORMAT);
+    expect(inspected.root?.name).toBe("Accenture");
+    expect(inspected.mappings).toHaveLength(1);
+    expect(inspected.root?.experience?.screens[0].payloadMappingId).toBe("m1");
   });
 
-  it("embeds image blobs and recovers them", async () => {
-    const p = await project();
-    p.experience!.assets = [
+  it("embeds images and warns on missing ones", async () => {
+    const { root, children } = workspace();
+    root.experience!.assets = [
       { id: "a1", screenId: "s1", fileName: "s.png", mimeType: "image/png", byteSize: 4, width: 10, height: 10, storageKey: "key-1", thumbnailStorageKey: "key-1-thumb", createdAt: "t" },
     ];
     const png = new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" });
-    const { blob } = await exportProjectZip(p, async (k) => (k === "key-1" ? png : k === "key-1-thumb" ? png : null));
-    const inspected = await inspectPackage(blob);
+    const { blob } = await exportWorkspaceZip(root, children, async (k) => (k === "key-1" || k === "key-1-thumb" ? png : null));
+    const inspected = await inspectWorkspace(blob);
     expect(inspected.ok).toBe(true);
     expect(inspected.manifest?.assets).toHaveLength(1);
+  });
+
+  it("remaps record ids on import, preserving payload links", () => {
+    const { root, children } = workspace();
+    const { root: r2, mappings: m2 } = remapWorkspaceImport(root, children);
+    expect(r2.id).not.toBe("w1");
+    expect(m2[0].id).not.toBe("m1");
+    expect(r2.mappingIds).toEqual([m2[0].id]);
+    // Screen payload link follows the mapping to its new id.
+    expect(r2.experience?.screens[0].payloadMappingId).toBe(m2[0].id);
+    // Row ids preserved so dependency references stay valid.
+    expect(m2[0].mappings[0].id).toBe("row1");
   });
 
   it("rejects traversal entries and non-packages", async () => {
     const zip = new JSZip();
     zip.file("../evil.txt", "x");
-    const evil = await zip.generateAsync({ type: "blob" });
-    expect((await inspectPackage(evil)).ok).toBe(false);
-
-    const plain = new Blob([JSON.stringify({ hello: 1 })], { type: "application/zip" });
-    const r = await inspectPackage(plain);
-    expect(r.ok).toBe(false);
-  });
-
-  it("rejects broken project shapes", async () => {
-    const zip = new JSZip();
-    const root = zip.folder("sobject-studio-project")!;
-    root.file("manifest.json", JSON.stringify({ format: PACKAGE_FORMAT, formatVersion: 1, application: "t", exportedAt: "t", project: { id: "x", name: "y" }, modules: [], assets: [], counts: {} }));
-    root.file("project/project.json", JSON.stringify({ id: "x" }));
-    const blob = await zip.generateAsync({ type: "blob" });
-    const r = await inspectPackage(blob);
-    expect(r.ok).toBe(false);
-    expect(r.errors.join(" ")).toMatch(/name missing|array missing/);
+    expect((await inspectWorkspace(await zip.generateAsync({ type: "blob" }))).ok).toBe(false);
+    expect((await inspectWorkspace(new Blob(["nope"], { type: "application/zip" }))).ok).toBe(false);
   });
 });

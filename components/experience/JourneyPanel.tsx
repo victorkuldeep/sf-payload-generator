@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Button from "../ui/Button";
 import { logChange } from "@/lib/experience/migrate";
-import type { MappingProject } from "@/lib/mapping/types";
+import type { StudioProject } from "@/lib/studio/types";
 import type { UserJourney } from "@/lib/experience/types";
 
 function uid(prefix: string): string {
@@ -19,8 +19,8 @@ export function JourneyPanel({
   onMutate,
   onOpenScreen,
 }: {
-  project: MappingProject;
-  onMutate: (fn: (p: MappingProject) => MappingProject) => void;
+  project: StudioProject;
+  onMutate: (fn: (p: StudioProject) => StudioProject) => void;
   onOpenScreen: (screenId: string) => void;
 }) {
   const exp = project.experience!;
@@ -28,7 +28,7 @@ export function JourneyPanel({
   const [name, setName] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
 
-  const mutateExp = (fn: (e: NonNullable<MappingProject["experience"]>) => NonNullable<MappingProject["experience"]>, summary: string, entityId: string) => {
+  const mutateExp = (fn: (e: NonNullable<StudioProject["experience"]>) => NonNullable<StudioProject["experience"]>, summary: string, entityId: string) => {
     onMutate((p) => {
       if (!p.experience) return p;
       const now = new Date().toISOString();
@@ -128,9 +128,9 @@ function JourneySteps({
   onMutate,
   onOpenScreen,
 }: {
-  project: MappingProject;
+  project: StudioProject;
   journey: UserJourney;
-  onMutate: (fn: (p: MappingProject) => MappingProject) => void;
+  onMutate: (fn: (p: StudioProject) => StudioProject) => void;
   onOpenScreen: (screenId: string) => void;
 }) {
   const exp = project.experience!;

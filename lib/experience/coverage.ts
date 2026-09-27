@@ -5,7 +5,8 @@
 
 import { checkDependencies } from "./bridge";
 import { validateBindings } from "./apiCatalog";
-import type { MappingProject } from "../mapping/types";
+import type { WorkspaceScope } from "../studio/types";
+import type { ExperienceModule } from "./types";
 
 export type FindingSeverity = "info" | "warning" | "blocking";
 
@@ -34,7 +35,7 @@ export interface CoverageCounts {
   openQuestions: number;
 }
 
-export function analyzeCoverage(project: MappingProject): { counts: CoverageCounts; findings: CoverageFinding[] } {
+export function analyzeCoverage(project: WorkspaceScope): { counts: CoverageCounts; findings: CoverageFinding[] } {
   const exp = project.experience;
   const ops = project.apiCatalog?.operations ?? [];
   const bindings = exp?.bindings ?? [];
@@ -100,6 +101,6 @@ export function analyzeCoverage(project: MappingProject): { counts: CoverageCoun
   return { counts, findings };
 }
 
-function blankExp(): NonNullable<MappingProject["experience"]> {
+function blankExp(): ExperienceModule {
   return { id: "x", version: 1, screens: [], assets: [], components: [], annotations: [], actions: [], journeys: [], transitions: [], bindings: [], requirements: [], states: [], createdAt: "", updatedAt: "" };
 }

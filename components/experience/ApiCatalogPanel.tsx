@@ -3,9 +3,10 @@
 import { useMemo, useState } from "react";
 import Button from "../ui/Button";
 import { logChange } from "@/lib/experience/migrate";
+import { checkDependencies, type CrossScope } from "@/lib/experience/bridge";
 import { DependencyPanel } from "./DependencyPanel";
 import { findDuplicateOperations, normalizeOperationKey, operationUsage, orphanOperations } from "@/lib/experience/apiCatalog";
-import type { MappingProject } from "@/lib/mapping/types";
+import type { StudioProject } from "@/lib/studio/types";
 import type { ApiCatalog, ApiLayer, ApiLifecycle, APIOperation, HttpMethod } from "@/lib/experience/types";
 
 function uid(prefix: string): string {
@@ -21,11 +22,14 @@ const LAYERS: ApiLayer[] = ["frontend", "bff", "salesforce", "middleware", "exte
 /** Project-level shared API catalog: operations, filters, usage, orphans. */
 export function ApiCatalogPanel({
   project,
+  cross,
   onMutate,
   onOpenIntegration,
 }: {
-  project: MappingProject;
-  onMutate: (fn: (p: MappingProject) => MappingProject) => void;
+  project: StudioProject;
+  /** Aggregated child snapshots / mappings / plans for cross-child refs. */
+  cross: CrossScope;
+  onMutate: (fn: (p: StudioProject) => StudioProject) => void;
   onOpenIntegration: () => void;
 }) {
   const catalog: ApiCatalog = project.apiCatalog!;
@@ -157,10 +161,18 @@ export function ApiCatalogPanel({
       </div>
       {detailId && catalog.operations.some((o) => o.id === detailId) && (
         <DependencyPanel
-          project={project}
+          projectId={project.id}
+          snapshotObjects={cross.snapshots ?? []}
+          integrationChoices={[
+            ...(cross.plans ?? []).map((r) => ({ id: r.id, label: `plan: ${r.name ?? r.id}${r.objectName ? ` → ${r.objectName}` : ""}` })),
+            ...(cross.mappings ?? []).map((m) => ({ id: m.id, label: `map: ${m.sourcePath} → ${m.objectName}.${m.fieldName || "?"}` })),
+          ]}
+          dependencies={catalog.dependencies}
+          operations={catalog.operations}
           operation={catalog.operations.find((o) => o.id === detailId)!}
           onMutate={onMutate}
           onOpenIntegration={onOpenIntegration}
+          brokenFor={new Map(checkDependencies({ apiCatalog: catalog }, cross).map((p) => [p.dependencyId, p.message]))}
         />
       )}
 
