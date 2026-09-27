@@ -15,6 +15,8 @@ import {
 } from "@/lib/experience/assets";
 import { logChange } from "@/lib/experience/migrate";
 import { AddScreenDialog, EditScreenDialog, ReplaceImage } from "./ScreenDialogs";
+import { ScreenCanvas } from "./ScreenCanvas";
+import type { Rect } from "@/lib/experience/geometry";
 import { deleteScreenCascade, reorderScreens, screenImpact } from "@/lib/experience/screens";
 import type { MappingProject } from "@/lib/mapping/types";
 import type { Screen, ScreenAsset } from "@/lib/experience/types";
@@ -275,6 +277,7 @@ function ScreenDetail({
   const asset = exp.assets.find((a) => a.screenId === screen.id);
   const [imgUrl, setImgUrl] = useState<string | null>(null);
   const [replacing, setReplacing] = useState(false);
+  const [selectedAnn, setSelectedAnn] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -298,6 +301,41 @@ function ScreenDetail({
   }, [asset?.storageKey]);
 
   const comps = exp.components.filter((c) => c.screenId === screen.id);
+  const anns = exp.annotations.filter((a) => a.screenId === screen.id).sort((a, b) => a.zIndex - b.zIndex);
+
+  const mutateAnn = (fn: (list: typeof anns) => typeof anns, summary: string, entityId: string) => {
+    onMutate((p) => {
+      if (!p.experience) return p;
+      const ids = new Set(anns.map((a) => a.id));
+      const kept = p.experience.annotations.filter((a) => !ids.has(a.id));
+      const next = touch({ ...p, experience: { ...p.experience, annotations: [...kept, ...fn(anns)] } });
+      logChange(next, "annotation", entityId, "updated", summary, new Date().toISOString());
+      return next;
+    });
+  };
+
+  const createAnn = (rect: Rect) => {
+    const id = uid("ann");
+    const label = `Region ${anns.length + 1}`;
+    onMutate((p) => {
+      if (!p.experience) return p;
+      const maxZ = p.experience.annotations.reduce((m, a) => Math.max(m, a.zIndex), -1);
+      const now = new Date().toISOString();
+      const next = touch({
+        ...p,
+        experience: {
+          ...p.experience,
+          annotations: [
+            ...p.experience.annotations,
+            { id, screenId: screen.id, label, geometry: { ...rect, coordinateSpace: "source-pixels" as const }, zIndex: maxZ + 1, createdAt: now, updatedAt: now },
+          ],
+        },
+      });
+      logChange(next, "annotation", id, "created", `Region "${label}" drawn on ${screen.name}.`, now);
+      return next;
+    });
+    setSelectedAnn(id);
+  };
 
   return (
     <div>
@@ -306,12 +344,38 @@ function ScreenDetail({
         {screen.route ?? "no route"} · {screen.status}
         {asset ? ` · ${asset.width}×${asset.height} · ${(asset.byteSize / 1024).toFixed(0)} KB` : " · no image"}
       </p>
-      {imgUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={imgUrl} alt={`Screenshot of ${screen.name}`} className="mt-3 max-h-[420px] w-auto rounded-xl border border-[#E8E2D8]" />
+      {imgUrl && asset ? (
+        <div className="mt-3">
+          <ScreenCanvas
+            imageUrl={imgUrl}
+            imageAlt={`Screenshot of ${screen.name}`}
+            sourceW={asset.width}
+            sourceH={asset.height}
+            annotations={anns}
+            selectedId={selectedAnn}
+            onSelect={setSelectedAnn}
+            onCreate={createAnn}
+            onMove={(id, rect) =>
+              mutateAnn((list) => list.map((a) => (a.id === id ? { ...a, geometry: { ...rect, coordinateSpace: "source-pixels" as const }, updatedAt: new Date().toISOString() } : a)), `Region moved/resized on ${screen.name}.`, id)
+            }
+            onDelete={(id) => {
+              onMutate((p) => {
+                if (!p.experience) return p;
+                const target = p.experience.annotations.find((a) => a.id === id);
+                const next = touch({ ...p, experience: { ...p.experience, annotations: p.experience.annotations.filter((a) => a.id !== id) } });
+                logChange(next, "annotation", id, "deleted", `Region "${target?.label ?? id}" deleted (components preserved).`, new Date().toISOString());
+                return next;
+              });
+              if (selectedAnn === id) setSelectedAnn(null);
+            }}
+            onLabel={(id, label) =>
+              mutateAnn((list) => list.map((a) => (a.id === id ? { ...a, label, updatedAt: new Date().toISOString() } : a)), `Region renamed to "${label}".`, id)
+            }
+          />
+        </div>
       ) : (
         <p className="mt-3 rounded-xl border border-dashed border-[#E8E2D8] p-8 text-center text-[12px] text-[#A39B8E]">
-          No screenshot yet. The annotation canvas arrives in Sprint 3.
+          No screenshot yet. Add an image to annotate regions.
         </p>
       )}
       <div className="mt-3">
