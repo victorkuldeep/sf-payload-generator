@@ -11,7 +11,6 @@ export function JsonEditorPane() {
   const [error, setError] = useState<string | null>(null);
   const [doc, setDoc] = useState<object | null>(null);
   const [loadId, setLoadId] = useState(0);
-  const [findSignal, setFindSignal] = useState(0);
   const [live, setLive] = useState<unknown>(null);
   const [copied, setCopied] = useState(false);
 
@@ -93,11 +92,10 @@ export function JsonEditorPane() {
         ) : (
           <>
             <div className="mb-2 flex gap-1.5">
-              <Button variant="ghost" size="sm" onClick={() => setFindSignal((n) => n + 1)} title="Find in JSON (Ctrl/⌘ F)">Find ⌘F</Button>
               <Button variant="ghost" size="sm" onClick={copy}>{copied ? "Copied" : "Copy formatted"}</Button>
               <Button variant="ghost" size="sm" onClick={download}>Download</Button>
             </div>
-            <VanillaEditor key={loadId} value={doc} onChange={setLive} findSignal={findSignal} />
+            <VanillaEditor key={loadId} value={doc} onChange={setLive} />
           </>
         )}
       </div>
