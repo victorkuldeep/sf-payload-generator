@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { parseJsonInput, formatJson, formatBytes } from "@/lib/json/studio";
 import { buildDocument } from "@/lib/json/document";
 import { VanillaEditor } from "./VanillaEditor";
@@ -23,6 +23,36 @@ export function JsonEditorPane() {
   const laserHostRef = useRef<HTMLDivElement>(null);
   const graphHostRef = useRef<HTMLDivElement>(null);
   useLaser(laser, setLaser);
+
+  // One-shot handoff from the Validate workspace (payload + finding path).
+  // Additive: no-ops when no handoff is pending.
+  useEffect(() => {
+    try {
+      const rawHandoff = sessionStorage.getItem("sf_json_handoff");
+      if (!rawHandoff) return;
+      sessionStorage.removeItem("sf_json_handoff");
+      const handoff = JSON.parse(rawHandoff) as { text?: string; path?: (string | number)[] | null };
+      if (typeof handoff.text !== "string" || !handoff.text.trim()) return;
+      const r = parseJsonInput(handoff.text);
+      if (!r.ok) {
+        setRaw(handoff.text);
+        setError(r.error);
+        return;
+      }
+      setError(null);
+      setRaw(handoff.text);
+      setDoc(r.value as object);
+      setLive(r.value);
+      setLoadId((n) => n + 1);
+      setSourceOpen(false);
+      if (Array.isArray(handoff.path)) {
+        setReveal({ path: handoff.path, nonce: Date.now() });
+      }
+    } catch {
+      /* handoff unavailable - start empty */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const load = () => {
     const r = parseJsonInput(raw);
