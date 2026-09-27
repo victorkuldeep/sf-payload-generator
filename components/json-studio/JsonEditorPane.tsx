@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { parseJsonInput, formatJson, formatBytes } from "@/lib/json/studio";
 import { VanillaEditor } from "./VanillaEditor";
+import { LaserButton, LaserOverlay, useLaser } from "./LaserOverlay";
 import Button from "../ui/Button";
 
 /** Single-pane JSON editor: paste, validate, tree/text edit, copy/download. */
@@ -14,6 +15,9 @@ export function JsonEditorPane() {
   const [live, setLive] = useState<unknown>(null);
   const [copied, setCopied] = useState(false);
   const [sourceOpen, setSourceOpen] = useState(true);
+  const [laser, setLaser] = useState(false);
+  const laserHostRef = useRef<HTMLDivElement>(null);
+  useLaser(laser, setLaser);
 
   const load = () => {
     const r = parseJsonInput(raw);
@@ -147,8 +151,12 @@ export function JsonEditorPane() {
             <div className="mb-2 flex gap-1.5">
               <Button variant="ghost" size="sm" onClick={copy}>{copied ? "Copied" : "Copy formatted"}</Button>
               <Button variant="ghost" size="sm" onClick={download}>Download</Button>
+              <LaserButton active={laser} onToggle={() => setLaser((v) => !v)} />
             </div>
-            <VanillaEditor key={loadId} value={doc} onChange={setLive} />
+            <div ref={laserHostRef} className="relative">
+              <VanillaEditor key={loadId} value={doc} onChange={setLive} />
+              <LaserOverlay active={laser} hostRef={laserHostRef} />
+            </div>
           </>
         )}
       </div>

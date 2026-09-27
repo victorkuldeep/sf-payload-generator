@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { parseJsonInput, formatBytes, samplePair, COMPARE_KEY_PRESETS } from "@/lib/json/studio";
+import { LaserButton, LaserOverlay, useLaser } from "./LaserOverlay";
 import Button from "../ui/Button";
 
 const VirtualizedDiffViewer = dynamic(
@@ -29,6 +30,9 @@ export function JsonCompare() {
   const [strategy, setStrategy] = useState<"strict" | "loose" | "type-aware">("strict");
   const [ignorePaths, setIgnorePaths] = useState("");
   const [current, setCurrent] = useState(0);
+  const [laser, setLaser] = useState(false);
+  const laserHostRef = useRef<HTMLDivElement>(null);
+  useLaser(laser, setLaser);
   const [aOpen, setAOpen] = useState(true);
   const [bOpen, setBOpen] = useState(true);
   const viewerRef = useRef<ViewerRef | null>(null);
@@ -202,6 +206,7 @@ export function JsonCompare() {
             <Button variant="ghost" size="sm" onClick={() => step(1)}>Next →</Button>
             <Button variant="ghost" size="sm" onClick={() => viewerRef.current?.expandAll()}>Expand all</Button>
             <Button variant="ghost" size="sm" onClick={() => viewerRef.current?.collapseAll()}>Collapse all</Button>
+            <LaserButton active={laser} onToggle={() => setLaser((v) => !v)} />
           </>
         )}
       </div>
@@ -218,7 +223,7 @@ export function JsonCompare() {
           <p className="font-mono text-[11px] text-[#A39B8E]">
             {sizes}{blocks !== null ? ` · ${blocks} changed lines` : ""}{current > 0 ? ` · at change ${current}` : ""}
           </p>
-          <div className="overflow-hidden rounded-xl border border-[#E8E2D8]">
+          <div ref={laserHostRef} className="relative overflow-hidden rounded-xl border border-[#E8E2D8]">
             <VirtualizedDiffViewer
               ref={viewerRef as never}
               oldValue={pair.a}
@@ -240,6 +245,7 @@ export function JsonCompare() {
               }}
               getDiffData={(d: [unknown[], unknown[]]) => setBlocks(d[0].length + d[1].length)}
             />
+            <LaserOverlay active={laser} hostRef={laserHostRef} />
           </div>
         </>
       )}
