@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectJunction, buildEdges } from "./graph";
+import { detectJunction, buildEdges, buildGraphElements, rootNeighbors } from "./graph";
 import type { SalesforceDescribeResult } from "@/lib/salesforce/types";
 
 const desc = (
@@ -138,5 +138,43 @@ describe("buildEdges", () => {
     const edges = buildEdges(map);
     const matches = edges.filter((e) => e.target === "Contact" && e.source === "Account");
     expect(matches.length).toBe(1);
+  });
+});
+
+describe("buildGraphElements", () => {
+  const labels = new Map<string, string>();
+  const notCustom = () => false;
+
+  it("drops bubbles for removed (undescribed) neighbors - no ghost links", () => {
+    const root = desc(
+      "DandBCompany",
+      [],
+      [
+        { childSObject: "Kept", field: "F", cascadeDelete: false, relationshipName: "Kepts" },
+        { childSObject: "Removed", field: "F", cascadeDelete: false, relationshipName: "Removeds" },
+      ]
+    );
+    const neighbors = rootNeighbors(root, labels, notCustom);
+    expect(neighbors.map((n) => n.apiName).sort()).toEqual(["Kept", "Removed"]);
+    // Only Kept is described (still on canvas) - Removed was bulk-removed.
+    const described = new Set(["DandBCompany", "Kept"]);
+    const { nodes, edges } = buildGraphElements(root, neighbors, described, null, null);
+    const ids = nodes.map((n) => n.id);
+    expect(ids).toContain("c:Kept");
+    expect(ids).not.toContain("c:Removed");
+    expect(edges.some((e) => String(e.target).includes("Removed") || String(e.source).includes("Removed"))).toBe(false);
+  });
+
+  it("renders every described bubble loaded (no dashed ghosts)", () => {
+    const root = desc(
+      "DandBCompany",
+      [],
+      [{ childSObject: "Kept", field: "F", cascadeDelete: false, relationshipName: "Kepts" }]
+    );
+    const neighbors = rootNeighbors(root, labels, notCustom);
+    const { nodes } = buildGraphElements(root, neighbors, new Set(["DandBCompany", "Kept"]), null, null);
+    const bubble = nodes.find((n) => n.id === "c:Kept");
+    expect(bubble).toBeDefined();
+    expect((bubble!.data as { loaded: boolean }).loaded).toBe(true);
   });
 });

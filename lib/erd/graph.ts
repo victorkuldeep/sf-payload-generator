@@ -362,8 +362,11 @@ export function buildGraphElements(
 ): GraphElements {
   const shown = neighbors.slice(0, MAX_FAN);
   const overflow = Math.max(0, neighbors.length - shown.length);
-  const parents = shown.filter((n) => n.role === "parent");
-  const children = shown.filter((n) => n.role === "child");
+  const parents = shown.filter((n) => n.role === "parent" && described.has(n.apiName));
+  const children = shown.filter((n) => n.role === "child" && described.has(n.apiName));
+  // Only described neighbors get bubbles: the graph shows objects with real
+  // metadata on canvas, never ghost links to removed ones. Undescribed names
+  // still count toward overflow so the badge stays honest.
 
   const nodes: Node<GraphBubbleData>[] = [
     {
@@ -428,7 +431,6 @@ export function buildGraphElements(
       }
       if (!placed) return; // no room even out here - counted as overflow below
       occupied.push(placed);
-      const loaded = described.has(n.apiName);
       nodes.push({
         id: `${prefix}:${n.apiName}`,
         type: "graphBubble",
@@ -438,7 +440,7 @@ export function buildGraphElements(
           apiName: n.apiName,
           custom: n.custom,
           role: n.role,
-          loaded,
+          loaded: true,
           childCount: 0,
           isJunction: false,
           dimmed: spot != null && spot.focus !== n.apiName && !spot.related.has(n.apiName),
@@ -452,7 +454,7 @@ export function buildGraphElements(
         target: isParentSide ? root.name : `${prefix}:${n.apiName}`,
         label: n.via,
         type: "erdEdge",
-        data: { kind: n.kind, graphLink: true, target: n.apiName, loaded } as Record<string, unknown>,
+        data: { kind: n.kind, graphLink: true, target: n.apiName, loaded: true } as Record<string, unknown>,
       });
     });
   };
@@ -460,7 +462,9 @@ export function buildGraphElements(
   const before = nodes.length;
   place(parents, 180, "p");
   place(children, 0, "c");
-  const unplaced = shown.length - (nodes.length - before);
+  // Only placed bubbles count - undescribed names never reached place(),
+  // so unplaced measures orbit-room pressure only.
+  const unplaced = parents.length + children.length - (nodes.length - before);
 
   return { nodes, edges, overflow: overflow + unplaced };
 }

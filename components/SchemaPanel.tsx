@@ -62,6 +62,169 @@ function timeAgo(ts: number): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+/**
+ * Chain explorer dialog: breadcrumb levels of immediate relationships.
+ * Tick nodes to grow the pending chain; "Continue ›" under a checked node
+ * fetches the NEXT level live. Apply lands the whole chain on the canvas.
+ */
+function ChainExplorer({
+  origin,
+  levels,
+  pending,
+  busy,
+  onToggle,
+  onContinue,
+  onApply,
+  onClose,
+}: {
+  origin: string;
+  levels: { depth: number; parent: string; title: string; candidates: DiscoverCandidate[] }[];
+  pending: Set<string>;
+  busy: boolean;
+  onToggle: (apiName: string) => void;
+  onContinue: (apiName: string, depth: number, parent: string) => void;
+  onApply: () => void;
+  onClose: () => void;
+}) {
+  const [filter, setFilter] = useState("");
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const q = filter.toLowerCase().trim();
+
+  return (
+    <div
+      className="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Dependency chain from ${origin}`}
+      onClick={onClose}
+      style={{ paddingTop: "8vh" }}
+    >
+      <div
+        className="modal-card max-w-xl flex flex-col"
+        style={{ maxHeight: "82vh" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-6 pt-5 pb-3 border-b border-[var(--color-line-soft)] shrink-0">
+          <p className="text-[10px] font-semibold uppercase tracking-[2px] text-[var(--color-accent-dark)]">
+            Chain explorer · nothing lands until Apply
+          </p>
+          <h2 className="mt-1 text-lg font-bold text-ivory-950">From {origin}, pick the chain</h2>
+          <p className="mt-0.5 text-xs text-ivory-600">
+            Check what joins the canvas, then Continue › under a checked node to walk one level deeper - like a lookup drill-down.
+          </p>
+          <div className="mt-3">
+            <Input
+              placeholder="Filter candidates…"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              aria-label="Filter chain candidates"
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-3 space-y-3">
+          {levels.map((l) => {
+            const visible = q
+              ? l.candidates.filter(
+                  (c) => c.apiName.toLowerCase().includes(q) || c.label.toLowerCase().includes(q)
+                )
+              : l.candidates;
+            const checkedHere = l.candidates.filter((c) => pending.has(c.apiName));
+            return (
+              <div key={`${l.depth}:${l.parent}`}>
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-[1.6px] text-ivory-600">
+                  {l.title} · {checkedHere.length} checked
+                </p>
+                <div className="rounded-lg border border-[var(--color-line)] divide-y divide-[var(--color-line-soft)] overflow-hidden">
+                  {visible.map((c) => {
+                    const checked = pending.has(c.apiName);
+                    const continued = levels.some((x) => x.parent === c.apiName);
+                    return (
+                      <div
+                        key={c.apiName}
+                        className={`flex items-center gap-2.5 px-3 py-2 transition-colors ${
+                          c.onCanvas ? "opacity-60" : checked ? "bg-ivory-200" : ""
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={c.onCanvas || checked}
+                          disabled={c.onCanvas || busy}
+                          onChange={() => onToggle(c.apiName)}
+                          className="h-4 w-4 shrink-0 rounded border-ivory-400 bg-white text-bronze-600 focus:ring-bronze-500 disabled:opacity-60"
+                          aria-label={c.onCanvas ? `${c.label} (already on canvas)` : `Add ${c.label} to chain`}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-xs font-medium text-ivory-950">{c.label}</span>
+                          <span className="block truncate text-[11px] font-mono text-ivory-600">
+                            {c.apiName} · via <span className="text-bronze-600">{c.via}</span>
+                          </span>
+                        </span>
+                        <span
+                          className={`shrink-0 rounded border px-1 py-px font-mono text-[9px] font-bold ${
+                            c.kind === "md"
+                              ? "bg-ivory-950 text-ivory-100 border-ivory-950"
+                              : "bg-white text-ivory-600 border-[var(--color-line)]"
+                          }`}
+                        >
+                          {c.kind === "md" ? "M-D" : "LKUP"}
+                        </span>
+                        {c.onCanvas && (
+                          <span className="shrink-0 rounded border border-bronze-300 bg-bronze-100 px-1 py-px text-[9px] font-semibold text-bronze-700">
+                            On canvas
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          disabled={!checked || continued || c.onCanvas || busy}
+                          onClick={() => onContinue(c.apiName, l.depth + 1, origin)}
+                          title={
+                            !checked
+                              ? "Check this node first, then continue deeper"
+                              : continued
+                                ? "Already expanded below"
+                                : `Walk one level deeper under ${c.apiName}`
+                          }
+                          className="shrink-0 rounded-md border border-[var(--color-line)] px-1.5 py-1 font-mono text-[10px] font-semibold text-bronze-600 hover:border-bronze-500 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                        >
+                          Continue ›
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {visible.length === 0 && (
+                    <p className="px-3 py-3 text-center text-xs text-ivory-600">No candidates match.</p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="px-6 py-3.5 border-t border-[var(--color-line-soft)] bg-[var(--color-canvas)] flex items-center gap-2 shrink-0">
+          <p className="flex-1 font-mono text-[11px] text-ivory-600">
+            {pending.size} in chain{levels.length > 1 ? ` · ${levels.length} levels deep` : ""}
+          </p>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={onApply} disabled={pending.size === 0 || busy}>
+            Apply chain{pending.size > 0 ? ` (${pending.size})` : ""}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type GraphDetail =
   | {
       kind: "loaded";
@@ -84,17 +247,24 @@ type GraphDetail =
 function GraphDetailCard({
   detail,
   labels,
+  erdCount,
   onClose,
   onOpenInErd,
   onMakeRoot,
   onLoad,
+  onToggleHidden,
+  hidden,
 }: {
   detail: GraphDetail;
   labels: Map<string, string>;
+  /** Objects currently on the ERD canvas - the card always names the number. */
+  erdCount: number;
   onClose: () => void;
   onOpenInErd: () => void;
   onMakeRoot: () => void;
   onLoad: () => void;
+  onToggleHidden: () => void;
+  hidden: boolean;
 }) {
   const apiName = detail.kind === "loaded" ? detail.d.name : detail.n.apiName;
   const label = detail.kind === "loaded" ? detail.d.label : detail.n.label;
@@ -108,6 +278,9 @@ function GraphDetailCard({
             </p>
             <h3 className="mt-1 text-xl font-bold tracking-tight text-ivory-950">{label}</h3>
             <p className="truncate font-mono text-[11px] text-ivory-600">{apiName}</p>
+            <p className="mt-1 font-mono text-[10px] text-ivory-500" title="Graph is a lens on the ERD canvas - both views share the same objects">
+              graph lens · {erdCount} on ERD canvas
+            </p>
           </div>
           <button
             type="button"
@@ -167,6 +340,14 @@ function GraphDetailCard({
             </Button>
             <Button size="sm" variant="ghost" onClick={onMakeRoot}>
               Make graph root
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onToggleHidden}
+              title={hidden ? "Show this bubble again (Manual keeps the rest)" : "Hide this bubble in Manual mode - ERD canvas keeps it"}
+            >
+              {hidden ? "Unhide in Manual" : "Hide from graph"}
             </Button>
           </div>
         </div>
@@ -228,6 +409,19 @@ export default function SchemaPanel({
     title: string;
     subtitle: string;
     candidates: DiscoverCandidate[];
+  } | null>(null);
+  // Chain explorer: level-by-level dependency walk. Each level is fetched and
+  // shown in a picker; only user-checked nodes enter the pending chain. Apply
+  // adds the whole chain to the canvas at once - nothing lands until then.
+  // NOTE (parked, not wired): `chain` state + `fetchDescribeSafe` below are
+  // dead scaffolding from an in-progress chain explorer. They render nothing,
+  // affect no memo, and are kept only so the idea isn't lost. Do NOT treat
+  // them as live: the shipped discovery path is DiscoverPicker + applyPicker.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [chain, setChain] = useState<{
+    origin: string;
+    levels: { depth: number; parent: string; title: string; candidates: DiscoverCandidate[] }[];
+    pending: Set<string>;
   } | null>(null);
 
   const SYSTEM_OBJECTS = useMemo(
@@ -314,19 +508,24 @@ export default function SchemaPanel({
     };
   }, [visibleDescribes, describes, labels, rootName, spot, enforced]);
 
-  // Radial graph elements (built from the same cache + visibility rules)
+  // Radial graph elements - GRAPH IS A LENS ON THE ERD CANVAS.
+  // Every bubble is an object already described on the ERD canvas; removals,
+  // filters and hidden eyes flow through automatically because both views
+  // share `describes` + the same hide rules. No ghost links, ever.
   const graphElements = useMemo(() => {
     if (view !== "graph" || !rootName) return { nodes: [], edges: [], overflow: 0 };
     const root = describes.get(rootName);
     if (!root) return { nodes: [], edges: [], overflow: 0 };
+    const canvasNames = new Set(describes.keys());
     const neighbors = rootNeighbors(root, labels, isCustomName).filter((n) => {
+      if (!canvasNames.has(n.apiName)) return false; // not on ERD canvas → no bubble
       if (hideSystem && SYSTEM_OBJECTS.has(n.apiName)) return false;
       if (filterMode === "standard" && n.custom) return false;
       if (filterMode === "custom" && !n.custom) return false;
       if (filterMode === "manual" && hiddenIds.has(n.apiName)) return false;
       return true;
     });
-    return buildGraphElements(root, neighbors, new Set(describes.keys()), spot, enforced);
+    return buildGraphElements(root, neighbors, canvasNames, spot, enforced);
   }, [view, rootName, describes, labels, isCustomName, hideSystem, SYSTEM_OBJECTS, filterMode, hiddenIds, spot, enforced]);
 
   const neighborMap = useMemo(() => {
@@ -454,6 +653,9 @@ export default function SchemaPanel({
     [baseElements, refreshingIds, refreshNode, openPicklist]
   );
 
+  // Retired with the recursive "Discover full": the chain explorer walks
+  // live describes level by level instead of this cache-only helper.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const undiscoveredChildren = useCallback(
     (ofName: string, known: Map<string, SalesforceDescribeResult>): string[] => {
       const d = known.get(ofName);
@@ -468,6 +670,22 @@ export default function SchemaPanel({
       return out;
     },
     []
+  );
+
+  /** Fresh describes reached through the live /describe path - the ONLY way
+   * a chain level can see beyond what is already on canvas. Never reads the
+   * local cache alone, so depth is real even for untouched neighborhoods.
+   * PARKED with `chain` above: unused by any shipped UI. */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const fetchDescribeSafe = useCallback(
+    async (objectName: string): Promise<SalesforceDescribeResult | null> => {
+      try {
+        return await fetchDescribe(objectName);
+      } catch {
+        return null;
+      }
+    },
+    [fetchDescribe]
   );
 
   const toggleStage = useCallback((apiName: string) => {
@@ -743,37 +961,157 @@ export default function SchemaPanel({
   }, [focusName, rootName, busy, describes, labels, isCustomName, SYSTEM_OBJECTS]);
 
   const discoverFull = useCallback(async () => {
+    // Chain explorer: progressive dependency walk, nothing lands on canvas
+    // until the user applies. Level 1 = immediate parents+children of the
+    // focus; "Continue" on a checked node fetches the NEXT level live and
+    // appends it as a new breadcrumb. Apply adds the whole checked chain.
     if (!rootName || busy) return;
+    const origin = focusName || rootName;
+    const originDescribe = describes.get(origin);
+    if (!originDescribe) return;
     setError(null);
     setNotice(null);
-    setSpot(null);
-    setBusy("Discovering full data model…");
+    setBusy(`Reading relationships of ${origin}…`);
     try {
-      const known = new Map(describes);
-      for (let depth = 0; depth < 3; depth++) {
-        const frontier: string[] = [];
-        for (const name of known.keys()) {
-          for (const kid of undiscoveredChildren(name, known)) {
-            if (!frontier.includes(kid)) frontier.push(kid);
-          }
-        }
-        const room = MAX_NODES - known.size;
-        if (frontier.length === 0 || room <= 0) break;
-        const batch = frontier.slice(0, Math.min(room, MAX_NEW_PER_ACTION));
-        setBusy(`Discovering level ${depth + 2} - ${batch.length} objects…`);
-        const fresh = await mapLimit(batch, 6, fetchDescribe);
-        for (const d of fresh) known.set(d.name, d);
-        setDescribes(new Map(known));
-        pinCurrentLayout();
-        setLayoutRev((r) => r + 1);
+      const kids = new Map<string, DiscoverCandidate>();
+      for (const r of originDescribe.childRelationships ?? []) {
+        if (!r.relationshipName || kids.has(r.childSObject)) continue;
+        kids.set(r.childSObject, {
+          apiName: r.childSObject,
+          label: labels.get(r.childSObject) ?? r.childSObject,
+          custom: isCustomName(r.childSObject),
+          group: "child",
+          via: r.relationshipName,
+          kind: r.cascadeDelete === true ? "md" : "lookup",
+          onCanvas: describes.has(r.childSObject),
+          system: SYSTEM_OBJECTS.has(r.childSObject),
+        });
       }
-      setNotice(`Mapped ${known.size} objects. Junctions are badged automatically.`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Full discovery failed");
+      const pars = new Map<string, DiscoverCandidate>();
+      for (const f of originDescribe.fields ?? []) {
+        if (f.type !== "reference") continue;
+        for (const t of f.referenceTo ?? []) {
+          if (t === origin || pars.has(t)) continue;
+          pars.set(t, {
+            apiName: t,
+            label: labels.get(t) ?? t,
+            custom: isCustomName(t),
+            group: "parent",
+            via: f.name,
+            kind: "lookup",
+            onCanvas: describes.has(t),
+            system: SYSTEM_OBJECTS.has(t),
+          });
+        }
+      }
+      const level0 = [...pars.values(), ...kids.values()];
+      if (level0.length === 0) {
+        setNotice(`${origin} has no immediate relationships to explore.`);
+        return;
+      }
+      setChain({ origin, levels: [{ depth: 1, parent: origin, title: `Level 1 · around ${origin}`, candidates: level0 }], pending: new Set() });
     } finally {
       setBusy(null);
     }
-  }, [rootName, busy, undiscoveredChildren, describes, fetchDescribe, pinCurrentLayout]);
+  }, [rootName, busy, focusName, describes, labels, isCustomName, SYSTEM_OBJECTS]);
+
+  /** Fetch the next level under a checked node and append it as a breadcrumb. */
+  const chainContinue = useCallback(async (apiName: string, depth: number, parent: string) => {
+    if (busy) return;
+    setBusy(`Reading relationships of ${apiName}…`);
+    try {
+      const d = describes.get(apiName) ?? (await fetchDescribeSafe(apiName));
+      if (!d) {
+        setError(`Could not describe ${apiName} - skipped.`);
+        return;
+      }
+      const next: DiscoverCandidate[] = [];
+      const seen = new Set<string>();
+      const push = (c: DiscoverCandidate) => {
+        if (seen.has(c.apiName) || c.apiName === apiName) return;
+        seen.add(c.apiName);
+        next.push(c);
+      };
+      for (const r of d.childRelationships ?? []) {
+        if (!r.relationshipName) continue;
+        push({
+          apiName: r.childSObject,
+          label: labels.get(r.childSObject) ?? r.childSObject,
+          custom: isCustomName(r.childSObject),
+          group: "child",
+          via: r.relationshipName,
+          kind: r.cascadeDelete === true ? "md" : "lookup",
+          onCanvas: describes.has(r.childSObject),
+          system: SYSTEM_OBJECTS.has(r.childSObject),
+        });
+      }
+      for (const f of d.fields ?? []) {
+        if (f.type !== "reference") continue;
+        for (const t of f.referenceTo ?? []) {
+          if (t === apiName) continue;
+          push({
+            apiName: t,
+            label: labels.get(t) ?? t,
+            custom: isCustomName(t),
+            group: "parent",
+            via: f.name,
+            kind: "lookup",
+            onCanvas: describes.has(t),
+            system: SYSTEM_OBJECTS.has(t),
+          });
+        }
+      }
+      if (next.length === 0) {
+        setNotice(`${apiName} has no further relationships.`);
+        return;
+      }
+      setChain((prev) => {
+        if (!prev) return prev;
+        if (prev.levels.some((l) => l.parent === apiName)) return prev;
+        const pending = new Set(prev.pending);
+        pending.add(apiName);
+        return {
+          ...prev,
+          levels: [...prev.levels, { depth, parent: apiName, title: `Level ${depth} · under ${apiName} (via ${parent})`, candidates: next }],
+          pending,
+        };
+      });
+    } finally {
+      setBusy(null);
+    }
+  }, [busy, describes, fetchDescribeSafe, labels, isCustomName, SYSTEM_OBJECTS]);
+
+  /** Apply the checked chain to the canvas at once. */
+  const chainApply = useCallback(async () => {
+    if (!chain || busy) return;
+    const names = [...chain.pending].filter((n) => !describes.has(n)).slice(0, MAX_NEW_PER_ACTION);
+    setChain(null);
+    if (names.length === 0) {
+      setNotice("Everything checked is already on canvas.");
+      return;
+    }
+    if (describes.size + names.length > MAX_NODES) {
+      setNotice(`Canvas cap is ${MAX_NODES} objects - adding ${names.length} would exceed it. Remove some nodes first.`);
+      return;
+    }
+    setError(null);
+    setNotice(null);
+    setSpot(null);
+    setBusy(`Adding ${names.length} object${names.length === 1 ? "" : "s"}…`);
+    try {
+      const fresh = await addNames(names);
+      setFocusName(fresh[fresh.length - 1]?.name ?? chain.origin);
+      setNotice(
+        fresh.length === 1
+          ? `${fresh[0].name} placed on canvas - links draw automatically.`
+          : `${fresh.length} objects placed on canvas - links draw automatically where both ends are present.`
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Chain discovery failed");
+    } finally {
+      setBusy(null);
+    }
+  }, [chain, busy, describes, addNames]);
 
   const showParents = useCallback(() => {
     const target = focusName || rootName;
@@ -1175,8 +1513,8 @@ export default function SchemaPanel({
                   <Button size="sm" variant="secondary" onClick={showParents} disabled={!!busy} title="Ring the focused node and highlight its lookup parents">
                     Show parents
                   </Button>
-                  <Button size="sm" onClick={discoverFull} disabled={!!busy} loading={!!busy} title="Auto-map the whole data model up to 3 levels deep">
-                    Discover full
+                  <Button size="sm" onClick={discoverFull} disabled={!!busy} loading={!!busy} title="Walk the dependency chain level by level - pick what joins, nothing auto-adds">
+                    Chain explorer
                   </Button>
                   <Button size="sm" variant="secondary" onClick={refreshAll} disabled={!!busy || describes.size === 0} title="Re-fetch metadata for every object on canvas and report what changed">
                     Refresh all
@@ -1462,6 +1800,7 @@ export default function SchemaPanel({
             <GraphDetailCard
               detail={detail}
               labels={labels}
+              erdCount={describes.size}
               onClose={() => setGraphSelected(null)}
               onOpenInErd={() => {
                 if (detail.kind === "loaded") {
@@ -1481,6 +1820,11 @@ export default function SchemaPanel({
               onLoad={() => {
                 if (detail.kind === "lite") void loadLite(detail.n.apiName);
               }}
+              onToggleHidden={() => {
+                const api = detail.kind === "loaded" ? detail.d.name : detail.n.apiName;
+                if (api !== rootName) toggleHidden(api);
+              }}
+              hidden={hiddenIds.has(detail.kind === "loaded" ? detail.d.name : detail.n.apiName)}
             />
           )}
         </div>
@@ -1498,6 +1842,28 @@ export default function SchemaPanel({
           candidates={picker.candidates}
           onApply={applyPicker}
           onClose={() => setPicker(null)}
+        />
+      )}
+
+      {/* Chain explorer - progressive dependency walk, apply lands the chain */}
+      {chain && (
+        <ChainExplorer
+          origin={chain.origin}
+          levels={chain.levels}
+          pending={chain.pending}
+          busy={!!busy}
+          onToggle={(apiName) =>
+            setChain((prev) => {
+              if (!prev) return prev;
+              const pending = new Set(prev.pending);
+              if (pending.has(apiName)) pending.delete(apiName);
+              else pending.add(apiName);
+              return { ...prev, pending };
+            })
+          }
+          onContinue={(apiName, depth, parent) => void chainContinue(apiName, depth, parent)}
+          onApply={() => void chainApply()}
+          onClose={() => setChain(null)}
         />
       )}
 
