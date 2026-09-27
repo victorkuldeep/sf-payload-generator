@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Button from "../ui/Button";
+import { BindingEditor } from "./BindingEditor";
 import { logChange } from "@/lib/experience/migrate";
 import type { MappingProject } from "@/lib/mapping/types";
 import type {
@@ -132,19 +133,7 @@ export function ComponentInspector({
         <StateEditor project={project} component={component} states={states} onMutate={onMutate} />
       )}
       {tab === "bindings" && (
-        <div className="text-[12px] text-[#777168]">
-          {bindings.length === 0 ? (
-            <p>No API bindings yet. The binding editor arrives in Sprint 5 - requirements below already capture what this component needs.</p>
-          ) : (
-            <ul className="space-y-1">
-              {bindings.map((b) => (
-                <li key={b.id} className="rounded-lg border border-[#F0EBE0] px-2 py-1 font-mono text-[11px]">
-                  {b.operationId} · {b.usage} · {b.trigger} · {b.status}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        <BindingEditor project={project} component={component} bindings={bindings} onMutate={onMutate} />
       )}
     </div>
   );

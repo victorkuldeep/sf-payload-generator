@@ -13,6 +13,7 @@ import { DriftReview } from "./DriftReview";
 import { ReviewPanel } from "./ReviewPanel";
 import { ensureExperience } from "@/lib/experience/migrate";
 import { ExperienceWorkspace } from "@/components/experience/ExperienceWorkspace";
+import { ApiCatalogPanel } from "@/components/experience/ApiCatalogPanel";
 import { useMappingMetadata } from "./useMappingMetadata";
 import { buildSnapshot } from "@/lib/mapping/snapshot";
 import { deleteProject, duplicateProject, listProjects, loadProject, saveProject, type ProjectSummary } from "@/lib/mapping/store";
@@ -425,13 +426,8 @@ export function MappingRoute() {
         <ExperienceWorkspace project={project} onMutate={mutate} />
       )}
 
-      {module === "apis" && (
-        <div className="rounded-xl border border-[#E8E2D8] bg-white p-8 text-center">
-          <p className="text-[14px] font-semibold text-[#27241F]">API Catalog</p>
-          <p className="mx-auto mt-1 max-w-md text-[12px] text-[#777168]">
-            Shared backend operations arrive in Sprint 5. The catalog will live here, referenced by screen bindings.
-          </p>
-        </div>
+      {module === "apis" && project.apiCatalog && (
+        <ApiCatalogPanel project={project} onMutate={mutate} />
       )}
 
       {module === "decisions" && (
