@@ -102,7 +102,7 @@ export function LaserOverlay({
       }}
     >
       {pencil && (
-        <g transform={`translate(${pencil.x} ${pencil.y}) rotate(-45)`} pointerEvents="none">
+        <g transform={`translate(${pencil.x} ${pencil.y}) rotate(45)`} pointerEvents="none">
           <rect x="-3" y="-19" width="6" height="12" rx="1" fill="#A98450" />
           <polygon points="-3,-7 3,-7 0,0" fill="#E8DCC8" />
           <circle cx="0" cy="-1.5" r="1.6" fill="#ef4444" />

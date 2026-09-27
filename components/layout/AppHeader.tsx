@@ -73,10 +73,10 @@ export function AppHeader({
     { id: "home", label: "Home", title: "Back to the start" },
     { id: "builder", label: "Builder", title: connected ? "Go to single-object builder" : "Connect to open the builder" },
     { id: "composite", label: "Composite", title: connected ? "Go to composite builder" : "Connect to open composite" },
-    { id: "soql", label: "SOQL", title: connected ? "Go to SOQL builder" : "Connect to open SOQL" },
+    { id: "soql", label: "Query", title: connected ? "Go to SOQL query builder" : "Connect to open SOQL" },
     { id: "graphql", label: "GraphQL", title: connected ? "Go to GraphQL query builder" : "Connect to open GraphQL" },
     { id: "schema", label: "Schema", title: connected ? "Go to schema deep dive" : "Connect to open the ERD" },
-    { id: "rest", label: "REST", title: connected ? "Go to REST explorer" : "Connect to open REST explorer" },
+    { id: "rest", label: "Rest", title: connected ? "Go to REST explorer" : "Connect to open REST explorer" },
   ];  const navLinkClass =
     "hover:text-[var(--color-ink)] hover:underline underline-offset-4 transition-colors cursor-pointer whitespace-nowrap";
 

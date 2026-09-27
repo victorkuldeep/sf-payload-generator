@@ -14,9 +14,9 @@ import { listCollectionItems } from "@/lib/collection/db";
 const MODE_LINKS: { label: string; href: string }[] = [
   { label: "Builder", href: "/?mode=single" },
   { label: "Composite", href: "/?mode=composite" },
-  { label: "SOQL", href: "/?mode=soql" },
+  { label: "Query", href: "/?mode=soql" },
   { label: "GraphQL", href: "/?mode=graphql" },
-  { label: "REST", href: "/?mode=rest" },
+  { label: "Rest", href: "/?mode=rest" },
 ];
 
 const ROUTE_LINKS: { label: string; href: string }[] = [
