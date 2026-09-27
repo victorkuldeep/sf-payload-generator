@@ -74,7 +74,7 @@ export function ProjectWizard({
         <div className="space-y-3">
           <label className="block text-[12px] font-semibold text-[#27241F]">
             Project name
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="TMF622 Product Order to Salesforce" className={`${inputCls} mt-1 font-normal`} />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Product Order to Salesforce" className={`${inputCls} mt-1 font-normal`} />
           </label>
           <label className="block text-[12px] font-semibold text-[#27241F]">
             Description
@@ -83,11 +83,11 @@ export function ProjectWizard({
           <div className="grid grid-cols-2 gap-3">
             <label className="block text-[12px] font-semibold text-[#27241F]">
               Source system
-              <input value={sourceSystem} onChange={(e) => setSourceSystem(e.target.value)} placeholder="TM Forum" className={`${inputCls} mt-1 font-normal`} />
+              <input value={sourceSystem} onChange={(e) => setSourceSystem(e.target.value)} placeholder="External system" className={`${inputCls} mt-1 font-normal`} />
             </label>
             <label className="block text-[12px] font-semibold text-[#27241F]">
               Source API
-              <input value={sourceApi} onChange={(e) => setSourceApi(e.target.value)} placeholder="TMF 622" className={`${inputCls} mt-1 font-normal`} />
+              <input value={sourceApi} onChange={(e) => setSourceApi(e.target.value)} placeholder="Orders API v1" className={`${inputCls} mt-1 font-normal`} />
             </label>
           </div>
           <label className="block text-[12px] font-semibold text-[#27241F]">
