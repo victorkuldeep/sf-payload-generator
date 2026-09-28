@@ -233,4 +233,37 @@ describe("buildGraphElements", () => {
     expect(ids.has(tgtId)).toBe(true);
     expect(tgtId).toBe("x:Account:Asset");
   });
+
+  it("mesh: same object under two parents shares one bubble with two edges", () => {
+    const root = desc("Lead", [], []);
+    const neighbors = [
+      { apiName: "Account", label: "Account", custom: false, role: "child" as const, via: "F", kind: "lookup" as const },
+      { apiName: "DNB", label: "D&B", custom: false, role: "child" as const, via: "F", kind: "lookup" as const },
+      { apiName: "DNB", label: "D&B", custom: false, role: "child" as const, via: "G", kind: "lookup" as const, attachTo: "Account", depth: 2 },
+    ];
+    const { nodes, edges } = buildGraphElements(root, neighbors, new Set(["Lead"]), null, null, "mesh");
+    const dnb = nodes.filter((n) => (n.data as { apiName: string }).apiName === "DNB");
+    expect(dnb).toHaveLength(1); // one shared bubble
+    const ids = new Set(nodes.map((n) => n.id));
+    const dnbEdges = edges.filter((e) => String(e.id).includes("|DNB|"));
+    expect(dnbEdges.length).toBe(2); // Lead>D&B AND Account>D&B
+    for (const e of dnbEdges) {
+      expect(ids.has(String(e.source))).toBe(true);
+      expect(ids.has(String(e.target))).toBe(true);
+    }
+  });
+
+  it("linear: same object under two parents gets independent bubbles", () => {
+    const root = desc("Lead", [], []);
+    const neighbors = [
+      { apiName: "Account", label: "Account", custom: false, role: "child" as const, via: "F", kind: "lookup" as const },
+      { apiName: "DNB", label: "D&B", custom: false, role: "child" as const, via: "F", kind: "lookup" as const },
+      { apiName: "DNB", label: "D&B", custom: false, role: "child" as const, via: "G", kind: "lookup" as const, attachTo: "Account", depth: 2 },
+    ];
+    const { nodes, edges } = buildGraphElements(root, neighbors, new Set(["Lead"]), null, null, "linear");
+    const dnb = nodes.filter((n) => (n.data as { apiName: string }).apiName === "DNB");
+    expect(dnb.length).toBe(2); // independent bubbles per attach path
+    expect(new Set(nodes.map((n) => n.id)).size).toBe(nodes.length); // ids unique
+    expect(new Set(edges.map((e) => e.id)).size).toBe(edges.length); // edge ids unique
+  });
 });

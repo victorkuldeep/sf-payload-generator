@@ -100,6 +100,7 @@ function GraphDetailCardInner({
   onVisibility,
   designMode,
   onAddToGraph,
+  drawnHere,
 }: {
   detail: GraphDetail;
   labels: Map<string, string>;
@@ -127,16 +128,26 @@ function GraphDetailCardInner({
   designMode: boolean;
   /** Design mode: add checked names to the graph sketch (roles place them). */
   onAddToGraph: (names: string[]) => void;
+  /** apiNames already drawn AS THIS NODE's family (level-1 if root, attached
+   * rows otherwise). Rows start checked iff present here - no phantom ticks. */
+  drawnHere: Set<string>;
 }) {
   const apiName = detail.kind === "loaded" ? detail.d.name : detail.n.apiName;
   const label = detail.kind === "loaded" ? detail.d.label : detail.n.label;
   const linkCount = detail.kind === "loaded" ? detail.parents.length + detail.kids.length : 0;
   const [familyFilter, setFamilyFilter] = useState("");
   const [familyChecked, setFamilyChecked] = useState<Set<string>>(new Set());
+  // Truthful ticks: a row starts checked ONLY if its bubble is actually drawn
+  // as this node's family. Never pre-check strangers (the phantom-tick bug).
   useEffect(() => {
-    setFamilyChecked(new Set());
+    if (family) {
+      setFamilyChecked(new Set(family.filter((c) => drawnHere.has(c.apiName)).map((c) => c.apiName)));
+    } else {
+      setFamilyChecked(new Set());
+    }
     setFamilyFilter("");
-  }, [apiName]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiName, family]);
   const q = familyFilter.toLowerCase().trim();
   const visibleFamily = family && (q ? family.filter((c) => c.apiName.toLowerCase().includes(q) || c.label.toLowerCase().includes(q)) : family);
   return (
@@ -244,17 +255,19 @@ function GraphDetailCardInner({
             />
             <div className="max-h-56 space-y-px overflow-y-auto rounded-lg border border-[var(--color-line)] divide-y divide-[var(--color-line-soft)]">
               {(visibleFamily ?? []).map((c) => {
-                // Checkbox = LIVE graph visibility. On-canvas rows start
-                // checked; unchecking hides the bubble now (ERD keeps it).
-                // familyChecked tracks rows the user explicitly re-showed.
-                const hiddenByUser = familyChecked.has(`hide:${c.apiName}`);
-                const checked = !hiddenByUser;
+                // Checkbox = selection for Expand-to-ERD / Add-to-graph.
+                // drawnHere rows (actually on the graph as THIS node's family)
+                // start checked; strangers never do. Unchecking a drawn row
+                // hides its bubble live via onVisibility.
+                const drawn = drawnHere.has(c.apiName);
+                const checked = familyChecked.has(c.apiName);
                 return (
                   <label
                     key={`${c.group}:${c.apiName}`}
                     className={`flex cursor-pointer items-center gap-2 px-2.5 py-1.5 transition-colors hover:bg-ivory-300 ${
                       checked ? "bg-ivory-200" : ""
                     }`}
+                    title={`${c.label} (${c.apiName}) - ${c.parentCount} parents, ${c.childCount} children ahead`}
                   >
                     <input
                       type="checkbox"
@@ -262,30 +275,34 @@ function GraphDetailCardInner({
                       onChange={() => {
                         setFamilyChecked((prev) => {
                           const next = new Set(prev);
-                          const k = `hide:${c.apiName}`;
-                          if (next.has(k)) next.delete(k);
-                          else next.add(k);
+                          if (next.has(c.apiName)) next.delete(c.apiName);
+                          else next.add(c.apiName);
                           return next;
                         });
-                        onVisibility(c.apiName, hiddenByUser);
+                        // Unchecking a drawn row hides its bubble live.
+                        if (drawn && checked) onVisibility(c.apiName, false);
                       }}
                       className="h-3.5 w-3.5 shrink-0 rounded border-ivory-400 bg-white text-bronze-600 focus:ring-bronze-500"
-                      aria-label={`${checked ? "Hide" : "Show"} ${c.label} in the graph`}
+                      aria-label={`${checked ? "Deselect" : "Select"} ${c.label}`}
                     />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[11px] font-medium text-ivory-950">{c.label}</span>
-                      <span className="block truncate font-mono text-[10px] text-ivory-600">
+                      <span
+                        className="block truncate font-mono text-[10px] text-ivory-600"
+                        title={`${c.parentCount} parents, ${c.childCount} children ahead of ${c.apiName}`}
+                      >
                         {c.group === "child" ? "↓" : "↑"} {c.apiName}
                         {(c.parentCount + c.childCount) > 0 && (
                           <span className="text-ivory-500"> · p:{c.parentCount} c:{c.childCount}</span>
                         )}
                       </span>
                     </span>
-                    {c.onCanvas ? (
+                    {c.onCanvas && (
                       <span className="shrink-0 rounded border border-bronze-300 bg-bronze-100 px-1 py-px text-[9px] font-semibold text-bronze-700">
                         On canvas
                       </span>
-                    ) : (
+                    )}
+                    {!c.onCanvas && (
                       <button
                         type="button"
                         onClick={() => onExpandFamily([c.apiName])}
@@ -303,14 +320,42 @@ function GraphDetailCardInner({
               )}
             </div>
             <div className="flex gap-1.5">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  // Expand all: check every visible row.
+                  const all = new Set((visibleFamily ?? []).map((c) => c.apiName));
+                  setFamilyChecked(all);
+                }}
+                title="Check every visible row"
+              >
+                Expand +
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  // Collapse all: uncheck everything; drawn rows hide live.
+                  for (const c of visibleFamily ?? []) {
+                    if (drawnHere.has(c.apiName)) onVisibility(c.apiName, false);
+                  }
+                  setFamilyChecked(new Set());
+                }}
+                title="Uncheck every row (drawn bubbles hide live)"
+              >
+                Collapse −
+              </Button>
+            </div>
+            <div className="flex gap-1.5">
               {designMode && (
                 <Button
                   size="sm"
                   variant="secondary"
-                  disabled={[...familyChecked].filter((n) => !n.startsWith("hide:")).length === 0}
+                  disabled={familyChecked.size === 0}
                   onClick={() => {
-                    const fresh = [...familyChecked].filter((n) => !n.startsWith("hide:"));
-                    setFamilyChecked(new Set([...familyChecked].filter((n) => n.startsWith("hide:"))));
+                    const fresh = [...familyChecked];
+                    setFamilyChecked(new Set());
                     onAddToGraph(fresh);
                   }}
                   title="Add checked to the graph sketch - parents left, children right"
@@ -321,18 +366,18 @@ function GraphDetailCardInner({
               <Button
                 size="sm"
                 className="flex-1"
-                disabled={[...familyChecked].filter((n) => !n.startsWith("hide:") && !(family ?? []).some((c) => c.apiName === n && c.onCanvas)).length === 0}
+                disabled={[...familyChecked].filter((n) => !(family ?? []).some((c) => c.apiName === n && c.onCanvas)).length === 0}
                 onClick={() => {
-                  const fresh = [...familyChecked].filter((n) => !n.startsWith("hide:") && !(family ?? []).some((c) => c.apiName === n && c.onCanvas));
-                  setFamilyChecked(new Set([...familyChecked].filter((n) => n.startsWith("hide:"))));
+                  const fresh = [...familyChecked].filter((n) => !(family ?? []).some((c) => c.apiName === n && c.onCanvas));
+                  setFamilyChecked(new Set());
                   onExpandToErd(fresh);
                 }}
                 title="Describe checked rows onto the ERD canvas as solid tables"
               >
                 Expand selected to ERD
               </Button>
-              <Button size="sm" variant="ghost" onClick={onCollapseFamily} title="Remove this node's extended family from the graph (ERD canvas untouched)">
-                Collapse
+              <Button size="sm" variant="ghost" onClick={onCollapseFamily} title="Prune this node's grown generations off the graph (ERD canvas untouched)">
+                Prune
               </Button>
             </div>
             <p className="font-mono text-[10px] text-ivory-500">
@@ -402,6 +447,9 @@ export default function SchemaPanel({
   // from GRAPH ONLY (quick remove, family uncheck) - ERD canvas untouched.
   const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+  // Mesh (default): one bubble per object, every attach path draws its edge.
+  // Linear: same object duplicated under each parent for independent trees.
+  const [familyMode, setFamilyMode] = useState<"mesh" | "linear">("mesh");
   // Design mode (graph only): start from the root bubble alone and add
   // objects one by one - parents land left, children right. The graph becomes
   // the object-model sketch; ERD stays the field-detail view until commit.
@@ -547,8 +595,8 @@ export default function SchemaPanel({
       }
     }
     const shown1 = designMode ? level1.filter((n) => designIds.has(n.apiName)) : level1;
-    return buildGraphElements(root, [...shown1, ...extra], canvasNames, spot, enforced);
-  }, [view, rootName, describes, labels, isCustomName, hideSystem, SYSTEM_OBJECTS, filterMode, hiddenIds, removedIds, dismissedIds, designMode, designIds, spot, enforced, expanded]);
+    return buildGraphElements(root, [...shown1, ...extra], canvasNames, spot, enforced, familyMode);
+  }, [view, rootName, describes, labels, isCustomName, hideSystem, SYSTEM_OBJECTS, filterMode, hiddenIds, removedIds, dismissedIds, designMode, designIds, spot, enforced, expanded, familyMode]);
 
   const neighborMap = useMemo(() => {
     const root = describes.get(rootName);
@@ -557,6 +605,30 @@ export default function SchemaPanel({
     for (const n of rootNeighbors(root, labels, isCustomName)) m.set(n.apiName, n);
     return m;
   }, [describes, rootName, labels, isCustomName]);
+
+  // Truthful ticks: which apiNames are actually drawn AS a node's family.
+  // Root → level-1 bubbles on screen; others → expanded rows attached to them
+  // that survived filtering. The family panel seeds checks from this set.
+  const drawnHere = useMemo(() => {
+    const drawn = new Set(graphElements.nodes.map((n) => String((n.data as { apiName?: string } | undefined)?.apiName ?? "")));
+    const byAttach = new Map<string, Set<string>>();
+    const l1 = new Set<string>();
+    for (const n of graphElements.nodes) {
+      const api = String((n.data as { apiName?: string } | undefined)?.apiName ?? "");
+      if (!api || api === rootName) continue;
+      if (n.id.startsWith("p:") || n.id.startsWith("c:")) l1.add(api);
+    }
+    byAttach.set(rootName, l1);
+    for (const [, list] of expanded) {
+      for (const r of list) {
+        if (!drawn.has(r.apiName)) continue;
+        const from = r.attachTo ?? rootName;
+        if (!byAttach.has(from)) byAttach.set(from, new Set());
+        byAttach.get(from)!.add(r.apiName);
+      }
+    }
+    return byAttach;
+  }, [graphElements, expanded, rootName]);
 
   const detail = useMemo(() => {
     if (!graphSelected || view !== "graph") return null;
@@ -1548,8 +1620,11 @@ export default function SchemaPanel({
   const discoverFamilyRef = useRef((api: string) => Promise.resolve());
   const handleNodeClick = useCallback(
     (id: string) => {
-      // Graph bubbles carry prefixed ids (p:X / c:X / x:FROM:X) - take the tail
-      const api = id.includes(":") ? id.split(":").pop()! : id;
+      // Bubble ids: root (Lead), level-1 (p:X / c:X), extended (x:FROM:X
+      // or x:FROM:X:n in linear mode). The apiName is always the segment
+      // right after the prefix... except x: ids where it sits in the middle.
+      const parts = id.split(":");
+      const api = id.startsWith("x:") ? (parts[2] ?? id) : parts.length > 1 ? parts.slice(1).join(":") : id;
       setFocusName(api);
       setSpot(null);
       setGraphSelected(api);
@@ -2044,6 +2119,28 @@ export default function SchemaPanel({
             >
               Hide system
             </button>
+            {view === "graph" && (
+              <span
+                role="group"
+                aria-label="Family layout"
+                className="flex rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] p-0.5"
+                title="Mesh: one bubble per object, every attach path draws its edge. Linear: duplicate bubbles per parent for independent trees."
+              >
+                {(["mesh", "linear"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setFamilyMode(m)}
+                    aria-pressed={familyMode === m}
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize transition-colors cursor-pointer ${
+                      familyMode === m ? "bg-ivory-950 text-ivory-100" : "text-ivory-600 hover:text-ivory-950"
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </span>
+            )}
             {view === "graph" && graphElements.extended > 0 && (
               <span
                 className="rounded-full border border-bronze-300 bg-bronze-100 px-2.5 py-1 text-[11px] font-medium text-bronze-700"
@@ -2171,6 +2268,7 @@ export default function SchemaPanel({
               labels={labels}
               erdCount={describes.size}
               family={familyFor === (detail.kind === "loaded" ? detail.d.name : detail.n.apiName) ? family : null}
+              drawnHere={drawnHere.get(detail.kind === "loaded" ? detail.d.name : detail.n.apiName) ?? new Set<string>()}
               familyBusy={familyBusy}
               onClose={() => setGraphSelected(null)}
               onOpenInErd={() => {

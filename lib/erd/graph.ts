@@ -366,7 +366,8 @@ export function buildGraphElements(
   neighbors: GraphNeighbor[],
   described: Set<string>,
   spot: ErdSpotlight | null = null,
-  pinned: Map<string, { x: number; y: number }> | null = null
+  pinned: Map<string, { x: number; y: number }> | null = null,
+  mode: "mesh" | "linear" = "mesh"
 ): GraphElements {
   const shown = neighbors;
   const overflow = 0;
@@ -530,13 +531,47 @@ export function buildGraphElements(
     byAttach.get(key)!.push(n);
   }
   let extended = 0;
+  // Edge ids must be unique per from/to/via triple - the SAME object under
+  // two parents (Lead>D&B and Account>D&B) yields two honest edges in mesh
+  // mode instead of one silently dropped link. Ids stay api-based (stable
+  // across layouts); linear duplicates append the node id.
+  const seenEdge = new Set<string>(edges.map((e) => e.id));
+  const emitEdge = (fromApi: string, toApi: string, fromBubble: string, toBubble: string, n: GraphNeighbor, loaded: boolean) => {
+    const id = mode === "linear" && toBubble.startsWith("x:")
+      ? `g|${fromApi}|${toApi}|${n.via}|${toBubble}`
+      : `g|${fromApi}|${toApi}|${n.via}`;
+    if (seenEdge.has(id)) return;
+    seenEdge.add(id);
+    edges.push({
+      id,
+      source: fromBubble,
+      target: toBubble,
+      label: n.via,
+      type: "erdEdge",
+      data: { kind: n.kind, graphLink: true, target: n.apiName, loaded } as Record<string, unknown>,
+    });
+  };
   for (const [attachApi, list] of [...byAttach.entries()].sort(([a], [b]) => (a < b ? -1 : 1))) {
     const center = placedCenters.get(attachApi);
     if (!center) continue;
+    const attachBubble = bubbleIdOf(attachApi);
     const ordered = [...list].sort((a, b) => (a.apiName < b.apiName ? -1 : 1));
     ordered.forEach((n, i) => {
-      if (placedCenters.has(n.apiName)) return;
       const up = n.role === "parent";
+      const loaded = described.has(n.apiName);
+      if (mode === "mesh" && placedCenters.has(n.apiName)) {
+        // Already drawn elsewhere: link the attach bubble to the EXISTING
+        // bubble instead of skipping. This is the honest mesh edge.
+        emitEdge(
+          attachApi,
+          n.apiName,
+          up ? bubbleIdOf(n.apiName) : attachBubble,
+          up ? attachBubble : bubbleIdOf(n.apiName),
+          n,
+          loaded
+        );
+        return;
+      }
       const side = up ? -1 : 1;
       const spread0 = (i - (ordered.length - 1) / 2) * EXTEND_SPREAD;
       // Walk outward until a free slot: same side, further rings.
@@ -552,10 +587,15 @@ export function buildGraphElements(
         p = { x: center.x + side * r * 0.9, y: center.y - r * 0.55 + spread0 };
       }
       occupied.push(p);
-      placedCenters.set(n.apiName, p);
-      const loaded = described.has(n.apiName);
+      // Linear mode: same object under several parents gets its OWN bubble
+      // per attach path (x:Account:D&B ≠ x:Lead:D&B) so each subtree reads
+      // independently. Mesh mode shares one bubble (handled above).
+      const nodeId = mode === "linear" ? `x:${attachApi}:${n.apiName}:${extended}` : `x:${attachApi}:${n.apiName}`;
+      if (mode === "linear") placedCenters.set(`${attachApi}::${n.apiName}`, p);
+      else placedCenters.set(n.apiName, p);
+      const isLoaded = described.has(n.apiName);
       nodes.push({
-        id: `x:${attachApi}:${n.apiName}`,
+        id: nodeId,
         type: "graphBubble",
         position: { x: p.x - BUBBLE_NODE / 2, y: p.y - BUBBLE_NODE / 2 },
         data: {
@@ -563,24 +603,21 @@ export function buildGraphElements(
           apiName: n.apiName,
           custom: n.custom,
           role: n.role,
-          loaded,
+          loaded: isLoaded,
           childCount: 0,
           isJunction: false,
           dimmed: spot != null && spot.focus !== n.apiName && !spot.related.has(n.apiName),
           spotlight: spot != null && spot.focus === n.apiName,
         },
       });
-      edges.push({
-        id: `g|${attachApi}|${n.apiName}|${n.via}`,
-        // Node ids: level-1 bubbles are p:X/c:X; extended bubbles are
-        // x:FROM:X. Edges must point at the REAL bubble ids or React Flow
-        // silently drops the link (the missing Account→Asset link bug).
-        source: up ? `x:${attachApi}:${n.apiName}` : bubbleIdOf(attachApi),
-        target: up ? bubbleIdOf(attachApi) : `x:${attachApi}:${n.apiName}`,
-        label: n.via,
-        type: "erdEdge",
-        data: { kind: n.kind, graphLink: true, target: n.apiName, loaded } as Record<string, unknown>,
-      });
+      emitEdge(
+        attachApi,
+        n.apiName,
+        up ? nodeId : bubbleIdOf(attachApi),
+        up ? bubbleIdOf(attachApi) : nodeId,
+        n,
+        isLoaded
+      );
       extended++;
     });
   }
