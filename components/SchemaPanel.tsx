@@ -6,12 +6,13 @@ import type {
   SalesforceObject,
   SalesforceDescribeResult,
 } from "@/lib/salesforce/types";
-import { buildErdElements, buildGraphElements, rootNeighbors, systemReason, isSystemObject, SYSTEM_OBJECTS, type ErdNodeData, type GraphNeighbor } from "@/lib/erd/graph";
+import { buildErdElements, buildGraphElements, rootNeighbors, systemReason, isEffectivelyHidden, isSystemObject, AUDIT_REFERENCE_FIELDS, type ErdNodeData, type GraphNeighbor } from "@/lib/erd/graph";
 import { rankObjects } from "@/lib/search/rank";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import { apiFetch } from "@/lib/api";
 import { ErdCanvas, type ErdCanvasHandle } from "./erd/ErdCanvas";
 import { DiscoverPicker, type DiscoverCandidate } from "./erd/DiscoverPicker";
+import { SystemHideModal } from "./erd/SystemHideModal";
 import { PicklistPopover, type PicklistPopoverData } from "./erd/PicklistPopover";
 import {
   listSnapshotsByOrg,
@@ -484,6 +485,17 @@ export default function SchemaPanel({
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [manageChecked, setManageChecked] = useState<Set<string>>(new Set());
   const [hideSystem, setHideSystem] = useState(false);
+  // Allow-list from the Hide-system review modal: explicitly force-shown
+  // names survive both the graph/ERD filter AND Neural sweeps.
+  const [systemAllow, setSystemAllow] = useState<Set<string>>(new Set());
+  const [systemReviewOpen, setSystemReviewOpen] = useState(false);
+  // Hide-system core: the modal allow-list always wins, in graph, ERD and
+  // Neural alike. Whatever the modal hides, sweeps automatically honor.
+  // Defined up here so graphElements, the review list and Neural share it.
+  const systemHidden = useCallback((n: { apiName: string; role: "parent" | "child"; via: string; custom?: boolean }) => {
+    if (systemAllow.has(n.apiName)) return false;
+    return systemReason({ apiName: n.apiName, role: n.role, via: n.via, custom: n.custom }) !== null;
+  }, [systemAllow]);
   const [graphSelected, setGraphSelected] = useState<string | null>(null);
   // removedIds: hard-removed from the ERD canvas (tombstones) - graph never
   // resurrects them as lite previews until re-added. dismissedIds: hidden
@@ -528,6 +540,7 @@ export default function SchemaPanel({
   );
 
   // Visible describes: filters hide without deleting (manual eyes, std/custom, system)
+  // Hide-system honors the modal allow-list: explicitly allowed names stay.
   const visibleDescribes = useMemo(() => {
     const out = new Map<string, SalesforceDescribeResult>();
     for (const [name, d] of describes) {
@@ -535,14 +548,14 @@ export default function SchemaPanel({
         out.set(name, d);
         continue;
       }
-      if (hideSystem && isSystemObject(name)) continue;
+      if (hideSystem && isEffectivelyHidden(name, d.custom, systemAllow)) continue;
       if (filterMode === "standard" && isCustomName(name)) continue;
       if (filterMode === "custom" && !isCustomName(name)) continue;
       if (filterMode === "manual" && hiddenIds.has(name)) continue;
       out.set(name, d);
     }
     return out;
-  }, [describes, rootName, hideSystem, filterMode, hiddenIds, isCustomName]);
+  }, [describes, rootName, hideSystem, systemAllow, filterMode, hiddenIds, isCustomName]);
 
   const orgDomain = useMemo(() => {
     try {
@@ -611,7 +624,7 @@ export default function SchemaPanel({
     const canvasNames = new Set(describes.keys());
     const passFilters = (n: GraphNeighbor) => {
       if (removedIds.has(n.apiName) || dismissedIds.has(n.apiName)) return false;
-      if (hideSystem && systemReason({ apiName: n.apiName, role: n.role, via: n.via })) return false;
+      if (hideSystem && systemHidden(n)) return false;
       if (filterMode === "standard" && n.custom) return false;
       if (filterMode === "custom" && !n.custom) return false;
       if (filterMode === "manual" && hiddenIds.has(n.apiName)) return false;
@@ -646,23 +659,30 @@ export default function SchemaPanel({
     return { nodes, edges, overflow: built.overflow, extended: nodes.filter((n) => n.id.startsWith("x:")).length };
   }, [view, rootName, describes, labels, isCustomName, hideSystem, filterMode, hiddenIds, removedIds, dismissedIds, dismissedEdges, designMode, designIds, spot, enforced, expanded, familyMode]);
 
-  // How many graph neighbors Hide-system would sweep (level-1 + expanded).
-  // Shown on the button so the sweep is never a mystery.
-  const systemHiddenCount = useMemo(() => {
-    if (view !== "graph" || !rootName) return 0;
+  // The review list behind Hide-system: every swept neighbor with its
+  // reason, label and custom flag. The modal allow-lists from this list.
+  // (systemHidden itself is defined once, up with the filter state.)
+  const systemHiddenList = useMemo(() => {
+    if (!rootName) return [];
     const root = describes.get(rootName);
-    if (!root) return 0;
-    let count = 0;
-    for (const n of rootNeighbors(root, labels, isCustomName)) {
-      if (systemReason({ apiName: n.apiName, role: n.role, via: n.via })) count++;
-    }
-    for (const [, list] of expanded) {
-      for (const n of list) {
-        if (systemReason({ apiName: n.apiName, role: n.role, via: n.via })) count++;
-      }
-    }
-    return count;
-  }, [view, rootName, describes, labels, isCustomName, expanded]);
+    if (!root) return [];
+    const seen = new Set<string>();
+    const out: { apiName: string; label: string; reason: string; custom: boolean }[] = [];
+    const consider = (n: { apiName: string; role: "parent" | "child"; via: string; custom: boolean }) => {
+      if (n.apiName === rootName || seen.has(n.apiName)) return;
+      seen.add(n.apiName);
+      const reason = systemHidden(n)
+        ? (systemReason({ apiName: n.apiName, role: n.role, via: n.via, custom: n.custom }) ?? "system")
+        : null;
+      if (!reason) return;
+      out.push({ apiName: n.apiName, label: labels.get(n.apiName) ?? n.apiName, reason, custom: n.custom });
+    };
+    for (const n of rootNeighbors(root, labels, isCustomName)) consider(n);
+    for (const [, list] of expanded) for (const n of list) consider(n);
+    return out.sort((a, b) => (a.reason < b.reason ? -1 : 1));
+  }, [rootName, describes, labels, isCustomName, expanded, systemHidden]);
+
+  const systemHiddenCount = systemHiddenList.filter((r) => !systemAllow.has(r.apiName)).length;
 
   const neighborMap = useMemo(() => {
     const root = describes.get(rootName);
@@ -1187,7 +1207,7 @@ export default function SchemaPanel({
         via: r.relationshipName,
         kind: r.cascadeDelete === true ? "md" : "lookup",
         onCanvas: describes.has(r.childSObject),
-        system: SYSTEM_OBJECTS.has(r.childSObject),
+        system: isSystemObject(r.childSObject, isCustomName(r.childSObject)),
       });
     }
     if (candidates.length === 0) {
@@ -1248,7 +1268,7 @@ export default function SchemaPanel({
         via: r.relationshipName,
         kind: r.cascadeDelete === true ? "md" : "lookup",
         onCanvas: describes.has(r.childSObject),
-        system: SYSTEM_OBJECTS.has(r.childSObject),
+        system: isSystemObject(r.childSObject, isCustomName(r.childSObject)),
         parentCount: ahead.p,
         childCount: ahead.c,
       });
@@ -1267,7 +1287,7 @@ export default function SchemaPanel({
           via: f.name,
           kind: "lookup",
           onCanvas: describes.has(t),
-          system: SYSTEM_OBJECTS.has(t),
+          system: isSystemObject(t, isCustomName(t)),
           parentCount: ahead.p,
           childCount: ahead.c,
         });
@@ -1367,6 +1387,11 @@ export default function SchemaPanel({
   // All/Custom/Manual/Hide-system. Caps bound the blast radius.
   const NEURAL_MAX_NODES = 250;
   const NEURAL_MAX_DEPTH = 5;
+  // Hub guard: a node with more than this many distinct neighbors is drawn
+  // with all its links but NOT walked through. Without this, one Task-like
+  // hub (or an Account with 200 children) re-explodes the sweep and drags
+  // the whole org back in. Hub children stay one click away via Discover.
+  const NEURAL_HUB_DEGREE = 40;
   const godCancel = useRef(false);
   const [neuralRunning, setNeuralRunning] = useState(false);
   const neuralMode = useCallback(async () => {
@@ -1395,7 +1420,9 @@ export default function SchemaPanel({
           break;
         }
         // One BFS level per batch (concurrency 6), so progress reads level by level.
-        const level = queue.splice(0);
+        // Custom-first ordering: under a fixed node budget, domain depth wins
+        // over platform breadth.
+        const level = queue.splice(0).sort((a, b) => Number(isCustomName(b.api)) - Number(isCustomName(a.api)));
         setBusy(`Neural mode: depth ${level[0].depth} · ${visited.size} objects so far…`);
         const results = await mapLimit(level, 6, async ({ api }) => {
           const d = await describeCached(api);
@@ -1405,42 +1432,73 @@ export default function SchemaPanel({
           if (!d) continue;
           const depth = level.find((l) => l.api === api)?.depth ?? 0;
           if (depth >= NEURAL_MAX_DEPTH) continue;
-          // Children.
+          // Collect neighbors first so the hub guard can count before walking.
+          const neighbors: { name: string; row: GraphNeighbor }[] = [];
+          const neighborKey = (role: string, name: string) => `${role}:${name}`;
+          const seenLocal = new Set<string>();
           for (const r of d.childRelationships ?? []) {
-            if (!r.relationshipName || r.childSObject === api) continue;
-            pushRow(api, {
-              apiName: r.childSObject,
-              label: labels.get(r.childSObject) ?? r.childSObject,
-              custom: isCustomName(r.childSObject),
-              role: "child",
-              via: r.relationshipName,
-              kind: r.cascadeDelete === true ? "md" : "lookup",
-              attachTo: api,
-              depth: depth + 1,
+            if (!r.relationshipName || r.childSObject === api || seenLocal.has(neighborKey("c", r.childSObject))) continue;
+            seenLocal.add(neighborKey("c", r.childSObject));
+            neighbors.push({
+              name: r.childSObject,
+              row: {
+                apiName: r.childSObject,
+                label: labels.get(r.childSObject) ?? r.childSObject,
+                custom: isCustomName(r.childSObject),
+                role: "child",
+                via: r.relationshipName,
+                kind: r.cascadeDelete === true ? "md" : "lookup",
+                attachTo: api,
+                depth: depth + 1,
+              },
             });
-            if (!visited.has(r.childSObject) && visited.size < NEURAL_MAX_NODES) {
-              visited.add(r.childSObject);
-              queue.push({ api: r.childSObject, depth: depth + 1 });
-            }
           }
-          // Parents (lookup targets).
           for (const f of d.fields ?? []) {
             if (f.type !== "reference") continue;
             for (const t of f.referenceTo ?? []) {
-              if (t === api) continue;
-              pushRow(api, {
-                apiName: t,
-                label: labels.get(t) ?? t,
-                custom: isCustomName(t),
-                role: "parent",
-                via: f.name,
-                kind: "lookup",
-                attachTo: api,
-                depth: depth + 1,
+              if (t === api || seenLocal.has(neighborKey("p", t))) continue;
+              seenLocal.add(neighborKey("p", t));
+              neighbors.push({
+                name: t,
+                row: {
+                  apiName: t,
+                  label: labels.get(t) ?? t,
+                  custom: isCustomName(t),
+                  role: "parent",
+                  via: f.name,
+                  kind: "lookup",
+                  attachTo: api,
+                  depth: depth + 1,
+                },
               });
-              if (!visited.has(t) && visited.size < NEURAL_MAX_NODES) {
-                visited.add(t);
-                queue.push({ api: t, depth: depth + 1 });
+            }
+          }
+          // System nodes are never touched: no rows, no traversal. This is
+          // what keeps Task/User/RecordType-style hubs (and Share/Feed/
+          // History families) from dragging the whole org back in.
+          // The Hide-system allow-list is honored automatically: force-shown
+          // names sweep normally. Audit-via parents are skipped too unless
+          // explicitly allowed (a custom object behind CreatedById is still
+          // noise until the architect says otherwise).
+          const live = neighbors.filter((n) => {
+            const custom = isCustomName(n.name);
+            if (systemAllow.has(n.name)) return true;
+            if (isEffectivelyHidden(n.name, custom, systemAllow)) return false;
+            if (n.row.role === "parent") {
+              const viaField = n.row.via;
+              if (AUDIT_REFERENCE_FIELDS.has(viaField)) return false;
+            }
+            return true;
+          });
+          const hub = live.length > NEURAL_HUB_DEGREE;
+          for (const n of live) pushRow(api, n.row);
+          // Hub-leaf: draw all of the hub's links but do NOT walk through it.
+          // Its children stay one Discover click away instead of exploding.
+          if (!hub) {
+            for (const n of live) {
+              if (!visited.has(n.name) && visited.size < NEURAL_MAX_NODES) {
+                visited.add(n.name);
+                queue.push({ api: n.name, depth: depth + 1 });
               }
             }
           }
@@ -1472,7 +1530,7 @@ export default function SchemaPanel({
       setBusy(null);
       setNeuralRunning(false);
     }
-  }, [rootName, busy, view, describes, describeCached, labels, isCustomName]);
+  }, [rootName, busy, view, describes, describeCached, labels, isCustomName, systemAllow]);
   const expandFamily = useCallback(async (fromApi: string, names: string[]) => {
     if (busy || names.length === 0) return;
     // True depth: walk attach-links back to the root.
@@ -1655,7 +1713,7 @@ export default function SchemaPanel({
           via: f.name,
           kind: "lookup",
           onCanvas: describes.has(t),
-          system: SYSTEM_OBJECTS.has(t),
+          system: isSystemObject(t, isCustomName(t)),
         });
       }
     }
@@ -1810,7 +1868,10 @@ export default function SchemaPanel({
     setDescribes(new Map());
     setRemovedIds(new Set());
     setDismissedIds(new Set());
+    setDismissedEdges(new Set());
     setHiddenIds(new Set());
+    setSystemAllow(new Set());
+    setHideSystem(false);
     setManageChecked(new Set());
     setExpanded(new Map());
     setFamilyFor(null);
@@ -2318,9 +2379,14 @@ export default function SchemaPanel({
             ))}
             <button
               type="button"
-              onClick={() => setHideSystem((v) => !v)}
+              onClick={() => {
+                // Opening the review IS the toggle UX: the modal shows exactly
+                // what hides, allow-listing per item, then Hide/Done proceeds.
+                // Turning off is one click inside.
+                setSystemReviewOpen(true);
+              }}
               aria-pressed={hideSystem}
-              title="Hide system noise, computed from metadata: audit lookups (CreatedBy, Owner…), User/RecordType/Organization/Profile, and Share/Feed/History children"
+              title="Review what Hide-system sweeps (audit lookups, system objects, platform families) - uncheck to force-show; Neural honors the same list"
               className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors cursor-pointer ${
                 hideSystem
                   ? "bg-bronze-600 text-white border-bronze-600"
@@ -2605,6 +2671,22 @@ export default function SchemaPanel({
       {popover && <PicklistPopover pop={popover} onClose={() => setPopover(null)} />}
 
       {/* Selective discovery picker */}
+      {systemReviewOpen && (
+        <SystemHideModal
+          rows={systemHiddenList}
+          initialAllow={systemAllow}
+          active={hideSystem}
+          onClose={() => setSystemReviewOpen(false)}
+          onApply={(allow) => {
+            setSystemAllow(allow);
+            setHideSystem(true);
+          }}
+          onTurnOff={() => {
+            setHideSystem(false);
+            setSystemReviewOpen(false);
+          }}
+        />
+      )}
       {picker && (
         <DiscoverPicker
           open

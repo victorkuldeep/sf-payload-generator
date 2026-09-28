@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectJunction, buildEdges, buildGraphElements, rootNeighbors, systemReason, isSystemObject } from "./graph";
+import { detectJunction, buildEdges, buildGraphElements, rootNeighbors, systemReason, isSystemObject, isNeuralExcluded } from "./graph";
 import type { SalesforceDescribeResult } from "@/lib/salesforce/types";
 
 const desc = (
@@ -289,5 +289,13 @@ describe("system-noise detection", () => {
     expect(isSystemObject("User")).toBe(true);
     expect(isSystemObject("LeadShare")).toBe(true);
     expect(isSystemObject("Opportunity")).toBe(false);
+  });
+  it("isNeuralExcluded keeps sweeps domain-only, custom always passes", () => {
+    expect(isNeuralExcluded("Task", false)).toBe(true);
+    expect(isNeuralExcluded("User", false)).toBe(true);
+    expect(isNeuralExcluded("LeadShare", false)).toBe(true);
+    expect(isNeuralExcluded("Account", false)).toBe(false);
+    expect(isNeuralExcluded("Quote__c", true)).toBe(false);
+    expect(isNeuralExcluded("Task__c", true)).toBe(false); // custom always deep
   });
 });

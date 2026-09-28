@@ -343,13 +343,45 @@ export const SYSTEM_OBJECTS = new Set(["User", "RecordType", "Organization", "Pr
 const SYSTEM_CHILD_FAMILIES = ["Share", "Feed", "History"];
 
 /**
+ * Ubiquitous platform objects: activities, notes/files, email/messaging,
+ * approvals/processes/flows, chatter plumbing. They attach to nearly every
+ * domain object, so including them turns any sweep into soup. Applies to
+ * STANDARD objects only - custom objects always go deep, even with these
+ * names (a custom object can never be one of these identities anyway, but
+ * the guard keeps the rule honest).
+ */
+export const SYSTEM_PLATFORM_OBJECTS = new Set([
+  // Activities
+  "Task", "Event", "TaskRelation", "EventRelation", "AcceptedEventRelation",
+  "ActivityHistory", "OpenActivity",
+  // Notes, attachments, files
+  "Note", "Attachment", "AttachedContentDocument", "CombinedAttachment",
+  "ContentDocument", "ContentDocumentLink", "ContentVersion", "ContentNote",
+  // Email & messaging
+  "EmailMessage", "EmailStatus", "EmailMessageRelation",
+  "MessagingSession", "MessagingEndUser",
+  // Approvals, processes, flows
+  "ProcessInstance", "ProcessInstanceHistory", "ProcessInstanceNode",
+  "ProcessInstanceStep", "ProcessInstanceWorkitem", "ApprovalSubmission",
+  "AuthorizationFormConsent", "FlowOrchestrationWorkItem",
+  "FlowOrchestrationStage", "FlowInterview",
+  // Chatter & collaboration plumbing, setup audit
+  "CollaborationGroupRecord", "EntitySubscription", "TopicAssignment",
+  "UserDefinedLabelAssignment", "NetworkActivityAudit", "ListEmail",
+]);
+
+/**
  * Why a graph neighbor counts as system noise, or null when it is real
  * domain model. Parents qualify ONLY via audit fields; children qualify by
- * Share/Feed/History family or core-org identity.
+ * Share/Feed/History family, platform identity, or core-org identity.
+ * Custom objects are exempt (except core-org identity, which is impossible
+ * for custom) - custom always goes deep.
  */
-export function systemReason(n: { apiName: string; role: "parent" | "child"; via: string }): string | null {
+export function systemReason(n: { apiName: string; role: "parent" | "child"; via: string; custom?: boolean }): string | null {
   if (SYSTEM_OBJECTS.has(n.apiName)) return "system object";
   if (n.role === "parent" && AUDIT_REFERENCE_FIELDS.has(n.via)) return `audit lookup (${n.via})`;
+  if (n.custom) return null;
+  if (SYSTEM_PLATFORM_OBJECTS.has(n.apiName)) return "platform object";
   if (n.role === "child" && SYSTEM_CHILD_FAMILIES.some((fam) => n.apiName.endsWith(fam))) {
     return "platform family";
   }
@@ -357,8 +389,30 @@ export function systemReason(n: { apiName: string; role: "parent" | "child"; via
 }
 
 /** Object-level check for the ERD canvas (no via context there). */
-export function isSystemObject(apiName: string): boolean {
-  return SYSTEM_OBJECTS.has(apiName) || SYSTEM_CHILD_FAMILIES.some((fam) => apiName.endsWith(fam));
+export function isSystemObject(apiName: string, custom = false): boolean {
+  return (
+    SYSTEM_OBJECTS.has(apiName) ||
+    (!custom &&
+      (SYSTEM_PLATFORM_OBJECTS.has(apiName) ||
+        SYSTEM_CHILD_FAMILIES.some((fam) => apiName.endsWith(fam))))
+  );
+}
+
+/** Single predicate for sweeps (Neural): never touch system nodes, and never
+ * traverse through them either. Custom objects always pass. */
+export function isNeuralExcluded(apiName: string, custom: boolean): boolean {
+  return isSystemObject(apiName, custom);
+}
+
+/**
+ * Effective hide decision honoring the user's allow-list: an explicitly
+ * allowed name stays visible (and sweepable) even when the system definition
+ * flags it. The same predicate drives Hide-system AND Neural, so whatever
+ * the modal hides is automatically honored by sweeps.
+ */
+export function isEffectivelyHidden(apiName: string, custom: boolean, allow: Set<string>): boolean {
+  if (allow.has(apiName)) return false;
+  return isSystemObject(apiName, custom);
 }
 
 const BUBBLE_ROOT = 104;const BUBBLE_NODE = 80;
