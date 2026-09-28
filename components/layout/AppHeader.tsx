@@ -115,7 +115,7 @@ export function AppHeader({
   };
 
   return (
-    <header className="sticky top-0 z-40 w-full bg-[var(--color-canvas)]/95 backdrop-blur-sm border-b border-[var(--color-line)]">
+    <header className="app-chrome-header sticky top-0 z-40 w-full bg-[var(--color-canvas)]/95 backdrop-blur-sm border-b border-[var(--color-line)]">
       <div className="w-full px-5 flex items-center justify-between h-[64px] gap-3">
         <Link href="/" className="sf-brand" aria-label="sObject Studio - Salesforce API Workbench">
           <span className="sf-brand__title">

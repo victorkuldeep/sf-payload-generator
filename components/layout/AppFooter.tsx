@@ -42,7 +42,7 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
   if (variant === "slim") {
     return (
       <>
-      <footer className="w-full border-t border-[var(--color-line)] bg-[#F5F1E8]/60 mt-auto relative overflow-hidden">
+      <footer className="app-chrome-footer w-full border-t border-[var(--color-line)] bg-[#F5F1E8]/60 mt-auto relative overflow-hidden">
         <div
           aria-hidden="true"
           className="absolute inset-0 opacity-20 pointer-events-none bg-[radial-gradient(#AE9B7D_1px,transparent_1px)] [background-size:24px_24px]"
@@ -78,7 +78,7 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
     <>
     <footer
       aria-label="Site footer"
-      className="w-full border-t border-[var(--color-line)] bg-[#F5F1E8]/60 mt-auto relative overflow-hidden"
+      className="app-chrome-footer w-full border-t border-[var(--color-line)] bg-[#F5F1E8]/60 mt-auto relative overflow-hidden"
     >
       {/* Ambient dotted detail */}
       <div
@@ -212,7 +212,7 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
                   </li>
                   <li>
                     <Link
-                      href="/schema"
+                      href="/?mode=schema"
                       className="text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:underline transition-colors"
                     >
                       Schema

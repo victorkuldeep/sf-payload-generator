@@ -294,3 +294,13 @@ button, input, select, textarea, optgroup, option {
 .focus-ring {
   @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bronze-600 focus-visible:ring-offset-2 focus-visible:ring-offset-ivory-100;
 }
+
+/* ── Schema presentation mode (body.sf-present): PPT-style full screen.
+   Same-tab toggle from the Schema Explorer - hides app chrome, no routing. ── */
+body.sf-present {
+  overflow: hidden;
+}
+body.sf-present .app-chrome-header,
+body.sf-present .app-chrome-footer {
+  display: none;
+}

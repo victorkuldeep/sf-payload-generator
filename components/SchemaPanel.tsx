@@ -33,8 +33,6 @@ interface SchemaPanelProps {
   instanceUrl: string;
   apiVersion: string;
   getToken: () => string;
-  /** Room mode: fill the parent height instead of a fixed viewport calc. */
-  fillHeight?: boolean;
   onSessionExpired?: () => void;
 }
 
@@ -681,7 +679,6 @@ export default function SchemaPanel({
   instanceUrl,
   apiVersion,
   getToken,
-  fillHeight = false,
   onSessionExpired,
 }: SchemaPanelProps) {
   const [rootSearch, setRootSearch] = useState("");
@@ -2349,44 +2346,46 @@ export default function SchemaPanel({
     setSpot(null);
   }, []);
 
-  // Pop-out handoff: fresh tabs don't inherit sessionStorage, so serve the
-  // live session over a same-origin BroadcastChannel (memory only, one-shot,
-  // nonce-matched - the token never touches disk or the URL).
+  // Presentation mode: same-tab full screen (PPT-style). Hides the app header
+  // + footer via body.sf-present - no route switch, no token handoff, Esc exits.
+  const [present, setPresent] = useState(false);
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.body.classList.toggle("sf-present", present);
+    if (!present) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPresent(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.classList.remove("sf-present");
+    };
+  }, [present]);
   const popOut = useCallback(() => {
-    const token = getToken();
-    if (!token) {
-      setError("Session expired - reconnect in the studio first, then pop out.");
-      return;
-    }
-    const nonce =
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    window.open(`/schema?handoff=${nonce}`, "_blank", "noopener");
-    try {
-      const bc = new BroadcastChannel("sf-schema-handoff");
-      const payload = { instanceUrl, apiVersion, token };
-      const timer = window.setTimeout(() => bc.close(), 15000);
-      bc.onmessage = (ev: MessageEvent) => {
-        const msg = ev.data as { type?: string; nonce?: string } | null;
-        if (msg?.type === "schema-room-ready" && msg.nonce === nonce) {
-          bc.postMessage({ type: "schema-room-session", nonce, session: payload });
-          window.clearTimeout(timer);
-          bc.close();
-        }
-      };
-    } catch {
-      /* BroadcastChannel unavailable - room falls back to its own Connect */
-    }
-  }, [getToken, instanceUrl, apiVersion]);
+    setPresent((v) => !v);
+  }, []);
 
   const focusOptions = [...describes.keys()].sort();
 
   return (
     <div
       className="flex gap-3"
-      style={fillHeight ? { height: "100%", minHeight: 0 } : { height: "calc(100vh - 180px)", minHeight: 520 }}
+      style={present ? { height: "calc(100vh - 72px)", minHeight: 520 } : { height: "calc(100vh - 180px)", minHeight: 520 }}
     >
+      {present && (
+        <button
+          type="button"
+          onClick={() => setPresent(false)}
+          aria-label="Exit full-screen presentation"
+          title="Exit full screen (or press Esc)"
+          className="fixed bottom-5 right-5 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-ivory-950 text-ivory-100 shadow-xl hover:bg-bronze-600 transition-colors cursor-pointer"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+            <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3" />
+          </svg>
+        </button>
+      )}
       {/* ── Collapsible explorer sidebar ── */}
       {sideOpen ? (
         <aside className="flex w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)]">
@@ -2401,13 +2400,19 @@ export default function SchemaPanel({
             <button
               type="button"
               onClick={popOut}
-              aria-label="Open schema room in a new tab"
-              title="Pop out to a full-screen schema room (new tab, chrome-free canvas)"
+              aria-label={present ? "Exit full-screen presentation" : "Enter full-screen presentation"}
+              title={present ? "Exit full screen (or press Esc)" : "Full screen: hide header + footer for presenting (Esc to exit)"}
               className="rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-                <path d="M14 4h6v6M20 4 11 13M9 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3" />
-              </svg>
+              {present ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                  <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3" />
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                  <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                </svg>
+              )}
             </button>
             <button
               type="button"
@@ -2979,7 +2984,7 @@ export default function SchemaPanel({
         )}
         <div className="relative min-h-0 flex-1">
           {!rootName || describes.size === 0 ? (
-            <div className={`flex items-center justify-center rounded-xl border border-dashed border-[var(--color-line)] bg-[var(--color-surface)] p-6 ${fillHeight ? "h-full" : "h-full min-h-[420px]"}`}>
+            <div className="flex items-center justify-center rounded-xl border border-dashed border-[var(--color-line)] bg-[var(--color-surface)] p-6 h-full min-h-[420px]">
               <EmptyState
                 icon={
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
