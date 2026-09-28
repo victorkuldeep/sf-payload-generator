@@ -23,12 +23,14 @@ import StudioRequests, { type StudioRequestActions } from "./composite-studio/St
 import StudioGraph from "./composite-studio/StudioGraph";
 import StudioPayloadView from "./composite-studio/StudioPayload";
 import Button from "./ui/Button";
-import { snapKey, loadSnap, saveSnap } from "@/lib/workspace/snapshots";
+import { loadAutosave, queueAutosave } from "@/lib/workspace/autosave";
 
 interface CompositePanelProps {
   objects: SalesforceObject[];
   instanceUrl: string;
   apiVersion: string;
+  /** Autosave org key (null until the session resolves it) - bundles persist per org. */
+  orgKey: string | null;
   getToken: () => string;
   onAddToCollection: (item: NewCollectionItem) => void;
   onSessionExpired?: () => void;
@@ -47,6 +49,7 @@ export default function CompositePanel({
   objects,
   instanceUrl,
   apiVersion,
+  orgKey,
   getToken,
   onAddToCollection,
   onSessionExpired,
@@ -86,52 +89,41 @@ export default function CompositePanel({
 
   const MAX_BUNDLES = 10;
 
-  // ── Bundle snapshot: bundles survive route trips + reloads. Describes
-  // re-backfill quietly. Saves stay silent until the restore pass runs.
-  interface CompositeSnap {
+  // ── Bundle autosave (per org, IndexedDB): full docs + describes persist as
+  // the live layer. Restored as-is - zero API calls. Empty mounts stay silent.
+  interface CompositeAutosaveData {
     bundles: { tabId: string; doc: StudioDocument }[];
     activeTabId: string;
+    describes: SalesforceDescribeResult[];
   }
-  const compositeRestoredRef = useRef(false);
+  const compositeRestoredRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!compositeRestoredRef.current) return;
-    saveSnap(snapKey("sf_composite", instanceUrl), {
+    if (!orgKey || compositeRestoredRef.current !== orgKey) return;
+    if (bundles.length === 0) return;
+    queueAutosave(orgKey, "composite", {
       bundles,
       activeTabId: activeBundleRef.current,
-    } satisfies CompositeSnap);
+      describes: [...describes.values()],
+    } satisfies CompositeAutosaveData);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bundles, activeBundleId, instanceUrl]);
+  }, [orgKey, bundles, activeBundleId, describes]);
 
   useEffect(() => {
-    if (objects.length === 0 || compositeRestoredRef.current) return;
-    compositeRestoredRef.current = true;
-    const snap = loadSnap<CompositeSnap>(snapKey("sf_composite", instanceUrl));
-    if (!snap || !snap.bundles || snap.bundles.length === 0) return;
-    const docs = snap.bundles.slice(0, MAX_BUNDLES);
-    setBundles(docs);
-    const activeId = docs.some((t) => t.tabId === snap.activeTabId) ? snap.activeTabId : docs[0].tabId;
-    setActiveBundleId(activeId);
-    activeBundleRef.current = activeId;
-    // Quiet describe backfill for every requested object.
-    const want = [...new Set(docs.flatMap((t) => t.doc.requests.map((r) => r.objectApiName).filter(Boolean)))];
-    if (want.length === 0) return;
+    if (objects.length === 0 || !orgKey || compositeRestoredRef.current === orgKey) return;
+    compositeRestoredRef.current = orgKey;
     void (async () => {
-      const token = getToken();
-      if (!token) return;
-      const entries: [string, SalesforceDescribeResult][] = [];
-      for (const objectName of want.slice(0, 40)) {
-        try {
-          const response = await apiFetch("/api/salesforce/describe", { instanceUrl, token, apiVersion, objectName });
-          const data = (await response.json()) as SalesforceDescribeResult;
-          if (response.ok) entries.push([objectName, data]);
-        } catch {
-          /* skip */
-        }
-      }
-      if (entries.length > 0) setDescribes(new Map(entries));
+      const snap = await loadAutosave<CompositeAutosaveData>(orgKey, "composite");
+      const s = snap?.data;
+      if (!s || !s.bundles || s.bundles.length === 0) return;
+      const docs = s.bundles.slice(0, MAX_BUNDLES);
+      setBundles(docs);
+      const activeId = docs.some((t) => t.tabId === s.activeTabId) ? s.activeTabId : docs[0].tabId;
+      setActiveBundleId(activeId);
+      activeBundleRef.current = activeId;
+      if (s.describes) setDescribes(new Map(s.describes.map((d) => [d.name, d])));
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [objects, instanceUrl]);
+  }, [orgKey, objects]);
 
   const switchBundle = useCallback((tabId: string) => {
     setActiveBundleId(tabId);

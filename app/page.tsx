@@ -38,7 +38,7 @@ import {
 import { ConnectModal } from "@/components/ConnectModal";
 import { ObjectSearchOverlay } from "@/components/ObjectSearchOverlay";
 import { getCachedConnection, setCachedConnection, clearCachedConnection } from "@/lib/session/cache";
-import { snapKey, loadSnap, saveSnap } from "@/lib/workspace/snapshots";
+import { loadAutosave, queueAutosave, flushAutosaves } from "@/lib/workspace/autosave";
 import Button from "@/components/ui/Button";
 import ObjectPanel from "@/components/ObjectPanel";
 import FieldPanel from "@/components/FieldPanel";
@@ -496,6 +496,9 @@ export default function Home() {
   const [sessionExpired, setSessionExpired] = useState(false);
   const [builderLeftOpen, setBuilderLeftOpen] = useState(true);
   const [builderRightOpen, setBuilderRightOpen] = useState(true);
+  // Org key for workspace autosave: resolved from the live session after
+  // login (org id, host fallback). Never derived from - or containing - tokens.
+  const [orgKey, setOrgKey] = useState<string | null>(null);
   const [builderTabs, setBuilderTabs] = useState<BuilderTab[]>(() => [
     { tabId: newItemId(), name: null, draft: freshBuilderDraft() },
   ]);
@@ -632,6 +635,7 @@ export default function Home() {
     if (conn) {
       tokenRef.current = conn.token;
       sessionStorage.setItem("sf_welcomed", "1");
+      setOrgKey(conn.orgKey);
       setState((prev) => ({
         ...prev,
         connected: true,
@@ -781,6 +785,30 @@ export default function Home() {
   const setErrorKey = (key: keyof ErrorState, value: string | null) =>
     setErrors((prev) => ({ ...prev, [key]: value }));
 
+  /** Resolve the autosave org key from the live session (one cheap query). */
+  const resolveOrgKey = useCallback(
+    async (instanceUrl: string, token: string, apiVersion: string): Promise<string> => {
+      try {
+        const r = await apiFetch(
+          "/api/salesforce/soql",
+          { instanceUrl, token, apiVersion, soql: "SELECT Id FROM Organization LIMIT 1" },
+          15000
+        );
+        const d = (await r.json()) as { records?: { Id?: string }[] };
+        const id = d?.records?.[0]?.Id;
+        if (r.ok && typeof id === "string" && id.length >= 15) return `org:${id.slice(0, 15)}`;
+      } catch {
+        /* fall through to host key */
+      }
+      try {
+        return `host:${new URL(instanceUrl).host.toLowerCase()}`;
+      } catch {
+        return `host:${instanceUrl}`;
+      }
+    },
+    []
+  );
+
   const handleConnect = useCallback(
     async (instanceUrl: string, token: string, apiVersion: string): Promise<boolean> => {
       setLoadingKey("connect", true);
@@ -814,7 +842,9 @@ export default function Home() {
 
         // Load objects immediately (returns them so the caller can cache the connection)
         const objs = await loadObjects(instanceUrl, token, apiVersion);
-        setCachedConnection({ instanceUrl, token, apiVersion, objects: objs, objectCount: data.objectCount ?? 0 });
+        const key = await resolveOrgKey(instanceUrl, token, apiVersion);
+        setOrgKey(key);
+        setCachedConnection({ instanceUrl, token, apiVersion, objects: objs, objectCount: data.objectCount ?? 0, orgKey: key });
         return true;
       } catch (err) {
         setErrorKey("connect", err instanceof Error ? err.message : "Connection failed");
@@ -823,7 +853,7 @@ export default function Home() {
         setLoadingKey("connect", false);
       }
     },
-    [] // eslint-disable-line react-hooks/exhaustive-deps
+    [resolveOrgKey] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const loadObjects = async (instanceUrl: string, token: string, apiVersion: string): Promise<SalesforceObject[]> => {
@@ -1079,10 +1109,10 @@ export default function Home() {
     setRenamingBuilderTabId(null);
   }, []);
 
-  // ── Workspace snapshots: builder tabs survive route trips + reloads.
-  // Saves stay silent until the restore pass runs (fresh mounts must not
-  // overwrite the good snapshot with blank state).
-  interface BuilderTabSnap {
+  // ── Builder workspace autosave (per org): full drafts incl. describes,
+  // restored as-is - zero API calls. Saves queue on change; restore runs once
+  // per org into a pristine workspace and never clobbers fresh user work.
+  interface BuilderTabAutosave {
     name: string | null;
     objectName: string | null;
     fieldNames: string[];
@@ -1090,6 +1120,11 @@ export default function Home() {
     operation: OperationType;
     recordId: string;
     payload: GeneratedPayload | null;
+    describe: SalesforceDescribeResult | null;
+  }
+  interface BuilderAutosaveData {
+    tabs: BuilderTabAutosave[];
+    activeIndex: number;
   }
   const builderRestoredRef = useRef<string | null>(null);
   const isPristineTabs = (tabs: BuilderTab[]) =>
@@ -1099,11 +1134,10 @@ export default function Home() {
     tabs[0].draft.generatedPayload === null;
 
   useEffect(() => {
-    if (!state.connected) return;
-    if (builderRestoredRef.current !== state.instanceUrl) return;
-    saveSnap(
-      snapKey("sf_builder_tabs", state.instanceUrl),
-      builderTabs.map((t): BuilderTabSnap => ({
+    if (!state.connected || !orgKey) return;
+    if (builderRestoredRef.current !== orgKey) return;
+    queueAutosave(orgKey, "builder", {
+      tabs: builderTabs.map((t): BuilderTabAutosave => ({
         name: t.name,
         objectName: t.draft.selectedObject?.name ?? null,
         fieldNames: [...t.draft.selectedFieldNames],
@@ -1111,82 +1145,77 @@ export default function Home() {
         operation: t.draft.operation,
         recordId: t.draft.recordId,
         payload: t.draft.generatedPayload,
-      }))
-    );
-  }, [builderTabs, state.connected, state.instanceUrl]);
+        describe: t.draft.describe,
+      })),
+      activeIndex: Math.max(
+        0,
+        builderTabs.findIndex((t) => t.tabId === activeBuilderTabRef.current)
+      ),
+    } satisfies BuilderAutosaveData);
+  }, [builderTabs, state.connected, orgKey]);
 
   useEffect(() => {
-    if (!state.connected || state.objects.length === 0) return;
-    if (builderRestoredRef.current === state.instanceUrl) return;
-    builderRestoredRef.current = state.instanceUrl;
-    const snap = loadSnap<BuilderTabSnap[]>(snapKey("sf_builder_tabs", state.instanceUrl));
-    if (!snap || snap.length === 0) return;
-    if (!isPristineTabs(builderTabs)) return;
+    if (!state.connected || !orgKey || state.objects.length === 0) return;
+    if (builderRestoredRef.current === orgKey) return;
+    builderRestoredRef.current = orgKey;
     void (async () => {
-      const tabs: BuilderTab[] = [];
-      for (const s of snap.slice(0, MAX_BUILDER_TABS)) {
+      const snap = await loadAutosave<BuilderAutosaveData>(orgKey, "builder");
+      if (!snap || snap.data.tabs.length === 0) return;
+      if (!isPristineTabs(builderTabs)) return;
+      const tabs: BuilderTab[] = snap.data.tabs.slice(0, MAX_BUILDER_TABS).map((s) => {
         const obj = s.objectName ? (state.objects.find((o) => o.name === s.objectName) ?? null) : null;
-        let describe: SalesforceDescribeResult | null = null;
-        if (obj) {
-          try {
-            const r = await apiFetch("/api/salesforce/describe", {
-              instanceUrl: state.instanceUrl,
-              token: tokenRef.current,
-              apiVersion: state.apiVersion,
-              objectName: obj.name,
-            });
-            const d = (await r.json()) as SalesforceDescribeResult;
-            if (r.ok) describe = d;
-          } catch {
-            /* leave null - user can reselect the object to retry */
-          }
-        }
-        tabs.push({
+        return {
           tabId: newItemId(),
           name: s.name,
           draft: {
             selectedObject: obj,
-            describe,
-            selectedFieldNames: new Set(s.fieldNames ?? []),
-            fieldValues: s.fieldValues ?? {},
+            describe: obj ? s.describe : null,
+            selectedFieldNames: obj ? new Set(s.fieldNames ?? []) : new Set(),
+            fieldValues: obj ? (s.fieldValues ?? {}) : {},
             operation: s.operation ?? "POST",
             recordId: s.recordId ?? "",
-            generatedPayload: s.payload,
+            generatedPayload: obj ? s.payload : null,
           },
-        });
-      }
+        };
+      });
       if (tabs.length === 0) return;
-      // Apply only if the user hasn't started fresh work mid-backfill.
       setBuilderTabs((prev) => (isPristineTabs(prev) ? tabs : prev));
+      const idx = Math.min(snap.data.activeIndex ?? 0, tabs.length - 1);
       setActiveBuilderTabId((prevActive) => {
         if (prevActive) return prevActive;
-        activeBuilderTabRef.current = tabs[0].tabId;
-        return tabs[0].tabId;
+        activeBuilderTabRef.current = tabs[idx].tabId;
+        return tabs[idx].tabId;
       });
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.connected, state.objects, state.instanceUrl, state.apiVersion]);
+  }, [state.connected, orgKey, state.objects]);
 
-  // ── Last-mode persistence: returning from JSON / Contracts / Architect
-  // lands back where work was happening instead of the home hero.
+  // ── Last-mode autosave: returning from JSON / Contracts / Architect lands
+  // back where work was happening instead of the home hero.
   const modeRestoredRef = useRef(false);
   useEffect(() => {
-    if (!state.connected || modeRestoredRef.current) return;
+    if (!state.connected || !orgKey || modeRestoredRef.current) return;
     modeRestoredRef.current = true;
     if (new URLSearchParams(window.location.search).get("mode")) return; // deep link wins
-    const m = loadSnap<string>(snapKey("sf_mode", state.instanceUrl));
-    if (m && m !== "home" && (m as BuilderMode) !== state.mode) goMode(m as BuilderMode);
-  }, [state.connected, state.instanceUrl, state.mode, goMode]);
+    void (async () => {
+      const snap = await loadAutosave<{ mode: string }>(orgKey, "meta");
+      const m = snap?.data.mode;
+      if (m && m !== "home" && (m as BuilderMode) !== state.mode) goMode(m as BuilderMode);
+    })();
+  }, [state.connected, orgKey, state.mode, goMode]);
   useEffect(() => {
-    if (!state.connected) return;
-    saveSnap(snapKey("sf_mode", state.instanceUrl), state.mode);
-  }, [state.mode, state.connected, state.instanceUrl]);
+    if (!state.connected || !orgKey) return;
+    if (!modeRestoredRef.current) return;
+    queueAutosave(orgKey, "meta", { mode: state.mode });
+  }, [state.mode, state.connected, orgKey]);
 
   const handleDisconnect = useCallback(() => {
     tokenRef.current = "";
     clearCachedConnection();
+    flushAutosaves();
     builderRestoredRef.current = null;
     modeRestoredRef.current = false;
+    setOrgKey(null);
     sessionStorage.removeItem("sf_session");
     setShowSearch(false);
     setShowConnect(false);
@@ -1409,6 +1438,7 @@ export default function Home() {
                   objects={state.objects}
                   instanceUrl={state.instanceUrl}
                   apiVersion={state.apiVersion}
+                  orgKey={orgKey}
                   getToken={() => tokenRef.current}
                   onAddToCollection={requestAddToCollection}
                   onSessionExpired={handleSessionExpired}
@@ -1450,6 +1480,7 @@ export default function Home() {
                   objects={state.objects}
                   instanceUrl={state.instanceUrl}
                   apiVersion={state.apiVersion}
+                  orgKey={orgKey}
                   getToken={() => tokenRef.current}
                   onSessionExpired={handleSessionExpired}
                 />

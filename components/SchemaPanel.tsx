@@ -22,7 +22,7 @@ import {
   type ErdSnapshot,
 } from "@/lib/erd/snapshotDb";
 import { newItemId } from "@/lib/collection/types";
-import { snapKey, loadSnap, saveSnap, clearSnap } from "@/lib/workspace/snapshots";
+import { loadAutosave, queueAutosave, clearAutosave } from "@/lib/workspace/autosave";
 import { EmptyState } from "./EmptyState";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
@@ -32,6 +32,8 @@ interface SchemaPanelProps {
   objects: SalesforceObject[];
   instanceUrl: string;
   apiVersion: string;
+  /** Autosave org key (null until the session resolves it) - canvas persists per org. */
+  orgKey: string | null;
   getToken: () => string;
   onSessionExpired?: () => void;
 }
@@ -678,6 +680,7 @@ export default function SchemaPanel({
   objects,
   instanceUrl,
   apiVersion,
+  orgKey,
   getToken,
   onSessionExpired,
 }: SchemaPanelProps) {
@@ -1023,13 +1026,13 @@ export default function SchemaPanel({
     });
   }, []);
 
-  // ── In-flight canvas snapshot: root + fetched objects + curation survive
-  // route trips (JSON / Contracts / Architect unmount this panel) and full
-  // reloads. Describes re-backfill quietly - no busy spinner, no error modal.
-  // Saves stay silent until the restore pass runs.
-  interface SchemaSnap {
+  // ── Canvas autosave (per org, IndexedDB): full describes + curation persist
+  // as the live layer under manual snapshots. Restored as-is on the next
+  // connect to the same org - zero API calls, no route-hop snapshots.
+  // Saves queue on change; empty mounts stay silent; Clear canvas deletes.
+  interface SchemaAutosaveData {
     rootName: string;
-    described: string[];
+    describes: SalesforceDescribeResult[];
     hiddenIds: string[];
     removedIds: string[];
     dismissedIds: string[];
@@ -1046,20 +1049,14 @@ export default function SchemaPanel({
     enforced: [string, { x: number; y: number }][] | null;
     viewports: { erd: { x: number; y: number; zoom: number } | null; graph: { x: number; y: number; zoom: number } | null };
   }
-  const schemaRestoredRef = useRef(false);
-  // True from restore start until the describe backfill lands. Saves stay
-  // locked meanwhile - an intermediate empty-describes state must never
-  // overwrite the good snapshot mid-restore (the cross-route wipe).
-  const restoreInFlightRef = useRef(false);
+  const schemaRestoredRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!schemaRestoredRef.current) return;
-    if (restoreInFlightRef.current) return;
+    if (!orgKey || schemaRestoredRef.current !== orgKey) return;
     // Empty mounts stay silent: nothing to save, nothing to clobber.
-    // Explicit Clear canvas removes the key directly (see clearCanvas).
     if (!rootName && describes.size === 0) return;
-    saveSnap(snapKey("sf_schema", instanceUrl), {
+    queueAutosave(orgKey, "schema", {
       rootName,
-      described: [...describes.keys()],
+      describes: [...describes.values()],
       hiddenIds: [...hiddenIds],
       removedIds: [...removedIds],
       dismissedIds: [...dismissedIds],
@@ -1075,55 +1072,45 @@ export default function SchemaPanel({
       expanded: [...expanded.entries()],
       enforced: enforced ? [...enforced.entries()] : null,
       viewports: viewports.current,
-    } satisfies SchemaSnap);
+    } satisfies SchemaAutosaveData);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rootName, describes, hiddenIds, removedIds, dismissedIds, focusName, graphSelected, view, filterMode, familyMode, hideSystem, systemAllow, designIds, designMode, expanded, enforced, instanceUrl]);
+  }, [orgKey, rootName, describes, hiddenIds, removedIds, dismissedIds, focusName, graphSelected, view, filterMode, familyMode, hideSystem, systemAllow, designIds, designMode, expanded, enforced]);
 
   useEffect(() => {
-    if (objects.length === 0 || schemaRestoredRef.current) return;
-    schemaRestoredRef.current = true;
-    const snap = loadSnap<SchemaSnap>(snapKey("sf_schema", instanceUrl));
-    if (!snap || (!snap.rootName && (!snap.described || snap.described.length === 0))) return;
-    restoreInFlightRef.current = true;
-    if (snap.rootName) {
-      setRootName(snap.rootName);
-      setFocusName(snap.focusName || snap.rootName);
-    }
-    if (snap.graphSelected) setGraphSelected(snap.graphSelected);
-    if (snap.view) setView(snap.view);
-    if (snap.filterMode) setFilterMode(snap.filterMode);
-    if (snap.familyMode) setFamilyMode(snap.familyMode);
-    if (typeof snap.hideSystem === "boolean") setHideSystem(snap.hideSystem);
-    if (snap.hiddenIds) setHiddenIds(new Set(snap.hiddenIds));
-    if (snap.removedIds) setRemovedIds(new Set(snap.removedIds));
-    if (snap.dismissedIds) setDismissedIds(new Set(snap.dismissedIds));
-    if (snap.systemAllow) setSystemAllow(new Set(snap.systemAllow));
-    if (snap.designIds) setDesignIds(new Set(snap.designIds));
-    if (typeof snap.designMode === "boolean") setDesignMode(snap.designMode);
-    if (snap.expanded) setExpanded(new Map(snap.expanded));
-    if (snap.enforced) setEnforced(new Map(snap.enforced));
-    if (snap.viewports) viewports.current = snap.viewports;
-    const want = (snap.described ?? []).filter((n) => !describes.has(n)).slice(0, MAX_NODES);
-    if (want.length === 0) {
-      restoreInFlightRef.current = false;
-      return;
-    }
-    setNotice(`Restoring canvas - ${want.length} object${want.length === 1 ? "" : "s"} reloading…`);
+    if (!orgKey || objects.length === 0 || schemaRestoredRef.current === orgKey) return;
+    schemaRestoredRef.current = orgKey;
     void (async () => {
-      const fresh: SalesforceDescribeResult[] = [];
-      for (const n of want) {
-        try {
-          fresh.push(await fetchDescribe(n));
-        } catch {
-          /* object gone from the org - skip */
-        }
+      const snap = await loadAutosave<SchemaAutosaveData>(orgKey, "schema");
+      const s = snap?.data;
+      if (!s || (!s.rootName && (!s.describes || s.describes.length === 0))) return;
+      if (s.describes) setDescribes(new Map(s.describes.map((d) => [d.name, d])));
+      if (s.rootName) {
+        setRootName(s.rootName);
+        setFocusName(s.focusName || s.rootName);
       }
-      mergeDescribes(fresh);
-      restoreInFlightRef.current = false;
-      setNotice((cur) => (cur && cur.startsWith("Restoring canvas") ? null : cur));
+      if (s.graphSelected) setGraphSelected(s.graphSelected);
+      if (s.view) setView(s.view);
+      if (s.filterMode) setFilterMode(s.filterMode);
+      if (s.familyMode) setFamilyMode(s.familyMode);
+      if (typeof s.hideSystem === "boolean") setHideSystem(s.hideSystem);
+      if (s.hiddenIds) setHiddenIds(new Set(s.hiddenIds));
+      if (s.removedIds) setRemovedIds(new Set(s.removedIds));
+      if (s.dismissedIds) setDismissedIds(new Set(s.dismissedIds));
+      if (s.systemAllow) setSystemAllow(new Set(s.systemAllow));
+      if (s.designIds) setDesignIds(new Set(s.designIds));
+      if (typeof s.designMode === "boolean") setDesignMode(s.designMode);
+      if (s.expanded) setExpanded(new Map(s.expanded));
+      if (s.enforced) setEnforced(new Map(s.enforced));
+      if (s.viewports) viewports.current = s.viewports;
+      const count = s.describes?.length ?? 0;
+      if (count > 0 && snap) {
+        const age = Date.now() - snap.savedAt;
+        const label = age < 60_000 ? "just now" : age < 3_600_000 ? `${Math.round(age / 60_000)}m ago` : age < 86_400_000 ? `${Math.round(age / 3_600_000)}h ago` : `${Math.round(age / 86_400_000)}d ago`;
+        setNotice(`Workspace restored - canvas auto-saved ${label}. Refresh all to revalidate.`);
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [objects, instanceUrl]);
+  }, [orgKey, objects]);
 
   const refreshNode = useCallback(
     async (id: string) => {
@@ -2273,9 +2260,9 @@ export default function SchemaPanel({
   const [confirmClear, setConfirmClear] = useState(false);
 
   const clearCanvas = useCallback(() => {
-    // Explicit wipe: remove the persisted key too, or the next mount would
-    // resurrect the cleared canvas (empty mounts otherwise stay silent).
-    clearSnap(snapKey("sf_schema", instanceUrl));
+    // Explicit wipe: delete the autosaved canvas too, or the next connect to
+    // this org would resurrect the cleared canvas (empty mounts stay silent).
+    if (orgKey) void clearAutosave(orgKey, "schema");
     setDescribes(new Map());
     setRemovedIds(new Set());
     setDismissedIds(new Set());
@@ -2296,7 +2283,7 @@ export default function SchemaPanel({
     setError(null);
     setConfirmClear(false);
     viewports.current = { erd: null, graph: null };
-  }, [instanceUrl]);
+  }, [orgKey]);
 
   const handleNodeClick = useCallback(
     (id: string) => {
@@ -2941,7 +2928,20 @@ export default function SchemaPanel({
               </button>
             )}
             {view === "graph" && (
-              <span className="ml-auto">
+              <span className="ml-auto flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => void refreshAll()}
+                  disabled={describes.size === 0 || !!busy}
+                  aria-label="Reload all canvas metadata fresh from the org"
+                  title="Reload all canvas metadata fresh from the org - re-fetch every object on canvas and report what changed"
+                  className="flex items-center rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] p-1.5 text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer disabled:opacity-40"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+                    <path d="M20 11a8 8 0 0 0-14.9-3M4 13a8 8 0 0 0 14.9 3" />
+                    <path d="M18 4v4h-4M6 20v-4h4" />
+                  </svg>
+                </button>
                 <button
                   type="button"
                   onClick={() => setNodesLocked((v) => !v)}

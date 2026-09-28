@@ -15,6 +15,8 @@ export interface CachedConnection {
   apiVersion: string;
   objects: SalesforceObject[];
   objectCount: number;
+  /** Resolved org key for workspace autosave (org id w/ host fallback). */
+  orgKey: string;
 }
 
 let cached: CachedConnection | null = null;
