@@ -511,8 +511,25 @@ export default function SchemaPanel({
   const [designMode, setDesignMode] = useState(false);
   const [designIds, setDesignIds] = useState<Set<string>>(new Set());
   const [nodeSearch, setNodeSearch] = useState("");
+  // Design mode follows the ERD canvas: anything added from the left
+  // explorer (or described anywhere) joins the design set automatically,
+  // so Add-left → appears in graph is one motion, not two.
   // Per-view viewport memory: zoom/pan survives view switches and growth.
   const viewports = useRef<{ erd: { x: number; y: number; zoom: number } | null; graph: { x: number; y: number; zoom: number } | null }>({ erd: null, graph: null });
+  useEffect(() => {
+    if (!designMode) return;
+    setDesignIds((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const name of describes.keys()) {
+        if (name !== rootName && !next.has(name)) {
+          next.add(name);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [describes, designMode, rootName]);
   // Drag-only lock (top toolbar button): node positions freeze, pan/zoom and
   // selection stay alive. Mutually exclusive with the built-in OOB lock below:
   // custom applies only while OOB is unlocked (oobLocked reported upward).
@@ -2611,6 +2628,18 @@ export default function SchemaPanel({
               onOobLockChange={setOobLocked}
               ref={canvasRef}
             />
+          )}
+          {view === "graph" && designMode && graphElements.nodes.length <= 1 && (
+            <div className="pointer-events-none absolute left-1/2 top-16 z-20 -translate-x-1/2">
+              <div className="max-w-sm rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] px-4 py-3 text-center shadow-[0_12px_36px_-16px_rgba(24,20,12,0.4)]">
+                <p className="text-[11px] font-bold uppercase tracking-[1.8px] text-[var(--color-accent-dark)]">
+                  Design mode
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-ivory-700">
+                  Search objects in the explorer (left) and Add - each lands left (parent) or right (child) by role. Or open a bubble → Discover → Add to graph.
+                </p>
+              </div>
+            </div>
           )}
           {view === "graph" && detail && (
             <GraphDetailCard
