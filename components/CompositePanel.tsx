@@ -5,6 +5,7 @@ import type { SalesforceObject, SalesforceDescribeResult, SalesforceField } from
 import { apiFetch } from "@/lib/api";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import { getWritableFields, isRequiredField } from "@/lib/salesforce/metadata";
+import { getSampleValueForField } from "@/lib/payload/samples";
 import type { NewCollectionItem } from "@/lib/collection/types";
 import {
   buildStudioPayload,
@@ -281,7 +282,7 @@ export default function CompositePanel({
               fieldLabel: f.label,
               fieldType: f.type,
               mode: "literal" as const,
-              literal: "",
+              literal: getSampleValueForField(f),
               mappingId: null,
             }));
           return { ...r, fields: [...r.fields, ...rows] };
@@ -589,6 +590,27 @@ export default function CompositePanel({
           <span className="font-mono text-[11px] text-[#777168]">
             {doc.requests.length}/25
           </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              if (doc.requests.some((r) => r.fields.length > 0)) {
+                if (!window.confirm("Start a new composite bundle? Current requests will be cleared.")) return;
+              }
+              setDoc({
+                name: "Untitled transaction",
+                apiVersion: doc.apiVersion,
+                allOrNone: true,
+                requests: [emptyStudioRequest(newStudioId("req"))],
+                mappings: [],
+              });
+              setScreen("requests");
+              touch();
+            }}
+            title="Start a new composite bundle (clears current requests)"
+          >
+            + New bundle
+          </Button>
           <button
             onClick={() => setScreen("payload")}
             title="Open validation"

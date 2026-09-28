@@ -482,6 +482,23 @@ function FieldSection({
               Add{picked.size > 0 ? ` ${picked.size}` : ""}
             </Button>
           </div>
+          <div className="flex items-center gap-3 px-2 pb-1.5 text-[12px]">
+            <button
+              type="button"
+              onClick={() => setPicked(new Set(candidates.map((f) => f.name)))}
+              className="font-medium text-[#A98450] hover:underline cursor-pointer"
+            >
+              Select all{candidates.length > 0 ? ` (${candidates.length})` : ""}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPicked(new Set())}
+              disabled={picked.size === 0}
+              className="text-[#777168] hover:underline cursor-pointer disabled:opacity-40"
+            >
+              Clear all
+            </button>
+          </div>
           <div className="max-h-56 overflow-y-auto px-2 pb-2">
             {candidates.map((f) => {
               const on = picked.has(f.name);

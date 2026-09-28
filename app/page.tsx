@@ -460,6 +460,8 @@ export default function Home() {
   const [collection, setCollection] = useState<CollectionItem[]>([]);
   const [pickerItem, setPickerItem] = useState<NewCollectionItem | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [builderLeftOpen, setBuilderLeftOpen] = useState(true);
+  const [builderRightOpen, setBuilderRightOpen] = useState(true);
 
   const handleSessionExpired = useCallback(() => {
     setSessionExpired(true);
@@ -1230,15 +1232,46 @@ export default function Home() {
             {/* ── Single object mode ── */}
             {state.mode === "single" && (
               <section id="builder" aria-label="Object and Field Selection" className="scroll-mt-20">
-                <div className="grid gap-5 lg:grid-cols-2">
-                  <ObjectPanel
-                    objects={state.objects}
-                    selectedObject={state.selectedObject}
-                    loading={loading.objects}
-                    error={errors.objects}
-                    onSelect={handleObjectSelect}
-                  />
+                <div className={`grid gap-5 ${builderLeftOpen && builderRightOpen ? "lg:grid-cols-2" : builderLeftOpen || builderRightOpen ? "lg:grid-cols-[1fr_auto]" : ""}`}>
+                  <div className={builderLeftOpen ? "" : "lg:w-12"}>
+                    <button
+                      type="button"
+                      onClick={() => setBuilderLeftOpen((v) => !v)}
+                      aria-expanded={builderLeftOpen}
+                      title={builderLeftOpen ? "Collapse object panel" : "Expand object panel"}
+                      className="mb-2 flex w-full items-center gap-1.5 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[13px] font-semibold text-ivory-950 hover:border-bronze-500 transition-colors cursor-pointer"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true" className={`transition-transform ${builderLeftOpen ? "" : "-rotate-90"}`}>
+                        <path d="m6 9 6 6 6-6" />
+                      </svg>
+                      {builderLeftOpen ? "Select object" : <span className="sr-only">Select object</span>}
+                    </button>
+                    {builderLeftOpen && (
+                    <ObjectPanel
+                      objects={state.objects}
+                      selectedObject={state.selectedObject}
+                      loading={loading.objects}
+                      error={errors.objects}
+                      onSelect={handleObjectSelect}
+                    />
+                    )}
+                  </div>
 
+                  <div className={builderRightOpen ? "" : "lg:w-12"}>
+                    <button
+                      type="button"
+                      onClick={() => setBuilderRightOpen((v) => !v)}
+                      aria-expanded={builderRightOpen}
+                      title={builderRightOpen ? "Collapse field panel" : "Expand field panel"}
+                      className="mb-2 flex w-full items-center gap-1.5 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[13px] font-semibold text-ivory-950 hover:border-bronze-500 transition-colors cursor-pointer"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true" className={`transition-transform ${builderRightOpen ? "" : "-rotate-90"}`}>
+                        <path d="m6 9 6 6 6-6" />
+                      </svg>
+                      {builderRightOpen ? "Select fields" : <span className="sr-only">Select fields</span>}
+                    </button>
+                    {builderRightOpen && (
+                    <>
                   {state.selectedObject ? (
                     <FieldPanel
                       fields={state.describe?.fields ?? []}
@@ -1269,6 +1302,9 @@ export default function Home() {
                       }
                     />
                   )}
+                    </>
+                    )}
+                  </div>
                 </div>
               </section>
             )}
