@@ -22,6 +22,7 @@ interface CollectionDrawerProps {
   onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
   onRemove: (id: string) => void;
+  onRenameItem: (id: string, name: string) => void;
   onClearActive: () => void;
 }
 
@@ -49,6 +50,7 @@ export function CollectionDrawer({
   onRename,
   onDelete,
   onRemove,
+  onRenameItem,
   onClearActive,
 }: CollectionDrawerProps) {
   const [copied, setCopied] = useState(false);
@@ -60,6 +62,8 @@ export function CollectionDrawer({
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [renameError, setRenameError] = useState("");
+  const [renamingItemId, setRenamingItemId] = useState<string | null>(null);
+  const [itemRenameValue, setItemRenameValue] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -290,10 +294,48 @@ export function CollectionDrawer({
                     {item.method}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-semibold text-ivory-950">
-                      {item.name}{" "}
-                      <span className="font-normal text-ivory-600">· {KIND_LABEL[item.kind]}</span>
-                    </p>
+                    {renamingItemId === item.id ? (
+                      <span className="flex items-center gap-1.5">
+                        <input
+                          value={itemRenameValue}
+                          onChange={(e) => setItemRenameValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              const name = itemRenameValue.trim();
+                              if (name) {
+                                onRenameItem(item.id, name);
+                                setRenamingItemId(null);
+                              }
+                            }
+                            if (e.key === "Escape") setRenamingItemId(null);
+                          }}
+                          autoFocus
+                          aria-label={`Rename ${item.name}`}
+                          className="w-full min-w-0 rounded-md border border-[var(--color-line)] bg-white px-1.5 py-0.5 text-xs text-ivory-950 focus:outline-none focus:border-bronze-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const name = itemRenameValue.trim();
+                            if (name) {
+                              onRenameItem(item.id, name);
+                              setRenamingItemId(null);
+                            }
+                          }}
+                          aria-label="Save name"
+                          className="shrink-0 rounded-md p-1 text-green-700 hover:bg-green-500/10 cursor-pointer"
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+                            <path d="M5 13l4 4L19 7" />
+                          </svg>
+                        </button>
+                      </span>
+                    ) : (
+                      <p className="truncate text-xs font-semibold text-ivory-950">
+                        {item.name}{" "}
+                        <span className="font-normal text-ivory-600">· {KIND_LABEL[item.kind]}</span>
+                      </p>
+                    )}
                     <p className="truncate font-mono text-[11px] text-ivory-600" title={item.url}>
                       {item.url}
                     </p>
@@ -301,6 +343,20 @@ export function CollectionDrawer({
                   <span className="hidden sm:inline shrink-0 text-[10px] text-ivory-500">
                     {new Date(item.createdAt).toLocaleTimeString()}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRenamingItemId(item.id);
+                      setItemRenameValue(item.name);
+                    }}
+                    aria-label={`Rename ${item.name}`}
+                    title="Rename request"
+                    className="shrink-0 rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                      <path d="M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                    </svg>
+                  </button>
                   <button
                     type="button"
                     onClick={() => onRemove(item.id)}

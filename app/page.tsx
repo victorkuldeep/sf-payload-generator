@@ -10,7 +10,7 @@ import {
 } from "@/lib/salesforce/types";
 import { generatePayload, generateEndpoint } from "@/lib/payload/generator";
 import { generateSampleValues, getSampleValueForField } from "@/lib/payload/samples";
-import { getWritableFields } from "@/lib/salesforce/metadata";
+import { getWritableFields, isRequiredField } from "@/lib/salesforce/metadata";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import { apiFetch } from "@/lib/api";
 import { AppShell } from "@/components/layout/AppShell";
@@ -811,7 +811,19 @@ export default function Home() {
           return;
         }
 
-        setState((prev) => ({ ...prev, describe: data }));
+        setState((prev) => {
+          // Auto-select required fields for the current operation (POST) with
+          // sample values, so a built request starts valid. User can uncheck.
+          const required = getWritableFields(data.fields, prev.operation).filter((f) =>
+            isRequiredField(f, prev.operation)
+          );
+          const selectedFieldNames = new Set(required.map((f) => f.name));
+          const fieldValues: Record<string, unknown> = {};
+          for (const f of required) {
+            fieldValues[f.name] = getSampleValueForField(f);
+          }
+          return { ...prev, describe: data, selectedFieldNames, fieldValues, generatedPayload: null };
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to load fields";
         setErrorKey("describe", message);
@@ -1051,6 +1063,15 @@ export default function Home() {
   const removeFromCollection = useCallback((id: string) => {
     setCollection((prev) => prev.filter((i) => i.id !== id));
     deleteCollectionItem(id).catch(() => {});
+  }, []);
+
+  const renameCollectionItem = useCallback((id: string, name: string) => {
+    setCollection((prev) => {
+      const next = prev.map((i) => (i.id === id ? { ...i, name } : i));
+      const updated = next.find((i) => i.id === id);
+      if (updated) saveCollectionItem(updated).catch(() => {});
+      return next;
+    });
   }, []);
 
   const clearActiveCollection = useCallback(() => {
@@ -1327,6 +1348,7 @@ export default function Home() {
         onRename={renameCollection}
         onDelete={deleteCollectionHandler}
         onRemove={removeFromCollection}
+        onRenameItem={renameCollectionItem}
         onClearActive={clearActiveCollection}
       />
       {toast && (
