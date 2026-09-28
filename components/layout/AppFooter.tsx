@@ -48,7 +48,7 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
           className="absolute inset-0 opacity-20 pointer-events-none bg-[radial-gradient(#AE9B7D_1px,transparent_1px)] [background-size:24px_24px]"
         />
         {trail && (
-          <div className="relative border-b border-[var(--color-line-soft)] px-5 py-2 flex justify-center">
+          <div className="relative border-b border-[var(--color-line-soft)] px-5 py-1 flex justify-center">
             <div className="w-full max-w-3xl">{trail}</div>
           </div>
         )}

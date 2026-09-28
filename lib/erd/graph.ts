@@ -515,12 +515,14 @@ const BUBBLE_ROOT = 104;const BUBBLE_NODE = 80;
 // Scatter orbits: bubbles sit on concentric rings so dense fans never share
 // one crowded circle. Orbits are UNBOUNDED - the ring list grows until every
 // neighbor has a slot, because the canvas scrolls/zooms and nothing may hide.
-// Kept under 180° so big fans stay wider than tall (never a vertical pipe):
-// extremes stay at ±70°, lanes march outward with full bubble + label room.
-const ORBIT_0 = 400;
-const ORBIT_STEP = 220;
+// Kept under 180° so big fans stay wider than tall (never a vertical pipe).
+// GENEROUS spacing: rings start far out and step wide, bubbles keep ~2.5
+// diameters - Neural-scale sweeps must read as a scattered sky, not a
+// crowded core. fitView zooms to fit; the user scrolls for the whole tree.
+const ORBIT_0 = 520;
+const ORBIT_STEP = 300;
 const ARC_DEG = 140;
-const MIN_GAP = 150;
+const MIN_GAP = 200;
 
 function orbitSlots(radius: number): number[] {
   const arcLen = radius * ((ARC_DEG * Math.PI) / 180);
@@ -720,9 +722,9 @@ export function buildGraphElements(
   // vertically with full bubble room (the canvas scrolls; nothing squeezes
   // into the viewport). Lanes walk further in x until a slot is free, so
   // dense sweeps read as a scattered big tree, never a tight vertical pipe.
-  const EXTEND_SPREAD = 150;
-  const EXTEND_R0 = 380;
-  const EXTEND_RSTEP = 240;
+  const EXTEND_SPREAD = 200;
+  const EXTEND_R0 = 520;
+  const EXTEND_RSTEP = 320;
   const byAttach = new Map<string, GraphNeighbor[]>();
   for (const n of deeper) {
     const key = n.attachTo ?? root.name;
