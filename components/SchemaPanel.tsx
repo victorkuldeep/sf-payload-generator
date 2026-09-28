@@ -128,20 +128,20 @@ function GraphDetailCardInner({
   designMode: boolean;
   /** Design mode: add checked names to the graph sketch (roles place them). */
   onAddToGraph: (names: string[]) => void;
-  /** apiNames already drawn AS THIS NODE's family (level-1 if root, attached
-   * rows otherwise). Rows start checked iff present here - no phantom ticks. */
-  drawnHere: Set<string>;
+  /** ApiName -> drawn edge ids touching it, for the selected node. */
+  drawnHere: Map<string, string[]>;
 }) {
   const apiName = detail.kind === "loaded" ? detail.d.name : detail.n.apiName;
   const label = detail.kind === "loaded" ? detail.d.label : detail.n.label;
   const linkCount = detail.kind === "loaded" ? detail.parents.length + detail.kids.length : 0;
   const [familyFilter, setFamilyFilter] = useState("");
   const [familyChecked, setFamilyChecked] = useState<Set<string>>(new Set());
-  // Truthful ticks: a row starts checked ONLY if its bubble is actually drawn
-  // as this node's family. Never pre-check strangers (the phantom-tick bug).
+  // Truthful ticks: a row starts checked ONLY if its link is actually drawn
+  // to this node. D&B in Account's panel starts unchecked until + draws the
+  // Account→D&B edge - no phantom ticks, ever.
   useEffect(() => {
     if (family) {
-      setFamilyChecked(new Set(family.filter((c) => drawnHere.has(c.apiName)).map((c) => c.apiName)));
+      setFamilyChecked(new Set([...drawnHere.keys()].filter((api) => family.some((c) => c.apiName === api))));
     } else {
       setFamilyChecked(new Set());
     }
@@ -150,6 +150,11 @@ function GraphDetailCardInner({
   }, [apiName, family]);
   const q = familyFilter.toLowerCase().trim();
   const visibleFamily = family && (q ? family.filter((c) => c.apiName.toLowerCase().includes(q) || c.label.toLowerCase().includes(q)) : family);
+  const [tab, setTab] = useState<"discover" | "edges">("discover");
+  useEffect(() => {
+    setTab("discover");
+  }, [apiName]);
+  const edgeCount = detail.kind === "loaded" ? detail.parents.length + detail.kids.length : 1;
   return (
     <div className="absolute right-3 top-3 bottom-3 z-30 w-[280px] overflow-y-auto rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] shadow-[0_16px_48px_-12px_rgba(24,20,12,0.35)]">
       <div className="border-b border-[var(--color-line-soft)] p-4">
@@ -192,30 +197,31 @@ function GraphDetailCardInner({
               </>
             )}
           </div>
+          {/* Tabs: Discover (search + family + actions) vs Edges (no scroll-hunt) */}
+          <div className="mt-3 flex rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-canvas)] p-0.5" role="tablist" aria-label="Detail sections">
+            {(
+              [
+                ["discover", "Discover"],
+                ["edges", `Edges (${edgeCount})`],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                role="tab"
+                aria-selected={tab === id}
+                onClick={() => setTab(id)}
+                className={`flex-1 rounded-md px-2 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
+                  tab === id ? "bg-[var(--color-surface)] text-ivory-950 shadow-sm" : "text-ivory-500 hover:text-ivory-950"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
       </div>
 
-      {detail.kind === "loaded" && (
+      {tab === "discover" && detail.kind === "loaded" && (
         <div className="space-y-3 p-4">
-          <div>
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-[1.6px] text-ivory-600">
-              Connected edges ({detail.parents.length + detail.kids.length})
-            </p>
-            <ul className="space-y-1">
-              {detail.parents.map((p) => (
-                <li key={`p:${p}`} className="truncate rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-canvas)] px-2.5 py-1.5 font-mono text-[11px] text-ivory-800">
-                  ↑ {labels.get(p) ?? p} <span className="text-ivory-500">({p})</span>
-                </li>
-              ))}
-              {detail.kids.map((k) => (
-                <li key={`c:${k}`} className="truncate rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-canvas)] px-2.5 py-1.5 font-mono text-[11px] text-ivory-800">
-                  ↓ {labels.get(k) ?? k} <span className="text-ivory-500">({k})</span>
-                </li>
-              ))}
-              {detail.parents.length === 0 && detail.kids.length === 0 && (
-                <li className="text-[11px] text-ivory-500">No described links yet.</li>
-              )}
-            </ul>
-          </div>
           <div className="flex flex-col gap-1.5">
             <Button size="sm" variant="secondary" onClick={onOpenInErd}>
               Open in ERD
@@ -235,8 +241,45 @@ function GraphDetailCardInner({
         </div>
       )}
 
+      {tab === "edges" && detail.kind === "loaded" && (
+        <div className="space-y-3 p-4">
+          <div>
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-[1.6px] text-ivory-600">
+              Connected edges ({detail.parents.length + detail.kids.length})
+            </p>
+            <ul className="max-h-64 space-y-1 overflow-y-auto">
+              {detail.parents.map((p) => (
+                <li key={`p:${p}`} className="truncate rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-canvas)] px-2.5 py-1.5 font-mono text-[11px] text-ivory-800">
+                  ↑ {labels.get(p) ?? p} <span className="text-ivory-500">({p})</span>
+                </li>
+              ))}
+              {detail.kids.map((k) => (
+                <li key={`c:${k}`} className="truncate rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-canvas)] px-2.5 py-1.5 font-mono text-[11px] text-ivory-800">
+                  ↓ {labels.get(k) ?? k} <span className="text-ivory-500">({k})</span>
+                </li>
+              ))}
+              {detail.parents.length === 0 && detail.kids.length === 0 && (
+                <li className="text-[11px] text-ivory-500">No described links yet.</li>
+              )}
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {tab === "edges" && detail.kind === "lite" && (
+        <div className="space-y-3 p-4">
+          <p className="text-xs leading-relaxed text-ivory-700">
+            Related to the root via <span className="font-mono font-semibold text-ivory-950">{detail.n.via}</span>. Fetch details for the full edge list.
+          </p>
+          <Button size="sm" onClick={onLoad} className="w-full">
+            Fetch details
+          </Button>
+        </div>
+      )}
+
       {/* Family discovery: deep expansion FROM the selected node. Works on
           root AND on any bubble - the graph grows like a family tree. */}
+      {tab === "discover" && (
       <div className="space-y-2 border-t border-[var(--color-line-soft)] p-4">
         <p className="text-[10px] font-semibold uppercase tracking-[1.6px] text-ivory-600">
           Discover of {apiName}
@@ -255,11 +298,6 @@ function GraphDetailCardInner({
             />
             <div className="max-h-56 space-y-px overflow-y-auto rounded-lg border border-[var(--color-line)] divide-y divide-[var(--color-line-soft)]">
               {(visibleFamily ?? []).map((c) => {
-                // Checkbox = selection for Expand-to-ERD / Add-to-graph.
-                // drawnHere rows (actually on the graph as THIS node's family)
-                // start checked; strangers never do. Unchecking a drawn row
-                // hides its bubble live via onVisibility.
-                const drawn = drawnHere.has(c.apiName);
                 const checked = familyChecked.has(c.apiName);
                 return (
                   <label
@@ -273,14 +311,16 @@ function GraphDetailCardInner({
                       type="checkbox"
                       checked={checked}
                       onChange={() => {
+                        const next = !checked;
                         setFamilyChecked((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(c.apiName)) next.delete(c.apiName);
-                          else next.add(c.apiName);
-                          return next;
+                          const s = new Set(prev);
+                          if (next) s.add(c.apiName);
+                          else s.delete(c.apiName);
+                          return s;
                         });
-                        // Unchecking a drawn row hides its bubble live.
-                        if (drawn && checked) onVisibility(c.apiName, false);
+                        // Uncheck hides this node's drawn links live (bubbles
+                        // survive); re-check restores them. Nothing deleted.
+                        onVisibility(c.apiName, next);
                       }}
                       className="h-3.5 w-3.5 shrink-0 rounded border-ivory-400 bg-white text-bronze-600 focus:ring-bronze-500"
                       aria-label={`${checked ? "Deselect" : "Select"} ${c.label}`}
@@ -324,11 +364,14 @@ function GraphDetailCardInner({
                 size="sm"
                 variant="ghost"
                 onClick={() => {
-                  // Expand all: check every visible row.
+                  // Expand all: check every visible row (links restore live).
                   const all = new Set((visibleFamily ?? []).map((c) => c.apiName));
                   setFamilyChecked(all);
+                  for (const api of all) {
+                    if (drawnHere.has(api)) onVisibility(api, true);
+                  }
                 }}
-                title="Check every visible row"
+                title="Check every visible row (drawn links restore)"
               >
                 Expand +
               </Button>
@@ -336,13 +379,12 @@ function GraphDetailCardInner({
                 size="sm"
                 variant="ghost"
                 onClick={() => {
-                  // Collapse all: uncheck everything; drawn rows hide live.
-                  for (const c of visibleFamily ?? []) {
-                    if (drawnHere.has(c.apiName)) onVisibility(c.apiName, false);
-                  }
+                  // Collapse all: uncheck everything; drawn links hide live,
+                  // bubbles survive. Nothing is deleted.
+                  for (const api of drawnHere.keys()) onVisibility(api, false);
                   setFamilyChecked(new Set());
                 }}
-                title="Uncheck every row (drawn bubbles hide live)"
+                title="Uncheck every row (drawn links hide live, bubbles stay)"
               >
                 Collapse −
               </Button>
@@ -386,8 +428,9 @@ function GraphDetailCardInner({
           </>
         )}
       </div>
+      )}
 
-      {detail.kind === "lite" && (
+      {tab === "discover" && detail.kind === "lite" && (
         <div className="space-y-3 p-4">
           <p className="text-xs leading-relaxed text-ivory-700">
             Placed from relationship metadata - its fields are not fetched yet.
@@ -562,8 +605,10 @@ export default function SchemaPanel({
   // expansion (Discover of <node>) extends generations outward per node.
   // Manual shows only eye-kept ones. Graph NEVER narrows to the ERD canvas:
   // it is the scouting view; ERD is the curated view.
-  // Tombstones (removedIds) never render anywhere; dismissedIds hide from
-  // the graph only (quick remove, family uncheck) while ERD keeps them.
+  // Tombstones (removedIds) never render anywhere; dismissedIds hide whole
+  // bubbles from the graph only (quick remove) while ERD keeps them;
+  // dismissedEdges hide single LINKS (family uncheck) keeping both bubbles.
+  const [dismissedEdges, setDismissedEdges] = useState<Set<string>>(new Set());
   const graphElements = useMemo(() => {
     if (view !== "graph" || !rootName) return { nodes: [], edges: [], overflow: 0, extended: 0 };
     const root = describes.get(rootName);
@@ -579,24 +624,32 @@ export default function SchemaPanel({
     };
     const level1 = rootNeighbors(root, labels, isCustomName).filter(passFilters);
     // Family generations: expansion rows hang off their source node.
+    // NOTE: no apiName dedupe here - a row whose name is already a level-1
+    // bubble MUST still reach the builder: mesh mode draws the extra edge
+    // (Account→D&B alongside Lead→D&B), linear mode duplicates the bubble.
+    // Dropping such rows is what silently killed + in testing.
     const extra: GraphNeighbor[] = [];
-    // In Design mode the visible set is explicit: root + chosen ids. Level-1
-    // rows already cover direct neighbors, so x: rows duplicating a visible
-    // level-1 apiName are skipped (no double bubbles).
-    const visibleL1 = new Set(
-      (designMode ? level1.filter((n) => designIds.has(n.apiName)) : level1).map((n) => n.apiName)
-    );
     for (const [, list] of expanded) {
       for (const n of list) {
         if (!passFilters(n)) continue;
-        if (visibleL1.has(n.apiName)) continue;
         if (designMode && !designIds.has(n.apiName)) continue;
         extra.push(n);
       }
     }
     const shown1 = designMode ? level1.filter((n) => designIds.has(n.apiName)) : level1;
-    return buildGraphElements(root, [...shown1, ...extra], canvasNames, spot, enforced, familyMode);
-  }, [view, rootName, describes, labels, isCustomName, hideSystem, SYSTEM_OBJECTS, filterMode, hiddenIds, removedIds, dismissedIds, designMode, designIds, spot, enforced, expanded, familyMode]);
+    const built = buildGraphElements(root, [...shown1, ...extra], canvasNames, spot, enforced, familyMode);
+    if (dismissedEdges.size === 0) return built;
+    // Hide dismissed LINKS; then prune x: bubbles left linkless (level-1 fan
+    // always stays - it is the neighborhood, not a link).
+    const edges = built.edges.filter((e) => !dismissedEdges.has(String(e.id)));
+    const linked = new Set<string>();
+    for (const e of edges) {
+      linked.add(String(e.source));
+      linked.add(String(e.target));
+    }
+    const nodes = built.nodes.filter((n) => !n.id.startsWith("x:") || linked.has(n.id));
+    return { nodes, edges, overflow: built.overflow, extended: nodes.filter((n) => n.id.startsWith("x:")).length };
+  }, [view, rootName, describes, labels, isCustomName, hideSystem, SYSTEM_OBJECTS, filterMode, hiddenIds, removedIds, dismissedIds, dismissedEdges, designMode, designIds, spot, enforced, expanded, familyMode]);
 
   const neighborMap = useMemo(() => {
     const root = describes.get(rootName);
@@ -606,29 +659,32 @@ export default function SchemaPanel({
     return m;
   }, [describes, rootName, labels, isCustomName]);
 
-  // Truthful ticks: which apiNames are actually drawn AS a node's family.
-  // Root → level-1 bubbles on screen; others → expanded rows attached to them
-  // that survived filtering. The family panel seeds checks from this set.
-  const drawnHere = useMemo(() => {
-    const drawn = new Set(graphElements.nodes.map((n) => String((n.data as { apiName?: string } | undefined)?.apiName ?? "")));
-    const byAttach = new Map<string, Set<string>>();
-    const l1 = new Set<string>();
+  // Truthful ticks: for any node, which neighbor links are actually drawn.
+  // Map neighbor apiName -> drawn edge ids touching this node. Unchecking a
+  // row dismisses exactly those edges (link dies, bubbles survive); the
+  // x: rows stay so re-checking restores instantly without refetch.
+  const linksOf = useMemo(() => {
+    const idToApi = new Map<string, string>();
     for (const n of graphElements.nodes) {
       const api = String((n.data as { apiName?: string } | undefined)?.apiName ?? "");
-      if (!api || api === rootName) continue;
-      if (n.id.startsWith("p:") || n.id.startsWith("c:")) l1.add(api);
+      if (api) idToApi.set(n.id, api);
     }
-    byAttach.set(rootName, l1);
-    for (const [, list] of expanded) {
-      for (const r of list) {
-        if (!drawn.has(r.apiName)) continue;
-        const from = r.attachTo ?? rootName;
-        if (!byAttach.has(from)) byAttach.set(from, new Set());
-        byAttach.get(from)!.add(r.apiName);
-      }
+    const out = new Map<string, Map<string, string[]>>();
+    for (const e of graphElements.edges) {
+      const s = idToApi.get(String(e.source));
+      const t = idToApi.get(String(e.target));
+      if (!s || !t || s === t) continue;
+      if (!out.has(s)) out.set(s, new Map());
+      if (!out.has(t)) out.set(t, new Map());
+      const sm = out.get(s)!;
+      const tm = out.get(t)!;
+      if (!sm.has(t)) sm.set(t, []);
+      if (!tm.has(s)) tm.set(s, []);
+      sm.get(t)!.push(String(e.id));
+      tm.get(s)!.push(String(e.id));
     }
-    return byAttach;
-  }, [graphElements, expanded, rootName]);
+    return out;
+  }, [graphElements]);
 
   const detail = useMemo(() => {
     if (!graphSelected || view !== "graph") return null;
@@ -860,9 +916,19 @@ export default function SchemaPanel({
 
   // Shared add-pipeline: fetch, merge, pin layout, bump revision.
   // Re-adding revives tombstones: removed/dismissed ids for these names clear.
+  // Resilient: one object's 404 (e.g. D&B Company not in this org) must not
+  // kill the whole batch - successes land, failures are named individually.
   const addNames = useCallback(
     async (names: string[]): Promise<SalesforceDescribeResult[]> => {
-      const fresh = await mapLimit(names, 6, fetchDescribe);
+      const settled = await mapLimit(names, 6, async (n) => {
+        try {
+          return { ok: true as const, value: await fetchDescribe(n) };
+        } catch (err) {
+          return { ok: false as const, name: n, error: err instanceof Error ? err.message : String(err) };
+        }
+      });
+      const fresh = settled.filter((r) => r.ok).map((r) => r.value);
+      const failed = settled.filter((r) => !r.ok);
       mergeDescribes(fresh);
       const revived = new Set(fresh.map((d) => d.name));
       setRemovedIds((prev) => {
@@ -877,6 +943,14 @@ export default function SchemaPanel({
       });
       pinCurrentLayout();
       setLayoutRev((r) => r + 1);
+      if (failed.length > 0) {
+        const err = new Error(
+          `Could not add ${failed.map((f) => `${f.name} (${f.error})`).join(", ")}` +
+            (fresh.length > 0 ? ` - ${fresh.length} other object${fresh.length === 1 ? "" : "s"} still added.` : " - nothing added.")
+        );
+        (err as unknown as { partial: SalesforceDescribeResult[] }).partial = fresh;
+        throw err;
+      }
       return fresh;
     },
     [fetchDescribe, mergeDescribes, pinCurrentLayout]
@@ -933,7 +1007,15 @@ export default function SchemaPanel({
     setPopover(null);
     setBusy(`Refreshing ${ids.length} object${ids.length === 1 ? "" : "s"}…`);
     try {
-      const fresh = await mapLimit(ids, 6, fetchDescribe);
+      const settled = await mapLimit(ids, 6, async (n) => {
+        try {
+          return { ok: true as const, value: await fetchDescribe(n) };
+        } catch (err) {
+          return { ok: false as const, name: n, error: err instanceof Error ? err.message : String(err) };
+        }
+      });
+      const fresh = settled.filter((r) => r.ok).map((r) => r.value);
+      const failed = settled.filter((r) => !r.ok);
       mergeDescribes(fresh);
       const parts: string[] = [];
       for (const d of fresh) {
@@ -957,6 +1039,9 @@ export default function SchemaPanel({
           ? `Refreshed ${fresh.length} · ` + parts.slice(0, 4).join(" · ") + (parts.length > 4 ? ` · +${parts.length - 4} more` : "")
           : `Refreshed ${fresh.length} object${fresh.length === 1 ? "" : "s"} - no field changes.`
       );
+      if (failed.length > 0) {
+        setError(`Skipped ${failed.map((f) => `${f.name} (${f.error})`).join(", ")} - rest refreshed.`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Refresh failed");
     } finally {
@@ -2268,7 +2353,7 @@ export default function SchemaPanel({
               labels={labels}
               erdCount={describes.size}
               family={familyFor === (detail.kind === "loaded" ? detail.d.name : detail.n.apiName) ? family : null}
-              drawnHere={drawnHere.get(detail.kind === "loaded" ? detail.d.name : detail.n.apiName) ?? new Set<string>()}
+              drawnHere={linksOf.get(detail.kind === "loaded" ? detail.d.name : detail.n.apiName) ?? new Map<string, string[]>()}
               familyBusy={familyBusy}
               onClose={() => setGraphSelected(null)}
               onOpenInErd={() => {
@@ -2348,10 +2433,17 @@ export default function SchemaPanel({
                 collapseFamily(api);
               }}
               onVisibility={(apiName, visible) => {
-                setDismissedIds((prev) => {
+                // Uncheck = dismiss THIS node's drawn edges to the neighbor
+                // (bubbles survive); re-check restores them. Rows are never
+                // deleted, so no refetch is ever needed to bring a link back.
+                const ids = linksOf.get(detail.kind === "loaded" ? detail.d.name : detail.n.apiName)?.get(apiName) ?? [];
+                setDismissedEdges((prev) => {
                   const next = new Set(prev);
-                  if (visible) next.delete(apiName);
-                  else next.add(apiName);
+                  if (visible) {
+                    for (const id of ids) next.delete(id);
+                  } else {
+                    for (const id of ids) next.add(id);
+                  }
                   return next;
                 });
               }}
