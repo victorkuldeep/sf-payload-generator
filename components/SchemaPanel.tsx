@@ -12,7 +12,7 @@ import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import { apiFetch } from "@/lib/api";
 import { ErdCanvas, type ErdCanvasHandle } from "./erd/ErdCanvas";
 import { DiscoverPicker, type DiscoverCandidate } from "./erd/DiscoverPicker";
-import { SystemHideModal } from "./erd/SystemHideModal";
+import { HidePanel } from "./erd/HidePanel";
 import { PicklistPopover, type PicklistPopoverData } from "./erd/PicklistPopover";
 import {
   listSnapshotsByOrg,
@@ -488,7 +488,7 @@ export default function SchemaPanel({
   // Allow-list from the Hide-system review modal: explicitly force-shown
   // names survive both the graph/ERD filter AND Neural sweeps.
   const [systemAllow, setSystemAllow] = useState<Set<string>>(new Set());
-  const [systemReviewOpen, setSystemReviewOpen] = useState(false);
+  const [hidePanel, setHidePanel] = useState<null | "system" | "graph">(null);
   // Hide-system core: the modal allow-list always wins, in graph, ERD and
   // Neural alike. Whatever the modal hides, sweeps automatically honor.
   // Defined up here so graphElements, the review list and Neural share it.
@@ -2401,21 +2401,16 @@ export default function SchemaPanel({
             ))}
             <button
               type="button"
-              onClick={() => {
-                // Opening the review IS the toggle UX: the modal shows exactly
-                // what hides, allow-listing per item, then Hide/Done proceeds.
-                // Turning off is one click inside.
-                setSystemReviewOpen(true);
-              }}
+              onClick={() => setHidePanel(hideSystem || (dismissedIds.size === 0 && dismissedEdges.size === 0) ? "system" : "graph")}
               aria-pressed={hideSystem}
-              title="Review what Hide-system sweeps (audit lookups, system objects, platform families) - uncheck to force-show; Neural honors the same list"
+              title="Hide: review the system sweep, allow-list per item, or manage every graph entity - Neural honors the same list"
               className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors cursor-pointer ${
                 hideSystem
                   ? "bg-bronze-600 text-white border-bronze-600"
                   : "bg-[var(--color-surface)] border-[var(--color-line)] text-ivory-600 hover:text-ivory-950"
               }`}
             >
-              Hide system{systemHiddenCount > 0 ? ` · ${systemHiddenCount}` : ""}
+              Hide{systemHiddenCount + dismissedIds.size + dismissedEdges.size > 0 ? ` · ${systemHiddenCount + dismissedIds.size + dismissedEdges.size}` : ""}
             </button>
             {view === "graph" && (
               <span
@@ -2492,7 +2487,7 @@ export default function SchemaPanel({
                 </button>
               )
             )}
-            {view === "graph" && (expanded.size > 0 || dismissedIds.size > 0 || graphSelected || designIds.size > 0) && (
+            {view === "graph" && (expanded.size > 0 || dismissedIds.size > 0 || dismissedEdges.size > 0 || graphSelected || designIds.size > 0) && (
               <button
                 type="button"
                 onClick={() => {
@@ -2500,6 +2495,7 @@ export default function SchemaPanel({
                   // expansions, no dismissals, remembered zoom cleared).
                   setExpanded(new Map());
                   setDismissedIds(new Set());
+                  setDismissedEdges(new Set());
                   setDesignIds(new Set());
                   setDesignMode(false);
                   setGraphSelected(null);
@@ -2512,7 +2508,7 @@ export default function SchemaPanel({
                 title="Clear expansions, restores and selection - back to the root neighborhood"
                 className="rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1 text-[11px] font-semibold text-ivory-700 hover:border-red-400 hover:text-red-600 transition-colors cursor-pointer"
               >
-                Reset graph
+                Reset
               </button>
             )}
             {view === "graph" && (
@@ -2553,7 +2549,6 @@ export default function SchemaPanel({
                     <path d="M8 11V7a4 4 0 0 1 7.5-2" />
                   )}
                 </svg>
-                {nodesLocked ? "Locked" : "Lock"}
               </button>
             )}
             {view === "graph" && (
@@ -2749,20 +2744,61 @@ export default function SchemaPanel({
       {/* Picklist inspector */}
       {popover && <PicklistPopover pop={popover} onClose={() => setPopover(null)} />}
 
-      {/* Selective discovery picker */}
-      {systemReviewOpen && (
-        <SystemHideModal
-          rows={systemHiddenList}
+      {/* Unified Hide panel: System sweep review + all graph entities */}
+      {hidePanel && (
+        <HidePanel
+          initialTab={hidePanel}
+          systemRows={systemHiddenList}
           initialAllow={systemAllow}
-          active={hideSystem}
-          onClose={() => setSystemReviewOpen(false)}
-          onApply={(allow) => {
+          hideSystemActive={hideSystem}
+          graphNodes={(() => {
+            const seen = new Map<string, string>();
+            for (const n of graphElements.nodes) {
+              const api = String((n.data as { apiName?: string } | undefined)?.apiName ?? "");
+              if (!api || seen.has(api)) continue;
+              seen.set(api, String((n.data as { label?: string } | undefined)?.label ?? labels.get(api) ?? api));
+            }
+            // Dismissed bubbles are filtered from nodes - list them too as hidden.
+            for (const api of dismissedIds) {
+              if (!seen.has(api)) seen.set(api, labels.get(api) ?? api);
+            }
+            return [...seen.entries()]
+              .map(([apiName, label]) => ({ apiName, label, visible: !dismissedIds.has(apiName) }))
+              .sort((a, b) => (a.apiName < b.apiName ? -1 : 1));
+          })()}
+          hiddenLinks={[...dismissedEdges].sort().map((id) => {
+            const parts = id.split("|");
+            const strip = (s: string | undefined) =>
+              !s ? "?" : s.startsWith("x:") ? (s.split(":")[2] ?? s) : s.includes(":") ? (s.split(":").pop() ?? s) : s;
+            return { id, from: strip(parts[1]), to: strip(parts[2]), via: parts[3] ?? "" };
+          })}
+          onClose={() => setHidePanel(null)}
+          onApplySystem={(allow) => {
             setSystemAllow(allow);
             setHideSystem(true);
           }}
-          onTurnOff={() => {
+          onTurnOffSystem={() => {
             setHideSystem(false);
-            setSystemReviewOpen(false);
+            setHidePanel(null);
+          }}
+          onToggleNode={(apiName, visible) =>
+            setDismissedIds((prev) => {
+              const next = new Set(prev);
+              if (visible) next.delete(apiName);
+              else next.add(apiName);
+              return next;
+            })
+          }
+          onRestoreLink={(id) =>
+            setDismissedEdges((prev) => {
+              const next = new Set(prev);
+              next.delete(id);
+              return next;
+            })
+          }
+          onRestoreAll={() => {
+            setDismissedIds(new Set());
+            setDismissedEdges(new Set());
           }}
         />
       )}
