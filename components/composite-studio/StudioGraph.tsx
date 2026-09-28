@@ -218,7 +218,7 @@ function StudioGraphFlow(props: StudioGraphProps) {
             style={{ background: "#FFFFFF", border: "1px solid #E8E2D8", borderRadius: 8 }}
           />
         )}
-        <Controls position="bottom-left" showInteractive={false} />
+        <Controls position="bottom-left" />
       </ReactFlow>
 
       {/* Toolbar - arrange only, no editing here */}

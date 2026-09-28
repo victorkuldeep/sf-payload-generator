@@ -104,10 +104,13 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
   const [strokes, setStrokes] = useState<Stroke[]>([]);
   const strokeId = useRef(0);
   const drawing = useRef(false);
-  // Drag-lock is OURS, not React Flow's: locking freezes node displacement
-  // only. Pan and zoom keep working - the built-in lock button (which also
-  // kills selection) is hidden in favor of this one.
+  // Drag-lock is OURS: freezing node displacement only, pan/zoom always
+  // alive. The built-in freeze-everything lock sits below it in Controls;
+  // its state is mirrored above so it never slips silently.
   const [nodesLocked, setNodesLocked] = useState(false);
+  // Mirror of the built-in freeze-everything lock: mirrored into state so a
+  // parent re-render can never silently unlock it behind the user's back.
+  const [fullLocked, setFullLocked] = useState(false);
 
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -277,9 +280,10 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
         panOnDrag={!laser}
         zoomOnScroll
         zoomOnPinch
-        nodesDraggable={!laser && !nodesLocked}
+        nodesDraggable={!laser && !nodesLocked && !fullLocked}
         nodesConnectable={false}
-        elementsSelectable={!laser}
+        elementsSelectable={!laser && !fullLocked}
+        onInteractiveChange={(interactive) => setFullLocked(!interactive)}
         minZoom={0.15}
         fitView={storedViewport ? false : true}
         defaultViewport={storedViewport ?? undefined}
@@ -294,8 +298,8 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
           style={{ background: "#FFFFFF", border: "1px solid #DDD3BC", borderRadius: 8 }}
           maskColor="rgba(250, 248, 242, 0.75)"
         />
-        <Controls position="bottom-left" showInteractive={false} />
-        <Panel position="bottom-left" style={{ marginBottom: 100 }}>
+        <Controls position="bottom-left" />
+        <Panel position="bottom-left" style={{ marginBottom: 134 }}>
           <button
             type="button"
             onClick={() => setNodesLocked((v) => !v)}
