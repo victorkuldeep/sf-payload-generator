@@ -8,7 +8,7 @@ export default function JsonPage() {
   return (
     <div className="flex flex-col min-h-screen">
       <ToolHeader />
-      <main className="mx-auto w-full max-w-[1400px] px-5 py-6 flex-1">
+      <main className="mx-auto w-full max-w-[1400px] px-5 pt-6 pb-1 flex-1">
         <JsonStudio />
       </main>
       <AppFooter variant="slim" />
