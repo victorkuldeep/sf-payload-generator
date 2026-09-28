@@ -2539,6 +2539,17 @@ export default function SchemaPanel({
                 {nodesLocked ? "Locked" : "Lock"}
               </button>
             )}
+            {view === "graph" && (
+              <button
+                type="button"
+                onClick={resetAll}
+                disabled={describes.size === 0 || !!busy}
+                title="Rebalance: re-run auto-layout and re-fit - keeps every node (same as Reset view in the explorer panel)"
+                className="rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer disabled:opacity-40"
+              >
+                Rebalance
+              </button>
+            )}
             {view === "graph" && graphElements.overflow > 0 && (
               <span
                 className="rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800"
