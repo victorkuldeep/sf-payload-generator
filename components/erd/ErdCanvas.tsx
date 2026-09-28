@@ -14,10 +14,10 @@ import {
   Background,
   Controls,
   MiniMap,
-  Panel,
   useNodesState,
   useEdgesState,
   useReactFlow,
+  useStore,
   getNodesBounds,
   getViewportForBounds,
   type Node,
@@ -51,6 +51,10 @@ interface ErdCanvasProps {
   /** Restored viewport (zoom memory across view switches). Omit to fit. */
   storedViewport?: { x: number; y: number; zoom: number } | null;
   onViewportChange?: (v: { x: number; y: number; zoom: number }) => void;
+  /** Drag-only lock, owned by the parent toolbar button. Pan/zoom unaffected. */
+  nodesLocked?: boolean;
+  /** Reports the built-in OOB lock state upward (for mutual exclusion). */
+  onOobLockChange?: (locked: boolean) => void;
 }
 
 interface Stroke {
@@ -74,13 +78,20 @@ function pngFileName(scale: 2 | 3): string {
 }
 
 const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
-  { nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick, onViewportMove, onNodeDragStop, layoutRev, enforcedPositions, storedViewport, onViewportChange },
+  { nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick, onViewportMove, onNodeDragStop, layoutRev, enforcedPositions, storedViewport, onViewportChange, nodesLocked = false, onOobLockChange },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<ErdNodeData | GraphBubbleData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const { fitView } = useReactFlow();
+  // Built-in OOB lock state, reported upward for mutual exclusion with the
+  // parent-owned drag lock. nodesConnectable is hard-false here, so it is
+  // excluded - otherwise the lock would read permanently engaged.
+  const oobLocked = useStore((s) => !(s.nodesDraggable || s.elementsSelectable));
+  useEffect(() => {
+    onOobLockChange?.(oobLocked);
+  }, [oobLocked, onOobLockChange]);
   const lastRev = useRef(layoutRev);
   // Refit only when the graph SHAPE changes (count, view type, explicit
   // re-layout) - never on data-only refreshes, so zoom is never stolen.
@@ -104,14 +115,6 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
   const [strokes, setStrokes] = useState<Stroke[]>([]);
   const strokeId = useRef(0);
   const drawing = useRef(false);
-  // Drag-lock is OURS: freezing node displacement only, pan/zoom always
-  // alive. The freeze-everything lock is ours too (the built-in one fights
-  // controlled props and this React Flow version has no onInteractiveChange
-  // to mirror it - so we own both buttons, zero store conflicts).
-  const [nodesLocked, setNodesLocked] = useState(false);
-  // Full freeze: nodes, selection everything stops; pan/zoom still alive
-  // (React Flow always allows viewport movement).
-  const [fullLocked, setFullLocked] = useState(false);
 
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -281,9 +284,9 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
         panOnDrag={!laser}
         zoomOnScroll
         zoomOnPinch
-        nodesDraggable={!laser && !nodesLocked && !fullLocked}
+        nodesDraggable={!laser && !nodesLocked}
         nodesConnectable={false}
-        elementsSelectable={!laser && !fullLocked}
+        elementsSelectable={!laser}
         minZoom={0.15}
         fitView={storedViewport ? false : true}
         defaultViewport={storedViewport ?? undefined}
@@ -298,53 +301,7 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
           style={{ background: "#FFFFFF", border: "1px solid #DDD3BC", borderRadius: 8 }}
           maskColor="rgba(250, 248, 242, 0.75)"
         />
-        <Controls position="bottom-left" showInteractive={false} />
-        <Panel position="bottom-left" style={{ marginBottom: 100 }}>
-          <div style={{ display: "flex", flexDirection: "column", borderRadius: 4, overflow: "hidden", boxShadow: "0 0 2px 1px rgba(0,0,0,0.08)" }}>
-          <button
-            type="button"
-            onClick={() => setFullLocked((v) => !v)}
-            aria-pressed={fullLocked}
-            title={fullLocked ? "Unfreeze everything" : "Freeze everything - nodes and selection stop, pan/zoom keep working"}
-            className="react-flow__controls-button"
-            style={{ width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", background: fullLocked ? "#211F1B" : "#fff", color: fullLocked ? "#fff" : undefined, borderBottom: "1px solid #eee" }}
-          >
-            {fullLocked ? (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-                <rect x="4" y="11" width="16" height="9" rx="2" />
-                <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-              </svg>
-            ) : (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-                <rect x="4" y="11" width="16" height="9" rx="2" />
-                <path d="M8 11V7a4 4 0 0 1 7.5-2" />
-              </svg>
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={() => setNodesLocked((v) => !v)}
-            aria-pressed={nodesLocked}
-            title={nodesLocked ? "Unlock node dragging (pan/zoom always work)" : "Lock node positions - drag to arrange, lock to present (pan/zoom always work)"}
-            className="react-flow__controls-button"
-            style={{ width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", background: nodesLocked ? "#211F1B" : "#fff", color: nodesLocked ? "#fff" : undefined }}
-          >
-            {nodesLocked ? (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-                <rect x="4" y="11" width="16" height="9" rx="2" />
-                <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-                <path d="M9 16.5h6" strokeWidth="2.6" />
-              </svg>
-            ) : (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-                <rect x="4" y="11" width="16" height="9" rx="2" />
-                <path d="M8 11V7a4 4 0 0 1 7.5-2" />
-                <path d="M9 16.5h6" strokeWidth="2.6" />
-              </svg>
-            )}
-          </button>
-          </div>
-        </Panel>
+        <Controls position="bottom-left" showInteractive={!nodesLocked} />
       </ReactFlow>
 
       {laser && (
