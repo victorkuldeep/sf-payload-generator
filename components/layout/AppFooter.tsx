@@ -52,7 +52,7 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
             <div className="w-full max-w-3xl">{trail}</div>
           </div>
         )}
-        <div className="relative mx-auto w-full px-5 lg:px-8 py-2 grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-2 font-mono text-[11px] text-[var(--color-muted)]">
+        <div className="relative mx-auto w-full px-5 lg:px-8 py-1 grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-1 font-mono text-[11px] text-[var(--color-muted)]">
           <div className="flex items-center gap-2 justify-self-center sm:justify-self-start">
             <Link href="/" className="font-semibold text-[var(--color-ink)] hover:text-[var(--color-accent)] transition-colors">
               sObject Studio

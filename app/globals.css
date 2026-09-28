@@ -304,3 +304,7 @@ body.sf-present .app-chrome-header,
 body.sf-present .app-chrome-footer {
   display: none;
 }
+/* 5px breathing room around the canvas in presentation mode */
+body.sf-present #main-content > main {
+  padding: 5px;
+}

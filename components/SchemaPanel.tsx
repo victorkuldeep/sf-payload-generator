@@ -1076,41 +1076,57 @@ export default function SchemaPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgKey, rootName, describes, hiddenIds, removedIds, dismissedIds, focusName, graphSelected, view, filterMode, familyMode, hideSystem, systemAllow, designIds, designMode, expanded, enforced]);
 
+  // First-class restore: reload the autosaved canvas on demand, anytime -
+  // same apply path as the automatic restore on connect.
+  const applyAutosaveData = useCallback((s: SchemaAutosaveData, savedAt: number | null) => {
+    if (!s || (!s.rootName && (!s.describes || s.describes.length === 0))) return false;
+    if (s.describes) setDescribes(new Map(s.describes.map((d) => [d.name, d])));
+    if (s.rootName) {
+      setRootName(s.rootName);
+      setFocusName(s.focusName || s.rootName);
+    }
+    if (s.graphSelected) setGraphSelected(s.graphSelected);
+    if (s.view) setView(s.view);
+    if (s.filterMode) setFilterMode(s.filterMode);
+    if (s.familyMode) setFamilyMode(s.familyMode);
+    if (typeof s.hideSystem === "boolean") setHideSystem(s.hideSystem);
+    if (s.hiddenIds) setHiddenIds(new Set(s.hiddenIds));
+    if (s.removedIds) setRemovedIds(new Set(s.removedIds));
+    if (s.dismissedIds) setDismissedIds(new Set(s.dismissedIds));
+    if (s.systemAllow) setSystemAllow(new Set(s.systemAllow));
+    if (s.designIds) setDesignIds(new Set(s.designIds));
+    if (typeof s.designMode === "boolean") setDesignMode(s.designMode);
+    if (s.expanded) setExpanded(new Map(s.expanded));
+    if (s.enforced) setEnforced(new Map(s.enforced));
+    if (s.viewports) viewports.current = s.viewports;
+    const count = s.describes?.length ?? 0;
+    if (count > 0 && savedAt) {
+      const age = Date.now() - savedAt;
+      const label = age < 60_000 ? "just now" : age < 3_600_000 ? `${Math.round(age / 60_000)}m ago` : age < 86_400_000 ? `${Math.round(age / 3_600_000)}h ago` : `${Math.round(age / 86_400_000)}d ago`;
+      setNotice(`Workspace restored - canvas auto-saved ${label}. Refresh all to revalidate.`);
+    }
+    return true;
+  }, []);
+
   useEffect(() => {
     if (!orgKey || objects.length === 0 || schemaRestoredRef.current === orgKey) return;
     schemaRestoredRef.current = orgKey;
     void (async () => {
       const snap = await loadAutosave<SchemaAutosaveData>(orgKey, "schema");
-      const s = snap?.data;
-      if (!s || (!s.rootName && (!s.describes || s.describes.length === 0))) return;
-      if (s.describes) setDescribes(new Map(s.describes.map((d) => [d.name, d])));
-      if (s.rootName) {
-        setRootName(s.rootName);
-        setFocusName(s.focusName || s.rootName);
-      }
-      if (s.graphSelected) setGraphSelected(s.graphSelected);
-      if (s.view) setView(s.view);
-      if (s.filterMode) setFilterMode(s.filterMode);
-      if (s.familyMode) setFamilyMode(s.familyMode);
-      if (typeof s.hideSystem === "boolean") setHideSystem(s.hideSystem);
-      if (s.hiddenIds) setHiddenIds(new Set(s.hiddenIds));
-      if (s.removedIds) setRemovedIds(new Set(s.removedIds));
-      if (s.dismissedIds) setDismissedIds(new Set(s.dismissedIds));
-      if (s.systemAllow) setSystemAllow(new Set(s.systemAllow));
-      if (s.designIds) setDesignIds(new Set(s.designIds));
-      if (typeof s.designMode === "boolean") setDesignMode(s.designMode);
-      if (s.expanded) setExpanded(new Map(s.expanded));
-      if (s.enforced) setEnforced(new Map(s.enforced));
-      if (s.viewports) viewports.current = s.viewports;
-      const count = s.describes?.length ?? 0;
-      if (count > 0 && snap) {
-        const age = Date.now() - snap.savedAt;
-        const label = age < 60_000 ? "just now" : age < 3_600_000 ? `${Math.round(age / 60_000)}m ago` : age < 86_400_000 ? `${Math.round(age / 3_600_000)}h ago` : `${Math.round(age / 86_400_000)}d ago`;
-        setNotice(`Workspace restored - canvas auto-saved ${label}. Refresh all to revalidate.`);
-      }
+      if (snap) applyAutosaveData(snap.data, snap.savedAt);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgKey, objects]);
+
+  const restoreSaved = useCallback(async () => {
+    if (!orgKey || busy) return;
+    setError(null);
+    const snap = await loadAutosave<SchemaAutosaveData>(orgKey, "schema");
+    if (!snap || !applyAutosaveData(snap.data, snap.savedAt)) {
+      setNotice("No autosaved workspace for this org yet - build a canvas and it saves itself.");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgKey, busy]);
 
   const refreshNode = useCallback(
     async (id: string) => {
@@ -2358,7 +2374,7 @@ export default function SchemaPanel({
   return (
     <div
       className="flex gap-3"
-      style={present ? { height: "calc(100vh - 72px)", minHeight: 520 } : { height: "calc(100vh - 180px)", minHeight: 520 }}
+      style={present ? { height: "calc(100vh - 12px)", minHeight: 480 } : { height: "calc(100vh - 180px)", minHeight: 520 }}
     >
       {present && (
         <button
@@ -2538,6 +2554,9 @@ export default function SchemaPanel({
                   </Button>
                   <Button size="sm" variant="secondary" onClick={refreshAll} disabled={!!busy || describes.size === 0} title="Re-fetch metadata for every object on canvas and report what changed">
                     Refresh all
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => void restoreSaved()} disabled={!!busy || !orgKey} title="Reload the autosaved canvas for this org - the same workspace restore that runs on connect, on demand">
+                    Restore saved
                   </Button>
                   <div className="flex gap-1.5">
                     <Button size="sm" variant="ghost" onClick={removeNode} disabled={!focusName || focusName === rootName || !!busy} className="flex-1" title="Remove the focused object from the canvas">
@@ -2927,21 +2946,21 @@ export default function SchemaPanel({
                 Rebalance
               </button>
             )}
-            {view === "graph" && (
-              <span className="ml-auto flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => void refreshAll()}
-                  disabled={describes.size === 0 || !!busy}
-                  aria-label="Reload all canvas metadata fresh from the org"
-                  title="Reload all canvas metadata fresh from the org - re-fetch every object on canvas and report what changed"
-                  className="flex items-center rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] p-1.5 text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer disabled:opacity-40"
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
-                    <path d="M20 11a8 8 0 0 0-14.9-3M4 13a8 8 0 0 0 14.9 3" />
-                    <path d="M18 4v4h-4M6 20v-4h4" />
-                  </svg>
-                </button>
+            <span className="ml-auto flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => void refreshAll()}
+                disabled={describes.size === 0 || !!busy}
+                aria-label="Reload all canvas metadata fresh from the org"
+                title="Reload all canvas metadata fresh from the org - re-fetch every object on canvas and report what changed"
+                className="flex items-center rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] p-1.5 text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer disabled:opacity-40"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+                  <path d="M20 11a8 8 0 0 0-14.9-3M4 13a8 8 0 0 0 14.9 3" />
+                  <path d="M18 4v4h-4M6 20v-4h4" />
+                </svg>
+              </button>
+              {view === "graph" && (
                 <button
                   type="button"
                   onClick={() => setNodesLocked((v) => !v)}
@@ -2970,8 +2989,8 @@ export default function SchemaPanel({
                     )}
                   </svg>
                 </button>
+              )}
               </span>
-            )}
             {view === "graph" && graphElements.overflow > 0 && (
               <span
                 className="rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800"
