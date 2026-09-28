@@ -47,6 +47,9 @@ interface ErdCanvasProps {
   layoutRev: number;
   /** Explicit positions (snapshot restore) applied on top of the fresh layout. */
   enforcedPositions?: Map<string, { x: number; y: number }> | null;
+  /** Restored viewport (zoom memory across view switches). Omit to fit. */
+  storedViewport?: { x: number; y: number; zoom: number } | null;
+  onViewportChange?: (v: { x: number; y: number; zoom: number }) => void;
 }
 
 interface Stroke {
@@ -70,7 +73,7 @@ function pngFileName(scale: 2 | 3): string {
 }
 
 const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
-  { nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick, onViewportMove, onNodeDragStop, layoutRev, enforcedPositions },
+  { nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick, onViewportMove, onNodeDragStop, layoutRev, enforcedPositions, storedViewport, onViewportChange },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -132,17 +135,20 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
       });
       setEdges(propEdges);
     }
-    // Refit only when the graph shape actually changes - node count, node
-    // type (ERD <-> graph switch), explicit re-layout, or restore. Never on
-    // data-only updates, selection, or spotlight: your zoom is sacred.
-    const sig = `${propNodes[0]?.type ?? ""}:${propNodes.length}:${layoutRev}:${enforcedPositions ? "e" : ""}`;
+    // Refit ONLY on view-type switch, explicit re-layout, or restore - NEVER
+    // on node-count changes (adds, removes, filters, expansions) and never on
+    // selection/spotlight: your zoom is sacred and stays put while scouting.
+    // With a stored viewport (memory across switches) skip fitting entirely -
+    // defaultViewport below restores it on mount.
+    const sig = `${propNodes[0]?.type ?? ""}:${layoutRev}:${enforcedPositions ? "e" : ""}:${storedViewport ? "m" : "f"}`;
     if (sig !== fitSig.current) {
       fitSig.current = sig;
+      if (storedViewport) return undefined;
       const t = window.setTimeout(() => fitView({ padding: 0.18, maxZoom: 1 }), 60);
       return () => window.clearTimeout(t);
     }
     return undefined;
-  }, [propNodes, propEdges, layoutRev, enforcedPositions, setNodes, setEdges, fitView]);
+  }, [propNodes, propEdges, layoutRev, enforcedPositions, storedViewport, setNodes, setEdges, fitView]);
 
   useEffect(() => {
     if (!laser) return;
@@ -260,6 +266,7 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
         onPaneClick={() => onPaneClick?.()}
         onNodeDragStop={(_, node) => onNodeDragStop?.(node.id, { ...node.position })}
         onMoveStart={() => onViewportMove?.()}
+        onMoveEnd={(_, viewport) => onViewportChange?.({ ...viewport })}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         panOnDrag={!laser}
@@ -269,7 +276,8 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
         nodesConnectable={false}
         elementsSelectable={!laser}
         minZoom={0.15}
-        fitView
+        fitView={storedViewport ? false : true}
+        defaultViewport={storedViewport ?? undefined}
       >
         <Background gap={22} size={1.2} color="#DDD3BC" bgColor="#FAF8F2" />
         <MiniMap

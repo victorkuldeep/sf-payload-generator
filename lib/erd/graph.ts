@@ -401,6 +401,8 @@ export function buildGraphElements(
     },
   ];
   const edges: Edge[] = [];
+  // Emergency-slot counter for the guaranteed-placement fallback below.
+  let placedEmergency = 0;
 
   // Occupied points: root center + any pinned (dragged) bubbles, matched by
   // bare API name or prefixed graph id.
@@ -422,8 +424,8 @@ export function buildGraphElements(
     prefix: string
   ) => {
     // Unbounded rings: keep adding orbit lanes until every bubble lands.
-    // Hard cap at 40 lanes (~thousands of slots) as a degenerate guard;
-    // anything still unplaced past that is genuine overflow.
+    // If 40 lanes still collide (pathological), force a far slot - placement
+    // NEVER fails, so the panel never needs an orbit-room badge.
     const taken: boolean[][] = [];
     const slotAngles: number[][] = [];
     const ringRadius = (o: number) => ORBIT_0 + o * ORBIT_STEP;
@@ -456,7 +458,13 @@ export function buildGraphElements(
           break;
         }
       }
-      if (!placed) return; // degenerate guard tripped - counted as overflow below
+      if (!placed) {
+        // Emergency slot: far out on the fan edge - always free by construction.
+        const r = ringRadius(40 + (placedEmergency++ % 40));
+        const edge = centerDeg + (placedEmergency % 2 === 0 ? ARC_DEG / 2 : -ARC_DEG / 2);
+        const rad = (edge * Math.PI) / 180;
+        placed = { x: r * Math.cos(rad), y: r * Math.sin(rad) };
+      }
       occupied.push(placed);
       const loaded = described.has(n.apiName);
       nodes.push({
@@ -532,13 +540,17 @@ export function buildGraphElements(
       const side = up ? -1 : 1;
       const spread0 = (i - (ordered.length - 1) / 2) * EXTEND_SPREAD;
       // Walk outward until a free slot: same side, further rings.
+      // Guaranteed: the final fallback keeps marching out, so every node lands.
       let p: { x: number; y: number } | null = null;
       for (let lane = 0; lane < 40 && !p; lane++) {
         const r = EXTEND_R0 + lane * EXTEND_RSTEP;
         const cand = { x: center.x + side * r * 0.9, y: center.y - r * 0.55 + spread0 };
         if (!occupied.some((q) => dist(cand, q) < MIN_GAP)) p = cand;
       }
-      if (!p) return; // degenerate guard - counted as overflow below
+      if (!p) {
+        const r = EXTEND_R0 + (40 + placedEmergency++ % 40) * EXTEND_RSTEP;
+        p = { x: center.x + side * r * 0.9, y: center.y - r * 0.55 + spread0 };
+      }
       occupied.push(p);
       placedCenters.set(n.apiName, p);
       const loaded = described.has(n.apiName);

@@ -87,15 +87,19 @@ function GraphDetailCardInner({
   erdCount,
   family,
   familyBusy,
+  dismissed,
   onClose,
   onOpenInErd,
   onMakeRoot,
   onLoad,
-  onToggleHidden,
+  onDismiss,
   onDiscoverFamily,
   onExpandFamily,
+  onExpandToErd,
   onCollapseFamily,
-  hidden,
+  onVisibility,
+  designMode,
+  onAddToGraph,
 }: {
   detail: GraphDetail;
   labels: Map<string, string>;
@@ -104,18 +108,29 @@ function GraphDetailCardInner({
   /** Family candidates for the selected node (null = not loaded yet). */
   family: (DiscoverCandidate & { parentCount: number; childCount: number })[] | null;
   familyBusy: boolean;
+  /** True when this bubble is dismissed from the graph (still on ERD). */
+  dismissed: boolean;
   onClose: () => void;
   onOpenInErd: () => void;
   onMakeRoot: () => void;
   onLoad: () => void;
-  onToggleHidden: () => void;
+  /** Quick remove / restore for THIS bubble - graph only, ERD untouched. */
+  onDismiss: () => void;
   onDiscoverFamily: () => void;
+  /** Grow one generation deeper under a family row - graph only. */
   onExpandFamily: (names: string[]) => void;
+  /** Describe checked family names onto the ERD canvas. */
+  onExpandToErd: (names: string[]) => void;
   onCollapseFamily: () => void;
-  hidden: boolean;
+  /** Live graph visibility toggle from a family checkbox. */
+  onVisibility: (apiName: string, visible: boolean) => void;
+  designMode: boolean;
+  /** Design mode: add checked names to the graph sketch (roles place them). */
+  onAddToGraph: (names: string[]) => void;
 }) {
   const apiName = detail.kind === "loaded" ? detail.d.name : detail.n.apiName;
   const label = detail.kind === "loaded" ? detail.d.label : detail.n.label;
+  const linkCount = detail.kind === "loaded" ? detail.parents.length + detail.kids.length : 0;
   const [familyFilter, setFamilyFilter] = useState("");
   const [familyChecked, setFamilyChecked] = useState<Set<string>>(new Set());
   useEffect(() => {
@@ -147,25 +162,25 @@ function GraphDetailCardInner({
             ✕
           </button>
         </div>
-        <div className="mt-2 flex flex-wrap gap-1">
-          {detail.kind === "loaded" ? (
-            <>
-              <Badge variant="default">{detail.d.fields.length} fields</Badge>
-              <Badge variant="default">
-                {detail.d.childRelationships.filter((r) => r.relationshipName).length} children
-              </Badge>
-              {detail.d.custom && <Badge variant="info">Custom</Badge>}
-            </>
-          ) : (
-            <>
-              <Badge variant={detail.n.role === "parent" ? "default" : "info"}>{detail.n.role}</Badge>
-              <Badge variant={detail.n.kind === "md" ? "custom" : "default"}>
-                {detail.n.kind === "md" ? "master-detail" : "lookup"}
-              </Badge>
-              <Badge variant="default">via {detail.n.via}</Badge>
-            </>
-          )}
-        </div>
+          <div className="mt-2 flex flex-wrap gap-1">
+            {detail.kind === "loaded" ? (
+              <>
+                <Badge variant="default">{detail.d.fields.length} fields</Badge>
+                <Badge variant="default">
+                  {linkCount} links
+                </Badge>
+                {detail.d.custom && <Badge variant="info">Custom</Badge>}
+              </>
+            ) : (
+              <>
+                <Badge variant={detail.n.role === "parent" ? "default" : "info"}>{detail.n.role}</Badge>
+                <Badge variant={detail.n.kind === "md" ? "custom" : "default"}>
+                  {detail.n.kind === "md" ? "master-detail" : "lookup"}
+                </Badge>
+                <Badge variant="default">via {detail.n.via}</Badge>
+              </>
+            )}
+          </div>
       </div>
 
       {detail.kind === "loaded" && (
@@ -200,10 +215,10 @@ function GraphDetailCardInner({
             <Button
               size="sm"
               variant="ghost"
-              onClick={onToggleHidden}
-              title={hidden ? "Show this bubble again (Manual keeps the rest)" : "Hide this bubble in Manual mode - ERD canvas keeps it"}
+              onClick={onDismiss}
+              title={dismissed ? "Restore this bubble to the graph (ERD untouched)" : "Remove this bubble from the graph now - ERD canvas keeps it"}
             >
-              {hidden ? "Unhide in Manual" : "Hide from graph"}
+              {dismissed ? "Restore to graph" : "Remove from graph"}
             </Button>
           </div>
         </div>
@@ -229,28 +244,33 @@ function GraphDetailCardInner({
             />
             <div className="max-h-56 space-y-px overflow-y-auto rounded-lg border border-[var(--color-line)] divide-y divide-[var(--color-line-soft)]">
               {(visibleFamily ?? []).map((c) => {
-                const checked = familyChecked.has(c.apiName);
+                // Checkbox = LIVE graph visibility. On-canvas rows start
+                // checked; unchecking hides the bubble now (ERD keeps it).
+                // familyChecked tracks rows the user explicitly re-showed.
+                const hiddenByUser = familyChecked.has(`hide:${c.apiName}`);
+                const checked = !hiddenByUser;
                 return (
                   <label
                     key={`${c.group}:${c.apiName}`}
                     className={`flex cursor-pointer items-center gap-2 px-2.5 py-1.5 transition-colors hover:bg-ivory-300 ${
-                      c.onCanvas ? "opacity-60" : checked ? "bg-ivory-200" : ""
+                      checked ? "bg-ivory-200" : ""
                     }`}
                   >
                     <input
                       type="checkbox"
-                      checked={c.onCanvas || checked}
-                      disabled={c.onCanvas}
-                      onChange={() =>
+                      checked={checked}
+                      onChange={() => {
                         setFamilyChecked((prev) => {
                           const next = new Set(prev);
-                          if (next.has(c.apiName)) next.delete(c.apiName);
-                          else next.add(c.apiName);
+                          const k = `hide:${c.apiName}`;
+                          if (next.has(k)) next.delete(k);
+                          else next.add(k);
                           return next;
-                        })
-                      }
-                      className="h-3.5 w-3.5 shrink-0 rounded border-ivory-400 bg-white text-bronze-600 focus:ring-bronze-500 disabled:opacity-60"
-                      aria-label={c.onCanvas ? `${c.label} (already on canvas)` : `Expand ${c.label}`}
+                        });
+                        onVisibility(c.apiName, hiddenByUser);
+                      }}
+                      className="h-3.5 w-3.5 shrink-0 rounded border-ivory-400 bg-white text-bronze-600 focus:ring-bronze-500"
+                      aria-label={`${checked ? "Hide" : "Show"} ${c.label} in the graph`}
                     />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[11px] font-medium text-ivory-950">{c.label}</span>
@@ -261,10 +281,19 @@ function GraphDetailCardInner({
                         )}
                       </span>
                     </span>
-                    {c.onCanvas && (
+                    {c.onCanvas ? (
                       <span className="shrink-0 rounded border border-bronze-300 bg-bronze-100 px-1 py-px text-[9px] font-semibold text-bronze-700">
                         On canvas
                       </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onExpandFamily([c.apiName])}
+                        title={`Grow one generation deeper under ${c.apiName} - graph only, ERD untouched`}
+                        className="shrink-0 rounded-md border border-[var(--color-line)] px-1.5 py-0.5 font-mono text-[11px] font-bold text-bronze-600 hover:border-bronze-500 cursor-pointer"
+                      >
+                        +
+                      </button>
                     )}
                   </label>
                 );
@@ -274,17 +303,33 @@ function GraphDetailCardInner({
               )}
             </div>
             <div className="flex gap-1.5">
+              {designMode && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={[...familyChecked].filter((n) => !n.startsWith("hide:")).length === 0}
+                  onClick={() => {
+                    const fresh = [...familyChecked].filter((n) => !n.startsWith("hide:"));
+                    setFamilyChecked(new Set([...familyChecked].filter((n) => n.startsWith("hide:"))));
+                    onAddToGraph(fresh);
+                  }}
+                  title="Add checked to the graph sketch - parents left, children right"
+                >
+                  Add to graph
+                </Button>
+              )}
               <Button
                 size="sm"
                 className="flex-1"
-                disabled={[...familyChecked].filter((n) => !(family ?? []).some((c) => c.apiName === n && c.onCanvas)).length === 0}
+                disabled={[...familyChecked].filter((n) => !n.startsWith("hide:") && !(family ?? []).some((c) => c.apiName === n && c.onCanvas)).length === 0}
                 onClick={() => {
-                  const fresh = [...familyChecked].filter((n) => !(family ?? []).some((c) => c.apiName === n && c.onCanvas));
-                  setFamilyChecked(new Set());
-                  onExpandFamily(fresh);
+                  const fresh = [...familyChecked].filter((n) => !n.startsWith("hide:") && !(family ?? []).some((c) => c.apiName === n && c.onCanvas));
+                  setFamilyChecked(new Set([...familyChecked].filter((n) => n.startsWith("hide:"))));
+                  onExpandToErd(fresh);
                 }}
+                title="Describe checked rows onto the ERD canvas as solid tables"
               >
-                Expand selected
+                Expand selected to ERD
               </Button>
               <Button size="sm" variant="ghost" onClick={onCollapseFamily} title="Remove this node's extended family from the graph (ERD canvas untouched)">
                 Collapse
@@ -352,6 +397,19 @@ export default function SchemaPanel({
   const [manageChecked, setManageChecked] = useState<Set<string>>(new Set());
   const [hideSystem, setHideSystem] = useState(false);
   const [graphSelected, setGraphSelected] = useState<string | null>(null);
+  // removedIds: hard-removed from the ERD canvas (tombstones) - graph never
+  // resurrects them as lite previews until re-added. dismissedIds: hidden
+  // from GRAPH ONLY (quick remove, family uncheck) - ERD canvas untouched.
+  const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+  // Design mode (graph only): start from the root bubble alone and add
+  // objects one by one - parents land left, children right. The graph becomes
+  // the object-model sketch; ERD stays the field-detail view until commit.
+  const [designMode, setDesignMode] = useState(false);
+  const [designIds, setDesignIds] = useState<Set<string>>(new Set());
+  const [nodeSearch, setNodeSearch] = useState("");
+  // Per-view viewport memory: zoom/pan survives view switches and growth.
+  const viewports = useRef<{ erd: { x: number; y: number; zoom: number } | null; graph: { x: number; y: number; zoom: number } | null }>({ erd: null, graph: null });
   const [picker, setPicker] = useState<{
     mode: "children" | "parents";
     title: string;
@@ -456,31 +514,41 @@ export default function SchemaPanel({
   // expansion (Discover of <node>) extends generations outward per node.
   // Manual shows only eye-kept ones. Graph NEVER narrows to the ERD canvas:
   // it is the scouting view; ERD is the curated view.
+  // Tombstones (removedIds) never render anywhere; dismissedIds hide from
+  // the graph only (quick remove, family uncheck) while ERD keeps them.
   const graphElements = useMemo(() => {
     if (view !== "graph" || !rootName) return { nodes: [], edges: [], overflow: 0, extended: 0 };
     const root = describes.get(rootName);
     if (!root) return { nodes: [], edges: [], overflow: 0, extended: 0 };
     const canvasNames = new Set(describes.keys());
-    const level1 = rootNeighbors(root, labels, isCustomName).filter((n) => {
+    const passFilters = (n: { apiName: string; custom: boolean }) => {
+      if (removedIds.has(n.apiName) || dismissedIds.has(n.apiName)) return false;
       if (hideSystem && SYSTEM_OBJECTS.has(n.apiName)) return false;
       if (filterMode === "standard" && n.custom) return false;
       if (filterMode === "custom" && !n.custom) return false;
       if (filterMode === "manual" && hiddenIds.has(n.apiName)) return false;
       return true;
-    });
+    };
+    const level1 = rootNeighbors(root, labels, isCustomName).filter(passFilters);
     // Family generations: expansion rows hang off their source node.
     const extra: GraphNeighbor[] = [];
+    // In Design mode the visible set is explicit: root + chosen ids. Level-1
+    // rows already cover direct neighbors, so x: rows duplicating a visible
+    // level-1 apiName are skipped (no double bubbles).
+    const visibleL1 = new Set(
+      (designMode ? level1.filter((n) => designIds.has(n.apiName)) : level1).map((n) => n.apiName)
+    );
     for (const [, list] of expanded) {
       for (const n of list) {
-        if (hideSystem && SYSTEM_OBJECTS.has(n.apiName)) continue;
-        if (filterMode === "standard" && n.custom) continue;
-        if (filterMode === "custom" && !n.custom) continue;
-        if (filterMode === "manual" && hiddenIds.has(n.apiName)) continue;
+        if (!passFilters(n)) continue;
+        if (visibleL1.has(n.apiName)) continue;
+        if (designMode && !designIds.has(n.apiName)) continue;
         extra.push(n);
       }
     }
-    return buildGraphElements(root, [...level1, ...extra], canvasNames, spot, enforced);
-  }, [view, rootName, describes, labels, isCustomName, hideSystem, SYSTEM_OBJECTS, filterMode, hiddenIds, spot, enforced, expanded]);
+    const shown1 = designMode ? level1.filter((n) => designIds.has(n.apiName)) : level1;
+    return buildGraphElements(root, [...shown1, ...extra], canvasNames, spot, enforced);
+  }, [view, rootName, describes, labels, isCustomName, hideSystem, SYSTEM_OBJECTS, filterMode, hiddenIds, removedIds, dismissedIds, designMode, designIds, spot, enforced, expanded]);
 
   const neighborMap = useMemo(() => {
     const root = describes.get(rootName);
@@ -718,11 +786,23 @@ export default function SchemaPanel({
     });
   }, []);
 
-  // Shared add-pipeline: fetch, merge, pin layout, bump revision
+  // Shared add-pipeline: fetch, merge, pin layout, bump revision.
+  // Re-adding revives tombstones: removed/dismissed ids for these names clear.
   const addNames = useCallback(
     async (names: string[]): Promise<SalesforceDescribeResult[]> => {
       const fresh = await mapLimit(names, 6, fetchDescribe);
       mergeDescribes(fresh);
+      const revived = new Set(fresh.map((d) => d.name));
+      setRemovedIds((prev) => {
+        const next = new Set(prev);
+        for (const n of revived) next.delete(n);
+        return next;
+      });
+      setDismissedIds((prev) => {
+        const next = new Set(prev);
+        for (const n of revived) next.delete(n);
+        return next;
+      });
       pinCurrentLayout();
       setLayoutRev((r) => r + 1);
       return fresh;
@@ -860,6 +940,18 @@ export default function SchemaPanel({
           throw new Error("None of the snapshotted objects could be described - org changed or session expired.");
         }
         setDescribes(new Map(fresh.map((d) => [d.name, d] as const)));
+        // Restored members are alive again - drop their tombstones/dismissals.
+        const alive = new Set(fresh.map((d) => d.name));
+        setRemovedIds((prev) => {
+          const next = new Set(prev);
+          for (const n of alive) next.delete(n);
+          return next;
+        });
+        setDismissedIds((prev) => {
+          const next = new Set(prev);
+          for (const n of alive) next.delete(n);
+          return next;
+        });
         const root = fresh.some((d) => d.name === snap.root) ? snap.root : fresh[0].name;
         setRootName(root);
         setFocusName(fresh.some((d) => d.name === snap.focus) ? snap.focus : root);
@@ -1157,6 +1249,12 @@ export default function SchemaPanel({
         next.set(key, [...(next.get(key) ?? []), ...freshRows]);
         return next;
       });
+      // Design mode follows along: expanded names join the chosen set.
+      setDesignIds((prev) => {
+        const next = new Set(prev);
+        for (const r of rows) next.add(r.apiName);
+        return next;
+      });
       // Graph-only: do NOT touch the ERD canvas here. Expanded names stay
       // lite previews until the user hits "Add visible to ERD" or opens them.
       setGraphSelected(fromApi);
@@ -1349,6 +1447,12 @@ export default function SchemaPanel({
     if (!target || target === rootName) return;
     setSpot(null);
     pruneEnforced(new Set([target]));
+    setRemovedIds((prev) => new Set(prev).add(target));
+    setDismissedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(target);
+      return next;
+    });
     setDescribes((prev) => {
       const next = new Map(prev);
       next.delete(target);
@@ -1365,6 +1469,16 @@ export default function SchemaPanel({
       setSpot(null);
       pruneEnforced(gone);
       setHiddenIds((prev) => {
+        const next = new Set(prev);
+        for (const id of gone) next.delete(id);
+        return next;
+      });
+      setRemovedIds((prev) => {
+        const next = new Set(prev);
+        for (const id of gone) next.add(id);
+        return next;
+      });
+      setDismissedIds((prev) => {
         const next = new Set(prev);
         for (const id of gone) next.delete(id);
         return next;
@@ -1412,6 +1526,14 @@ export default function SchemaPanel({
 
   const clearCanvas = useCallback(() => {
     setDescribes(new Map());
+    setRemovedIds(new Set());
+    setDismissedIds(new Set());
+    setHiddenIds(new Set());
+    setManageChecked(new Set());
+    setExpanded(new Map());
+    setFamilyFor(null);
+    setFamily(null);
+    setGraphSelected(null);
     setRootName("");
     setFocusName("");
     setSpot(null);
@@ -1419,8 +1541,11 @@ export default function SchemaPanel({
     setNotice(null);
     setError(null);
     setConfirmClear(false);
+    viewports.current = { erd: null, graph: null };
   }, []);
 
+  const loadLiteRef = useRef((api: string) => Promise.resolve());
+  const discoverFamilyRef = useRef((api: string) => Promise.resolve());
   const handleNodeClick = useCallback(
     (id: string) => {
       // Graph bubbles carry prefixed ids (p:X / c:X / x:FROM:X) - take the tail
@@ -1428,11 +1553,15 @@ export default function SchemaPanel({
       setFocusName(api);
       setSpot(null);
       setGraphSelected(api);
-      // A new selection starts with a fresh family panel.
-      setFamilyFor(null);
-      setFamily(null);
+      // Selecting IS fetching: lite bubbles describe immediately (graph AND
+      // ERD stay in sync), and the family panel loads - no second click.
+      // Refs avoid a stale closure; both are assigned below their definitions.
+      if (view === "graph" && !describes.has(api)) {
+        void loadLiteRef.current(api);
+      }
+      void discoverFamilyRef.current(api);
     },
-    []
+    [view, describes]
   );
 
   const loadLite = useCallback(
@@ -1454,6 +1583,12 @@ export default function SchemaPanel({
     },
     [busy, describes, addNames]
   );
+
+  // Keep the click-handler refs pointed at the latest implementations.
+  useEffect(() => {
+    loadLiteRef.current = loadLite;
+    discoverFamilyRef.current = discoverFamily;
+  }, [loadLite, discoverFamily]);
 
   const handlePaneClick = useCallback(() => {
     setSpot(null);
@@ -1710,8 +1845,26 @@ export default function SchemaPanel({
                   Canvas nodes ({describes.size})
                   <span className="ml-1 font-normal text-ivory-500">- eye to curate Manual mode, tick + remove for bulk</span>
                 </summary>
-                <ul className="max-h-44 space-y-0.5 overflow-y-auto border-t border-[var(--color-line-soft)] p-1.5">
-                  {[...describes.keys()].sort().map((name) => {
+                <div className="border-t border-[var(--color-line-soft)] p-1.5 pb-0.5">
+                  <input
+                    value={nodeSearch}
+                    onChange={(e) => setNodeSearch(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    placeholder="Search canvas nodes…"
+                    aria-label="Search canvas nodes"
+                    spellCheck={false}
+                    className="w-full rounded-md border border-[var(--color-line)] bg-white px-2 py-1 font-mono text-[11px] text-ivory-900 focus:border-bronze-500 focus:outline-none"
+                  />
+                </div>
+                <ul className="max-h-44 space-y-0.5 overflow-y-auto p-1.5">
+                  {[...describes.keys()]
+                    .sort()
+                    .filter((name) => {
+                      const q = nodeSearch.trim().toLowerCase();
+                      return !q || name.toLowerCase().includes(q) || (labels.get(name) ?? "").toLowerCase().includes(q);
+                    })
+                    .map((name) => {
                     const isRoot = name === rootName;
                     const hidden = hiddenIds.has(name);
                     const checked = manageChecked.has(name);
@@ -1902,6 +2055,50 @@ export default function SchemaPanel({
             {view === "graph" && (
               <button
                 type="button"
+                onClick={() => {
+                  // Design mode: graph starts at the root bubble alone; every
+                  // added object lands left (parent) / right (child) by role.
+                  // Leaving restores the full neighborhood.
+                  setDesignMode((v) => !v);
+                  setDesignIds(new Set());
+                }}
+                aria-pressed={designMode}
+                title={designMode ? "Exit design mode - restore the full neighborhood" : "Design from zero: root bubble only, add objects one by one with roles placing them"}
+                className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
+                  designMode
+                    ? "bg-ivory-950 text-ivory-100 border-ivory-950"
+                    : "bg-[var(--color-surface)] border-[var(--color-line)] text-ivory-700 hover:border-[var(--color-accent)]"
+                }`}
+              >
+                Design{designMode && designIds.size > 0 ? ` · ${designIds.size}` : ""}
+              </button>
+            )}
+            {view === "graph" && (expanded.size > 0 || dismissedIds.size > 0 || graphSelected || designIds.size > 0) && (
+              <button
+                type="button"
+                onClick={() => {
+                  // Reset graph: back to step 1 (root neighborhood, no
+                  // expansions, no dismissals, remembered zoom cleared).
+                  setExpanded(new Map());
+                  setDismissedIds(new Set());
+                  setDesignIds(new Set());
+                  setDesignMode(false);
+                  setGraphSelected(null);
+                  setFamilyFor(null);
+                  setFamily(null);
+                  viewports.current = { ...viewports.current, graph: null };
+                  setLayoutRev((r) => r + 1);
+                  setNotice("Graph reset - root neighborhood restored.");
+                }}
+                title="Clear expansions, restores and selection - back to the root neighborhood"
+                className="rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1 text-[11px] font-semibold text-ivory-700 hover:border-red-400 hover:text-red-600 transition-colors cursor-pointer"
+              >
+                Reset graph
+              </button>
+            )}
+            {view === "graph" && (
+              <button
+                type="button"
                 onClick={() => void addVisibleToErd()}
                 disabled={!!busy}
                 title="Describe every visible graph bubble onto the ERD canvas - lite previews become solid tables"
@@ -1913,9 +2110,9 @@ export default function SchemaPanel({
             {view === "graph" && graphElements.overflow > 0 && (
               <span
                 className="rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800"
-                title="Dense neighborhood - refine with filters or Manual mode to see the rest"
+                title="Degenerate layout guard tripped - everything still drew, this is just a heads-up"
               >
-                +{graphElements.overflow} beyond orbit room
+                +{graphElements.overflow} placed far out
               </span>
             )}
           </div>
@@ -1945,6 +2142,10 @@ export default function SchemaPanel({
               onNodeDragStop={handleNodeDragStop}
               layoutRev={layoutRev}
               enforcedPositions={enforced}
+              storedViewport={viewports.current.erd}
+              onViewportChange={(v) => {
+                viewports.current = { ...viewports.current, erd: v };
+              }}
               ref={canvasRef}
             />
           ) : (
@@ -1957,6 +2158,10 @@ export default function SchemaPanel({
               onNodeDragStop={handleNodeDragStop}
               layoutRev={layoutRev}
               enforcedPositions={null}
+              storedViewport={viewports.current.graph}
+              onViewportChange={(v) => {
+                viewports.current = { ...viewports.current, graph: v };
+              }}
               ref={canvasRef}
             />
           )}
@@ -1976,20 +2181,35 @@ export default function SchemaPanel({
               }}
               onMakeRoot={() => {
                 if (detail.kind === "loaded") {
+                  // Clean re-root: the new root shows ITS full neighborhood
+                  // like day one - stale expansions, dismissals, design set
+                  // and family state from the old root do not leak across.
                   setRootName(detail.d.name);
                   setFocusName(detail.d.name);
                   setSpot(null);
                   setGraphSelected(detail.d.name);
-                  setNotice(`${detail.d.name} is now the graph root.`);
+                  setExpanded(new Map());
+                  setDismissedIds(new Set());
+                  setDesignIds(new Set());
+                  setFamilyFor(null);
+                  setFamily(null);
+                  setNotice(`${detail.d.name} is now the graph root - showing its full neighborhood.`);
                 }
               }}
               onLoad={() => {
                 if (detail.kind === "lite") void loadLite(detail.n.apiName);
               }}
-              onToggleHidden={() => {
+              onDismiss={() => {
                 const api = detail.kind === "loaded" ? detail.d.name : detail.n.apiName;
-                if (api !== rootName) toggleHidden(api);
+                if (api === rootName) return;
+                setDismissedIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(api)) next.delete(api);
+                  else next.add(api);
+                  return next;
+                });
               }}
+              dismissed={dismissedIds.has(detail.kind === "loaded" ? detail.d.name : detail.n.apiName)}
               onDiscoverFamily={() => {
                 const api = detail.kind === "loaded" ? detail.d.name : detail.n.apiName;
                 void discoverFamily(api);
@@ -1998,11 +2218,45 @@ export default function SchemaPanel({
                 const api = detail.kind === "loaded" ? detail.d.name : detail.n.apiName;
                 void expandFamily(api, names);
               }}
+              designMode={designMode}
+              onAddToGraph={(names) => {
+                const api = detail.kind === "loaded" ? detail.d.name : detail.n.apiName;
+                void expandFamily(api, names);
+              }}
+              onExpandToErd={(names) => {
+                void (async () => {
+                  const missing = names.filter((n) => !describes.has(n)).slice(0, MAX_NEW_PER_ACTION);
+                  if (missing.length === 0) {
+                    setNotice("Everything selected is already on the ERD canvas.");
+                    return;
+                  }
+                  if (describes.size + missing.length > MAX_NODES) {
+                    setNotice(`Canvas cap is ${MAX_NODES} objects - adding ${missing.length} would exceed it. Remove some nodes first.`);
+                    return;
+                  }
+                  setBusy(`Adding ${missing.length} to ERD…`);
+                  try {
+                    await addNames(missing);
+                    setNotice(`${missing.length} object${missing.length === 1 ? "" : "s"} added to the ERD canvas as solid tables.`);
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : "Add to ERD failed");
+                  } finally {
+                    setBusy(null);
+                  }
+                })();
+              }}
               onCollapseFamily={() => {
                 const api = detail.kind === "loaded" ? detail.d.name : detail.n.apiName;
                 collapseFamily(api);
               }}
-              hidden={hiddenIds.has(detail.kind === "loaded" ? detail.d.name : detail.n.apiName)}
+              onVisibility={(apiName, visible) => {
+                setDismissedIds((prev) => {
+                  const next = new Set(prev);
+                  if (visible) next.delete(apiName);
+                  else next.add(apiName);
+                  return next;
+                });
+              }}
             />
           )}
         </div>
