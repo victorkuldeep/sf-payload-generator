@@ -113,6 +113,7 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
 
   const [laser, setLaser] = useState(false);
   const [strokes, setStrokes] = useState<Stroke[]>([]);
+  const [pencil, setPencil] = useState<{ x: number; y: number } | null>(null);
   const strokeId = useRef(0);
   const drawing = useRef(false);
 
@@ -243,7 +244,9 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
       drawing.current = true;
       (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
       const id = ++strokeId.current;
-      setStrokes((prev) => [...prev.slice(-11), { id, pts: [relPos(e)] }]);
+      const p = relPos(e);
+      setPencil(p);
+      setStrokes((prev) => [...prev.slice(-11), { id, pts: [p] }]);
       window.setTimeout(() => {
         setStrokes((prev) => prev.filter((s) => s.id !== id));
       }, 1600);
@@ -253,8 +256,10 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
 
   const extendStroke = useCallback(
     (e: React.PointerEvent) => {
-      if (!laser || !drawing.current) return;
+      if (!laser) return;
       const p = relPos(e);
+      if (e.pointerType === "mouse" || e.pointerType === "pen") setPencil(p);
+      if (!drawing.current) return;
       setStrokes((prev) => {
         if (prev.length === 0) return prev;
         const last = prev[prev.length - 1];
@@ -307,7 +312,7 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
       {laser && (
         <svg
           className="erd-laser-layer absolute inset-0 h-full w-full touch-none"
-          style={{ cursor: "crosshair", zIndex: 20 }}
+          style={{ cursor: "none", zIndex: 20 }}
           onPointerDown={startStroke}
           onPointerMove={extendStroke}
           onPointerUp={() => {
@@ -315,8 +320,16 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
           }}
           onPointerLeave={() => {
             drawing.current = false;
+            setPencil(null);
           }}
         >
+          {pencil && (
+            <g transform={`translate(${pencil.x} ${pencil.y}) rotate(45)`} pointerEvents="none">
+              <rect x="-3" y="-19" width="6" height="12" rx="1" fill="#A98450" />
+              <polygon points="-3,-7 3,-7 0,0" fill="#E8DCC8" />
+              <circle cx="0" cy="-1.5" r="1.6" fill="#ef4444" />
+            </g>
+          )}
           {strokes.map((s) => (
             <g key={s.id}>
               <polyline
