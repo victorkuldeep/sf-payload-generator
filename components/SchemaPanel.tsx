@@ -2211,7 +2211,6 @@ export default function SchemaPanel({
     },
     []
   );
-  );
 
   const loadLite = useCallback(
     async (api: string) => {
