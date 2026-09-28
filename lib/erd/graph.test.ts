@@ -289,6 +289,18 @@ describe("system-noise detection", () => {  it("flags core org objects", () => {
     expect(isSystemObject("LeadShare")).toBe(true);
     expect(isSystemObject("Opportunity")).toBe(false);
   });
+  it("covers the extended platform list", () => {
+    for (const name of [
+      "VoiceCall", "VideoCall", "Visit", "EngagementTopic",
+      "AttachedContentNote", "GeneratedDocument", "DocumentEnvelope",
+      "DocumentChecklistItem", "NoteAndAttachment",
+      "RecordAction", "RecordAlert", "ProcessException", "DuplicateRecordItem",
+      "NetworkUserHistoryRecent", "OmniAssessmentTask", "GenericVisitTaskContext",
+    ]) {
+      expect(isSystemObject(name)).toBe(true);
+    }
+    expect(isSystemObject("Account")).toBe(false);
+  });
   it("isNeuralExcluded keeps sweeps domain-only, custom always passes", () => {
     expect(isNeuralExcluded("Task", false)).toBe(true);
     expect(isNeuralExcluded("User", false)).toBe(true);

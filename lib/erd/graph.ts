@@ -454,6 +454,15 @@ export const SYSTEM_PLATFORM_OBJECTS = new Set([
   // Chatter & collaboration plumbing, setup audit
   "CollaborationGroupRecord", "EntitySubscription", "TopicAssignment",
   "UserDefinedLabelAssignment", "NetworkActivityAudit", "ListEmail",
+  // Activity, calls and interactions
+  "VoiceCall", "VideoCall", "Visit", "EngagementTopic",
+  // Document and content infrastructure
+  "AttachedContentNote", "GeneratedDocument", "DocumentEnvelope",
+  "DocumentChecklistItem", "NoteAndAttachment",
+  // System actions and alerts
+  "RecordAction", "RecordAlert", "ProcessException", "DuplicateRecordItem",
+  // Experience Cloud and OmniStudio
+  "NetworkUserHistoryRecent", "OmniAssessmentTask", "GenericVisitTaskContext",
 ]);
 
 /**

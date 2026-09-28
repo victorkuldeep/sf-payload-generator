@@ -709,7 +709,7 @@ export default function SchemaPanel({
   const [filterMode, setFilterMode] = useState<"all" | "standard" | "custom" | "manual">("all");
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [manageChecked, setManageChecked] = useState<Set<string>>(new Set());
-  const [hideSystem, setHideSystem] = useState(false);
+  const [hideSystem, setHideSystem] = useState(true);
   // Allow-list from the Hide-system review modal: explicitly force-shown
   // names survive both the graph/ERD filter AND Neural sweeps.
   const [systemAllow, setSystemAllow] = useState<Set<string>>(new Set());
