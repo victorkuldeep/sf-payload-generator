@@ -2063,8 +2063,6 @@ export default function SchemaPanel({
     viewports.current = { erd: null, graph: null };
   }, []);
 
-  const loadLiteRef = useRef((api: string) => Promise.resolve());
-  const discoverFamilyRef = useRef((api: string) => Promise.resolve());
   const handleNodeClick = useCallback(
     (id: string) => {
       // Bubble ids: root (Lead), level-1 (p:X / c:X), extended (x:FROM:X
@@ -2075,15 +2073,12 @@ export default function SchemaPanel({
       setFocusName(api);
       setSpot(null);
       setGraphSelected(api);
-      // Selecting IS fetching: lite bubbles describe immediately (graph AND
-      // ERD stay in sync), and the family panel loads - no second click.
-      // Refs avoid a stale closure; both are assigned below their definitions.
-      if (view === "graph" && !describes.has(api)) {
-        void loadLiteRef.current(api);
-      }
-      void discoverFamilyRef.current(api);
+      // Selection only - no auto-fetch. Opening the panel to remove/hide a
+      // bubble must not fire API calls; Discover + Fetch stay one manual
+      // click away inside the card.
     },
-    [view, describes]
+    []
+  );
   );
 
   const loadLite = useCallback(
@@ -2105,12 +2100,6 @@ export default function SchemaPanel({
     },
     [busy, describes, addNames]
   );
-
-  // Keep the click-handler refs pointed at the latest implementations.
-  useEffect(() => {
-    loadLiteRef.current = loadLite;
-    discoverFamilyRef.current = discoverFamily;
-  }, [loadLite, discoverFamily]);
 
   const handlePaneClick = useCallback(() => {
     setSpot(null);
