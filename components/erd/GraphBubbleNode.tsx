@@ -2,8 +2,7 @@
 
 import { memo } from "react";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
-import type { GraphBubbleData } from "@/lib/erd/graph";
-
+import { bubbleInitials, type GraphBubbleData } from "@/lib/erd/graph";
 /**
  * Radial-graph bubble node (case-studies language): a circle with the object
  * label beneath. Root is large + dark; lite (not-yet-loaded) neighbors render
@@ -45,7 +44,7 @@ function GraphBubbleNodeInner({ data, selected }: NodeProps<Node<GraphBubbleData
           }`}
           title={data.loaded ? data.apiName : `${data.apiName} - click to load onto canvas`}
         >
-          {isRoot ? data.label.slice(0, 2).toUpperCase() : data.apiName.slice(0, 2).toUpperCase()}
+          {data.bubbleTag ?? bubbleInitials(data.apiName)}
         </div>
         {isRoot && (
           <span

@@ -86,6 +86,128 @@ type GraphDetail =
  * Design-mode object picker: search the FULL org catalog (not just family),
  * tick anything, Add to graph. Roles place bubbles; nothing touches ERD.
  */
+/**
+ * On-the-fly object pull: search the FULL org catalog (not just family),
+ * tick 1-N objects, Add drops them into the graph off the root with true
+ * roles where related. No ERD round-trip, no mode to enter.
+ */
+function AddObjectModal({
+  objects,
+  drawn,
+  busy,
+  onAdd,
+  onClose,
+}: {
+  objects: { name: string; label: string }[];
+  drawn: Set<string>;
+  busy: boolean;
+  onAdd: (names: string[]) => void;
+  onClose: () => void;
+}) {
+  const [q, setQ] = useState("");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const query = q.trim().toLowerCase();
+  const matches = query
+    ? objects
+        .filter((o) => o.name.toLowerCase().includes(query) || o.label.toLowerCase().includes(query))
+        .slice(0, 50)
+    : [];
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const fresh = [...picked].filter((n) => !drawn.has(n));
+
+  return (
+    <div
+      className="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Add objects to graph"
+      onClick={onClose}
+      style={{ paddingTop: "12vh" }}
+    >
+      <div className="modal-card max-w-md flex flex-col" style={{ maxHeight: "70vh" }} onClick={(e) => e.stopPropagation()}>
+        <div className="px-6 pt-5 pb-3 border-b border-[var(--color-line-soft)] shrink-0">
+          <p className="text-[10px] font-semibold uppercase tracking-[2px] text-[var(--color-accent-dark)]">
+            Add to graph · on the fly
+          </p>
+          <h2 className="mt-1 text-lg font-bold text-ivory-950">Pull any sObject</h2>
+          <div className="mt-3">
+            <Input
+              placeholder="Search name or label…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              aria-label="Search objects"
+            />
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto px-6 py-3">
+          {query === "" ? (
+            <p className="py-6 text-center text-xs text-ivory-600">Type to search {objects.length} objects.</p>
+          ) : matches.length === 0 ? (
+            <p className="py-6 text-center text-xs text-ivory-600">No matches.</p>
+          ) : (
+            <ul className="space-y-px rounded-lg border border-[var(--color-line)] divide-y divide-[var(--color-line-soft)] overflow-hidden">
+              {matches.map((o) => {
+                const already = drawn.has(o.name);
+                const checked = picked.has(o.name);
+                return (
+                  <label
+                    key={o.name}
+                    className={`flex cursor-pointer items-center gap-2 px-2.5 py-1.5 hover:bg-ivory-300 ${checked ? "bg-ivory-200" : ""} ${already ? "opacity-60" : ""}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={already || checked}
+                      disabled={already}
+                      onChange={() =>
+                        setPicked((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(o.name)) next.delete(o.name);
+                          else next.add(o.name);
+                          return next;
+                        })
+                      }
+                      className="h-4 w-4 shrink-0 rounded border-ivory-400 bg-white text-bronze-600 focus:ring-bronze-500 disabled:opacity-60"
+                      aria-label={already ? `${o.label} (already on graph)` : `Add ${o.label}`}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-medium text-ivory-950">{o.label}</span>
+                      <span className="block truncate font-mono text-[11px] text-ivory-600">{o.name}</span>
+                    </span>
+                    {already && (
+                      <span className="shrink-0 rounded border border-bronze-300 bg-bronze-100 px-1 py-px text-[9px] font-semibold text-bronze-700">
+                        On graph
+                      </span>
+                    )}
+                  </label>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+        <div className="px-6 py-3.5 border-t border-[var(--color-line-soft)] bg-[var(--color-canvas)] flex items-center gap-2 shrink-0">
+          <p className="flex-1 font-mono text-[11px] text-ivory-600">
+            {picked.size > 0 ? `${fresh.length} to add` : "Tick 1 or more"}
+          </p>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button disabled={fresh.length === 0 || busy} onClick={() => { onAdd(fresh); onClose(); }}>
+            Add{fresh.length > 0 ? ` (${fresh.length})` : ""}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DesignPicker({
   catalog,
   exclude,
@@ -109,7 +231,16 @@ function DesignPicker({
     : [];
   return (
     <div className="rounded-lg border border-dashed border-[var(--color-line)] bg-[var(--color-canvas)] p-2">
-      <p className="mb-1 text-[10px] font-semibold uppercase tracking-[1.6px] text-ivory-600">
+      <details>
+        <summary className="cursor-pointer text-[10px] font-semibold uppercase tracking-[1.6px] text-ivory-600">
+          How design works
+        </summary>
+        <p className="mt-1 text-[11px] leading-relaxed text-ivory-700">
+          Sketch topology only - nothing touches ERD until Add visible to ERD.
+          Search below or Discover any bubble; roles place parents left, children right.
+        </p>
+      </details>
+      <p className="mb-1 mt-2 text-[10px] font-semibold uppercase tracking-[1.6px] text-ivory-600">
         Add any object
       </p>
       <Input
@@ -1493,6 +1624,7 @@ export default function SchemaPanel({
   const NEURAL_HUB_DEGREE = 40;
   const godCancel = useRef(false);
   const [neuralRunning, setNeuralRunning] = useState(false);
+  const [addObjectOpen, setAddObjectOpen] = useState(false);
   const neuralMode = useCallback(async () => {
     if (!rootName || busy || view !== "graph") return;
     const root = describes.get(rootName);
@@ -2679,6 +2811,17 @@ export default function SchemaPanel({
             {view === "graph" && (
               <button
                 type="button"
+                onClick={() => setAddObjectOpen(true)}
+                disabled={!!busy}
+                title="Pull any sObject straight into the graph - search, tick, add. No ERD round-trip."
+                className="rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer disabled:opacity-40"
+              >
+                + Add object
+              </button>
+            )}
+            {view === "graph" && (
+              <button
+                type="button"
                 onClick={resetAll}
                 disabled={describes.size === 0 || !!busy}
                 title="Rebalance: re-run auto-layout and re-fit - keeps every node (same as Reset view in the explorer panel)"
@@ -2780,18 +2923,6 @@ export default function SchemaPanel({
               onOobLockChange={setOobLocked}
               ref={canvasRef}
             />
-          )}
-          {view === "graph" && designMode && graphElements.nodes.length <= 1 && (
-            <div className="pointer-events-none absolute left-1/2 top-16 z-20 -translate-x-1/2">
-              <div className="max-w-sm rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] px-4 py-3 text-center shadow-[0_12px_36px_-16px_rgba(24,20,12,0.4)]">
-                <p className="text-[11px] font-bold uppercase tracking-[1.8px] text-[var(--color-accent-dark)]">
-                  Design mode
-                </p>
-                <p className="mt-1 text-xs leading-relaxed text-ivory-700">
-                  Search objects in the explorer (left) and Add - each lands left (parent) or right (child) by role. Or open a bubble → Discover → Add to graph.
-                </p>
-              </div>
-            </div>
           )}
           {view === "graph" && detail && (
             <GraphDetailCard
@@ -2968,6 +3099,16 @@ export default function SchemaPanel({
           candidates={picker.candidates}
           onApply={applyPicker}
           onClose={() => setPicker(null)}
+        />
+      )}
+
+      {addObjectOpen && (
+        <AddObjectModal
+          objects={objects}
+          drawn={new Set(graphElements.nodes.map((n) => String((n.data as { apiName?: string } | undefined)?.apiName ?? "")).filter(Boolean))}
+          busy={!!busy}
+          onAdd={(names) => void expandFamily(rootName, names)}
+          onClose={() => setAddObjectOpen(false)}
         />
       )}
 

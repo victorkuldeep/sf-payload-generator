@@ -57,6 +57,90 @@ export function erdNodeHeight(rowCount: number): number {
   return CHROME_H + Math.min(rowCount, ERD_MAX_ROWS) * ROW_H;
 }
 
+/** Split an API name into meaningful words (namespace + __c stripped). */
+export function nameWords(apiName: string): string[] {
+  const withoutSuffix = apiName.replace(/__c$/i, "");
+  const base = withoutSuffix.includes("__") ? (withoutSuffix.split("__").pop() ?? withoutSuffix) : withoutSuffix;
+  return base
+    .split("_")
+    .flatMap((part) => part.replace(/([a-z0-9])([A-Z])/g, "$1 $2").split(" "))
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** Bubble initials from the LAST two meaningful segments.
+ *
+ * First-two-chars collapses teams' prefixed names (DESIGNFORM_PRICING_… and
+ * DESIGNFORM_REQUEST_… both read "DE"). Instead: strip __c/namespace, split
+ * snake + camel, take initials of the last two segments:
+ * DESIGNFORM_PRICING_REQUEST__c → PR, DESIGNFORM_REQUEST_TERM → RT,
+ * OrderItem → OI, Lead → LE (single word keeps first two letters).
+ * Kept as the per-name fallback; graphs use assignBubbleTags for uniqueness.
+ */
+export function bubbleInitials(apiName: string): string {
+  const segments = nameWords(apiName);
+  if (segments.length >= 2) {
+    const last = segments.slice(-2);
+    return (last[0][0] + last[1][0]).toUpperCase();
+  }
+  const only = segments[0] ?? apiName;
+  return only.slice(0, 2).toUpperCase();
+}
+
+/** Candidate tags for one name, in preference order:
+ * 1. first letters of first two words (DESIGN_REQUEST__c → DR)
+ * 2. FIRST + LAST word (collision escape hatch)
+ * 3. FIRST + progressively earlier words (SECOND-LAST and so on)
+ * 4. three letters (first-3 initials, else first 3 chars)
+ * Numeric suffixes are applied by assignBubbleTags, not here.
+ */
+export function tagCandidates(apiName: string): string[] {
+  const words = nameWords(apiName).map((w) => w.toUpperCase());
+  const out: string[] = [];
+  const push = (t: string) => {
+    if (t && t.length >= 2 && !out.includes(t)) out.push(t);
+  };
+  if (words.length >= 2) {
+    push(words[0][0] + words[1][0]);
+    push(words[0][0] + words[words.length - 1][0]);
+    for (let k = words.length - 2; k >= 1; k--) {
+      push(words[0][0] + words[k][0]);
+    }
+    if (words.length >= 3) {
+      push(words[0][0] + words[1][0] + words[2][0]);
+    }
+  } else {
+    const w = words[0] ?? apiName.toUpperCase();
+    push(w.slice(0, 2));
+    if (w.length >= 2) push(w[0] + w[w.length - 1]);
+    if (w.length >= 3) push(w.slice(0, 3));
+  }
+  if (out.length === 0) push(apiName.slice(0, 2).toUpperCase());
+  return out;
+}
+
+/** Assign collision-free bubble tags across one graph, deterministically.
+ * Sorted apiNames so the same graph always tags identically; first free
+ * candidate wins, then BASE2, BASE3… numeric fallback (always terminates).
+ */
+export function assignBubbleTags(apiNames: string[]): Map<string, string> {
+  const used = new Set<string>();
+  const assigned = new Map<string, string>();
+  for (const api of [...apiNames].sort()) {
+    const cands = tagCandidates(api);
+    let tag = cands.find((c) => !used.has(c));
+    if (!tag) {
+      const base = cands[0] ?? api.slice(0, 2).toUpperCase();
+      let n = 2;
+      while (used.has(`${base}${n}`)) n++;
+      tag = `${base}${n}`;
+    }
+    used.add(tag);
+    assigned.set(api, tag);
+  }
+  return assigned;
+}
+
 function toRow(
   f: {
     name: string;
@@ -260,6 +344,8 @@ export interface GraphBubbleData extends Record<string, unknown> {
   isJunction: boolean;
   dimmed: boolean;
   spotlight: boolean;
+  /** Graph-scoped collision-free tag (assignBubbleTags). Falls back to initials. */
+  bubbleTag?: string;
 }
 
 export interface GraphNeighbor {
@@ -724,6 +810,12 @@ export function buildGraphElements(
     });
   }
   const unplaced = shown.length - (nodes.length - before);
+
+  // Graph-scoped collision-free tags: same names always tag identically.
+  const tags = assignBubbleTags(nodes.map((n) => (n.data as GraphBubbleData).apiName));
+  for (const n of nodes) {
+    (n.data as GraphBubbleData).bubbleTag = tags.get((n.data as GraphBubbleData).apiName);
+  }
 
   return { nodes, edges, overflow: overflow + unplaced, extended };
 }

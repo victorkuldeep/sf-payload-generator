@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectJunction, buildEdges, buildGraphElements, rootNeighbors, systemReason, isSystemObject, isNeuralExcluded } from "./graph";
+import { detectJunction, buildEdges, buildGraphElements, rootNeighbors, bubbleInitials, assignBubbleTags, systemReason, isSystemObject, isNeuralExcluded } from "./graph";
 import type { SalesforceDescribeResult } from "@/lib/salesforce/types";
 
 const desc = (
@@ -267,8 +267,7 @@ describe("buildGraphElements", () => {
   });
 });
 
-describe("system-noise detection", () => {
-  it("flags core org objects", () => {
+describe("system-noise detection", () => {  it("flags core org objects", () => {
     expect(systemReason({ apiName: "User", role: "parent", via: "OwnerId" })).toBe("system object");
     expect(systemReason({ apiName: "Profile", role: "child", via: "X" })).toBe("system object");
   });
@@ -297,5 +296,49 @@ describe("system-noise detection", () => {
     expect(isNeuralExcluded("Account", false)).toBe(false);
     expect(isNeuralExcluded("Quote__c", true)).toBe(false);
     expect(isNeuralExcluded("Task__c", true)).toBe(false); // custom always deep
+  });
+});
+
+describe("bubbleInitials", () => {  it("disambiguates prefixed team names by last two segments", () => {
+    expect(bubbleInitials("DESIGNFORM_PRICING_REQUEST__c")).toBe("PR");
+    expect(bubbleInitials("DESIGNFORM_REQUEST_TERM")).toBe("RT");
+  });
+  it("splits camelCase and strips namespaces", () => {
+    expect(bubbleInitials("OrderItem")).toBe("OI");
+    expect(bubbleInitials("ns__MyObject__c")).toBe("MO");
+    expect(bubbleInitials("DandBCompany")).toBe("DB");
+  });
+  it("keeps first-two-letters for single words", () => {
+    expect(bubbleInitials("Lead")).toBe("LE");
+    expect(bubbleInitials("Account")).toBe("AC");
+  });
+});
+
+describe("assignBubbleTags", () => {
+  it("word-splits multi-word names and resolves collisions in sequence", () => {
+    const tags = assignBubbleTags(["DESIGN_REQUEST__c", "DESIGN_FORM__c", "Lead", "Account"]);
+    expect(tags.get("DESIGN_FORM__c")).toBe("DF");
+    expect(tags.get("DESIGN_REQUEST__c")).toBe("DR");
+    expect(tags.get("Lead")).toBe("LE");
+    expect(tags.get("Account")).toBe("AC");
+  });
+  it("walks FIRST+LAST, earlier words, 3-char, then numeric fallback", () => {
+    // AB_X2__c claims AX first (A+X initials); AB_X__c escapes via numeric
+    // fallback (AX2); AB_Y__c escapes via FIRST+LAST (AY). All unique.
+    const tags = assignBubbleTags(["AB_X__c", "AB_Y__c", "AB_X2__c"]);
+    const vals = [...tags.values()];
+    expect(new Set(vals).size).toBe(vals.length); // all unique
+    expect(tags.get("AB_X2__c")).toBe("AX");
+    expect(tags.get("AB_X__c")).toBe("AX2");
+    expect(tags.get("AB_Y__c")).toBe("AY");
+  });
+  it("falls back to numeric suffixes when every candidate collides", () => {
+    const tags = assignBubbleTags(["AB", "Ab", "aB"]);
+    expect(new Set([...tags.values()]).size).toBe(3);
+  });
+  it("is deterministic regardless of input order", () => {
+    const a = assignBubbleTags(["Zulu", "Alpha", "Mike"]);
+    const b = assignBubbleTags(["Mike", "Zulu", "Alpha"]);
+    expect([...a.entries()]).toEqual([...b.entries()]);
   });
 });
