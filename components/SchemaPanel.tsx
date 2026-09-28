@@ -82,8 +82,92 @@ type GraphDetail =
       };
     };
 
-function GraphDetailCardInner({
-  detail,
+/**
+ * Design-mode object picker: search the FULL org catalog (not just family),
+ * tick anything, Add to graph. Roles place bubbles; nothing touches ERD.
+ */
+function DesignPicker({
+  catalog,
+  exclude,
+  onAdd,
+}: {
+  catalog: { name: string; label: string }[];
+  exclude: string;
+  onAdd: (names: string[]) => void;
+}) {
+  const [q, setQ] = useState("");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const query = q.trim().toLowerCase();
+  const matches = query
+    ? catalog
+        .filter(
+          (o) =>
+            o.name !== exclude &&
+            (o.name.toLowerCase().includes(query) || o.label.toLowerCase().includes(query))
+        )
+        .slice(0, 8)
+    : [];
+  return (
+    <div className="rounded-lg border border-dashed border-[var(--color-line)] bg-[var(--color-canvas)] p-2">
+      <p className="mb-1 text-[10px] font-semibold uppercase tracking-[1.6px] text-ivory-600">
+        Add any object
+      </p>
+      <Input
+        placeholder="Search all objects…"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        aria-label="Search all objects to add"
+      />
+      {matches.length > 0 && (
+        <ul className="mt-1 max-h-40 space-y-px overflow-y-auto rounded-md border border-[var(--color-line-soft)] bg-white">
+          {matches.map((o) => {
+            const checked = picked.has(o.name);
+            return (
+              <label
+                key={o.name}
+                className={`flex cursor-pointer items-center gap-2 px-2 py-1 text-[11px] hover:bg-ivory-300 ${checked ? "bg-ivory-200" : ""}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() =>
+                    setPicked((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(o.name)) next.delete(o.name);
+                      else next.add(o.name);
+                      return next;
+                    })
+                  }
+                  className="h-3.5 w-3.5 shrink-0 rounded border-ivory-400 bg-white text-bronze-600 focus:ring-bronze-500"
+                  aria-label={`Add ${o.label} to graph`}
+                />
+                <span className="min-w-0 flex-1 truncate">
+                  <span className="font-medium text-ivory-950">{o.label}</span>{" "}
+                  <span className="font-mono text-[10px] text-ivory-500">({o.name})</span>
+                </span>
+              </label>
+            );
+          })}
+        </ul>
+      )}
+      {picked.size > 0 && (
+        <Button
+          size="sm"
+          className="mt-1.5 w-full"
+          onClick={() => {
+            onAdd([...picked]);
+            setPicked(new Set());
+            setQ("");
+          }}
+        >
+          Add {picked.size} to graph
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function GraphDetailCardInner({  detail,
   labels,
   erdCount,
   family,
@@ -102,6 +186,7 @@ function GraphDetailCardInner({
   designMode,
   onAddToGraph,
   drawnHere,
+  catalog,
 }: {
   detail: GraphDetail;
   labels: Map<string, string>;
@@ -131,6 +216,8 @@ function GraphDetailCardInner({
   onAddToGraph: (names: string[]) => void;
   /** ApiName -> drawn edge ids touching it, for the selected node. */
   drawnHere: Map<string, string[]>;
+  /** Full org catalog for the design-mode object picker. */
+  catalog: { name: string; label: string }[];
 }) {
   const apiName = detail.kind === "loaded" ? detail.d.name : detail.n.apiName;
   const label = detail.kind === "loaded" ? detail.d.label : detail.n.label;
@@ -285,6 +372,13 @@ function GraphDetailCardInner({
         <p className="text-[10px] font-semibold uppercase tracking-[1.6px] text-ivory-600">
           Discover of {apiName}
         </p>
+        {designMode && (
+          <DesignPicker
+            catalog={catalog}
+            exclude={apiName}
+            onAdd={(names) => onAddToGraph(names)}
+          />
+        )}
         {family === null ? (
           <Button size="sm" variant="secondary" onClick={onDiscoverFamily} disabled={familyBusy} loading={familyBusy} className="w-full">
             Discover children + parents
@@ -511,25 +605,8 @@ export default function SchemaPanel({
   const [designMode, setDesignMode] = useState(false);
   const [designIds, setDesignIds] = useState<Set<string>>(new Set());
   const [nodeSearch, setNodeSearch] = useState("");
-  // Design mode follows the ERD canvas: anything added from the left
-  // explorer (or described anywhere) joins the design set automatically,
-  // so Add-left → appears in graph is one motion, not two.
   // Per-view viewport memory: zoom/pan survives view switches and growth.
   const viewports = useRef<{ erd: { x: number; y: number; zoom: number } | null; graph: { x: number; y: number; zoom: number } | null }>({ erd: null, graph: null });
-  useEffect(() => {
-    if (!designMode) return;
-    setDesignIds((prev) => {
-      const next = new Set(prev);
-      let changed = false;
-      for (const name of describes.keys()) {
-        if (name !== rootName && !next.has(name)) {
-          next.add(name);
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [describes, designMode, rootName]);
   // Drag-only lock (top toolbar button): node positions freeze, pan/zoom and
   // selection stay alive. Mutually exclusive with the built-in OOB lock below:
   // custom applies only while OOB is unlocked (oobLocked reported upward).
@@ -2695,6 +2772,7 @@ export default function SchemaPanel({
                 const api = detail.kind === "loaded" ? detail.d.name : detail.n.apiName;
                 void expandFamily(api, names);
               }}
+              catalog={objects.map((o) => ({ name: o.name, label: o.label }))}
               onExpandToErd={(names) => {
                 void (async () => {
                   const missing = names.filter((n) => !describes.has(n)).slice(0, MAX_NEW_PER_ACTION);
