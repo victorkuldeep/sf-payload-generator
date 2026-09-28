@@ -86,7 +86,7 @@ export function SupportDialog({ open, onClose }: SupportDialogProps) {
         <div className="pt-2">
           <button
             type="button"
-            className="w-full py-2 rounded-lg bg-[var(--color-surface-strong)] hover:bg-[var(--color-line)] text-xs font-medium text-[var(--color-ink)] transition-colors cursor-pointer"
+            className="w-full py-2 rounded-lg bg-ivory-950 text-xs font-semibold text-ivory-100 hover:bg-bronze-600 transition-colors cursor-pointer"
             onClick={onClose}
           >
             Done

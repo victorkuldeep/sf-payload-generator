@@ -14,13 +14,14 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
     <button
       type="button"
       onClick={() => setSupportOpen(true)}
-      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--color-canvas)] border border-[var(--color-line)] text-[var(--color-ink)] hover:border-[var(--color-accent)] hover:bg-[var(--color-surface-strong)] transition-all cursor-pointer font-medium"
+      title="Buy me a coffee"
+      aria-label="Buy me a coffee"
+      className="inline-flex items-center justify-center h-9 w-9 rounded-lg bg-[var(--color-canvas)] border border-[var(--color-line)] text-[var(--color-ink)] hover:border-[var(--color-accent)] hover:bg-[var(--color-surface-strong)] transition-all cursor-pointer"
     >
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" className="h-3.5 w-3.5 text-[var(--color-accent)]">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" className="h-4 w-4 text-[var(--color-accent)]">
         <path d="M4 8h12v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8Z" />
         <path d="M16 9h2a2 2 0 0 1 0 4h-2M7 4c0 1-1 1.5-1 2.5M11 4c0 1-1 1.5-1 2.5" />
       </svg>
-      <span>Buy me a coffee</span>
     </button>
   );
 
