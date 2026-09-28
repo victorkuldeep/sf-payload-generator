@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectJunction, buildEdges, buildGraphElements, rootNeighbors } from "./graph";
+import { detectJunction, buildEdges, buildGraphElements, rootNeighbors, systemReason, isSystemObject } from "./graph";
 import type { SalesforceDescribeResult } from "@/lib/salesforce/types";
 
 const desc = (
@@ -194,8 +194,7 @@ describe("buildGraphElements", () => {
     expect((bubble!.data as { loaded: boolean }).loaded).toBe(true);
   });
 
-  it("draws hundreds of neighbors with zero overflow (unbounded orbits)", () => {
-    const root = desc(
+  it("draws hundreds of neighbors with zero overflow (unbounded orbits)", () => {    const root = desc(
       "Lead",
       [],
       Array.from({ length: 200 }, (_, i) => ({
@@ -265,5 +264,30 @@ describe("buildGraphElements", () => {
     expect(dnb.length).toBe(2); // independent bubbles per attach path
     expect(new Set(nodes.map((n) => n.id)).size).toBe(nodes.length); // ids unique
     expect(new Set(edges.map((e) => e.id)).size).toBe(edges.length); // edge ids unique
+  });
+});
+
+describe("system-noise detection", () => {
+  it("flags core org objects", () => {
+    expect(systemReason({ apiName: "User", role: "parent", via: "OwnerId" })).toBe("system object");
+    expect(systemReason({ apiName: "Profile", role: "child", via: "X" })).toBe("system object");
+  });
+  it("flags audit parents only via audit fields", () => {
+    expect(systemReason({ apiName: "User", role: "parent", via: "CreatedById" })).toBe("system object"); // identity wins
+    expect(systemReason({ apiName: "SomeParent", role: "parent", via: "CreatedById" })).toBe("audit lookup (CreatedById)");
+    expect(systemReason({ apiName: "SomeParent", role: "parent", via: "Custom_Lookup__c" })).toBeNull();
+    expect(systemReason({ apiName: "Account", role: "child", via: "CreatedById" })).toBeNull(); // children never audit
+  });
+  it("flags Share/Feed/History children, keeps real objects", () => {
+    expect(systemReason({ apiName: "LeadShare", role: "child", via: "R" })).toBe("platform family");
+    expect(systemReason({ apiName: "LeadFeed", role: "child", via: "R" })).toBe("platform family");
+    expect(systemReason({ apiName: "LeadHistory", role: "child", via: "R" })).toBe("platform family");
+    expect(systemReason({ apiName: "Contact", role: "child", via: "R" })).toBeNull();
+    expect(systemReason({ apiName: "Account", role: "parent", via: "AccountId" })).toBeNull();
+  });
+  it("isSystemObject covers ERD-level names", () => {
+    expect(isSystemObject("User")).toBe(true);
+    expect(isSystemObject("LeadShare")).toBe(true);
+    expect(isSystemObject("Opportunity")).toBe(false);
   });
 });

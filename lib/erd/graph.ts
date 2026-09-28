@@ -322,8 +322,46 @@ export function rootNeighbors(
   return out;
 }
 
-const BUBBLE_ROOT = 104;
-const BUBBLE_NODE = 80;
+// ── System-noise detection (architect-grade Hide-system) ────────────────
+// Salesforce litters every object with audit lookups (CreatedBy, Owner…)
+// and Share/Feed/History children. These are computed from metadata, not a
+// vibes list: audit parents are recognized by the driving FIELD, families by
+// name shape, core org objects by identity.
+
+/** Lookup fields that only ever point at audit/system parents. */
+export const AUDIT_REFERENCE_FIELDS = new Set([
+  "CreatedById",
+  "LastModifiedById",
+  "OwnerId",
+  "RecordTypeId",
+]);
+
+/** Core org objects that are never domain model. */
+export const SYSTEM_OBJECTS = new Set(["User", "RecordType", "Organization", "Profile"]);
+
+/** Child families that are platform plumbing, not domain model. */
+const SYSTEM_CHILD_FAMILIES = ["Share", "Feed", "History"];
+
+/**
+ * Why a graph neighbor counts as system noise, or null when it is real
+ * domain model. Parents qualify ONLY via audit fields; children qualify by
+ * Share/Feed/History family or core-org identity.
+ */
+export function systemReason(n: { apiName: string; role: "parent" | "child"; via: string }): string | null {
+  if (SYSTEM_OBJECTS.has(n.apiName)) return "system object";
+  if (n.role === "parent" && AUDIT_REFERENCE_FIELDS.has(n.via)) return `audit lookup (${n.via})`;
+  if (n.role === "child" && SYSTEM_CHILD_FAMILIES.some((fam) => n.apiName.endsWith(fam))) {
+    return "platform family";
+  }
+  return null;
+}
+
+/** Object-level check for the ERD canvas (no via context there). */
+export function isSystemObject(apiName: string): boolean {
+  return SYSTEM_OBJECTS.has(apiName) || SYSTEM_CHILD_FAMILIES.some((fam) => apiName.endsWith(fam));
+}
+
+const BUBBLE_ROOT = 104;const BUBBLE_NODE = 80;
 
 // Scatter orbits: bubbles sit on concentric rings so dense fans never share
 // one crowded circle. Orbits are UNBOUNDED - the ring list grows until every
@@ -378,7 +416,17 @@ export function buildGraphElements(
   // read like a family tree instead of piling onto the root. Orbit rings
   // grow without bound - the infinite canvas scrolls, nothing hides.
   const depthOf = (n: GraphNeighbor) => n.depth ?? 1;
-  const level1 = shown.filter((n) => depthOf(n) <= 1);
+  // Level-1 dedupe by apiName (first wins = root fan order): neural sweeps
+  // re-list root neighbors as depth-1 rows, and without this they would mint
+  // duplicate p:/c: node ids. Deeper generations dedupe by attach path
+  // instead (mesh shares, linear duplicates) - see byAttach handling below.
+  const seenL1 = new Set<string>();
+  const level1 = shown.filter((n) => {
+    if (depthOf(n) > 1) return false;
+    if (seenL1.has(n.apiName)) return false;
+    seenL1.add(n.apiName);
+    return true;
+  });
   const deeper = shown.filter((n) => depthOf(n) > 1);
   const parents = level1.filter((n) => n.role === "parent");
   const children = level1.filter((n) => n.role === "child");

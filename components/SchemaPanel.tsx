@@ -6,7 +6,7 @@ import type {
   SalesforceObject,
   SalesforceDescribeResult,
 } from "@/lib/salesforce/types";
-import { buildErdElements, buildGraphElements, rootNeighbors, type ErdNodeData, type GraphNeighbor } from "@/lib/erd/graph";
+import { buildErdElements, buildGraphElements, rootNeighbors, systemReason, isSystemObject, SYSTEM_OBJECTS, type ErdNodeData, type GraphNeighbor } from "@/lib/erd/graph";
 import { rankObjects } from "@/lib/search/rank";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import { apiFetch } from "@/lib/api";
@@ -516,11 +516,6 @@ export default function SchemaPanel({
   const [family, setFamily] = useState<(DiscoverCandidate & { parentCount: number; childCount: number })[] | null>(null);
   const [familyBusy, setFamilyBusy] = useState(false);
 
-  const SYSTEM_OBJECTS = useMemo(
-    () => new Set(["User", "RecordType", "Organization", "Profile"]),
-    []
-  );
-
   const customSet = useMemo(() => {
     const s = new Set<string>();
     for (const o of objects) if (o.custom) s.add(o.name);
@@ -540,14 +535,14 @@ export default function SchemaPanel({
         out.set(name, d);
         continue;
       }
-      if (hideSystem && SYSTEM_OBJECTS.has(name)) continue;
+      if (hideSystem && isSystemObject(name)) continue;
       if (filterMode === "standard" && isCustomName(name)) continue;
       if (filterMode === "custom" && !isCustomName(name)) continue;
       if (filterMode === "manual" && hiddenIds.has(name)) continue;
       out.set(name, d);
     }
     return out;
-  }, [describes, rootName, hideSystem, filterMode, hiddenIds, isCustomName, SYSTEM_OBJECTS]);
+  }, [describes, rootName, hideSystem, filterMode, hiddenIds, isCustomName]);
 
   const orgDomain = useMemo(() => {
     try {
@@ -614,9 +609,9 @@ export default function SchemaPanel({
     const root = describes.get(rootName);
     if (!root) return { nodes: [], edges: [], overflow: 0, extended: 0 };
     const canvasNames = new Set(describes.keys());
-    const passFilters = (n: { apiName: string; custom: boolean }) => {
+    const passFilters = (n: GraphNeighbor) => {
       if (removedIds.has(n.apiName) || dismissedIds.has(n.apiName)) return false;
-      if (hideSystem && SYSTEM_OBJECTS.has(n.apiName)) return false;
+      if (hideSystem && systemReason({ apiName: n.apiName, role: n.role, via: n.via })) return false;
       if (filterMode === "standard" && n.custom) return false;
       if (filterMode === "custom" && !n.custom) return false;
       if (filterMode === "manual" && hiddenIds.has(n.apiName)) return false;
@@ -649,7 +644,25 @@ export default function SchemaPanel({
     }
     const nodes = built.nodes.filter((n) => !n.id.startsWith("x:") || linked.has(n.id));
     return { nodes, edges, overflow: built.overflow, extended: nodes.filter((n) => n.id.startsWith("x:")).length };
-  }, [view, rootName, describes, labels, isCustomName, hideSystem, SYSTEM_OBJECTS, filterMode, hiddenIds, removedIds, dismissedIds, dismissedEdges, designMode, designIds, spot, enforced, expanded, familyMode]);
+  }, [view, rootName, describes, labels, isCustomName, hideSystem, filterMode, hiddenIds, removedIds, dismissedIds, dismissedEdges, designMode, designIds, spot, enforced, expanded, familyMode]);
+
+  // How many graph neighbors Hide-system would sweep (level-1 + expanded).
+  // Shown on the button so the sweep is never a mystery.
+  const systemHiddenCount = useMemo(() => {
+    if (view !== "graph" || !rootName) return 0;
+    const root = describes.get(rootName);
+    if (!root) return 0;
+    let count = 0;
+    for (const n of rootNeighbors(root, labels, isCustomName)) {
+      if (systemReason({ apiName: n.apiName, role: n.role, via: n.via })) count++;
+    }
+    for (const [, list] of expanded) {
+      for (const n of list) {
+        if (systemReason({ apiName: n.apiName, role: n.role, via: n.via })) count++;
+      }
+    }
+    return count;
+  }, [view, rootName, describes, labels, isCustomName, expanded]);
 
   const neighborMap = useMemo(() => {
     const root = describes.get(rootName);
@@ -1187,7 +1200,7 @@ export default function SchemaPanel({
       subtitle: `${candidates.length} related objects - tick what joins the canvas`,
       candidates,
     });
-  }, [focusName, rootName, busy, describes, labels, isCustomName, SYSTEM_OBJECTS]);
+  }, [focusName, rootName, busy, describes, labels, isCustomName]);
 
   // Family-tree expansion data: candidate children/parents for ONE node,
   // with ahead-counts (p:/c:) computed from describe (cache + fetch).
@@ -1262,7 +1275,7 @@ export default function SchemaPanel({
     }
     familyCache.current.set(apiName, out);
     return { candidates: out };
-  }, [describes, describeCached, labels, isCustomName, SYSTEM_OBJECTS]);
+  }, [describes, describeCached, labels, isCustomName]);
 
   // One-click custom sweep: every custom object linked to the root's
   // neighborhood, fetched live. Answers "show me all custom links" without
@@ -1348,6 +1361,118 @@ export default function SchemaPanel({
    * canvas (use "Add visible to ERD" for that). fromApi anchors the
    * generation so the tree reads Lead → Account → Asset. Edges hang off the
    * source bubble: for children Account→Asset uses Account's own describe. */
+  // NEURAL MODE: one click recursively discovers EVERYTHING reachable from
+  // the root (BFS over live describes, cache-first) and fans the whole mesh
+  // out as lite previews. ERD canvas untouched; filter afterwards with
+  // All/Custom/Manual/Hide-system. Caps bound the blast radius.
+  const NEURAL_MAX_NODES = 250;
+  const NEURAL_MAX_DEPTH = 5;
+  const godCancel = useRef(false);
+  const [neuralRunning, setNeuralRunning] = useState(false);
+  const neuralMode = useCallback(async () => {
+    if (!rootName || busy || view !== "graph") return;
+    const root = describes.get(rootName);
+    if (!root) return;
+    godCancel.current = false;
+    setNeuralRunning(true);
+    setError(null);
+    setNotice(null);
+    const visited = new Set<string>([rootName]);
+    const queue: { api: string; depth: number }[] = [{ api: rootName, depth: 0 }];
+    const gathered = new Map<string, GraphNeighbor[]>();
+    let fetched = 0;
+    const pushRow = (from: string, n: GraphNeighbor) => {
+      if (!gathered.has(from)) gathered.set(from, []);
+      const list = gathered.get(from)!;
+      if (list.some((r) => r.apiName === n.apiName)) return;
+      list.push(n);
+    };
+    setBusy("Neural mode: mapping the reachable universe…");
+    try {
+      while (queue.length > 0 && visited.size < NEURAL_MAX_NODES) {
+        if (godCancel.current) {
+          setNotice("Neural mode cancelled - keeping what landed so far.");
+          break;
+        }
+        // One BFS level per batch (concurrency 6), so progress reads level by level.
+        const level = queue.splice(0);
+        setBusy(`Neural mode: depth ${level[0].depth} · ${visited.size} objects so far…`);
+        const results = await mapLimit(level, 6, async ({ api }) => {
+          const d = await describeCached(api);
+          return { api, d };
+        });
+        for (const { api, d } of results) {
+          if (!d) continue;
+          const depth = level.find((l) => l.api === api)?.depth ?? 0;
+          if (depth >= NEURAL_MAX_DEPTH) continue;
+          // Children.
+          for (const r of d.childRelationships ?? []) {
+            if (!r.relationshipName || r.childSObject === api) continue;
+            pushRow(api, {
+              apiName: r.childSObject,
+              label: labels.get(r.childSObject) ?? r.childSObject,
+              custom: isCustomName(r.childSObject),
+              role: "child",
+              via: r.relationshipName,
+              kind: r.cascadeDelete === true ? "md" : "lookup",
+              attachTo: api,
+              depth: depth + 1,
+            });
+            if (!visited.has(r.childSObject) && visited.size < NEURAL_MAX_NODES) {
+              visited.add(r.childSObject);
+              queue.push({ api: r.childSObject, depth: depth + 1 });
+            }
+          }
+          // Parents (lookup targets).
+          for (const f of d.fields ?? []) {
+            if (f.type !== "reference") continue;
+            for (const t of f.referenceTo ?? []) {
+              if (t === api) continue;
+              pushRow(api, {
+                apiName: t,
+                label: labels.get(t) ?? t,
+                custom: isCustomName(t),
+                role: "parent",
+                via: f.name,
+                kind: "lookup",
+                attachTo: api,
+                depth: depth + 1,
+              });
+              if (!visited.has(t) && visited.size < NEURAL_MAX_NODES) {
+                visited.add(t);
+                queue.push({ api: t, depth: depth + 1 });
+              }
+            }
+          }
+          fetched++;
+        }
+      }
+      // Merge into expansion state (dedupe by attachTo::apiName), then also
+      // feed designIds so Design mode follows along.
+      setExpanded((prev) => {
+        const next = new Map(prev);
+        for (const [from, rows] of gathered) {
+          const key = `${from}::neural`;
+          const have = new Set((next.get(key) ?? []).map((n) => n.apiName));
+          const freshRows = rows.filter((r) => !have.has(r.apiName));
+          if (freshRows.length > 0) next.set(key, [...(next.get(key) ?? []), ...freshRows]);
+        }
+        return next;
+      });
+      setDesignIds((prev) => {
+        const next = new Set(prev);
+        for (const rows of gathered.values()) for (const r of rows) next.add(r.apiName);
+        return next;
+      });
+      const totalLinks = [...gathered.values()].reduce((n, l) => n + l.length, 0);
+      setNotice(
+        `Neural mesh: ${visited.size} objects, ${totalLinks} links, ${fetched} describes - all previews, ERD untouched. Filter with All/Custom/Manual/Hide system, or flip Mesh/Linear.`
+      );
+    } finally {
+      setBusy(null);
+      setNeuralRunning(false);
+    }
+  }, [rootName, busy, view, describes, describeCached, labels, isCustomName]);
   const expandFamily = useCallback(async (fromApi: string, names: string[]) => {
     if (busy || names.length === 0) return;
     // True depth: walk attach-links back to the root.
@@ -1544,7 +1669,7 @@ export default function SchemaPanel({
       subtitle: `${candidates.length} lookup targets - tick what joins the canvas, then they spotlight`,
       candidates,
     });
-  }, [focusName, rootName, busy, describes, labels, isCustomName, SYSTEM_OBJECTS]);
+  }, [focusName, rootName, busy, describes, labels, isCustomName]);
 
   const applyPicker = useCallback(
     async (selected: string[]) => {
@@ -2195,14 +2320,14 @@ export default function SchemaPanel({
               type="button"
               onClick={() => setHideSystem((v) => !v)}
               aria-pressed={hideSystem}
-              title="Hide system objects (User, RecordType, Organization, Profile)"
+              title="Hide system noise, computed from metadata: audit lookups (CreatedBy, Owner…), User/RecordType/Organization/Profile, and Share/Feed/History children"
               className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors cursor-pointer ${
                 hideSystem
                   ? "bg-bronze-600 text-white border-bronze-600"
                   : "bg-[var(--color-surface)] border-[var(--color-line)] text-ivory-600 hover:text-ivory-950"
               }`}
             >
-              Hide system
+              Hide system{systemHiddenCount > 0 ? ` · ${systemHiddenCount}` : ""}
             </button>
             {view === "graph" && (
               <span
@@ -2254,6 +2379,30 @@ export default function SchemaPanel({
               >
                 Design{designMode && designIds.size > 0 ? ` · ${designIds.size}` : ""}
               </button>
+            )}
+            {view === "graph" && (
+              neuralRunning ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    godCancel.current = true;
+                  }}
+                  title="Stop the neural sweep, keeping what landed so far"
+                  className="rounded-full border border-red-300 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-700 transition-colors cursor-pointer"
+                >
+                  Stop neural
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void neuralMode()}
+                  disabled={!!busy}
+                  title="Neural mode: recursively discover EVERYTHING reachable from the root and fan the full mesh out as lite previews. ERD untouched - filter afterwards. Capped, cancellable."
+                  className="rounded-full border border-bronze-600 bg-bronze-600 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors cursor-pointer hover:bg-bronze-700 disabled:opacity-40"
+                >
+                  Neural
+                </button>
+              )
             )}
             {view === "graph" && (expanded.size > 0 || dismissedIds.size > 0 || graphSelected || designIds.size > 0) && (
               <button

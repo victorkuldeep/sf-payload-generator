@@ -14,6 +14,7 @@ import {
   Background,
   Controls,
   MiniMap,
+  Panel,
   useNodesState,
   useEdgesState,
   useReactFlow,
@@ -103,6 +104,10 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
   const [strokes, setStrokes] = useState<Stroke[]>([]);
   const strokeId = useRef(0);
   const drawing = useRef(false);
+  // Drag-lock is OURS, not React Flow's: locking freezes node displacement
+  // only. Pan and zoom keep working - the built-in lock button (which also
+  // kills selection) is hidden in favor of this one.
+  const [nodesLocked, setNodesLocked] = useState(false);
 
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -272,7 +277,7 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
         panOnDrag={!laser}
         zoomOnScroll
         zoomOnPinch
-        nodesDraggable={!laser}
+        nodesDraggable={!laser && !nodesLocked}
         nodesConnectable={false}
         elementsSelectable={!laser}
         minZoom={0.15}
@@ -289,7 +294,29 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
           style={{ background: "#FFFFFF", border: "1px solid #DDD3BC", borderRadius: 8 }}
           maskColor="rgba(250, 248, 242, 0.75)"
         />
-        <Controls position="bottom-left" />
+        <Controls position="bottom-left" showInteractive={false} />
+        <Panel position="bottom-left" style={{ marginBottom: 100 }}>
+          <button
+            type="button"
+            onClick={() => setNodesLocked((v) => !v)}
+            aria-pressed={nodesLocked}
+            title={nodesLocked ? "Unlock node dragging (pan/zoom always work)" : "Lock node positions - drag to arrange, lock to present (pan/zoom always work)"}
+            className="react-flow__controls-button"
+            style={{ width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", background: nodesLocked ? "#211F1B" : undefined, color: nodesLocked ? "#fff" : undefined, borderBottom: "1px solid #eee" }}
+          >
+            {nodesLocked ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                <rect x="4" y="11" width="16" height="9" rx="2" />
+                <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+              </svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                <rect x="4" y="11" width="16" height="9" rx="2" />
+                <path d="M8 11V7a4 4 0 0 1 7.5-2" />
+              </svg>
+            )}
+          </button>
+        </Panel>
       </ReactFlow>
 
       {laser && (
