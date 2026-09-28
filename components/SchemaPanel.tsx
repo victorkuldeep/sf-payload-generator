@@ -2602,35 +2602,6 @@ export default function SchemaPanel({
             {view === "graph" && (
               <button
                 type="button"
-                onClick={() => setNodesLocked((v) => !v)}
-                disabled={oobLocked}
-                aria-pressed={nodesLocked}
-                title={
-                  oobLocked
-                    ? "Built-in lock is engaged - release it below to use the position lock"
-                    : nodesLocked
-                      ? "Unlock node positions (pan/zoom always work)"
-                      : "Lock node positions - drag to arrange, lock to present (pan/zoom always work)"
-                }
-                className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                  nodesLocked
-                    ? "bg-ivory-950 text-ivory-100 border-ivory-950"
-                    : "bg-[var(--color-surface)] border-[var(--color-line)] text-ivory-700 hover:border-[var(--color-accent)]"
-                }`}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
-                  <rect x="4" y="11" width="16" height="9" rx="2" />
-                  {nodesLocked ? (
-                    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-                  ) : (
-                    <path d="M8 11V7a4 4 0 0 1 7.5-2" />
-                  )}
-                </svg>
-              </button>
-            )}
-            {view === "graph" && (
-              <button
-                type="button"
                 onClick={resetAll}
                 disabled={describes.size === 0 || !!busy}
                 title="Rebalance: re-run auto-layout and re-fit - keeps every node (same as Reset view in the explorer panel)"
@@ -2638,6 +2609,38 @@ export default function SchemaPanel({
               >
                 Rebalance
               </button>
+            )}
+            {view === "graph" && (
+              <span className="ml-auto">
+                <button
+                  type="button"
+                  onClick={() => setNodesLocked((v) => !v)}
+                  disabled={oobLocked}
+                  aria-pressed={nodesLocked}
+                  aria-label={nodesLocked ? "Unlock node positions" : "Lock node positions"}
+                  title={
+                    oobLocked
+                      ? "Built-in lock is engaged - release it below to use the position lock"
+                      : nodesLocked
+                        ? "Unlock node positions (pan/zoom always work)"
+                        : "Lock node positions - drag to arrange, lock to present (pan/zoom always work)"
+                  }
+                  className={`flex items-center rounded-full border p-1.5 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                    nodesLocked
+                      ? "bg-ivory-950 text-ivory-100 border-ivory-950"
+                      : "bg-[var(--color-surface)] border-[var(--color-line)] text-ivory-700 hover:border-[var(--color-accent)]"
+                  }`}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+                    <rect x="4" y="11" width="16" height="9" rx="2" />
+                    {nodesLocked ? (
+                      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                    ) : (
+                      <path d="M8 11V7a4 4 0 0 1 7.5-2" />
+                    )}
+                  </svg>
+                </button>
+              </span>
             )}
             {view === "graph" && graphElements.overflow > 0 && (
               <span
