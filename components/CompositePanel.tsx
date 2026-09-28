@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo, useRef } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import type { SalesforceObject, SalesforceDescribeResult, SalesforceField } from "@/lib/salesforce/types";
 import { apiFetch } from "@/lib/api";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
@@ -23,6 +23,7 @@ import StudioRequests, { type StudioRequestActions } from "./composite-studio/St
 import StudioGraph from "./composite-studio/StudioGraph";
 import StudioPayloadView from "./composite-studio/StudioPayload";
 import Button from "./ui/Button";
+import { snapKey, loadSnap, saveSnap } from "@/lib/workspace/snapshots";
 
 interface CompositePanelProps {
   objects: SalesforceObject[];
@@ -84,6 +85,53 @@ export default function CompositePanel({
   const [renamingBundleId, setRenamingTabId] = useState<string | null>(null);
 
   const MAX_BUNDLES = 10;
+
+  // ── Bundle snapshot: bundles survive route trips + reloads. Describes
+  // re-backfill quietly. Saves stay silent until the restore pass runs.
+  interface CompositeSnap {
+    bundles: { tabId: string; doc: StudioDocument }[];
+    activeTabId: string;
+  }
+  const compositeRestoredRef = useRef(false);
+  useEffect(() => {
+    if (!compositeRestoredRef.current) return;
+    saveSnap(snapKey("sf_composite", instanceUrl), {
+      bundles,
+      activeTabId: activeBundleRef.current,
+    } satisfies CompositeSnap);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bundles, activeBundleId, instanceUrl]);
+
+  useEffect(() => {
+    if (objects.length === 0 || compositeRestoredRef.current) return;
+    compositeRestoredRef.current = true;
+    const snap = loadSnap<CompositeSnap>(snapKey("sf_composite", instanceUrl));
+    if (!snap || !snap.bundles || snap.bundles.length === 0) return;
+    const docs = snap.bundles.slice(0, MAX_BUNDLES);
+    setBundles(docs);
+    const activeId = docs.some((t) => t.tabId === snap.activeTabId) ? snap.activeTabId : docs[0].tabId;
+    setActiveBundleId(activeId);
+    activeBundleRef.current = activeId;
+    // Quiet describe backfill for every requested object.
+    const want = [...new Set(docs.flatMap((t) => t.doc.requests.map((r) => r.objectApiName).filter(Boolean)))];
+    if (want.length === 0) return;
+    void (async () => {
+      const token = getToken();
+      if (!token) return;
+      const entries: [string, SalesforceDescribeResult][] = [];
+      for (const objectName of want.slice(0, 40)) {
+        try {
+          const response = await apiFetch("/api/salesforce/describe", { instanceUrl, token, apiVersion, objectName });
+          const data = (await response.json()) as SalesforceDescribeResult;
+          if (response.ok) entries.push([objectName, data]);
+        } catch {
+          /* skip */
+        }
+      }
+      if (entries.length > 0) setDescribes(new Map(entries));
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [objects, instanceUrl]);
 
   const switchBundle = useCallback((tabId: string) => {
     setActiveBundleId(tabId);

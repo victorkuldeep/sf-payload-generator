@@ -22,6 +22,7 @@ import {
   type ErdSnapshot,
 } from "@/lib/erd/snapshotDb";
 import { newItemId } from "@/lib/collection/types";
+import { snapKey, loadSnap, saveSnap } from "@/lib/workspace/snapshots";
 import { EmptyState } from "./EmptyState";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
@@ -1024,6 +1025,93 @@ export default function SchemaPanel({
       return next;
     });
   }, []);
+
+  // ── In-flight canvas snapshot: root + fetched objects + curation survive
+  // route trips (JSON / Contracts / Architect unmount this panel) and full
+  // reloads. Describes re-backfill quietly - no busy spinner, no error modal.
+  // Saves stay silent until the restore pass runs.
+  interface SchemaSnap {
+    rootName: string;
+    described: string[];
+    hiddenIds: string[];
+    removedIds: string[];
+    dismissedIds: string[];
+    focusName: string;
+    graphSelected: string | null;
+    view: "erd" | "graph";
+    filterMode: "all" | "standard" | "custom" | "manual";
+    familyMode: "mesh" | "linear";
+    hideSystem: boolean;
+    systemAllow: string[];
+    designIds: string[];
+    designMode: boolean;
+    expanded: [string, GraphNeighbor[]][];
+    enforced: [string, { x: number; y: number }][] | null;
+    viewports: { erd: { x: number; y: number; zoom: number } | null; graph: { x: number; y: number; zoom: number } | null };
+  }
+  const schemaRestoredRef = useRef(false);
+  useEffect(() => {
+    if (!schemaRestoredRef.current) return;
+    saveSnap(snapKey("sf_schema", instanceUrl), {
+      rootName,
+      described: [...describes.keys()],
+      hiddenIds: [...hiddenIds],
+      removedIds: [...removedIds],
+      dismissedIds: [...dismissedIds],
+      focusName,
+      graphSelected,
+      view,
+      filterMode,
+      familyMode,
+      hideSystem,
+      systemAllow: [...systemAllow],
+      designIds: [...designIds],
+      designMode,
+      expanded: [...expanded.entries()],
+      enforced: enforced ? [...enforced.entries()] : null,
+      viewports: viewports.current,
+    } satisfies SchemaSnap);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rootName, describes, hiddenIds, removedIds, dismissedIds, focusName, graphSelected, view, filterMode, familyMode, hideSystem, systemAllow, designIds, designMode, expanded, enforced, instanceUrl]);
+
+  useEffect(() => {
+    if (objects.length === 0 || schemaRestoredRef.current) return;
+    schemaRestoredRef.current = true;
+    const snap = loadSnap<SchemaSnap>(snapKey("sf_schema", instanceUrl));
+    if (!snap || (!snap.rootName && (!snap.described || snap.described.length === 0))) return;
+    if (snap.rootName) {
+      setRootName(snap.rootName);
+      setFocusName(snap.focusName || snap.rootName);
+    }
+    if (snap.graphSelected) setGraphSelected(snap.graphSelected);
+    if (snap.view) setView(snap.view);
+    if (snap.filterMode) setFilterMode(snap.filterMode);
+    if (snap.familyMode) setFamilyMode(snap.familyMode);
+    if (typeof snap.hideSystem === "boolean") setHideSystem(snap.hideSystem);
+    if (snap.hiddenIds) setHiddenIds(new Set(snap.hiddenIds));
+    if (snap.removedIds) setRemovedIds(new Set(snap.removedIds));
+    if (snap.dismissedIds) setDismissedIds(new Set(snap.dismissedIds));
+    if (snap.systemAllow) setSystemAllow(new Set(snap.systemAllow));
+    if (snap.designIds) setDesignIds(new Set(snap.designIds));
+    if (typeof snap.designMode === "boolean") setDesignMode(snap.designMode);
+    if (snap.expanded) setExpanded(new Map(snap.expanded));
+    if (snap.enforced) setEnforced(new Map(snap.enforced));
+    if (snap.viewports) viewports.current = snap.viewports;
+    const want = (snap.described ?? []).filter((n) => !describes.has(n)).slice(0, MAX_NODES);
+    if (want.length === 0) return;
+    void (async () => {
+      const fresh: SalesforceDescribeResult[] = [];
+      for (const n of want) {
+        try {
+          fresh.push(await fetchDescribe(n));
+        } catch {
+          /* object gone from the org - skip */
+        }
+      }
+      mergeDescribes(fresh);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [objects, instanceUrl]);
 
   const refreshNode = useCallback(
     async (id: string) => {

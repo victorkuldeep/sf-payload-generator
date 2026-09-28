@@ -37,6 +37,8 @@ import {
 } from "@/lib/collection/db";
 import { ConnectModal } from "@/components/ConnectModal";
 import { ObjectSearchOverlay } from "@/components/ObjectSearchOverlay";
+import { getCachedConnection, setCachedConnection, clearCachedConnection } from "@/lib/session/cache";
+import { snapKey, loadSnap, saveSnap } from "@/lib/workspace/snapshots";
 import Button from "@/components/ui/Button";
 import ObjectPanel from "@/components/ObjectPanel";
 import FieldPanel from "@/components/FieldPanel";
@@ -511,6 +513,7 @@ export default function Home() {
   }, []);
 
   const handleSessionExpired = useCallback(() => {
+    clearCachedConnection();
     setSessionExpired(true);
   }, []);
 
@@ -619,9 +622,27 @@ export default function Home() {
 
   // On mount: restore session, seed modal prefill, decide on welcome,
   // and reload the persisted request collection (IndexedDB).
-  // A dead restored session pops the Connect dialog instead of failing silently.
+  // Fast path first: the module connection cache survives client-side route
+  // trips (JSON / Contracts / Architect unmount this page) - hydrate
+  // instantly with zero network and zero boot modal. A dead restored session
+  // pops the Connect dialog instead of failing silently.
   useEffect(() => {
     setSavedCreds(readSavedCreds());
+    const conn = getCachedConnection();
+    if (conn) {
+      tokenRef.current = conn.token;
+      sessionStorage.setItem("sf_welcomed", "1");
+      setState((prev) => ({
+        ...prev,
+        connected: true,
+        instanceUrl: conn.instanceUrl,
+        token: "",
+        apiVersion: conn.apiVersion,
+        objects: conn.objects,
+        objectCount: conn.objectCount,
+      }));
+      return;
+    }
     const saved = sessionStorage.getItem("sf_session");
     if (!saved) {
       if (!sessionStorage.getItem("sf_welcomed")) setShowWelcome(true);
@@ -791,8 +812,9 @@ export default function Home() {
           token: "", // never put token in state
         }));
 
-        // Load objects immediately
-        await loadObjects(instanceUrl, token, apiVersion);
+        // Load objects immediately (returns them so the caller can cache the connection)
+        const objs = await loadObjects(instanceUrl, token, apiVersion);
+        setCachedConnection({ instanceUrl, token, apiVersion, objects: objs, objectCount: data.objectCount ?? 0 });
         return true;
       } catch (err) {
         setErrorKey("connect", err instanceof Error ? err.message : "Connection failed");
@@ -804,7 +826,7 @@ export default function Home() {
     [] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  const loadObjects = async (instanceUrl: string, token: string, apiVersion: string) => {
+  const loadObjects = async (instanceUrl: string, token: string, apiVersion: string): Promise<SalesforceObject[]> => {
     setLoadingKey("objects", true);
     setErrorKey("objects", null);
 
@@ -817,14 +839,16 @@ export default function Home() {
         const message = data.error ?? "Failed to load objects";
         setErrorKey("objects", message);
         if (isSessionExpiredMessage(message)) handleSessionExpired();
-        return;
+        return [];
       }
 
       setState((prev) => ({ ...prev, objects: data.objects ?? [] }));
+      return data.objects ?? [];
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load objects";
       setErrorKey("objects", message);
       if (isSessionExpiredMessage(message)) handleSessionExpired();
+      return [];
     } finally {
       setLoadingKey("objects", false);
     }
@@ -1055,8 +1079,114 @@ export default function Home() {
     setRenamingBuilderTabId(null);
   }, []);
 
+  // ── Workspace snapshots: builder tabs survive route trips + reloads.
+  // Saves stay silent until the restore pass runs (fresh mounts must not
+  // overwrite the good snapshot with blank state).
+  interface BuilderTabSnap {
+    name: string | null;
+    objectName: string | null;
+    fieldNames: string[];
+    fieldValues: Record<string, unknown>;
+    operation: OperationType;
+    recordId: string;
+    payload: GeneratedPayload | null;
+  }
+  const builderRestoredRef = useRef<string | null>(null);
+  const isPristineTabs = (tabs: BuilderTab[]) =>
+    tabs.length === 1 &&
+    tabs[0].draft.selectedObject === null &&
+    tabs[0].draft.selectedFieldNames.size === 0 &&
+    tabs[0].draft.generatedPayload === null;
+
+  useEffect(() => {
+    if (!state.connected) return;
+    if (builderRestoredRef.current !== state.instanceUrl) return;
+    saveSnap(
+      snapKey("sf_builder_tabs", state.instanceUrl),
+      builderTabs.map((t): BuilderTabSnap => ({
+        name: t.name,
+        objectName: t.draft.selectedObject?.name ?? null,
+        fieldNames: [...t.draft.selectedFieldNames],
+        fieldValues: t.draft.fieldValues,
+        operation: t.draft.operation,
+        recordId: t.draft.recordId,
+        payload: t.draft.generatedPayload,
+      }))
+    );
+  }, [builderTabs, state.connected, state.instanceUrl]);
+
+  useEffect(() => {
+    if (!state.connected || state.objects.length === 0) return;
+    if (builderRestoredRef.current === state.instanceUrl) return;
+    builderRestoredRef.current = state.instanceUrl;
+    const snap = loadSnap<BuilderTabSnap[]>(snapKey("sf_builder_tabs", state.instanceUrl));
+    if (!snap || snap.length === 0) return;
+    if (!isPristineTabs(builderTabs)) return;
+    void (async () => {
+      const tabs: BuilderTab[] = [];
+      for (const s of snap.slice(0, MAX_BUILDER_TABS)) {
+        const obj = s.objectName ? (state.objects.find((o) => o.name === s.objectName) ?? null) : null;
+        let describe: SalesforceDescribeResult | null = null;
+        if (obj) {
+          try {
+            const r = await apiFetch("/api/salesforce/describe", {
+              instanceUrl: state.instanceUrl,
+              token: tokenRef.current,
+              apiVersion: state.apiVersion,
+              objectName: obj.name,
+            });
+            const d = (await r.json()) as SalesforceDescribeResult;
+            if (r.ok) describe = d;
+          } catch {
+            /* leave null - user can reselect the object to retry */
+          }
+        }
+        tabs.push({
+          tabId: newItemId(),
+          name: s.name,
+          draft: {
+            selectedObject: obj,
+            describe,
+            selectedFieldNames: new Set(s.fieldNames ?? []),
+            fieldValues: s.fieldValues ?? {},
+            operation: s.operation ?? "POST",
+            recordId: s.recordId ?? "",
+            generatedPayload: s.payload,
+          },
+        });
+      }
+      if (tabs.length === 0) return;
+      // Apply only if the user hasn't started fresh work mid-backfill.
+      setBuilderTabs((prev) => (isPristineTabs(prev) ? tabs : prev));
+      setActiveBuilderTabId((prevActive) => {
+        if (prevActive) return prevActive;
+        activeBuilderTabRef.current = tabs[0].tabId;
+        return tabs[0].tabId;
+      });
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.connected, state.objects, state.instanceUrl, state.apiVersion]);
+
+  // ── Last-mode persistence: returning from JSON / Contracts / Architect
+  // lands back where work was happening instead of the home hero.
+  const modeRestoredRef = useRef(false);
+  useEffect(() => {
+    if (!state.connected || modeRestoredRef.current) return;
+    modeRestoredRef.current = true;
+    if (new URLSearchParams(window.location.search).get("mode")) return; // deep link wins
+    const m = loadSnap<string>(snapKey("sf_mode", state.instanceUrl));
+    if (m && m !== "home" && (m as BuilderMode) !== state.mode) goMode(m as BuilderMode);
+  }, [state.connected, state.instanceUrl, state.mode, goMode]);
+  useEffect(() => {
+    if (!state.connected) return;
+    saveSnap(snapKey("sf_mode", state.instanceUrl), state.mode);
+  }, [state.mode, state.connected, state.instanceUrl]);
+
   const handleDisconnect = useCallback(() => {
     tokenRef.current = "";
+    clearCachedConnection();
+    builderRestoredRef.current = null;
+    modeRestoredRef.current = false;
     sessionStorage.removeItem("sf_session");
     setShowSearch(false);
     setShowConnect(false);
