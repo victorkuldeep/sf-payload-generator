@@ -1792,6 +1792,83 @@ export default function SchemaPanel({
     }
   }, [busy, view, graphElements, rootName, describes, addNames]);
 
+  /** Sync FROM the ERD canvas: every on-canvas object gets a graph bubble,
+   * fanned off the root with true roles where related (or a "canvas" link
+   * where not). Clears dismissals for synced names and drops to All filter
+   * so the sync is total - the mirror of Add visible to ERD. */
+  const syncFromCanvas = useCallback(() => {
+    if (busy || view !== "graph" || !rootName) return;
+    const root = describes.get(rootName);
+    if (!root) return;
+    const names = [...describes.keys()].filter((n) => n !== rootName);
+    if (names.length === 0) {
+      setNotice("ERD canvas holds only the root - nothing to sync.");
+      return;
+    }
+    const kidVia = new Map(
+      (root.childRelationships ?? []).filter((r) => r.relationshipName).map((r) => [r.childSObject, r] as const)
+    );
+    const rows: GraphNeighbor[] = names.map((apiName) => {
+      const rel = kidVia.get(apiName);
+      if (rel) {
+        return {
+          apiName,
+          label: labels.get(apiName) ?? apiName,
+          custom: isCustomName(apiName),
+          role: "child" as const,
+          via: rel.relationshipName!,
+          kind: (rel.cascadeDelete === true ? "md" : "lookup") as "md" | "lookup",
+          attachTo: rootName,
+          depth: 2,
+        };
+      }
+      const f = (root.fields ?? []).find((ff) => ff.type === "reference" && (ff.referenceTo ?? []).includes(apiName));
+      if (f) {
+        return {
+          apiName,
+          label: labels.get(apiName) ?? apiName,
+          custom: isCustomName(apiName),
+          role: "parent" as const,
+          via: f.name,
+          kind: "lookup" as const,
+          attachTo: rootName,
+          depth: 2,
+        };
+      }
+      return {
+        apiName,
+        label: labels.get(apiName) ?? apiName,
+        custom: isCustomName(apiName),
+        role: "child" as const,
+        via: "canvas",
+        kind: "lookup" as const,
+        attachTo: rootName,
+        depth: 2,
+      };
+    });
+    setExpanded((prev) => {
+      const next = new Map(prev);
+      const key = `${rootName}::canvas-sync`;
+      next.set(key, rows);
+      return next;
+    });
+    setDismissedIds((prev) => {
+      const next = new Set(prev);
+      for (const n of names) next.delete(n);
+      return next;
+    });
+    setDismissedEdges((prev) => {
+      // Drop dismissals touching synced names so links redraw.
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (!names.some((n) => id.includes(n))) next.add(id);
+      }
+      return next;
+    });
+    setFilterMode("all");
+    setNotice(`${names.length} canvas object${names.length === 1 ? "" : "s"} synced into the graph - related links first, the rest via "canvas".`);
+  }, [busy, view, rootName, describes, labels, isCustomName]);
+
   const showParents = useCallback(() => {
     const target = focusName || rootName;
     if (!target || busy) return;
@@ -2597,6 +2674,17 @@ export default function SchemaPanel({
                 className="rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer disabled:opacity-40"
               >
                 Add visible to ERD
+              </button>
+            )}
+            {view === "graph" && (
+              <button
+                type="button"
+                onClick={syncFromCanvas}
+                disabled={!!busy}
+                title="Pull every ERD-canvas object into the graph - related links first, the rest via 'canvas'"
+                className="rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer disabled:opacity-40"
+              >
+                Sync from canvas
               </button>
             )}
             {view === "graph" && (
