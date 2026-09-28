@@ -699,6 +699,10 @@ export default function SchemaPanel({
   const [popover, setPopover] = useState<PicklistPopoverData | null>(null);
   const [layoutRev, setLayoutRev] = useState(0);
   const [enforced, setEnforced] = useState<Map<string, { x: number; y: number }> | null>(null);
+  // Graph drag pins live apart from ERD pins: same apiName keys, two
+  // unrelated coordinate systems. Sharing one map pinned graph bubbles at
+  // ERD table coordinates (first graph open looked wind-blown until Rebalance).
+  const [graphEnforced, setGraphEnforced] = useState<Map<string, { x: number; y: number }> | null>(null);
   const canvasRef = useRef<ErdCanvasHandle | null>(null);
   const [snapshots, setSnapshots] = useState<ErdSnapshot[]>([]);
   const [showHistory, setShowHistory] = useState(false);
@@ -876,7 +880,7 @@ export default function SchemaPanel({
       }
     }
     const shown1 = designMode ? level1.filter((n) => designIds.has(n.apiName)) : level1;
-    const built = buildGraphElements(root, [...shown1, ...extra], canvasNames, spot, enforced, familyMode);
+    const built = buildGraphElements(root, [...shown1, ...extra], canvasNames, spot, graphEnforced, familyMode);
     if (dismissedEdges.size === 0) return built;
     // Hide dismissed LINKS; then prune x: bubbles left linkless (level-1 fan
     // always stays - it is the neighborhood, not a link).
@@ -888,7 +892,7 @@ export default function SchemaPanel({
     }
     const nodes = built.nodes.filter((n) => !n.id.startsWith("x:") || linked.has(n.id));
     return { nodes, edges, overflow: built.overflow, extended: nodes.filter((n) => n.id.startsWith("x:")).length };
-  }, [view, rootName, describes, labels, isCustomName, hideSystem, filterMode, hiddenIds, removedIds, dismissedIds, dismissedEdges, designMode, designIds, spot, enforced, expanded, familyMode]);
+  }, [view, rootName, describes, labels, isCustomName, hideSystem, filterMode, hiddenIds, removedIds, dismissedIds, dismissedEdges, designMode, designIds, spot, graphEnforced, expanded, familyMode]);
 
   // The review list behind Hide-system: every swept neighbor with its
   // reason, label and custom flag. The modal allow-lists from this list.
@@ -1047,6 +1051,7 @@ export default function SchemaPanel({
     designMode: boolean;
     expanded: [string, GraphNeighbor[]][];
     enforced: [string, { x: number; y: number }][] | null;
+    graphEnforced: [string, { x: number; y: number }][] | null;
     viewports: { erd: { x: number; y: number; zoom: number } | null; graph: { x: number; y: number; zoom: number } | null };
   }
   const schemaRestoredRef = useRef<string | null>(null);
@@ -1071,10 +1076,11 @@ export default function SchemaPanel({
       designMode,
       expanded: [...expanded.entries()],
       enforced: enforced ? [...enforced.entries()] : null,
+      graphEnforced: graphEnforced ? [...graphEnforced.entries()] : null,
       viewports: viewports.current,
     } satisfies SchemaAutosaveData);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgKey, rootName, describes, hiddenIds, removedIds, dismissedIds, focusName, graphSelected, view, filterMode, familyMode, hideSystem, systemAllow, designIds, designMode, expanded, enforced]);
+  }, [orgKey, rootName, describes, hiddenIds, removedIds, dismissedIds, focusName, graphSelected, view, filterMode, familyMode, hideSystem, systemAllow, designIds, designMode, expanded, enforced, graphEnforced]);
 
   // First-class restore: reload the autosaved canvas on demand, anytime -
   // same apply path as the automatic restore on connect.
@@ -1098,6 +1104,7 @@ export default function SchemaPanel({
     if (typeof s.designMode === "boolean") setDesignMode(s.designMode);
     if (s.expanded) setExpanded(new Map(s.expanded));
     if (s.enforced) setEnforced(new Map(s.enforced));
+    if (s.graphEnforced) setGraphEnforced(new Map(s.graphEnforced));
     if (s.viewports) viewports.current = s.viewports;
     const count = s.describes?.length ?? 0;
     if (count > 0 && savedAt) {
@@ -1246,7 +1253,10 @@ export default function SchemaPanel({
   const pinCurrentLayout = useCallback(() => {
     const live = canvasRef.current?.getNodes() ?? [];
     if (live.length === 0) return;
-    setEnforced((prev) => {
+    // Pin into the mounted view's own map - ERD tables and graph bubbles
+    // must never share coordinates.
+    const setPins = view === "graph" ? setGraphEnforced : setEnforced;
+    setPins((prev) => {
       const next = new Map(prev ?? []);
       for (const n of live) {
         next.set(n.id, { ...n.position });
@@ -1256,9 +1266,9 @@ export default function SchemaPanel({
       }
       return next;
     });
-  }, []);
+  }, [view]);
 
-  const handleNodeDragStop = useCallback((id: string, position: { x: number; y: number }) => {
+  const handleErdDragStop = useCallback((id: string, position: { x: number; y: number }) => {
     setEnforced((prev) => {
       const next = new Map(prev ?? []);
       next.set(id, { ...position });
@@ -1266,8 +1276,16 @@ export default function SchemaPanel({
     });
   }, []);
 
+  const handleGraphDragStop = useCallback((id: string, position: { x: number; y: number }) => {
+    setGraphEnforced((prev) => {
+      const next = new Map(prev ?? []);
+      next.set(id, { ...position });
+      return next;
+    });
+  }, []);
+
   const pruneEnforced = useCallback((ids: Set<string>) => {
-    setEnforced((prev) => {
+    const prune = (prev: Map<string, { x: number; y: number }> | null) => {
       if (!prev) return prev;
       const next = new Map(prev);
       for (const id of ids) {
@@ -1277,7 +1295,9 @@ export default function SchemaPanel({
         }
       }
       return next;
-    });
+    };
+    setEnforced(prune);
+    setGraphEnforced(prune);
   }, []);
 
   // Shared add-pipeline: fetch, merge, pin layout, bump revision.
@@ -2268,6 +2288,7 @@ export default function SchemaPanel({
     setNotice(null);
     setError(null);
     setEnforced(null);
+    setGraphEnforced(null);
     setDescribes(new Map(describes));
     setLayoutRev((r) => r + 1);
     setNotice("Layout refreshed - nodes re-arranged, nothing removed.");
@@ -2295,6 +2316,7 @@ export default function SchemaPanel({
     setFocusName("");
     setSpot(null);
     setEnforced(null);
+    setGraphEnforced(null);
     setNotice(null);
     setError(null);
     setConfirmClear(false);
@@ -3023,7 +3045,7 @@ export default function SchemaPanel({
               onNodeClick={handleNodeClick}
               onPaneClick={handlePaneClick}
               onViewportMove={() => setPopover(null)}
-              onNodeDragStop={handleNodeDragStop}
+              onNodeDragStop={handleErdDragStop}
               layoutRev={layoutRev}
               enforcedPositions={enforced}
               storedViewport={viewports.current.erd}
@@ -3041,7 +3063,7 @@ export default function SchemaPanel({
               onNodeClick={handleNodeClick}
               onPaneClick={handlePaneClick}
               onViewportMove={() => setPopover(null)}
-              onNodeDragStop={handleNodeDragStop}
+              onNodeDragStop={handleGraphDragStop}
               layoutRev={layoutRev}
               enforcedPositions={null}
               storedViewport={viewports.current.graph}

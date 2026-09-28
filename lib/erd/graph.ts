@@ -515,11 +515,12 @@ const BUBBLE_ROOT = 104;const BUBBLE_NODE = 80;
 // Scatter orbits: bubbles sit on concentric rings so dense fans never share
 // one crowded circle. Orbits are UNBOUNDED - the ring list grows until every
 // neighbor has a slot, because the canvas scrolls/zooms and nothing may hide.
-// Lane step clears two bubble diameters + margin.
-const ORBIT_0 = 330;
-const ORBIT_STEP = 150;
-const ARC_DEG = 160;
-const MIN_GAP = 118;
+// Kept under 180° so big fans stay wider than tall (never a vertical pipe):
+// extremes stay at ±70°, lanes march outward with full bubble + label room.
+const ORBIT_0 = 400;
+const ORBIT_STEP = 220;
+const ARC_DEG = 140;
+const MIN_GAP = 150;
 
 function orbitSlots(radius: number): number[] {
   const arcLen = radius * ((ARC_DEG * Math.PI) / 180);
@@ -714,13 +715,14 @@ export function buildGraphElements(
     const api = (n.data as GraphBubbleData).apiName;
     placedCenters.set(api, { x: n.position.x + BUBBLE_NODE / 2, y: n.position.y + BUBBLE_NODE / 2 });
   }
-  // Family-tree generations: fan each node's own parents/children outward
-  // from its center (parents to its upper-left, children to its upper-right),
-  // skipping anything already placed. Deterministic: sorted by apiName.
-  // Unbounded lanes: walk outward ring by ring until the slot is free.
-  const EXTEND_SPREAD = 96;
-  const EXTEND_R0 = 320;
-  const EXTEND_RSTEP = 130;
+  // Family-tree generations: grow as a proper left/right tree. Each node's
+  // children march RIGHT in a column, parents march LEFT - siblings stacked
+  // vertically with full bubble room (the canvas scrolls; nothing squeezes
+  // into the viewport). Lanes walk further in x until a slot is free, so
+  // dense sweeps read as a scattered big tree, never a tight vertical pipe.
+  const EXTEND_SPREAD = 150;
+  const EXTEND_R0 = 380;
+  const EXTEND_RSTEP = 240;
   const byAttach = new Map<string, GraphNeighbor[]>();
   for (const n of deeper) {
     const key = n.attachTo ?? root.name;
@@ -771,17 +773,19 @@ export function buildGraphElements(
       }
       const side = up ? -1 : 1;
       const spread0 = (i - (ordered.length - 1) / 2) * EXTEND_SPREAD;
-      // Walk outward until a free slot: same side, further rings.
-      // Guaranteed: the final fallback keeps marching out, so every node lands.
+      // Columnar tree growth: same x-column per generation, siblings stacked
+      // at EXTEND_SPREAD apart around the attach node's y. Lanes push the
+      // column further right/left until a slot frees. Guaranteed: the final
+      // fallback keeps marching out, so every node lands.
       let p: { x: number; y: number } | null = null;
-      for (let lane = 0; lane < 40 && !p; lane++) {
-        const r = EXTEND_R0 + lane * EXTEND_RSTEP;
-        const cand = { x: center.x + side * r * 0.9, y: center.y - r * 0.55 + spread0 };
+      for (let lane = 0; lane < 80 && !p; lane++) {
+        const xStep = EXTEND_R0 + lane * EXTEND_RSTEP;
+        const cand = { x: center.x + side * xStep, y: center.y + spread0 };
         if (!occupied.some((q) => dist(cand, q) < MIN_GAP)) p = cand;
       }
       if (!p) {
         const r = EXTEND_R0 + (40 + placedEmergency++ % 40) * EXTEND_RSTEP;
-        p = { x: center.x + side * r * 0.9, y: center.y - r * 0.55 + spread0 };
+        p = { x: center.x + side * r, y: center.y + spread0 };
       }
       occupied.push(p);
       // Linear mode: same object under several parents gets its OWN bubble
