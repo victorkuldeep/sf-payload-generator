@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import type { SalesforceObject, SalesforceDescribeResult, SalesforceField } from "@/lib/salesforce/types";
 import { apiFetch } from "@/lib/api";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
@@ -50,13 +50,26 @@ export default function CompositePanel({
   onAddToCollection,
   onSessionExpired,
 }: CompositePanelProps) {
-  const [doc, setDoc] = useState<StudioDocument>(() => ({
-    name: "Untitled transaction",
+  const freshBundleDoc = (name = "Untitled transaction"): StudioDocument => ({
+    name,
     apiVersion,
     allOrNone: true,
     requests: [emptyStudioRequest(newStudioId("req"))],
     mappings: [],
-  }));
+  });
+  const [bundles, setBundles] = useState<{ tabId: string; doc: StudioDocument }[]>(() => [
+    { tabId: newStudioId("bundle"), doc: freshBundleDoc() },
+  ]);
+  const [activeBundleId, setActiveBundleId] = useState<string>(() => "");
+  // Resolve active tab (defaults to first). setDoc below writes through the
+  // ref so every existing handler keeps working unchanged across tab switches.
+  const activeBundleRef = useRef<string>("");
+  const doc = (bundles.find((t) => t.tabId === activeBundleId) ?? bundles[0]).doc;
+  activeBundleRef.current = (bundles.find((t) => t.tabId === activeBundleId) ?? bundles[0]).tabId;
+  const setDoc = useCallback((updater: (p: StudioDocument) => StudioDocument) => {
+    const id = activeBundleRef.current;
+    setBundles((prev) => prev.map((t) => (t.tabId === id ? { ...t, doc: updater(t.doc) } : t)));
+  }, []);
   const [describes, setDescribes] = useState<Map<string, SalesforceDescribeResult>>(new Map());
   const [screen, setScreen] = useState<StudioScreen>("requests");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -68,6 +81,59 @@ export default function CompositePanel({
   const [testResult, setTestResult] = useState<{ status: number; statusText: string; responseTime: number; body: unknown; success: boolean } | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [renamingBundleId, setRenamingTabId] = useState<string | null>(null);
+
+  const MAX_BUNDLES = 5;
+
+  const switchBundle = useCallback((tabId: string) => {
+    setActiveBundleId(tabId);
+    activeBundleRef.current = tabId;
+    setSelectedId(null);
+    setScreen("requests");
+    setPayload(null);
+    setTestResult(null);
+    setTestError(null);
+    setOrderNotice(null);
+  }, []);
+
+  const addBundle = useCallback(() => {
+    if (bundles.length >= MAX_BUNDLES) return;
+    const id = newStudioId("bundle");
+    setBundles((prev) => [...prev, { tabId: id, doc: freshBundleDoc(`Untitled transaction ${prev.length + 1}`) }]);
+    setActiveBundleId(id);
+    activeBundleRef.current = id;
+    setSelectedId(null);
+    setScreen("requests");
+    setPayload(null);
+    setTestResult(null);
+    setTestError(null);
+    setOrderNotice(null);
+  }, [bundles.length]);
+
+  const closeBundle = useCallback((tabId: string) => {
+    const tab = bundles.find((t) => t.tabId === tabId);
+    if (!tab) return;
+    const dirty = tab.doc.requests.length > 1 || tab.doc.requests.some((r) => r.fields.length > 0);
+    if (dirty && !window.confirm(`Close "${tab.doc.name}"? Unsaved bundle work will be lost.`)) return;
+    if (bundles.length <= 1) {
+      // Keep one tab: reset it in place so ids stay consistent.
+      setBundles([{ tabId, doc: freshBundleDoc() }]);
+    } else {
+      setBundles((prev) => prev.filter((t) => t.tabId !== tabId));
+    }
+    if (activeBundleRef.current === tabId && bundles.length > 1) {
+      const remaining = bundles.filter((t) => t.tabId !== tabId);
+      const next = remaining.length > 0 ? remaining[remaining.length - 1].tabId : tabId;
+      setActiveBundleId(next);
+      activeBundleRef.current = next;
+    }
+    setSelectedId(null);
+    setScreen("requests");
+    setPayload(null);
+    setTestResult(null);
+    setTestError(null);
+    setOrderNotice(null);
+  }, [bundles]);
 
   const issues = useMemo(() => validateStudio(doc, describes), [doc, describes]);
   const errCount = issues.filter((i) => i.level === "error").length;
@@ -545,6 +611,65 @@ export default function CompositePanel({
 
   return (
     <div className="space-y-4">
+      {/* Bundle tabs - up to 5 open bundles, state kept per tab */}
+      <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Open bundles">
+        {bundles.map((t) => {
+          const active = t.tabId === activeBundleRef.current;
+          const dirty = t.doc.requests.length > 1 || t.doc.requests.some((r) => r.fields.length > 0);
+          return (
+            <span
+              key={t.tabId}
+              role="tab"
+              aria-selected={active}
+              className={`flex items-center gap-1 rounded-lg border pl-2.5 pr-1 py-1 text-[12px] font-medium transition-colors ${
+                active
+                  ? "border-[#211F1B] bg-[#211F1B] text-white"
+                  : "border-[#E8E2D8] bg-white text-[#777168] hover:text-[#27241F]"
+              }`}
+            >
+              {renamingBundleId === t.tabId ? (
+                <input
+                  autoFocus
+                  defaultValue={t.doc.name}
+                  onBlur={(e) => {
+                    const name = e.target.value.trim();
+                    if (name) {
+                      const id = t.tabId;
+                      setBundles((prev) => prev.map((x) => (x.tabId === id ? { ...x, doc: { ...x.doc, name } } : x)));
+                    }
+                    setRenamingTabId(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                    if (e.key === "Escape") setRenamingTabId(null);
+                  }}
+                  aria-label="Bundle name"
+                  className="w-32 rounded border border-[#A98450] px-1 py-0.5 text-[12px] text-[#27241F] focus:outline-none"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => switchBundle(t.tabId)}
+                  onDoubleClick={() => setRenamingTabId(t.tabId)}
+                  title="Switch bundle (double-click to rename)"
+                  className="max-w-[160px] truncate cursor-pointer"
+                >
+                  {dirty ? "● " : ""}{t.doc.name || "Untitled"}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => closeBundle(t.tabId)}
+                aria-label={`Close ${t.doc.name}`}
+                title="Close bundle"
+                className={`rounded px-1 cursor-pointer ${active ? "hover:bg-white/20" : "hover:bg-[#F5F1E8]"}`}
+              >
+                ✕
+              </button>
+            </span>
+          );
+        })}
+      </div>
       {/* Transaction toolbar */}
       <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -593,21 +718,9 @@ export default function CompositePanel({
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => {
-              if (doc.requests.some((r) => r.fields.length > 0)) {
-                if (!window.confirm("Start a new composite bundle? Current requests will be cleared.")) return;
-              }
-              setDoc({
-                name: "Untitled transaction",
-                apiVersion: doc.apiVersion,
-                allOrNone: true,
-                requests: [emptyStudioRequest(newStudioId("req"))],
-                mappings: [],
-              });
-              setScreen("requests");
-              touch();
-            }}
-            title="Start a new composite bundle (clears current requests)"
+            onClick={addBundle}
+            disabled={bundles.length >= MAX_BUNDLES}
+            title={bundles.length >= MAX_BUNDLES ? `Up to ${MAX_BUNDLES} open bundles` : "Open a new bundle tab (keeps current work)"}
           >
             + New bundle
           </Button>
