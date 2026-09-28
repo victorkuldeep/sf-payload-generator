@@ -83,7 +83,7 @@ export default function CompositePanel({
   const [showConfirm, setShowConfirm] = useState(false);
   const [renamingBundleId, setRenamingTabId] = useState<string | null>(null);
 
-  const MAX_BUNDLES = 5;
+  const MAX_BUNDLES = 10;
 
   const switchBundle = useCallback((tabId: string) => {
     setActiveBundleId(tabId);
@@ -611,7 +611,7 @@ export default function CompositePanel({
 
   return (
     <div className="space-y-4">
-      {/* Bundle tabs - up to 5 open bundles, state kept per tab */}
+      {/* Bundle tabs - up to 10 open bundles, state kept per tab */}
       <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Open bundles">
         {bundles.map((t) => {
           const active = t.tabId === activeBundleRef.current;
@@ -715,14 +715,17 @@ export default function CompositePanel({
           <span className="font-mono text-[11px] text-[#777168]">
             {doc.requests.length}/25
           </span>
+          <span className="flex-1" />
           <Button
             size="sm"
-            variant="ghost"
             onClick={addBundle}
             disabled={bundles.length >= MAX_BUNDLES}
             title={bundles.length >= MAX_BUNDLES ? `Up to ${MAX_BUNDLES} open bundles` : "Open a new bundle tab (keeps current work)"}
           >
             + New bundle
+          </Button>
+          <Button size="sm" onClick={handleGenerate} disabled={doc.requests.length === 0}>
+            Generate Payload
           </Button>
           <button
             onClick={() => setScreen("payload")}
@@ -737,10 +740,6 @@ export default function CompositePanel({
           >
             {errCount > 0 ? `${errCount} error${errCount === 1 ? "" : "s"}` : warnCount > 0 ? `${warnCount} warning${warnCount === 1 ? "" : "s"}` : "valid"}
           </button>
-          <span className="flex-1" />
-          <Button size="sm" onClick={handleGenerate} disabled={doc.requests.length === 0}>
-            Generate Payload
-          </Button>
         </div>
         <div className="mt-2.5 flex border-b border-[#E8E2D8] -mb-3" role="tablist" aria-label="Composite Studio screens">
           {tabs.map((t) => (

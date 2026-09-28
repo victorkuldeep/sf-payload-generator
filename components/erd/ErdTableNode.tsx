@@ -122,12 +122,13 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
       <Handle type="target" id={childEntryHandleId} position={Position.Left} style={{ top: `calc(100% - ${ERD_FOOTER_H / 2}px)`, opacity: 0, width: 2, height: 2, pointerEvents: "none" }} />
       <Handle type="source" id={loopOutHandleId} position={Position.Left} style={{ top: ERD_HEADER_H / 2, opacity: 0, width: 2, height: 2, pointerEvents: "none" }} />
       <Handle type="target" id={loopInHandleId} position={Position.Left} style={{ top: `calc(100% - ${ERD_FOOTER_H / 2}px)`, opacity: 0, width: 2, height: 2, pointerEvents: "none" }} />
-      {/* Header */}
-      <div className={`flex flex-col justify-center px-3 border-b ${data.isRoot ? "bg-ivory-950 text-ivory-100" : "bg-[var(--color-surface-soft)]"}`} style={{ height: ERD_HEADER_H }}>
-        <div className="flex items-center gap-1.5">
-          <p className={`flex-1 min-w-0 truncate text-[13px] font-bold ${data.isRoot ? "text-ivory-100" : "text-ivory-950"}`}>
-            {data.label}
-          </p>
+      {/* Header: label owns the full top row (centered), badges + actions
+          sit on their own second row so long labels never trim under them */}
+      <div className={`flex flex-col justify-center gap-0.5 px-3 border-b ${data.isRoot ? "bg-ivory-950 text-ivory-100" : "bg-[var(--color-surface-soft)]"}`} style={{ height: ERD_HEADER_H }}>
+        <p className={`truncate text-center text-[13px] font-bold ${data.isRoot ? "text-ivory-100" : "text-ivory-950"}`} title={data.label}>
+          {data.label}
+        </p>
+        <div className="flex items-center justify-center gap-1.5">
           {data.isJunction && (
             <span className="shrink-0 rounded border px-1 py-px text-[9px] font-bold bg-bronze-100 text-bronze-700 border-bronze-300" title="Two or more required lookups - classic junction object">
               JUNCTION
@@ -168,7 +169,7 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
             </button>
           )}
         </div>
-        <p className={`truncate font-mono text-[10px] ${data.isRoot ? "text-ivory-300" : "text-ivory-600"}`}>
+        <p className={`truncate text-center font-mono text-[10px] ${data.isRoot ? "text-ivory-300" : "text-ivory-600"}`}>
           {data.apiName} · {data.totalFields} fields · {data.totalChildren} children
         </p>
       </div>

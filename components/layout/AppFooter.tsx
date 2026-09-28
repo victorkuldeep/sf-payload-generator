@@ -16,7 +16,7 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
       onClick={() => setSupportOpen(true)}
       title="Buy me a coffee"
       aria-label="Buy me a coffee"
-      className="inline-flex items-center justify-center h-9 w-9 rounded-lg bg-[var(--color-canvas)] border border-[var(--color-line)] text-[var(--color-ink)] hover:border-[var(--color-accent)] hover:bg-[var(--color-surface-strong)] transition-all cursor-pointer"
+      className="inline-flex items-center justify-center h-8 w-8 rounded-lg bg-[var(--color-canvas)] border border-[var(--color-line)] text-[var(--color-ink)] hover:border-[var(--color-accent)] hover:bg-[var(--color-surface-strong)] transition-all cursor-pointer"
     >
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" className="h-4 w-4 text-[var(--color-accent)]">
         <path d="M4 8h12v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8Z" />
@@ -48,11 +48,11 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
           className="absolute inset-0 opacity-20 pointer-events-none bg-[radial-gradient(#AE9B7D_1px,transparent_1px)] [background-size:24px_24px]"
         />
         {trail && (
-          <div className="relative border-b border-[var(--color-line-soft)] px-5 py-3 flex justify-center">
+          <div className="relative border-b border-[var(--color-line-soft)] px-5 py-2 flex justify-center">
             <div className="w-full max-w-3xl">{trail}</div>
           </div>
         )}
-        <div className="relative mx-auto w-full px-5 lg:px-8 py-4 grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-3 font-mono text-[11px] text-[var(--color-muted)]">
+        <div className="relative mx-auto w-full px-5 lg:px-8 py-2 grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-2 font-mono text-[11px] text-[var(--color-muted)]">
           <div className="flex items-center gap-2 justify-self-center sm:justify-self-start">
             <Link href="/" className="font-semibold text-[var(--color-ink)] hover:text-[var(--color-accent)] transition-colors">
               sObject Studio

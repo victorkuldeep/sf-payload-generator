@@ -48,7 +48,7 @@ export const ERD_NODE_WIDTH = 300;
 export const ERD_MAX_ROWS = 10;
 const ROW_H = 26;
 // Fixed chrome heights (nodes must match these exactly - dagre + handle docks depend on them)
-export const ERD_HEADER_H = 62;
+export const ERD_HEADER_H = 74;
 export const ERD_FOOTER_H = 60;
 // Header + rows padding + more-button + footer
 const CHROME_H = ERD_HEADER_H + 8 + 22 + ERD_FOOTER_H;

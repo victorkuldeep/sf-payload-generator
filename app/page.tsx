@@ -96,6 +96,38 @@ const initialState: AppState = {
   generatedPayload: null,
 };
 
+// ── Builder request tabs: up to 10 full drafts side by side, mirroring the
+// Composite bundle pattern. Each tab owns object + fields + values +
+// operation + generated payload + test result (RequestPanel keeps its own
+// send state per mounted tab switch via key).
+interface BuilderDraft {
+  selectedObject: SalesforceObject | null;
+  describe: SalesforceDescribeResult | null;
+  selectedFieldNames: Set<string>;
+  fieldValues: Record<string, unknown>;
+  operation: OperationType;
+  recordId: string;
+  generatedPayload: GeneratedPayload | null;
+}
+
+interface BuilderTab {
+  tabId: string;
+  name: string | null;
+  draft: BuilderDraft;
+}
+
+const MAX_BUILDER_TABS = 10;
+
+const freshBuilderDraft = (): BuilderDraft => ({
+  selectedObject: null,
+  describe: null,
+  selectedFieldNames: new Set(),
+  fieldValues: {},
+  operation: "POST",
+  recordId: "",
+  generatedPayload: null,
+});
+
 interface LoadingState {
   connect: boolean;
   objects: boolean;
@@ -462,6 +494,21 @@ export default function Home() {
   const [sessionExpired, setSessionExpired] = useState(false);
   const [builderLeftOpen, setBuilderLeftOpen] = useState(true);
   const [builderRightOpen, setBuilderRightOpen] = useState(true);
+  const [builderTabs, setBuilderTabs] = useState<BuilderTab[]>(() => [
+    { tabId: newItemId(), name: null, draft: freshBuilderDraft() },
+  ]);
+  const [activeBuilderTabId, setActiveBuilderTabId] = useState<string>("");
+  const [renamingBuilderTabId, setRenamingBuilderTabId] = useState<string | null>(null);
+  // Resolve active tab (defaults to first). updateDraft below writes through
+  // the ref so async describe resolutions land in the tab that started them.
+  const activeBuilderTabRef = useRef<string>("");
+  const activeBuilderTab = builderTabs.find((t) => t.tabId === activeBuilderTabId) ?? builderTabs[0];
+  activeBuilderTabRef.current = activeBuilderTab.tabId;
+  const draft = activeBuilderTab.draft;
+  const updateDraft = useCallback((updater: (d: BuilderDraft) => BuilderDraft) => {
+    const id = activeBuilderTabRef.current;
+    setBuilderTabs((prev) => prev.map((t) => (t.tabId === id ? { ...t, draft: updater(t.draft) } : t)));
+  }, []);
 
   const handleSessionExpired = useCallback(() => {
     setSessionExpired(true);
@@ -785,14 +832,24 @@ export default function Home() {
 
   const handleObjectSelect = useCallback(
     async (obj: SalesforceObject) => {
-      setState((prev) => ({
-        ...prev,
-        selectedObject: obj,
-        describe: null,
-        selectedFieldNames: new Set(),
-        fieldValues: {},
-        generatedPayload: null,
-      }));
+      const tabId = activeBuilderTabRef.current;
+      setBuilderTabs((prev) =>
+        prev.map((t) =>
+          t.tabId === tabId
+            ? {
+                ...t,
+                draft: {
+                  ...t.draft,
+                  selectedObject: obj,
+                  describe: null,
+                  selectedFieldNames: new Set(),
+                  fieldValues: {},
+                  generatedPayload: null,
+                },
+              }
+            : t
+        )
+      );
       setErrorKey("describe", null);
       setLoadingKey("describe", true);
 
@@ -813,19 +870,22 @@ export default function Home() {
           return;
         }
 
-        setState((prev) => {
-          // Auto-select required fields for the current operation (POST) with
-          // sample values, so a built request starts valid. User can uncheck.
-          const required = getWritableFields(data.fields, prev.operation).filter((f) =>
-            isRequiredField(f, prev.operation)
-          );
-          const selectedFieldNames = new Set(required.map((f) => f.name));
-          const fieldValues: Record<string, unknown> = {};
-          for (const f of required) {
-            fieldValues[f.name] = getSampleValueForField(f);
-          }
-          return { ...prev, describe: data, selectedFieldNames, fieldValues, generatedPayload: null };
-        });
+        setBuilderTabs((prev) =>
+          prev.map((t) => {
+            if (t.tabId !== tabId) return t;
+            // Auto-select required fields for the current operation (POST) with
+            // sample values, so a built request starts valid. User can uncheck.
+            const required = getWritableFields(data.fields, t.draft.operation).filter((f) =>
+              isRequiredField(f, t.draft.operation)
+            );
+            const selectedFieldNames = new Set(required.map((f) => f.name));
+            const fieldValues: Record<string, unknown> = {};
+            for (const f of required) {
+              fieldValues[f.name] = getSampleValueForField(f);
+            }
+            return { ...t, draft: { ...t.draft, describe: data, selectedFieldNames, fieldValues, generatedPayload: null } };
+          })
+        );
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to load fields";
         setErrorKey("describe", message);
@@ -838,7 +898,7 @@ export default function Home() {
   );
 
   const handleToggleField = useCallback((fieldName: string) => {
-    setState((prev) => {
+    updateDraft((prev) => {
       const next = new Set(prev.selectedFieldNames);
       const isAdding = !next.has(fieldName);
       if (isAdding) {
@@ -856,10 +916,10 @@ export default function Home() {
       }
       return { ...prev, selectedFieldNames: next, fieldValues, generatedPayload: null };
     });
-  }, []);
+  }, [updateDraft]);
 
   const handleSelectAll = useCallback((fields: SalesforceField[]) => {
-    setState((prev) => {
+    updateDraft((prev) => {
       const next = new Set(prev.selectedFieldNames);
       const newValues = { ...prev.fieldValues };
       fields.forEach((f) => {
@@ -870,83 +930,130 @@ export default function Home() {
       });
       return { ...prev, selectedFieldNames: next, fieldValues: newValues, generatedPayload: null };
     });
-  }, []);
+  }, [updateDraft]);
 
   const handleClearAll = useCallback(() => {
-    setState((prev) => ({
+    updateDraft((prev) => ({
       ...prev,
       selectedFieldNames: new Set(),
       fieldValues: {},
       generatedPayload: null,
     }));
-  }, []);
+  }, [updateDraft]);
 
   const handleFieldValueChange = useCallback((fieldName: string, value: unknown) => {
-    setState((prev) => ({
+    updateDraft((prev) => ({
       ...prev,
       fieldValues: { ...prev.fieldValues, [fieldName]: value },
       generatedPayload: null,
     }));
-  }, []);
+  }, [updateDraft]);
 
   const handleOperationChange = useCallback((op: OperationType) => {
-    setState((prev) => ({ ...prev, operation: op, generatedPayload: null }));
-  }, []);
+    updateDraft((prev) => ({ ...prev, operation: op, generatedPayload: null }));
+  }, [updateDraft]);
 
   const handleRecordIdChange = useCallback((id: string) => {
-    setState((prev) => ({ ...prev, recordId: id }));
-  }, []);
+    updateDraft((prev) => ({ ...prev, recordId: id }));
+  }, [updateDraft]);
 
   const handleGenerateSamples = useCallback(() => {
-    if (!state.describe) return;
-    const writableFields = getWritableFields(
-      state.describe.fields.filter((f) => state.selectedFieldNames.has(f.name)),
-      state.operation
-    );
-    const samples = generateSampleValues(writableFields);
-    setState((prev) => ({
-      ...prev,
-      fieldValues: { ...prev.fieldValues, ...samples },
-      generatedPayload: null,
-    }));
-  }, [state.describe, state.selectedFieldNames, state.operation]);
+    updateDraft((prev) => {
+      if (!prev.describe) return prev;
+      const writableFields = getWritableFields(
+        prev.describe.fields.filter((f) => prev.selectedFieldNames.has(f.name)),
+        prev.operation
+      );
+      const samples = generateSampleValues(writableFields);
+      return {
+        ...prev,
+        fieldValues: { ...prev.fieldValues, ...samples },
+        generatedPayload: null,
+      };
+    });
+  }, [updateDraft]);
 
   const handleGeneratePayload = useCallback(() => {
-    if (!state.describe || !state.selectedObject) return;
-
-    const selectedFields = state.describe.fields.filter((f) =>
-      state.selectedFieldNames.has(f.name)
+    const id = activeBuilderTabRef.current;
+    setBuilderTabs((prevTabs) =>
+      prevTabs.map((t) => {
+        if (t.tabId !== id) return t;
+        const d = t.draft;
+        if (!d.describe || !d.selectedObject) return t;
+        const selectedFields = d.describe.fields.filter((f) =>
+          d.selectedFieldNames.has(f.name)
+        );
+        const payload = generatePayload(selectedFields, d.fieldValues, d.operation);
+        const endpoint = generateEndpoint(
+          state.instanceUrl,
+          state.apiVersion,
+          d.selectedObject.name,
+          d.operation,
+          d.recordId || undefined
+        );
+        return {
+          ...t,
+          draft: {
+            ...d,
+            generatedPayload: {
+              operation: d.operation,
+              objectName: d.selectedObject.name,
+              endpoint,
+              payload,
+              recordId: d.recordId || undefined,
+            },
+          },
+        };
+      })
     );
+  }, [state.instanceUrl, state.apiVersion]);
 
-    const payload = generatePayload(selectedFields, state.fieldValues, state.operation);
-    const endpoint = generateEndpoint(
-      state.instanceUrl,
-      state.apiVersion,
-      state.selectedObject.name,
-      state.operation,
-      state.recordId || undefined
+  // ── Builder request tabs ──
+  const switchBuilderTab = useCallback((tabId: string) => {
+    setActiveBuilderTabId(tabId);
+    activeBuilderTabRef.current = tabId;
+    setErrorKey("describe", null);
+  }, []);
+
+  const addBuilderTab = useCallback(() => {
+    setBuilderTabs((prev) => {
+      if (prev.length >= MAX_BUILDER_TABS) return prev;
+      const tabId = newItemId();
+      const next = [...prev, { tabId, name: null, draft: freshBuilderDraft() }];
+      setActiveBuilderTabId(tabId);
+      activeBuilderTabRef.current = tabId;
+      setErrorKey("describe", null);
+      return next;
+    });
+  }, []);
+
+  const closeBuilderTab = useCallback((tabId: string) => {
+    setBuilderTabs((prev) => {
+      const tab = prev.find((t) => t.tabId === tabId);
+      if (!tab) return prev;
+      const dirty =
+        tab.draft.selectedObject !== null ||
+        tab.draft.selectedFieldNames.size > 0 ||
+        tab.draft.generatedPayload !== null;
+      if (dirty && !window.confirm(`Close "${tab.name ?? tab.draft.selectedObject?.label ?? "untitled request"}"? Unsaved request work will be lost.`)) return prev;
+      if (prev.length <= 1) return [{ tabId, name: null, draft: freshBuilderDraft() }];
+      const remaining = prev.filter((t) => t.tabId !== tabId);
+      if (activeBuilderTabRef.current === tabId) {
+        const next = remaining[remaining.length - 1].tabId;
+        setActiveBuilderTabId(next);
+        activeBuilderTabRef.current = next;
+        setErrorKey("describe", null);
+      }
+      return remaining;
+    });
+  }, []);
+
+  const renameBuilderTab = useCallback((tabId: string, name: string) => {
+    setBuilderTabs((prev) =>
+      prev.map((t) => (t.tabId === tabId ? { ...t, name: name.trim() || null } : t))
     );
-
-    setState((prev) => ({
-      ...prev,
-      generatedPayload: {
-        operation: prev.operation,
-        objectName: prev.selectedObject!.name,
-        endpoint,
-        payload,
-        recordId: prev.recordId || undefined,
-      },
-    }));
-  }, [
-    state.describe,
-    state.selectedObject,
-    state.selectedFieldNames,
-    state.fieldValues,
-    state.operation,
-    state.instanceUrl,
-    state.apiVersion,
-    state.recordId,
-  ]);
+    setRenamingBuilderTabId(null);
+  }, []);
 
   const handleDisconnect = useCallback(() => {
     tokenRef.current = "";
@@ -955,6 +1062,9 @@ export default function Home() {
     setShowConnect(false);
     setSessionExpired(false);
     setState(initialState);
+    setBuilderTabs([{ tabId: newItemId(), name: null, draft: freshBuilderDraft() }]);
+    setActiveBuilderTabId("");
+    setRenamingBuilderTabId(null);
     setErrors({ connect: null, objects: null, describe: null });
   }, []);
 
@@ -1083,15 +1193,15 @@ export default function Home() {
     Promise.all(doomed.map((i) => deleteCollectionItem(i.id))).catch(() => {});
   }, [collection, activeCollectionId]);
 
-  const selectedFields = state.describe?.fields.filter((f) =>
-    state.selectedFieldNames.has(f.name)
+  const selectedFields = draft.describe?.fields.filter((f) =>
+    draft.selectedFieldNames.has(f.name)
   ) ?? [];
 
   const singleStep = !state.connected
     ? 0
-    : !state.selectedObject || selectedFields.length === 0
+    : !draft.selectedObject || selectedFields.length === 0
       ? 1
-      : !state.generatedPayload
+      : !draft.generatedPayload
         ? 2
         : 3;
 
@@ -1229,27 +1339,87 @@ export default function Home() {
               </section>
             </div>
 
-            {/* ── Single object mode ── */}
+            {/* ── Single object mode: request tabs + panels stack tight ── */}
             {state.mode === "single" && (
+              <div className="space-y-3">
+              {/* Request tabs - up to 10 full drafts side by side, state kept per tab */}
+              <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Open requests">
+                {builderTabs.map((t, i) => {
+                  const active = t.tabId === activeBuilderTabRef.current;
+                  const label = t.name ?? t.draft.selectedObject?.label ?? `Request ${i + 1}`;
+                  const dirty = t.draft.selectedObject !== null || t.draft.selectedFieldNames.size > 0;
+                  return (
+                    <span
+                      key={t.tabId}
+                      role="tab"
+                      aria-selected={active}
+                      className={`flex items-center gap-1 rounded-lg border pl-2.5 pr-1 py-1 text-[12px] font-medium transition-colors ${
+                        active
+                          ? "border-ivory-950 bg-ivory-950 text-ivory-100"
+                          : "border-[var(--color-line)] bg-[var(--color-surface)] text-ivory-600 hover:text-ivory-950"
+                      }`}
+                    >
+                      {renamingBuilderTabId === t.tabId ? (
+                        <input
+                          autoFocus
+                          defaultValue={label}
+                          onBlur={(e) => renameBuilderTab(t.tabId, e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                            if (e.key === "Escape") setRenamingBuilderTabId(null);
+                          }}
+                          aria-label="Request name"
+                          className="w-28 rounded border border-bronze-500 px-1 py-0.5 text-[12px] text-ivory-950 focus:outline-none"
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => switchBuilderTab(t.tabId)}
+                          onDoubleClick={() => setRenamingBuilderTabId(t.tabId)}
+                          title="Switch request (double-click to rename)"
+                          className="max-w-[160px] truncate cursor-pointer"
+                        >
+                          {dirty ? "● " : ""}{label}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => closeBuilderTab(t.tabId)}
+                        aria-label={`Close ${label}`}
+                        title="Close request"
+                        className={`rounded px-1 cursor-pointer ${active ? "hover:bg-white/20" : "hover:bg-ivory-200"}`}
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  );
+                })}
+                <Button
+                  size="sm"
+                  onClick={addBuilderTab}
+                  disabled={builderTabs.length >= MAX_BUILDER_TABS}
+                  title={builderTabs.length >= MAX_BUILDER_TABS ? `Up to ${MAX_BUILDER_TABS} open requests` : "Open a new request tab (keeps current work)"}
+                >
+                  + New request
+                </Button>
+              </div>
               <section id="builder" aria-label="Object and Field Selection" className="scroll-mt-20">
-                <div className={`grid gap-5 ${builderLeftOpen && builderRightOpen ? "lg:grid-cols-2" : builderLeftOpen || builderRightOpen ? "lg:grid-cols-[1fr_auto]" : ""}`}>
-                  <div className={builderLeftOpen ? "" : "lg:w-12"}>
+                <div className={`grid gap-4 ${builderLeftOpen && builderRightOpen ? "lg:grid-cols-2" : builderLeftOpen || builderRightOpen ? "lg:grid-cols-[1fr_auto]" : ""}`}>
+                  <div className={builderLeftOpen ? "" : "lg:w-10"}>
                     <button
                       type="button"
                       onClick={() => setBuilderLeftOpen((v) => !v)}
                       aria-expanded={builderLeftOpen}
                       title={builderLeftOpen ? "Collapse object panel" : "Expand object panel"}
-                      className="mb-2 flex w-full items-center gap-1.5 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[13px] font-semibold text-ivory-950 hover:border-bronze-500 transition-colors cursor-pointer"
+                      className={`mb-2 flex w-full items-center gap-1.5 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[13px] font-semibold text-ivory-950 hover:border-bronze-500 transition-colors cursor-pointer ${builderLeftOpen ? "" : "lg:flex-col lg:py-3"}`}
                     >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true" className={`transition-transform ${builderLeftOpen ? "" : "-rotate-90"}`}>
-                        <path d="m6 9 6 6 6-6" />
-                      </svg>
-                      {builderLeftOpen ? "Select object" : <span className="sr-only">Select object</span>}
+                      <span className={`transition-transform ${builderLeftOpen ? "" : "lg:rotate-90"}`} aria-hidden="true">›</span>
+                      {builderLeftOpen ? "Select object" : <span className="lg:[writing-mode:vertical-rl]">Select object</span>}
                     </button>
                     {builderLeftOpen && (
                     <ObjectPanel
                       objects={state.objects}
-                      selectedObject={state.selectedObject}
+                      selectedObject={draft.selectedObject}
                       loading={loading.objects}
                       error={errors.objects}
                       onSelect={handleObjectSelect}
@@ -1257,30 +1427,28 @@ export default function Home() {
                     )}
                   </div>
 
-                  <div className={builderRightOpen ? "" : "lg:w-12"}>
+                  <div className={builderRightOpen ? "" : "lg:w-10"}>
                     <button
                       type="button"
                       onClick={() => setBuilderRightOpen((v) => !v)}
                       aria-expanded={builderRightOpen}
                       title={builderRightOpen ? "Collapse field panel" : "Expand field panel"}
-                      className="mb-2 flex w-full items-center gap-1.5 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[13px] font-semibold text-ivory-950 hover:border-bronze-500 transition-colors cursor-pointer"
+                      className={`mb-2 flex w-full items-center gap-1.5 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[13px] font-semibold text-ivory-950 hover:border-bronze-500 transition-colors cursor-pointer ${builderRightOpen ? "" : "lg:flex-col lg:py-3"}`}
                     >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true" className={`transition-transform ${builderRightOpen ? "" : "-rotate-90"}`}>
-                        <path d="m6 9 6 6 6-6" />
-                      </svg>
-                      {builderRightOpen ? "Select fields" : <span className="sr-only">Select fields</span>}
+                      <span className={`transition-transform ${builderRightOpen ? "" : "lg:rotate-90"}`} aria-hidden="true">›</span>
+                      {builderRightOpen ? "Select fields" : <span className="lg:[writing-mode:vertical-rl]">Select fields</span>}
                     </button>
                     {builderRightOpen && (
                     <>
-                  {state.selectedObject ? (
+                  {draft.selectedObject ? (
                     <FieldPanel
-                      fields={state.describe?.fields ?? []}
-                      selectedFieldNames={state.selectedFieldNames}
-                      operation={state.operation}
+                      fields={draft.describe?.fields ?? []}
+                      selectedFieldNames={draft.selectedFieldNames}
+                      operation={draft.operation}
                       loading={loading.describe}
                       error={errors.describe}
-                      objectName={state.selectedObject.name}
-                      objectLabel={state.selectedObject.label}
+                      objectName={draft.selectedObject.name}
+                      objectLabel={draft.selectedObject.label}
                       onToggleField={handleToggleField}
                       onSelectAll={handleSelectAll}
                       onClearAll={handleClearAll}
@@ -1307,16 +1475,15 @@ export default function Home() {
                   </div>
                 </div>
               </section>
-            )}
 
-            {/* Step 3: Payload values */}
-            {state.connected && state.mode === "single" && selectedFields.length > 0 && (
+              {/* Step 3: Payload values */}
+              {state.connected && selectedFields.length > 0 && (
               <section aria-label="Payload Configuration">
                 <PayloadPanel
                   selectedFields={selectedFields}
-                  fieldValues={state.fieldValues}
-                  operation={state.operation}
-                  recordId={state.recordId}
+                  fieldValues={draft.fieldValues}
+                  operation={draft.operation}
+                  recordId={draft.recordId}
                   onFieldValueChange={handleFieldValueChange}
                   onOperationChange={handleOperationChange}
                   onRecordIdChange={handleRecordIdChange}
@@ -1324,26 +1491,29 @@ export default function Home() {
                   onGenerateSamples={handleGenerateSamples}
                 />
               </section>
-            )}
+              )}
 
-            {/* Step 4: Export */}
-            {state.generatedPayload && state.mode === "single" && (
+              {/* Step 4: Export */}
+              {draft.generatedPayload && (
               <section aria-label="Export">
-                <ExportPanel generatedPayload={state.generatedPayload} onAddToCollection={requestAddToCollection} />
+                <ExportPanel generatedPayload={draft.generatedPayload} onAddToCollection={requestAddToCollection} />
               </section>
-            )}
+              )}
 
-            {/* Step 5: Test request */}
-            {state.generatedPayload && state.mode === "single" && (
+              {/* Step 5: Test request */}
+              {draft.generatedPayload && (
               <section aria-label="Test Request">
                 <RequestPanel
-                  generatedPayload={state.generatedPayload}
+                  key={activeBuilderTab.tabId}
+                  generatedPayload={draft.generatedPayload}
                   instanceUrl={state.instanceUrl}
                   apiVersion={state.apiVersion}
                   getToken={() => tokenRef.current}
                   onSessionExpired={handleSessionExpired}
                 />
               </section>
+              )}
+              </div>
             )}
           </>
         )}
