@@ -33,3 +33,12 @@ export function saveSnap(key: string, value: unknown): void {
     /* storage full or unavailable - snapshots are best-effort */
   }
 }
+
+export function clearSnap(key: string): void {
+  try {
+    if (typeof window === "undefined") return;
+    sessionStorage.removeItem(key);
+  } catch {
+    /* ignore */
+  }
+}

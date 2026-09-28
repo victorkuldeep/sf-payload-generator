@@ -22,7 +22,7 @@ import {
   type ErdSnapshot,
 } from "@/lib/erd/snapshotDb";
 import { newItemId } from "@/lib/collection/types";
-import { snapKey, loadSnap, saveSnap } from "@/lib/workspace/snapshots";
+import { snapKey, loadSnap, saveSnap, clearSnap } from "@/lib/workspace/snapshots";
 import { EmptyState } from "./EmptyState";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
@@ -237,7 +237,7 @@ function DesignPicker({
           How design works
         </summary>
         <p className="mt-1 text-[11px] leading-relaxed text-ivory-700">
-          Sketch topology only - nothing touches ERD until Add visible to ERD.
+          Sketch topology only - nothing touches ERD until + ERD.
           Search below or Discover any bubble; roles place parents left, children right.
         </p>
       </details>
@@ -1050,8 +1050,16 @@ export default function SchemaPanel({
     viewports: { erd: { x: number; y: number; zoom: number } | null; graph: { x: number; y: number; zoom: number } | null };
   }
   const schemaRestoredRef = useRef(false);
+  // True from restore start until the describe backfill lands. Saves stay
+  // locked meanwhile - an intermediate empty-describes state must never
+  // overwrite the good snapshot mid-restore (the cross-route wipe).
+  const restoreInFlightRef = useRef(false);
   useEffect(() => {
     if (!schemaRestoredRef.current) return;
+    if (restoreInFlightRef.current) return;
+    // Empty mounts stay silent: nothing to save, nothing to clobber.
+    // Explicit Clear canvas removes the key directly (see clearCanvas).
+    if (!rootName && describes.size === 0) return;
     saveSnap(snapKey("sf_schema", instanceUrl), {
       rootName,
       described: [...describes.keys()],
@@ -1079,6 +1087,7 @@ export default function SchemaPanel({
     schemaRestoredRef.current = true;
     const snap = loadSnap<SchemaSnap>(snapKey("sf_schema", instanceUrl));
     if (!snap || (!snap.rootName && (!snap.described || snap.described.length === 0))) return;
+    restoreInFlightRef.current = true;
     if (snap.rootName) {
       setRootName(snap.rootName);
       setFocusName(snap.focusName || snap.rootName);
@@ -1098,7 +1107,11 @@ export default function SchemaPanel({
     if (snap.enforced) setEnforced(new Map(snap.enforced));
     if (snap.viewports) viewports.current = snap.viewports;
     const want = (snap.described ?? []).filter((n) => !describes.has(n)).slice(0, MAX_NODES);
-    if (want.length === 0) return;
+    if (want.length === 0) {
+      restoreInFlightRef.current = false;
+      return;
+    }
+    setNotice(`Restoring canvas - ${want.length} object${want.length === 1 ? "" : "s"} reloading…`);
     void (async () => {
       const fresh: SalesforceDescribeResult[] = [];
       for (const n of want) {
@@ -1109,6 +1122,8 @@ export default function SchemaPanel({
         }
       }
       mergeDescribes(fresh);
+      restoreInFlightRef.current = false;
+      setNotice((cur) => (cur && cur.startsWith("Restoring canvas") ? null : cur));
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [objects, instanceUrl]);
@@ -2261,6 +2276,9 @@ export default function SchemaPanel({
   const [confirmClear, setConfirmClear] = useState(false);
 
   const clearCanvas = useCallback(() => {
+    // Explicit wipe: remove the persisted key too, or the next mount would
+    // resurrect the cleared canvas (empty mounts otherwise stay silent).
+    clearSnap(snapKey("sf_schema", instanceUrl));
     setDescribes(new Map());
     setRemovedIds(new Set());
     setDismissedIds(new Set());
@@ -2281,7 +2299,7 @@ export default function SchemaPanel({
     setError(null);
     setConfirmClear(false);
     viewports.current = { erd: null, graph: null };
-  }, []);
+  }, [instanceUrl]);
 
   const handleNodeClick = useCallback(
     (id: string) => {
@@ -2712,7 +2730,7 @@ export default function SchemaPanel({
       {/* ── Full-height canvas ── */}
       <div className="min-w-0 flex-1 min-h-0 flex flex-col gap-2">
         {rootName && describes.size > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+          <div className="flex flex-wrap items-center gap-1.5 gap-y-2 shrink-0">
             <div className="flex rounded-lg border border-[var(--color-line)] overflow-hidden bg-[var(--color-surface)]" role="tablist" aria-label="Canvas view">
               {(["erd", "graph"] as const).map((v) => (
                 <button
@@ -2878,10 +2896,10 @@ export default function SchemaPanel({
                 type="button"
                 onClick={() => void addVisibleToErd()}
                 disabled={!!busy}
-                title="Describe every visible graph bubble onto the ERD canvas - lite previews become solid tables"
+                title="Add visible graph bubbles to the ERD canvas - lite previews become solid tables"
                 className="rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer disabled:opacity-40"
               >
-                Add visible to ERD
+                + ERD
               </button>
             )}
             {view === "graph" && (
@@ -2889,10 +2907,10 @@ export default function SchemaPanel({
                 type="button"
                 onClick={syncFromCanvas}
                 disabled={!!busy}
-                title="Pull every ERD-canvas object into the graph - related links first, the rest via 'canvas'"
+                title="Sync: pull every ERD-canvas object into the graph - related links first, the rest follow via 'canvas'"
                 className="rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer disabled:opacity-40"
               >
-                Sync from canvas
+                Sync
               </button>
             )}
             {view === "graph" && (
@@ -2900,10 +2918,10 @@ export default function SchemaPanel({
                 type="button"
                 onClick={() => setAddObjectOpen(true)}
                 disabled={!!busy}
-                title="Pull any sObject straight into the graph - search, tick, add. No ERD round-trip."
+                title="+ adds any sObject (Obj = Object) straight into the graph - search, tick, add. No ERD round-trip."
                 className="rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer disabled:opacity-40"
               >
-                + Add object
+                + Obj
               </button>
             )}
             {view === "graph" && (

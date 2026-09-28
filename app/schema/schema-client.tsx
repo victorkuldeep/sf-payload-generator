@@ -6,6 +6,7 @@ import type { SalesforceObject } from "@/lib/salesforce/types";
 import SchemaPanel from "@/components/SchemaPanel";
 import { ConnectModal } from "@/components/ConnectModal";
 import Button from "@/components/ui/Button";
+import { getCachedConnection, setCachedConnection } from "@/lib/session/cache";
 
 const DEFAULT_API_VERSION =
   process.env.NEXT_PUBLIC_DEFAULT_SF_API_VERSION ?? "v66.0";
@@ -44,7 +45,7 @@ export default function SchemaRoom() {
   const tokenRef = useRef<string>("");
 
   const loadObjects = useCallback(
-    async (url: string, token: string, ver: string) => {
+    async (url: string, token: string, ver: string): Promise<SalesforceObject[]> => {
       const response = await fetch("/api/salesforce/objects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -56,6 +57,7 @@ export default function SchemaRoom() {
       };
       if (!response.ok) throw new Error(data.error ?? "Failed to load objects");
       setObjects(data.objects ?? []);
+      return data.objects ?? [];
     },
     []
   );
@@ -90,7 +92,8 @@ export default function SchemaRoom() {
         setObjectCount(data.objectCount ?? 0);
         setConnected(true);
         setShowConnect(false);
-        await loadObjects(url, token, ver);
+        const objs = await loadObjects(url, token, ver);
+        setCachedConnection({ instanceUrl: url, token, apiVersion: ver, objects: objs, objectCount: data.objectCount ?? 0 });
         return true;
       } catch (err) {
         setConnectError(err instanceof Error ? err.message : "Connection failed");
@@ -102,13 +105,28 @@ export default function SchemaRoom() {
     [loadObjects]
   );
 
-  // Room entry: (1) pop-out handoff from the studio tab, else (2) tab's own session.
+  // Room entry: (0) module connection cache (same-tab hop from Studio -
+  // hydrate instantly, zero fetch), (1) pop-out handoff from the studio tab,
+  // else (2) tab's own session.
   // Fresh tabs don't inherit sessionStorage, so the opener serves the live
   // session over a same-origin, nonce-matched BroadcastChannel (memory only).
   useEffect(() => {
     setSavedCreds(readSavedCreds());
     const params = new URLSearchParams(window.location.search);
     const nonce = params.get("handoff");
+
+    if (!nonce) {
+      const conn = getCachedConnection();
+      if (conn) {
+        tokenRef.current = conn.token;
+        setInstanceUrl(conn.instanceUrl);
+        setApiVersion(conn.apiVersion);
+        setObjects(conn.objects);
+        setObjectCount(conn.objectCount);
+        setConnected(true);
+        return;
+      }
+    }
 
     if (nonce) {
       let settled = false;
