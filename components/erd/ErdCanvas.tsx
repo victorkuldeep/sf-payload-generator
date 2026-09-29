@@ -20,6 +20,7 @@ import {
   useStore,
   getNodesBounds,
   getViewportForBounds,
+  PanOnScrollMode,
   type Node,
   type Edge,
 } from "@xyflow/react";
@@ -86,7 +87,7 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
   const containerRef = useRef<HTMLDivElement>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<ErdNodeData | GraphBubbleData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const { fitView, setCenter, getZoom } = useReactFlow();
+  const { fitView, setCenter, getZoom, setViewport, getViewport } = useReactFlow();
   // Built-in OOB lock state, reported upward for mutual exclusion with the
   // parent-owned drag lock. nodesConnectable is hard-false here, so it is
   // excluded - otherwise the lock would read permanently engaged.
@@ -128,6 +129,42 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
   const [pencil, setPencil] = useState<{ x: number; y: number } | null>(null);
   const strokeId = useRef(0);
   const drawing = useRef(false);
+  const overlayRef = useRef<SVGSVGElement | null>(null);
+
+  // Laser overlay covers the canvas, so the wheel never reaches React Flow.
+  // Mirror the standard contract manually: plain wheel pans in every
+  // direction, pinch (ctrl+wheel) zooms around the cursor. Non-passive so
+  // the page underneath never scrolls mid-walkthrough.
+  useEffect(() => {
+    if (!laser) return;
+    const el = overlayRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const unit = e.deltaMode === 1 ? 16 : 1;
+      const dx = e.deltaX * unit;
+      const dy = e.deltaY * unit;
+      const v = getViewport();
+      if (e.ctrlKey || e.metaKey) {
+        const factor = Math.exp(-dy * 0.015);
+        const newZoom = Math.min(2.5, Math.max(0.15, v.zoom * factor));
+        if (newZoom === v.zoom) return;
+        const rect = el.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const fx = (mx - v.x) / v.zoom;
+        const fy = (my - v.y) / v.zoom;
+        setViewport({ x: mx - fx * newZoom, y: my - fy * newZoom, zoom: newZoom });
+      } else {
+        setViewport({ x: v.x - dx, y: v.y - dy, zoom: v.zoom });
+      }
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+    };
+  }, [laser, setViewport, getViewport]);
 
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -184,7 +221,8 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
     return () => window.removeEventListener("keydown", onKey);
   }, [laser]);
 
-  // "L" toggles the laser (Excalidraw-style): press to present, Esc to scroll again.
+  // "L" toggles the laser (Excalidraw-style): press to present, Esc to exit.
+  // Scroll moves and pinch zooms even while lasering - no toggle dance.
   // Ignored while typing or with modifier keys held. ⌘K stays as object find.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -299,7 +337,9 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         panOnDrag={!laser}
-        zoomOnScroll
+        zoomOnScroll={false}
+        panOnScroll
+        panOnScrollMode={PanOnScrollMode.Free}
         zoomOnPinch
         nodesDraggable={!laser && !nodesLocked}
         nodesConnectable={false}
@@ -323,6 +363,7 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
 
       {laser && (
         <svg
+          ref={overlayRef}
           className="erd-laser-layer absolute inset-0 h-full w-full touch-none"
           style={{ cursor: "none", zIndex: 20 }}
           onPointerDown={startStroke}
@@ -377,7 +418,7 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
               already on canvas draw automatically.
             </p>
             <p className="mt-2.5 text-[11px] text-ivory-500">
-              ⌘K find · L laser · drag to pan · scroll to zoom
+              ⌘K find · L laser · drag to pan · scroll to move · pinch to zoom
             </p>
           </div>
         </div>
@@ -392,7 +433,7 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
           type="button"
           onClick={() => setLaser((v) => !v)}
           aria-pressed={laser}
-          title={laser ? "Exit laser pointer (Esc)" : "Laser walkthrough - press L to present, Esc to scroll again"}
+          title={laser ? "Exit laser pointer (Esc)" : "Laser walkthrough - press L to present, Esc to exit (scroll moves, pinch zooms)"}
           className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors cursor-pointer ${
             laser
               ? "bg-[#ef4444] border-[#dc2626] text-white shadow-[0_0_12px_rgba(239,68,68,0.5)]"
