@@ -2372,18 +2372,13 @@ export default function SchemaPanel({
   }, []);
 
   // Presentation mode: same-tab full screen (PPT-style). Hides the app header
-  // + footer via body.sf-present - no route switch, no token handoff, Esc exits.
+  // + footer via body.sf-present - no route switch, no token handoff.
+  // Exit is icon-only on purpose: Esc belongs to the laser + picklist popover.
   const [present, setPresent] = useState(false);
   useEffect(() => {
     if (typeof document === "undefined") return;
     document.body.classList.toggle("sf-present", present);
-    if (!present) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setPresent(false);
-    };
-    window.addEventListener("keydown", onKey);
     return () => {
-      window.removeEventListener("keydown", onKey);
       document.body.classList.remove("sf-present");
     };
   }, [present]);
@@ -2403,7 +2398,7 @@ export default function SchemaPanel({
           type="button"
           onClick={() => setPresent(false)}
           aria-label="Exit full-screen presentation"
-          title="Exit full screen (or press Esc)"
+          title="Exit full screen"
           className="fixed bottom-5 right-5 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-ivory-950 text-ivory-100 shadow-xl hover:bg-bronze-600 transition-colors cursor-pointer"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
@@ -2426,7 +2421,7 @@ export default function SchemaPanel({
               type="button"
               onClick={popOut}
               aria-label={present ? "Exit full-screen presentation" : "Enter full-screen presentation"}
-              title={present ? "Exit full screen (or press Esc)" : "Full screen: hide header + footer for presenting (Esc to exit)"}
+              title={present ? "Exit full screen" : "Full screen: hide header + footer for presenting (Esc stays with the laser)"}
               className="rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer"
             >
               {present ? (

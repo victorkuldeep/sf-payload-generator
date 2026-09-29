@@ -54,7 +54,7 @@ function GraphBubbleNodeInner({ data, selected }: NodeProps<Node<GraphBubbleData
         )}
       </div>
       <p
-        className={`mt-1.5 max-w-full truncate text-center font-mono text-[11px] font-semibold ${
+        className={`mt-1.5 max-w-full text-center font-mono text-[11px] font-semibold leading-tight break-all ${
           isRoot ? "text-ivory-950" : "text-ivory-700"
         }`}
         title={data.loaded ? `${data.label} (${data.apiName})` : `${data.apiName} (preview - click for details)`}
