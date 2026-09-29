@@ -24,6 +24,7 @@ import {
 import { newItemId } from "@/lib/collection/types";
 import { loadAutosave, queueAutosave, clearAutosave } from "@/lib/workspace/autosave";
 import { renderMarkdownLite, toggleTaskLine } from "./erd/notesMd";
+import { validateSharePayload, shareFileName, ERD_SHARE_KIND, ERD_SHARE_VERSION, type ErdSharePayload } from "@/lib/erd/share";
 import { EmptyState } from "./EmptyState";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
@@ -1757,6 +1758,108 @@ export default function SchemaPanel({
     },
     [orgDomain]
   );
+
+  // ── Snapshot sharing: export bundles full describes + positions + notes +
+  // entity TODOs into a portable file; import restores with zero API calls.
+  const exportSnapshot = useCallback(async (s: ErdSnapshot) => {
+    if (busy) return;
+    setError(null);
+    setNotice(null);
+    setBusy(`Packing “${s.name}” for sharing…`);
+    try {
+      const results = await mapLimit(s.nodes, 6, async (n) => {
+        try {
+          return await fetchDescribe(n);
+        } catch {
+          return null;
+        }
+      });
+      const fresh = results.filter((d): d is SalesforceDescribeResult => d !== null);
+      if (fresh.length === 0) {
+        throw new Error("None of the snapshotted objects could be described - session expired or org changed.");
+      }
+      const en: Record<string, { text: string; todo: boolean; done: boolean; updatedAt: number }> = {};
+      for (const n of s.nodes) {
+        if (entityNotes[n]?.text) en[n] = entityNotes[n];
+      }
+      const payload: ErdSharePayload = {
+        kind: ERD_SHARE_KIND,
+        version: ERD_SHARE_VERSION,
+        exportedAt: Date.now(),
+        exportedOrg: orgDomain,
+        snapshot: {
+          name: s.name,
+          root: s.root,
+          focus: s.focus,
+          describes: fresh,
+          positions: s.positions,
+          notes: s.notes,
+        },
+        entityNotes: Object.keys(en).length > 0 ? en : undefined,
+      };
+      const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = shareFileName(s.name);
+      a.click();
+      URL.revokeObjectURL(url);
+      const skipped = s.nodes.length - fresh.length;
+      setNotice(
+        `Exported “${s.name}” (${fresh.length} objects${skipped > 0 ? `, ${skipped} skipped` : ""}) - share the file and your teammate continues the same canvas.`
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setBusy(null);
+    }
+  }, [busy, fetchDescribe, orgDomain, entityNotes]);
+
+  const importSnapshotFile = useCallback(async (file: File) => {
+    setError(null);
+    setNotice(null);
+    try {
+      const raw = JSON.parse(await file.text());
+      const p = validateSharePayload(raw);
+      if (!p) throw new Error("Not a valid sObject Studio canvas file.");
+      const s = p.snapshot;
+      setDescribes(new Map(s.describes.map((d) => [d.name, d] as const)));
+      const alive = new Set(s.describes.map((d) => d.name));
+      setRemovedIds((prev) => {
+        const next = new Set(prev);
+        for (const n of alive) next.delete(n);
+        return next;
+      });
+      setDismissedIds((prev) => {
+        const next = new Set(prev);
+        for (const n of alive) next.delete(n);
+        return next;
+      });
+      if (s.removedIds) setRemovedIds(new Set(s.removedIds.filter((n) => !alive.has(n))));
+      if (s.hiddenIds) setHiddenIds(new Set(s.hiddenIds));
+      if (s.dismissedIds) setDismissedIds(new Set(s.dismissedIds));
+      const root = alive.has(s.root) ? s.root : s.describes[0].name;
+      setRootName(root);
+      setFocusName(alive.has(s.focus) ? s.focus : root);
+      setEnforced(new Map(Object.entries(s.positions)));
+      setLayoutRev((r) => r + 1);
+      if (s.notes) {
+        setNotesText(s.notes);
+        touchNotes();
+      }
+      if (p.entityNotes) {
+        setEntityNotes((prev) => ({ ...prev, ...p.entityNotes }));
+        touchNotes();
+      }
+      setShowHistory(false);
+      setNotice(`Imported “${s.name}” from ${p.exportedOrg} (${s.describes.length} objects) - zero API calls, continue together.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Import failed");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const importFileRef = useRef<HTMLInputElement | null>(null);
 
   const renameSnapshot = useCallback(
     async (id: string, name: string) => {
@@ -3675,20 +3778,48 @@ export default function SchemaPanel({
                 <h2 id="history-title" className="mt-1 text-lg font-bold text-ivory-950">
                   Canvas snapshots
                 </h2>
+                <p className="mt-0.5 text-[11px] text-ivory-600">
+                  Export shares the full canvas as a file - teammates import to continue together.
+                </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowHistory(false);
-                  setRenamingId(null);
-                }}
-                aria-label="Close snapshot history"
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => importFileRef.current?.click()}
+                  title="Import a shared canvas file (.sobject-erd.json) - restores with zero API calls"
+                  className="rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                    <path d="M12 4v11m0 0 4-4m-4 4-4-4" />
+                    <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+                  </svg>
+                </button>
+                <input
+                  ref={importFileRef}
+                  type="file"
+                  accept=".json,application/json"
+                  className="hidden"
+                  aria-label="Import shared canvas file"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = "";
+                    if (f) void importSnapshotFile(f);
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowHistory(false);
+                    setRenamingId(null);
+                  }}
+                  aria-label="Close snapshot history"
                 className="rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
                   <path d="M6 6l12 12M18 6 6 18" />
                 </svg>
               </button>
+              </div>
             </div>
             <div className="max-h-80 overflow-y-auto px-6 py-4">
               {snapshots.length === 0 ? (
@@ -3746,6 +3877,19 @@ export default function SchemaPanel({
                           <Button size="sm" variant="secondary" onClick={() => restoreSnapshot(s)} disabled={!!busy}>
                             Restore
                           </Button>
+                          <button
+                            type="button"
+                            onClick={() => void exportSnapshot(s)}
+                            disabled={!!busy}
+                            aria-label={`Export ${s.name} as a shareable file`}
+                            title="Export full canvas as a file - teammates import to continue together"
+                            className="rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer disabled:opacity-40"
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                              <path d="M12 15V4m0 0 4 4m-4-4L8 8" />
+                              <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+                            </svg>
+                          </button>
                           <button
                             type="button"
                             onClick={() => {
