@@ -105,10 +105,10 @@ export function HowItWorksModal({ open, onClose, onConnect }: HowItWorksModalPro
 
         <div className="overflow-y-auto px-6 sm:px-8 py-5 space-y-5">
           <ol className="grid sm:grid-cols-2 gap-3">
-            {STEPS.map((s) => (
+            {STEPS.map((s, i) => (
               <li key={s.n} className="rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-4">
                 <div className="flex items-baseline gap-2">
-                  <span className="font-display text-2xl font-bold text-bronze-500">{s.n}</span>
+                  <span className={`font-display text-2xl font-bold ${i % 2 === 0 ? "text-bronze-500" : "text-[#c41230]"}`}>{s.n}</span>
                   <p className="text-sm font-semibold text-ivory-950">{s.title}</p>
                 </div>
                 <ul className="mt-2 space-y-1.5">
