@@ -25,6 +25,9 @@ import { newItemId } from "@/lib/collection/types";
 import { loadAutosave, queueAutosave, clearAutosave } from "@/lib/workspace/autosave";
 import { renderMarkdownLite, toggleTaskLine } from "./erd/notesMd";
 import { validateSharePayload, shareFileName, ERD_SHARE_KIND, ERD_SHARE_VERSION, type ErdSharePayload } from "@/lib/erd/share";
+import { ArchitectureInbox } from "./inbox/ArchitectureInbox";
+import { normalizeLiveNotes, normalizeSnapshotNotes, resolveStale, countInbox } from "@/lib/inbox/normalize";
+import type { ArchitectureInboxItem } from "@/lib/inbox/types";
 import { EmptyState } from "./EmptyState";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
@@ -1860,7 +1863,119 @@ export default function SchemaPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Focus dropdown: picks the working node for Discover/Remove AND glides
+  // it to canvas center (big-canvas navigation). Canvas clicks only select -
+  // they never yank the viewport. Lives up here so Inbox navigation can reuse it.
+  const handleFocusChange = useCallback((id: string) => {
+    setFocusName(id);
+    setSpot(null);
+    // The newly focused node is already laid out - center it next frame.
+    window.setTimeout(() => {
+      canvasRef.current?.focusNode(id);
+    }, 60);
+  }, []);
+
   const importFileRef = useRef<HTMLInputElement | null>(null);
+
+  // ── Architecture Inbox (Phase 1): normalized view over live notes +
+  // snapshot notes. Writers route back to the canonical records - the Inbox
+  // never owns an editable copy.
+  const [inboxOpen, setInboxOpen] = useState(false);
+  const inboxItems: ArchitectureInboxItem[] = useMemo(() => {
+    if (!orgKey) return [];
+    const live = normalizeLiveNotes({
+      orgScopeId: orgKey,
+      text: notesText,
+      updatedAt: notesSavedAt,
+      entities: entityNotes,
+      labels,
+    });
+    const fromSnaps = snapshots.flatMap((s) => normalizeSnapshotNotes({ snapshot: s, orgScopeId: orgKey }));
+    const known = new Set<string>([...describes.keys(), ...objects.map((o) => o.name)]);
+    return resolveStale([...live, ...fromSnaps], known);
+  }, [orgKey, notesText, notesSavedAt, entityNotes, labels, snapshots, describes, objects]);
+  const inboxCounts = useMemo(() => countInbox(inboxItems), [inboxItems]);
+  const inboxCanvases = useMemo(() => {
+    const out = [{ id: "live", name: "Live canvas" }];
+    for (const s of snapshots) {
+      if (s.notes?.trim()) out.push({ id: s.id, name: s.name });
+    }
+    return out;
+  }, [snapshots]);
+
+  const inboxEditBody = useCallback((id: string, body: string) => {
+    if (id === "live-canvas") {
+      setNotesText(body);
+      touchNotes();
+      return;
+    }
+    if (id.startsWith("live-entity-")) {
+      setEntityNoteText(id.slice("live-entity-".length), body);
+      return;
+    }
+    if (id.startsWith("snap-")) {
+      const s = snapshots.find((x) => x.id === id.slice(5));
+      if (!s) return;
+      void (async () => {
+        try {
+          await persistSnapshot({ ...s, notes: body.trim() ? body : undefined });
+          setSnapshots(await listSnapshotsByOrg(orgDomain));
+        } catch {
+          setError("Couldn't save notes (IndexedDB unavailable).");
+        }
+      })();
+    }
+  }, [snapshots, orgDomain, touchNotes, setEntityNoteText]);
+
+  const inboxSetTaskDone = useCallback((id: string, done: boolean) => {
+    if (id.startsWith("live-entity-")) {
+      setEntityNoteFlag(id.slice("live-entity-".length), { done });
+    }
+  }, [setEntityNoteFlag]);
+
+  const inboxDelete = useCallback((id: string) => {
+    if (id === "live-canvas") {
+      setNotesText("");
+      touchNotes();
+      return;
+    }
+    if (id.startsWith("live-entity-")) {
+      clearEntityNote(id.slice("live-entity-".length));
+      return;
+    }
+    if (id.startsWith("snap-")) {
+      const s = snapshots.find((x) => x.id === id.slice(5));
+      if (!s) return;
+      void (async () => {
+        try {
+          await persistSnapshot({ ...s, notes: undefined });
+          setSnapshots(await listSnapshotsByOrg(orgDomain));
+          setNotice(`Notes removed from “${s.name}” - canvas untouched.`);
+        } catch {
+          setError("Couldn't update snapshot (IndexedDB unavailable).");
+        }
+      })();
+    }
+  }, [snapshots, orgDomain, touchNotes, clearEntityNote]);
+
+  const inboxNavigate = useCallback((item: ArchitectureInboxItem) => {
+    setInboxOpen(false);
+    if (item.provenance.source === "snapshot" && item.provenance.snapshotId) {
+      const s = snapshots.find((x) => x.id === item.provenance.snapshotId);
+      if (s) {
+        void restoreSnapshot(s);
+        return;
+      }
+    }
+    setView("erd");
+    if (item.anchor.type === "entity") {
+      handleFocusChange(item.anchor.id);
+      // View switch remounts the canvas - retry centering once settled.
+      window.setTimeout(() => {
+        canvasRef.current?.focusNode(item.anchor.id);
+      }, 400);
+    }
+  }, [snapshots, restoreSnapshot, handleFocusChange]);
 
   const renameSnapshot = useCallback(
     async (id: string, name: string) => {
@@ -2701,18 +2816,6 @@ export default function SchemaPanel({
     setGraphSelected(null);
   }, []);
 
-  // Focus dropdown: picks the working node for Discover/Remove AND glides
-  // it to canvas center (big-canvas navigation). Canvas clicks only select -
-  // they never yank the viewport.
-  const handleFocusChange = useCallback((id: string) => {
-    setFocusName(id);
-    setSpot(null);
-    // The newly focused node is already laid out - center it next frame.
-    window.setTimeout(() => {
-      canvasRef.current?.focusNode(id);
-    }, 60);
-  }, []);
-
   // Presentation mode: same-tab full screen (PPT-style). Hides the app header
   // + footer via body.sf-present - no route switch, no token handoff.
   // Exit is icon-only on purpose: Esc belongs to the laser + picklist popover.
@@ -2836,6 +2939,23 @@ export default function SchemaPanel({
               {snapshots.length > 0 && (
                 <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-0.5 inline-flex items-center justify-center rounded-full bg-ivory-950 text-ivory-100 text-[9px] font-bold">
                   {snapshots.length > 99 ? "99+" : snapshots.length}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setInboxOpen(true)}
+              aria-label={`Architecture Inbox, ${inboxCounts.open} open items`}
+              title="Architecture Inbox - notes, tasks and Action Pack across this org's canvases"
+              className="relative rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                <path d="M4 5h16v11H8l-4 4V5Z" />
+                <path d="M8 9h8M8 12.5h5" />
+              </svg>
+              {inboxCounts.open > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-0.5 inline-flex items-center justify-center rounded-full bg-bronze-600 text-white text-[9px] font-bold">
+                  {inboxCounts.open > 99 ? "99+" : inboxCounts.open}
                 </span>
               )}
             </button>
@@ -3758,6 +3878,19 @@ export default function SchemaPanel({
           </div>
         </aside>
       )}
+
+      {/* Architecture Inbox overlay */}
+      <ArchitectureInbox
+        open={inboxOpen}
+        onClose={() => setInboxOpen(false)}
+        orgLabel={orgDomain || "This org"}
+        items={inboxItems}
+        canvases={inboxCanvases}
+        onEditBody={inboxEditBody}
+        onSetTaskDone={inboxSetTaskDone}
+        onDelete={inboxDelete}
+        onNavigate={inboxNavigate}
+      />
 
       {/* Picklist inspector */}
       {popover && <PicklistPopover pop={popover} onClose={() => setPopover(null)} />}
