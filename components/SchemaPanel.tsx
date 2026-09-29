@@ -2743,12 +2743,14 @@ export default function SchemaPanel({
       {/* ── Collapsible explorer sidebar ── */}
       {sideOpen ? (
         <aside className="flex w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)]">
-          <div className="flex items-center gap-2 border-b border-[var(--color-line-soft)] px-3.5 py-2.5">
+          <div className="flex items-center gap-2 border-b border-[var(--color-line-soft)] px-3.5 py-2">
             <div className="min-w-0 flex-1">
-              <h2 className="truncate text-sm font-bold text-ivory-950">Schema Explorer</h2>
-              <p className="text-[10px] text-ivory-600">
-                {describes.size > 0 ? `${describes.size} on canvas` : "Pick a root object"}
-              </p>
+              <h2 className="truncate text-sm font-bold text-ivory-950">
+                Schema Explorer
+                <span className="ml-1.5 font-mono text-[10px] font-medium text-ivory-500">
+                  {describes.size > 0 ? `${describes.size} on canvas` : ""}
+                </span>
+              </h2>
             </div>
             <Badge variant="info">ERD</Badge>
             <button
@@ -2895,6 +2897,45 @@ export default function SchemaPanel({
                 </div>
               )}
             </div>
+
+            {!rootName && describes.size === 0 && (
+              <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-3.5">
+                <p className="flex items-center gap-1.5 text-xs font-bold text-ivory-950">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true" className="text-bronze-600">
+                    <circle cx="12" cy="12" r="3" />
+                    <circle cx="5" cy="5" r="2" />
+                    <circle cx="19" cy="5" r="2" />
+                    <circle cx="5" cy="19" r="2" />
+                    <circle cx="19" cy="19" r="2" />
+                    <path d="M6.5 6.5 10 10m4 0 3.5-3.5M6.5 17.5 10 14m4 0 3.5 3.5" />
+                  </svg>
+                  Pick a root object
+                </p>
+                <ul className="mt-2.5 space-y-2">
+                  <li className="flex items-start gap-2">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true" className="mt-0.5 shrink-0 text-bronze-600">
+                      <circle cx="11" cy="11" r="7" />
+                      <path d="m20 20-3.5-3.5" />
+                    </svg>
+                    <p className="text-[11px] leading-relaxed text-ivory-700"><strong className="text-ivory-950">Search</strong> above - try Account, Lead, Opportunity.</p>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true" className="mt-0.5 shrink-0 text-bronze-600">
+                      <path d="M12 5v14M5 12h14" />
+                    </svg>
+                    <p className="text-[11px] leading-relaxed text-ivory-700"><strong className="text-ivory-950">Tick + Add to canvas</strong> - it lands as an ERD table.</p>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true" className="mt-0.5 shrink-0 text-bronze-600">
+                      <circle cx="6" cy="6" r="2.5" />
+                      <circle cx="18" cy="18" r="2.5" />
+                      <path d="M8 8l8 8" />
+                    </svg>
+                    <p className="text-[11px] leading-relaxed text-ivory-700"><strong className="text-ivory-950">Discover children + parents</strong> - links draw themselves.</p>
+                  </li>
+                </ul>
+              </div>
+            )}
 
             {rootName && (
               <>
