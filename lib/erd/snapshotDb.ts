@@ -10,6 +10,8 @@ export interface ErdSnapshot {
   nodes: string[];
   /** Drag positions to reapply on restore. */
   positions: Record<string, { x: number; y: number }>;
+  /** Design notes captured with the snapshot (markdown). */
+  notes?: string;
 }
 
 import { STORES, withStore } from "@/lib/db";

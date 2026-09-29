@@ -125,7 +125,7 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
       {/* Header: label owns the full top row (centered), badges + actions
           sit on their own second row so long labels never trim under them */}
       <div className={`flex flex-col justify-center gap-0.5 px-3 border-b ${data.isRoot ? "bg-ivory-950 text-ivory-100" : "bg-[var(--color-surface-soft)]"}`} style={{ height: ERD_HEADER_H }}>
-        <p className={`truncate text-center text-[13px] font-bold ${data.isRoot ? "text-ivory-100" : "text-ivory-950"}`} title={data.label}>
+        <p className={`text-center text-[13px] font-bold leading-tight break-all line-clamp-2 ${data.isRoot ? "text-ivory-100" : "text-ivory-950"}`} title={data.label}>
           {data.label}
         </p>
         <div className="flex items-center justify-center gap-1.5">
@@ -139,6 +139,24 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
               Custom
             </span>
           )}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              data.onNoteClick?.(data.apiName);
+            }}
+            title={data.hasNote ? "Open design note for this object" : "Attach a design note / TODO to this object"}
+            aria-label={data.hasNote ? `Open design note for ${data.apiName}` : `Attach a design note to ${data.apiName}`}
+            className={`nodrag relative shrink-0 rounded p-1 transition-colors cursor-pointer ${data.isRoot ? "text-ivory-300 hover:text-white hover:bg-ivory-800" : "text-ivory-950 hover:text-bronze-600 hover:bg-ivory-200"}`}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+              <path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3Z" />
+              <path d="m13.5 6.5 3 3" />
+            </svg>
+            {data.hasNote && (
+              <span className={`absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full ${data.hasTodo ? "bg-red-500" : "bg-bronze-500"}`} aria-hidden="true" />
+            )}
+          </button>
           <button
             type="button"
             onClick={copyApiName}

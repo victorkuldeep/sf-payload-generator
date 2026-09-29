@@ -23,6 +23,7 @@ import {
 } from "@/lib/erd/snapshotDb";
 import { newItemId } from "@/lib/collection/types";
 import { loadAutosave, queueAutosave, clearAutosave } from "@/lib/workspace/autosave";
+import { renderMarkdownLite, toggleTaskLine } from "./erd/notesMd";
 import { EmptyState } from "./EmptyState";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
@@ -317,6 +318,8 @@ function GraphDetailCardInner({  detail,
   onVisibility,
   designMode,
   onAddToGraph,
+  onNote,
+  noteFlags,
   drawnHere,
   catalog,
 }: {
@@ -346,6 +349,10 @@ function GraphDetailCardInner({  detail,
   designMode: boolean;
   /** Design mode: add checked names to the graph sketch (roles place them). */
   onAddToGraph: (names: string[]) => void;
+  /** Open the entity note / TODO editor for this bubble. */
+  onNote: (apiName: string) => void;
+  /** Note presence flags for this bubble (dot state on the button). */
+  noteFlags: { hasNote: boolean; hasTodo: boolean } | null;
   /** ApiName -> drawn edge ids touching it, for the selected node. */
   drawnHere: Map<string, string[]>;
   /** Full org catalog for the design-mode object picker. */
@@ -398,7 +405,21 @@ function GraphDetailCardInner({  detail,
             ✕
           </button>
         </div>
-          <div className="mt-2 flex flex-wrap gap-1">
+          <div className="mt-2 flex flex-wrap items-center gap-1">
+            <button
+              type="button"
+              onClick={() => onNote(apiName)}
+              title={noteFlags?.hasNote ? "Open design note / TODO for this object" : "Attach a design note / TODO to this object"}
+              className="relative rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-200 transition-colors cursor-pointer"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                <path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3Z" />
+                <path d="m13.5 6.5 3 3" />
+              </svg>
+              {noteFlags?.hasNote && (
+                <span className={`absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full ${noteFlags.hasTodo ? "bg-red-500" : "bg-bronze-500"}`} aria-hidden="true" />
+              )}
+            </button>
             {detail.kind === "loaded" ? (
               <>
                 <Badge variant="default">{detail.d.fields.length} fields</Badge>
@@ -676,6 +697,91 @@ function GraphDetailCardInner({  detail,
 // canvas tick would remount the card and wipe checked rows mid-selection.
 const GraphDetailCard = memo(GraphDetailCardInner);
 
+// Entity-scoped note editor inside the notes panel: markdown-lite + TODO/Done.
+function EntityNoteEditor({
+  apiName,
+  note,
+  tab,
+  onText,
+  onToggleTask,
+  onTodo,
+  onDone,
+  onBack,
+  onClear,
+}: {
+  apiName: string;
+  note: { text: string; todo: boolean; done: boolean } | null;
+  tab: "write" | "preview";
+  onText: (text: string) => void;
+  onToggleTask: (lineIndex: number) => void;
+  onTodo: (todo: boolean) => void;
+  onDone: (done: boolean) => void;
+  onBack: () => void;
+  onClear: () => void;
+}) {
+  const text = note?.text ?? "";
+  const todo = note?.todo ?? false;
+  const done = note?.done ?? false;
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onBack}
+        className="mb-2 text-[11px] font-semibold text-bronze-600 hover:text-bronze-700 cursor-pointer"
+      >
+        ← All notes
+      </button>
+      {tab === "write" ? (
+        <textarea
+          value={text}
+          onChange={(e) => onText(e.target.value)}
+          placeholder={`Note on ${apiName}…\n- [ ] Verify lookup before demo`}
+          spellCheck={false}
+          aria-label={`Design note for ${apiName}`}
+          className="min-h-[220px] w-full resize-y rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-3 font-mono text-xs leading-relaxed text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+        />
+      ) : (
+        <div className="min-h-[220px] rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-3">
+          {text.trim() ? (
+            renderMarkdownLite(text, onToggleTask)
+          ) : (
+            <p className="text-xs text-ivory-500">Nothing to preview yet.</p>
+          )}
+        </div>
+      )}
+      <div className="mt-2.5 space-y-2">
+        <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-ivory-900">
+          <input
+            type="checkbox"
+            checked={todo}
+            onChange={(e) => onTodo(e.target.checked)}
+            className="h-3.5 w-3.5 cursor-pointer accent-red-500"
+          />
+          TODO - needs action here
+        </label>
+        <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-ivory-900">
+          <input
+            type="checkbox"
+            checked={done}
+            onChange={(e) => onDone(e.target.checked)}
+            className="h-3.5 w-3.5 cursor-pointer accent-green-600"
+          />
+          Done
+        </label>
+        {(text || todo) && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="text-[11px] text-ivory-500 hover:text-red-700 underline cursor-pointer"
+          >
+            Delete note
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function SchemaPanel({
   objects,
   instanceUrl,
@@ -707,6 +813,8 @@ export default function SchemaPanel({
   const [snapshots, setSnapshots] = useState<ErdSnapshot[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [snapNotesId, setSnapNotesId] = useState<string | null>(null);
+  const [snapNotesDraft, setSnapNotesDraft] = useState("");
   const [renameValue, setRenameValue] = useState("");
 
   // Graph view + filters + detail
@@ -762,6 +870,102 @@ export default function SchemaPanel({
   const [familyFor, setFamilyFor] = useState<string | null>(null);
   const [family, setFamily] = useState<(DiscoverCandidate & { parentCount: number; childCount: number })[] | null>(null);
   const [familyBusy, setFamilyBusy] = useState(false);
+
+  // ── Design notes (per org, autosaved): canvas-level markdown shared by ERD
+  // + Graph, plus per-entity notes with TODO flags. Snapshots capture notes.
+  // Lives up here so the element memos below can inject note flags.
+  interface EntityNote {
+    text: string;
+    todo: boolean;
+    done: boolean;
+    updatedAt: number;
+  }
+  interface CanvasNotesData {
+    text: string;
+    updatedAt: number;
+    entities: Record<string, EntityNote>;
+  }
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [notesTab, setNotesTab] = useState<"write" | "preview">("write");
+  const [notesText, setNotesText] = useState("");
+  const [notesSavedAt, setNotesSavedAt] = useState<number | null>(null);
+  const [entityNotes, setEntityNotes] = useState<Record<string, EntityNote>>({});
+  const [noteEntity, setNoteEntity] = useState<string | null>(null);
+  const notesRestoredRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!orgKey || notesRestoredRef.current !== orgKey) return;
+    if (!notesText && Object.keys(entityNotes).length === 0) return;
+    queueAutosave(orgKey, "notes", {
+      text: notesText,
+      updatedAt: notesSavedAt ?? Date.now(),
+      entities: entityNotes,
+    } satisfies CanvasNotesData);
+  }, [orgKey, notesText, notesSavedAt, entityNotes]);
+
+  useEffect(() => {
+    if (!orgKey || notesRestoredRef.current === orgKey) return;
+    notesRestoredRef.current = orgKey;
+    void (async () => {
+      const snap = await loadAutosave<CanvasNotesData>(orgKey, "notes");
+      const d = snap?.data;
+      if (!d) return;
+      if (d.text) {
+        setNotesText(d.text);
+        setNotesSavedAt(d.updatedAt ?? snap.savedAt);
+      }
+      if (d.entities) setEntityNotes(d.entities);
+    })();
+  }, [orgKey]);
+
+  const touchNotes = useCallback(() => setNotesSavedAt(Date.now()), []);
+
+  // Open the notes panel scoped to one entity (from ERD header icon or graph card).
+  const openEntityNote = useCallback((apiName: string) => {
+    setNoteEntity(apiName);
+    setNotesOpen(true);
+  }, []);
+
+  const setEntityNoteText = useCallback((api: string, text: string) => {
+    setEntityNotes((prev) => {
+      if (!text.trim() && !prev[api]?.todo) {
+        const next = { ...prev };
+        delete next[api];
+        return next;
+      }
+      return {
+        ...prev,
+        [api]: { text, todo: prev[api]?.todo ?? false, done: prev[api]?.done ?? false, updatedAt: Date.now() },
+      };
+    });
+    touchNotes();
+  }, [touchNotes]);
+
+  const setEntityNoteFlag = useCallback((api: string, patch: { todo?: boolean; done?: boolean }) => {
+    setEntityNotes((prev) => {
+      const cur = prev[api] ?? { text: "", todo: false, done: false, updatedAt: Date.now() };
+      return { ...prev, [api]: { ...cur, ...patch, updatedAt: Date.now() } };
+    });
+    touchNotes();
+  }, [touchNotes]);
+
+  const clearEntityNote = useCallback((api: string) => {
+    setEntityNotes((prev) => {
+      const next = { ...prev };
+      delete next[api];
+      return next;
+    });
+    touchNotes();
+    setNoteEntity(null);
+  }, [touchNotes]);
+
+  const openTodos = useMemo(
+    () =>
+      Object.entries(entityNotes)
+        .filter(([, n]) => n.todo && !n.done)
+        .sort((a, b) => b[1].updatedAt - a[1].updatedAt),
+    [entityNotes]
+  );
 
   const customSet = useMemo(() => {
     const s = new Set<string>();
@@ -838,10 +1042,20 @@ export default function SchemaPanel({
         const shown = (d?.childRelationships ?? []).filter(
           (r) => r.relationshipName && describedSet.has(r.childSObject)
         ).length;
-        return { ...n, data: { ...n.data, shownChildren: shown } };
+        const en = entityNotes[n.id];
+        return {
+          ...n,
+          data: {
+            ...n.data,
+            shownChildren: shown,
+            hasNote: !!en?.text,
+            hasTodo: !!en?.todo && !en?.done,
+            onNoteClick: openEntityNote,
+          },
+        };
       }),
     };
-  }, [visibleDescribes, describes, labels, rootName, spot, enforced]);
+  }, [visibleDescribes, describes, labels, rootName, spot, enforced, entityNotes, openEntityNote]);
 
   // Graph default = FULL 1-level neighborhood (parents left, children right),
   // lite previews included - this is the intent of graph view. Family
@@ -881,7 +1095,16 @@ export default function SchemaPanel({
     }
     const shown1 = designMode ? level1.filter((n) => designIds.has(n.apiName)) : level1;
     const built = buildGraphElements(root, [...shown1, ...extra], canvasNames, spot, graphEnforced, familyMode);
-    if (dismissedEdges.size === 0) return built;
+    // Stamp entity-note flags so bubbles show the marker dot.
+    const stampNotes = <T extends { data: { apiName: string } }>(list: T[]): T[] =>
+      list.map((n) => {
+        const en = entityNotes[n.data.apiName];
+        if (!en?.text) return n;
+        return { ...n, data: { ...n.data, hasNote: true, hasTodo: !!en.todo && !en.done } };
+      });
+    if (dismissedEdges.size === 0) {
+      return { ...built, nodes: stampNotes(built.nodes) };
+    }
     // Hide dismissed LINKS; then prune x: bubbles left linkless (level-1 fan
     // always stays - it is the neighborhood, not a link).
     const edges = built.edges.filter((e) => !dismissedEdges.has(String(e.id)));
@@ -890,9 +1113,9 @@ export default function SchemaPanel({
       linked.add(String(e.source));
       linked.add(String(e.target));
     }
-    const nodes = built.nodes.filter((n) => !n.id.startsWith("x:") || linked.has(n.id));
+    const nodes = stampNotes(built.nodes.filter((n) => !n.id.startsWith("x:") || linked.has(n.id)));
     return { nodes, edges, overflow: built.overflow, extended: nodes.filter((n) => n.id.startsWith("x:")).length };
-  }, [view, rootName, describes, labels, isCustomName, hideSystem, filterMode, hiddenIds, removedIds, dismissedIds, dismissedEdges, designMode, designIds, spot, graphEnforced, expanded, familyMode]);
+  }, [view, rootName, describes, labels, isCustomName, hideSystem, filterMode, hiddenIds, removedIds, dismissedIds, dismissedEdges, designMode, designIds, spot, graphEnforced, expanded, familyMode, entityNotes]);
 
   // The review list behind Hide-system: every swept neighbor with its
   // reason, label and custom flag. The modal allow-lists from this list.
@@ -1451,15 +1674,17 @@ export default function SchemaPanel({
       focus: focusName || rootName,
       nodes: [...describes.keys()],
       positions,
+      // Design notes travel with the canvas they describe.
+      notes: notesText.trim() ? notesText : undefined,
     };
     try {
       await persistSnapshot(snap);
       setSnapshots(await listSnapshotsByOrg(orgDomain));
-      setNotice(`Snapshot “${snap.name}” saved - restore it anytime from history.`);
+      setNotice(`Snapshot “${snap.name}” saved${snap.notes ? " with design notes" : ""} - restore it anytime from history.`);
     } catch {
       setError("Couldn't save snapshot (IndexedDB unavailable).");
     }
-  }, [busy, describes, orgDomain, rootName, focusName, labels]);
+  }, [busy, describes, orgDomain, rootName, focusName, labels, notesText]);
 
   const restoreSnapshot = useCallback(
     async (snap: ErdSnapshot) => {
@@ -1500,10 +1725,16 @@ export default function SchemaPanel({
         setFocusName(fresh.some((d) => d.name === snap.focus) ? snap.focus : root);
         setEnforced(new Map(Object.entries(snap.positions)));
         setLayoutRev((r) => r + 1);
+        // Snapshot notes travel back into the live editor (agreed behavior).
+        if (snap.notes) {
+          setNotesText(snap.notes);
+          touchNotes();
+        }
         const skipped = snap.nodes.length - fresh.length;
         setNotice(
           `Restored “${snap.name}” with fresh metadata (${fresh.length} objects)` +
             (skipped > 0 ? `, ${skipped} no longer describable` : "") +
+            (snap.notes ? ", notes included" : "") +
             "."
         );
       } catch (err) {
@@ -1512,7 +1743,7 @@ export default function SchemaPanel({
         setBusy(null);
       }
     },
-    [busy, fetchDescribe]
+    [busy, fetchDescribe, touchNotes]
   );
 
   const deleteSnapshot = useCallback(
@@ -2436,6 +2667,25 @@ export default function SchemaPanel({
             </button>
             <button
               type="button"
+              onClick={() => {
+                setNoteEntity(null);
+                setNotesOpen((v) => !v);
+              }}
+              aria-label={notesOpen ? "Close design notes" : "Open design notes"}
+              aria-pressed={notesOpen}
+              title="Design notes - canvas markdown + per-object TODOs, autosaved per org"
+              className={`relative rounded-md p-1.5 transition-colors cursor-pointer ${notesOpen ? "text-ivory-950 bg-ivory-300" : "text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300"}`}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                <path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3Z" />
+                <path d="m13.5 6.5 3 3" />
+              </svg>
+              {(openTodos.length > 0 || notesText) && (
+                <span className={`absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full border border-white ${openTodos.length > 0 ? "bg-red-500" : "bg-bronze-500"}`} aria-hidden="true" />
+              )}
+            </button>
+            <button
+              type="button"
               onClick={saveSnapshot}
               disabled={busy != null || describes.size === 0}
               aria-label="Save canvas snapshot"
@@ -3129,6 +3379,12 @@ export default function SchemaPanel({
                 const api = detail.kind === "loaded" ? detail.d.name : detail.n.apiName;
                 void expandFamily(api, names);
               }}
+              onNote={openEntityNote}
+              noteFlags={(() => {
+                const api = detail.kind === "loaded" ? detail.d.name : detail.n.apiName;
+                const en = entityNotes[api];
+                return en?.text ? { hasNote: true, hasTodo: !!en.todo && !en.done } : null;
+              })()}
               catalog={objects.map((o) => ({ name: o.name, label: o.label }))}
               onExpandToErd={(names) => {
                 void (async () => {
@@ -3175,6 +3431,144 @@ export default function SchemaPanel({
           )}
         </div>
       </div>
+
+      {/* ── Design notes (right panel, shared by ERD + Graph) ── */}
+      {notesOpen && (
+        <aside className="flex w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)]">
+          <div className="flex items-center gap-2 border-b border-[var(--color-line-soft)] px-3.5 py-2.5">
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate text-sm font-bold text-ivory-950">
+                {noteEntity ? (labels.get(noteEntity) ?? noteEntity) : "Design Notes"}
+              </h2>
+              <p className="truncate font-mono text-[10px] text-ivory-600">
+                {noteEntity ? noteEntity : notesSavedAt ? `Auto-saved ${timeAgo(notesSavedAt)}` : "Autosaves per org"}
+              </p>
+            </div>
+            <div className="flex rounded-lg border border-[var(--color-line)] overflow-hidden" role="tablist" aria-label="Notes mode">
+              {(["write", "preview"] as const).map((t) => (
+                <button
+                  key={t}
+                  role="tab"
+                  aria-selected={notesTab === t}
+                  onClick={() => setNotesTab(t)}
+                  className={`px-2.5 py-1 text-[11px] font-semibold capitalize transition-colors cursor-pointer ${notesTab === t ? "bg-ivory-950 text-ivory-100" : "text-ivory-600 hover:text-ivory-950"}`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const stamp = `\n- ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} — `;
+                if (noteEntity) {
+                  const cur = entityNotes[noteEntity]?.text ?? "";
+                  setEntityNoteText(noteEntity, `${cur}${stamp}`);
+                } else {
+                  setNotesText((p) => `${p}${stamp}`);
+                }
+                touchNotes();
+                setNotesTab("write");
+              }}
+              title="Insert timestamp bullet"
+              aria-label="Insert timestamp bullet"
+              className="rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                <circle cx="12" cy="12" r="8.5" />
+                <path d="M12 7.5V12l3 2" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setNotesOpen(false);
+                setNoteEntity(null);
+              }}
+              aria-label="Close design notes"
+              title="Close notes"
+              className="rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+                <path d="M6 6l12 12M18 6 6 18" />
+              </svg>
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto p-3.5">
+            {noteEntity ? (
+              <EntityNoteEditor
+                apiName={noteEntity}
+                note={entityNotes[noteEntity] ?? null}
+                tab={notesTab}
+                onText={(text) => setEntityNoteText(noteEntity, text)}
+                onToggleTask={(idx) => {
+                  const cur = entityNotes[noteEntity]?.text ?? "";
+                  setEntityNoteText(noteEntity, toggleTaskLine(cur, idx));
+                }}
+                onTodo={(todo) => setEntityNoteFlag(noteEntity, { todo })}
+                onDone={(done) => setEntityNoteFlag(noteEntity, { done })}
+                onBack={() => setNoteEntity(null)}
+                onClear={() => clearEntityNote(noteEntity)}
+              />
+            ) : (
+              <>
+                {openTodos.length > 0 && (
+                  <div className="mb-3 rounded-xl border border-red-200 bg-red-50/50 p-2.5">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-red-700">
+                      Open TODOs ({openTodos.length})
+                    </p>
+                    <ul className="mt-1.5 space-y-1">
+                      {openTodos.map(([api, n]) => (
+                        <li key={api}>
+                          <button
+                            type="button"
+                            onClick={() => setNoteEntity(api)}
+                            className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left hover:bg-white/70 transition-colors cursor-pointer"
+                          >
+                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" aria-hidden="true" />
+                            <span className="min-w-0 flex-1 truncate font-mono text-[11px] font-semibold text-ivory-950">
+                              {api}
+                            </span>
+                            <span className="shrink-0 text-[10px] text-ivory-500">{timeAgo(n.updatedAt)}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {notesTab === "write" ? (
+                  <textarea
+                    value={notesText}
+                    onChange={(e) => {
+                      setNotesText(e.target.value);
+                      touchNotes();
+                    }}
+                    placeholder={"# Design log\n- [ ] Confirm junction on Quote_Line__c\n- 14:32 — Lead conversion mapping…"}
+                    spellCheck={false}
+                    aria-label="Canvas design notes (markdown)"
+                    className="min-h-[320px] w-full resize-y rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-3 font-mono text-xs leading-relaxed text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+                  />
+                ) : (
+                  <div className="min-h-[320px] rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-3">
+                    {notesText.trim() ? (
+                      renderMarkdownLite(notesText, (idx) => {
+                        setNotesText((p) => toggleTaskLine(p, idx));
+                        touchNotes();
+                      })
+                    ) : (
+                      <p className="text-xs text-ivory-500">Nothing to preview yet - write some markdown.</p>
+                    )}
+                  </div>
+                )}
+                <p className="mt-2 text-[10px] text-ivory-500">
+                  {notesText.trim().split(/\s+/).filter(Boolean).length} words · markdown-lite · attaches to snapshots
+                </p>
+              </>
+            )}
+          </div>
+        </aside>
+      )}
 
       {/* Picklist inspector */}
       {popover && <PicklistPopover pop={popover} onClose={() => setPopover(null)} />}
@@ -3332,8 +3726,21 @@ export default function SchemaPanel({
                         <div className="flex items-center gap-2">
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-xs font-semibold text-ivory-950">{s.name}</p>
-                            <p className="text-[11px] text-ivory-600">
+                            <p className="flex items-center gap-1.5 text-[11px] text-ivory-600">
                               {s.nodes.length} objects · {timeAgo(s.createdAt)}
+                              {s.notes && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSnapNotesId((cur) => (cur === s.id ? null : s.id));
+                                    setSnapNotesDraft(s.notes ?? "");
+                                  }}
+                                  title="View attached design notes"
+                                  className="rounded-full border border-bronze-300 bg-bronze-100 px-1.5 py-px text-[9px] font-bold text-bronze-700 hover:border-bronze-500 cursor-pointer"
+                                >
+                                  Notes
+                                </button>
+                              )}
                             </p>
                           </div>
                           <Button size="sm" variant="secondary" onClick={() => restoreSnapshot(s)} disabled={!!busy}>
@@ -3365,6 +3772,37 @@ export default function SchemaPanel({
                               <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-9 0 1 13h10l1-13" />
                             </svg>
                           </button>
+                        </div>
+                      )}
+                      {snapNotesId === s.id && (
+                        <div className="mt-2 rounded-lg border border-[var(--color-line)] bg-white p-2">
+                          <textarea
+                            value={snapNotesDraft}
+                            onChange={(e) => setSnapNotesDraft(e.target.value)}
+                            spellCheck={false}
+                            aria-label={`Design notes for snapshot ${s.name}`}
+                            className="min-h-[90px] w-full resize-y rounded-md border border-[var(--color-line)] bg-[var(--color-canvas)] p-2 font-mono text-[11px] leading-relaxed text-ivory-950 focus:border-bronze-500 focus:outline-none"
+                          />
+                          <div className="mt-1.5 flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={() => void (async () => {
+                                try {
+                                  await persistSnapshot({ ...s, notes: snapNotesDraft.trim() ? snapNotesDraft : undefined });
+                                  setSnapshots(await listSnapshotsByOrg(orgDomain));
+                                  setSnapNotesId(null);
+                                  setNotice(`Notes updated on “${s.name}”.`);
+                                } catch {
+                                  setError("Couldn't save notes (IndexedDB unavailable).");
+                                }
+                              })()}
+                            >
+                              Save notes
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => setSnapNotesId(null)}>
+                              Cancel
+                            </Button>
+                          </div>
                         </div>
                       )}
                     </li>

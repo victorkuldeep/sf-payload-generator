@@ -52,6 +52,13 @@ function GraphBubbleNodeInner({ data, selected }: NodeProps<Node<GraphBubbleData
             aria-hidden="true"
           />
         )}
+        {data.hasNote && (
+          <span
+            title={data.hasTodo ? "Open TODO for this object" : "Design note attached"}
+            className={`absolute right-1 top-1 h-2.5 w-2.5 rounded-full border border-white ${data.hasTodo ? "bg-red-500" : "bg-bronze-500"}`}
+            aria-hidden="true"
+          />
+        )}
       </div>
       <p
         className={`mt-1.5 max-w-full text-center font-mono text-[11px] font-semibold leading-tight break-all ${

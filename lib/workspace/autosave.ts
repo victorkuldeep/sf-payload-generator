@@ -15,7 +15,7 @@
 
 import { withStore, STORES } from "@/lib/db";
 
-export type AutosaveSlice = "schema" | "builder" | "composite" | "meta";
+export type AutosaveSlice = "schema" | "builder" | "composite" | "meta" | "notes";
 
 export interface AutosaveRecord<T = unknown> {
   id: string;

@@ -36,6 +36,10 @@ export interface ErdNodeData extends Record<string, unknown> {
   dimmed: boolean;
   /** True while this node's describe is being refreshed. */
   refreshing: boolean;
+  /** Design-note flags (entity notes) - header shows the note icon state. */
+  hasNote?: boolean;
+  hasTodo?: boolean;
+  onNoteClick?: (apiName: string) => void;
   onRefreshNode?: (id: string) => void;
   onPicklistClick?: (
     nodeId: string,
@@ -48,7 +52,7 @@ export const ERD_NODE_WIDTH = 300;
 export const ERD_MAX_ROWS = 10;
 const ROW_H = 26;
 // Fixed chrome heights (nodes must match these exactly - dagre + handle docks depend on them)
-export const ERD_HEADER_H = 74;
+export const ERD_HEADER_H = 88;
 export const ERD_FOOTER_H = 60;
 // Header + rows padding + more-button + footer
 const CHROME_H = ERD_HEADER_H + 8 + 22 + ERD_FOOTER_H;
@@ -346,6 +350,9 @@ export interface GraphBubbleData extends Record<string, unknown> {
   spotlight: boolean;
   /** Graph-scoped collision-free tag (assignBubbleTags). Falls back to initials. */
   bubbleTag?: string;
+  /** Entity design note attached - bubble shows a marker dot. */
+  hasNote?: boolean;
+  hasTodo?: boolean;
 }
 
 export interface GraphNeighbor {
