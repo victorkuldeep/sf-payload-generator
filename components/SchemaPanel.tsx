@@ -896,7 +896,8 @@ export default function SchemaPanel({
 
   useEffect(() => {
     if (!orgKey || notesRestoredRef.current !== orgKey) return;
-    if (!notesText && Object.keys(entityNotes).length === 0) return;
+    // Always persist once restored - including the empty state, so deleting
+    // the last note truly wipes the record instead of resurrecting it.
     queueAutosave(orgKey, "notes", {
       text: notesText,
       updatedAt: notesSavedAt ?? Date.now(),
@@ -2700,9 +2701,16 @@ export default function SchemaPanel({
     setGraphSelected(null);
   }, []);
 
+  // Focus dropdown: picks the working node for Discover/Remove AND glides
+  // it to canvas center (big-canvas navigation). Canvas clicks only select -
+  // they never yank the viewport.
   const handleFocusChange = useCallback((id: string) => {
     setFocusName(id);
     setSpot(null);
+    // The newly focused node is already laid out - center it next frame.
+    window.setTimeout(() => {
+      canvasRef.current?.focusNode(id);
+    }, 60);
   }, []);
 
   // Presentation mode: same-tab full screen (PPT-style). Hides the app header
@@ -2940,8 +2948,8 @@ export default function SchemaPanel({
 
             {rootName && (
               <>
-                <label className="block text-xs font-medium text-ivory-700">
-                  Focus node
+                <label className="block text-xs font-medium text-ivory-700" title="Working node for Discover / Remove - picking one glides it to canvas center">
+                  Focus node - centers canvas
                   <select
                     value={focusName}
                     onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleFocusChange(e.target.value)}
@@ -3728,9 +3736,23 @@ export default function SchemaPanel({
                     )}
                   </div>
                 )}
-                <p className="mt-2 text-[10px] text-ivory-500">
-                  {notesText.trim().split(/\s+/).filter(Boolean).length} words · markdown-lite · attaches to snapshots
-                </p>
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <p className="text-[10px] text-ivory-500">
+                    {notesText.trim().split(/\s+/).filter(Boolean).length} words · markdown-lite · attaches to snapshots
+                  </p>
+                  {notesText && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNotesText("");
+                        touchNotes();
+                      }}
+                      className="shrink-0 text-[10px] text-ivory-500 hover:text-red-700 underline cursor-pointer"
+                    >
+                      Delete note
+                    </button>
+                  )}
+                </div>
               </>
             )}
           </div>

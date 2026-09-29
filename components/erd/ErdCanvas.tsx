@@ -35,6 +35,8 @@ const edgeTypes = { erdEdge: ErdEdge } as const;
 
 export interface ErdCanvasHandle {
   getNodes: () => Node<ErdNodeData | GraphBubbleData>[];
+  /** Smooth-pan the node to canvas center, keeping the current zoom. */
+  focusNode: (apiName: string) => boolean;
 }
 
 interface ErdCanvasProps {
@@ -84,7 +86,7 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
   const containerRef = useRef<HTMLDivElement>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<ErdNodeData | GraphBubbleData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const { fitView } = useReactFlow();
+  const { fitView, setCenter, getZoom } = useReactFlow();
   // Built-in OOB lock state, reported upward for mutual exclusion with the
   // parent-owned drag lock. nodesConnectable is hard-false here, so it is
   // excluded - otherwise the lock would read permanently engaged.
@@ -107,8 +109,18 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
     ref,
     () => ({
       getNodes: () => nodesRef.current,
+      focusNode: (apiName: string) => {
+        const n = nodesRef.current.find(
+          (node) => node.id === apiName || (node.data as ErdNodeData | GraphBubbleData).apiName === apiName
+        );
+        if (!n) return false;
+        const w = n.measured?.width ?? n.width ?? 300;
+        const h = n.measured?.height ?? n.height ?? 200;
+        setCenter(n.position.x + w / 2, n.position.y + h / 2, { zoom: getZoom(), duration: 600 });
+        return true;
+      },
     }),
-    []
+    [setCenter, getZoom]
   );
 
   const [laser, setLaser] = useState(false);
