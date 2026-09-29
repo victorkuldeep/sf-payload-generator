@@ -1397,7 +1397,7 @@ export default function Home() {
         ) : null
       }
     >
-      <main className="mx-auto w-full px-5 pt-6 pb-1 space-y-5">
+      <main className="mx-auto w-full px-5 pt-6 pb-0.5 space-y-5">
         {!state.connected ? (
           <>
             <HomeHero

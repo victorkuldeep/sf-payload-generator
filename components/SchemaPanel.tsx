@@ -2743,16 +2743,27 @@ export default function SchemaPanel({
       {/* ── Collapsible explorer sidebar ── */}
       {sideOpen ? (
         <aside className="flex w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)]">
-          <div className="flex items-center gap-2 border-b border-[var(--color-line-soft)] px-3.5 py-2">
-            <div className="min-w-0 flex-1">
-              <h2 className="truncate text-sm font-bold text-ivory-950">
-                Schema Explorer
-                <span className="ml-1.5 font-mono text-[10px] font-medium text-ivory-500">
-                  {describes.size > 0 ? `${describes.size} on canvas` : ""}
-                </span>
-              </h2>
+          <div className="border-b border-[var(--color-line-soft)] px-3.5 py-2">
+            <div className="flex items-center gap-2">
+              <h2 className="min-w-0 flex-1 truncate text-sm font-bold text-ivory-950">Schema Explorer</h2>
+              <span className="shrink-0 font-mono text-[10px] font-medium text-ivory-500">
+                {describes.size > 0 ? `${describes.size} on canvas` : ""}
+              </span>
+              <button
+                type="button"
+                onClick={() => setSideOpen(false)}
+                aria-label="Collapse explorer panel"
+                title="Collapse panel"
+                className="shrink-0 rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+                  <path d="m14 6-6 6 6 6" />
+                </svg>
+              </button>
             </div>
-            <Badge variant="info">ERD</Badge>
+            <div className="mt-1.5 flex items-center gap-1">
+              <Badge variant="info">ERD</Badge>
+              <span className="mx-0.5 h-4 w-px bg-[var(--color-line-soft)]" aria-hidden="true" />
             <button
               type="button"
               onClick={popOut}
@@ -2820,17 +2831,7 @@ export default function SchemaPanel({
                 </span>
               )}
             </button>
-            <button
-              type="button"
-              onClick={() => setSideOpen(false)}
-              aria-label="Collapse explorer panel"
-              title="Collapse panel"
-              className="rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
-                <path d="m14 6-6 6 6 6" />
-              </svg>
-            </button>
+            </div>
           </div>
 
           <div className="flex-1 space-y-3 overflow-y-auto p-3.5">
