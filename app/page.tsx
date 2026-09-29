@@ -1397,7 +1397,7 @@ export default function Home() {
         ) : null
       }
     >
-      <main className="mx-auto w-full px-5 pt-6 pb-0.5 space-y-5">
+      <main className={`mx-auto w-full space-y-5 ${state.mode === "schema" ? "px-0.5 pt-0.5 pb-0.5" : "px-5 pt-3 pb-0.5"}`}>
         {!state.connected ? (
           <>
             <HomeHero

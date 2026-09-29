@@ -2725,7 +2725,7 @@ export default function SchemaPanel({
   return (
     <div
       className="flex gap-3"
-      style={present ? { height: "calc(100vh - 12px)", minHeight: 480 } : { height: "calc(100vh - 180px)", minHeight: 520 }}
+      style={present ? { height: "calc(100vh - 12px)", minHeight: 480 } : { height: "calc(100vh - 100px)", minHeight: 520 }}
     >
       {present && (
         <button
