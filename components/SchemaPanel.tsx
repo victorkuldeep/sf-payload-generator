@@ -27,7 +27,8 @@ import { renderMarkdownLite, toggleTaskLine } from "./erd/notesMd";
 import { validateSharePayload, shareFileName, ERD_SHARE_KIND, ERD_SHARE_VERSION, type ErdSharePayload } from "@/lib/erd/share";
 import { ArchitectureInbox } from "./inbox/ArchitectureInbox";
 import { normalizeLiveNotes, normalizeSnapshotNotes, resolveStale, countInbox } from "@/lib/inbox/normalize";
-import type { ArchitectureInboxItem } from "@/lib/inbox/types";
+import { fingerprintEntity, fingerprintField, diffFieldFacts, diffEntityFacts, type EntityFacts, type FieldFacts } from "@/lib/inbox/schemaReview";
+import type { ArchitectureInboxItem, InboxAnchor, InboxFingerprint, InboxHistoryEntry, InboxMeta, AnchorFacts } from "@/lib/inbox/types";
 import { EmptyState } from "./EmptyState";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
@@ -701,31 +702,40 @@ function GraphDetailCardInner({  detail,
 // canvas tick would remount the card and wipe checked rows mid-selection.
 const GraphDetailCard = memo(GraphDetailCardInner);
 
-// Entity-scoped note editor inside the notes panel: markdown-lite + TODO/Done.
+// Entity-scoped note editor inside the notes panel: markdown-lite + TODO/Done
+// + lifecycle (kind, status, owner, priority, anchor). Writes route through
+// onMeta so legacy todo/done flags stay consistent.
 function EntityNoteEditor({
   apiName,
   note,
   tab,
+  fields,
   onText,
   onToggleTask,
-  onTodo,
-  onDone,
+  onMeta,
+  onAnchor,
   onBack,
   onClear,
 }: {
   apiName: string;
-  note: { text: string; todo: boolean; done: boolean } | null;
+  note: { text: string; todo: boolean; done: boolean; meta?: InboxMeta } | null;
   tab: "write" | "preview";
+  fields: { name: string; label: string; type: string; referenceTo: string[] }[];
   onText: (text: string) => void;
   onToggleTask: (lineIndex: number) => void;
-  onTodo: (todo: boolean) => void;
-  onDone: (done: boolean) => void;
+  onMeta: (patch: Partial<InboxMeta>, what: string) => void;
+  onAnchor: (anchor: InboxAnchor | null) => void;
   onBack: () => void;
   onClear: () => void;
 }) {
   const text = note?.text ?? "";
   const todo = note?.todo ?? false;
   const done = note?.done ?? false;
+  const meta = note?.meta;
+  const kind = meta?.kind ?? (todo ? "task" : "note");
+  const status = done ? "resolved" : (meta?.status ?? "open");
+  const anchorId = meta?.anchor?.id ?? apiName;
+  const fieldOf = (name: string) => fields.find((f) => f.name === name);
   return (
     <div>
       <button
@@ -735,6 +745,49 @@ function EntityNoteEditor({
       >
         ← All notes
       </button>
+      <div className="mb-2 grid grid-cols-2 gap-1.5">
+        <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+          Kind
+          <select
+            value={kind}
+            onChange={(e) => onMeta({ kind: e.target.value as InboxMeta["kind"] }, `Kind set to ${e.target.value}`)}
+            className="mt-0.5 w-full rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-1.5 py-1 text-xs font-medium normal-case tracking-normal text-ivory-950 cursor-pointer"
+          >
+            <option value="note">Note</option>
+            <option value="task">Task</option>
+            <option value="question">Question</option>
+            <option value="decision">Decision</option>
+          </select>
+        </label>
+        <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+          Anchor
+          <select
+            value={anchorId}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === apiName) {
+                onAnchor(null);
+                return;
+              }
+              const f = fieldOf(v);
+              onAnchor({
+                type: f && f.type === "reference" ? "relationship" : "field",
+                id: `${apiName}.${v}`,
+                labelAtCreation: f?.label,
+              });
+            }}
+            title="Anchor this note to the object or one of its fields"
+            className="mt-0.5 w-full rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-1.5 py-1 text-xs font-medium normal-case tracking-normal text-ivory-950 cursor-pointer"
+          >
+            <option value={apiName}>{apiName} (object)</option>
+            {fields.map((f) => (
+              <option key={f.name} value={f.name}>
+                {f.name}{f.type === "reference" ? " ⤴" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       {tab === "write" ? (
         <textarea
           value={text}
@@ -754,11 +807,100 @@ function EntityNoteEditor({
         </div>
       )}
       <div className="mt-2.5 space-y-2">
+        <div className="grid grid-cols-2 gap-1.5">
+          <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+            Status
+            <select
+              value={status}
+              onChange={(e) => onMeta({ status: e.target.value as InboxMeta["status"] }, `Status set to ${e.target.value}`)}
+              className="mt-0.5 w-full rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-1.5 py-1 text-xs font-medium normal-case tracking-normal text-ivory-950 cursor-pointer"
+            >
+              <option value="open">Open</option>
+              <option value="in-progress">In progress</option>
+              <option value="resolved">Resolved</option>
+            </select>
+          </label>
+          <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+            Priority
+            <select
+              value={meta?.priority ?? ""}
+              onChange={(e) => onMeta({ priority: (e.target.value || undefined) as InboxMeta["priority"] }, e.target.value ? `Priority set to ${e.target.value}` : "Priority cleared")}
+              className="mt-0.5 w-full rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-1.5 py-1 text-xs font-medium normal-case tracking-normal text-ivory-950 cursor-pointer"
+            >
+              <option value="">—</option>
+              <option value="low">Low</option>
+              <option value="normal">Normal</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
+          </label>
+        </div>
+        <div className="grid grid-cols-2 gap-1.5">
+          <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+            Owner
+            <input
+              value={meta?.owner ?? ""}
+              onChange={(e) => onMeta({ owner: e.target.value.trim() || undefined }, e.target.value.trim() ? `Owner set to ${e.target.value.trim()}` : "Owner cleared")}
+              placeholder="—"
+              spellCheck={false}
+              className="mt-0.5 w-full rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-1.5 py-1 text-xs normal-case tracking-normal text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+            />
+          </label>
+          <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+            Team
+            <input
+              value={meta?.team ?? ""}
+              onChange={(e) => onMeta({ team: e.target.value.trim() || undefined }, e.target.value.trim() ? `Team set to ${e.target.value.trim()}` : "Team cleared")}
+              placeholder="—"
+              spellCheck={false}
+              className="mt-0.5 w-full rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-1.5 py-1 text-xs normal-case tracking-normal text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+            />
+          </label>
+        </div>
+        <div className="grid grid-cols-2 gap-1.5">
+          <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+            Due
+            <input
+              type="date"
+              value={meta?.dueDate ?? ""}
+              onChange={(e) => onMeta({ dueDate: e.target.value || undefined }, e.target.value ? `Due date set to ${e.target.value}` : "Due date cleared")}
+              className="mt-0.5 w-full rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-1.5 py-1 text-xs normal-case tracking-normal text-ivory-950 cursor-pointer"
+            />
+          </label>
+          {kind === "decision" && (
+            <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+              Decision
+              <select
+                value={meta?.decisionState ?? "proposed"}
+                onChange={(e) => onMeta({ decisionState: e.target.value as InboxMeta["decisionState"] }, `Decision ${e.target.value}`)}
+                className="mt-0.5 w-full rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-1.5 py-1 text-xs font-medium normal-case tracking-normal text-ivory-950 cursor-pointer"
+              >
+                <option value="proposed">Proposed</option>
+                <option value="confirmed">Confirmed</option>
+                <option value="rejected">Rejected</option>
+                <option value="superseded">Superseded</option>
+              </select>
+            </label>
+          )}
+        </div>
+        {(status === "resolved" || kind === "question" || kind === "decision") && (
+          <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+            {kind === "question" ? "Answer / resolution" : "Resolution"}
+            <textarea
+              value={meta?.resolution ?? ""}
+              onChange={(e) => onMeta({ resolution: e.target.value || undefined }, "Resolution updated")}
+              placeholder="—"
+              spellCheck={false}
+              rows={2}
+              className="mt-0.5 w-full resize-y rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] p-1.5 text-xs normal-case tracking-normal text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+            />
+          </label>
+        )}
         <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-ivory-900">
           <input
             type="checkbox"
             checked={todo}
-            onChange={(e) => onTodo(e.target.checked)}
+            onChange={(e) => onMeta({ kind: e.target.checked ? "task" : "note" }, e.target.checked ? "Converted to task" : "Converted to note")}
             className="h-3.5 w-3.5 cursor-pointer accent-red-500"
           />
           TODO - needs action here
@@ -767,7 +909,7 @@ function EntityNoteEditor({
           <input
             type="checkbox"
             checked={done}
-            onChange={(e) => onDone(e.target.checked)}
+            onChange={(e) => onMeta({ status: e.target.checked ? "resolved" : "open" }, e.target.checked ? "Resolved" : "Reopened")}
             className="h-3.5 w-3.5 cursor-pointer accent-green-600"
           />
           Done
@@ -875,6 +1017,26 @@ export default function SchemaPanel({
   const [family, setFamily] = useState<(DiscoverCandidate & { parentCount: number; childCount: number })[] | null>(null);
   const [familyBusy, setFamilyBusy] = useState(false);
 
+  // Org hostname for per-org snapshot scoping. Lives up here so notes +
+  // inbox writers below can persist against it.
+  const orgDomain = useMemo(() => {
+    try {
+      return new URL(instanceUrl).hostname;
+    } catch {
+      return "";
+    }
+  }, [instanceUrl]);
+
+  useEffect(() => {
+    if (!orgDomain) {
+      setSnapshots([]);
+      return;
+    }
+    listSnapshotsByOrg(orgDomain)
+      .then(setSnapshots)
+      .catch(() => setSnapshots([]));
+  }, [orgDomain]);
+
   // ── Design notes (per org, autosaved): canvas-level markdown shared by ERD
   // + Graph, plus per-entity notes with TODO flags. Snapshots capture notes.
   // Lives up here so the element memos below can inject note flags.
@@ -883,6 +1045,8 @@ export default function SchemaPanel({
     todo: boolean;
     done: boolean;
     updatedAt: number;
+    /** Optional lifecycle/anchor metadata - absent on legacy notes. */
+    meta?: InboxMeta;
   }
   interface CanvasNotesData {
     text: string;
@@ -964,6 +1128,142 @@ export default function SchemaPanel({
     setNoteEntity(null);
   }, [touchNotes]);
 
+  // ── Inbox lifecycle writers (Phase 2): meta merges onto the canonical
+  // entity/snapshot records with history entries. Legacy todo/done flags
+  // stay meaningful: kind task ↔ todo, done ↔ resolved.
+  const appendHistory = (h: InboxHistoryEntry[] | undefined, what: string): InboxHistoryEntry[] =>
+    [...(h ?? []), { at: Date.now(), what }].slice(-50);
+
+  /** Current baseline for an anchor against live describes (null = unresolvable). */
+  const baselineFor = useCallback((api: string, anchor?: InboxAnchor): { fingerprint: InboxFingerprint; anchorFacts: AnchorFacts } | null => {
+    const a = anchor ?? { type: "entity" as const, id: api };
+    if (a.type === "field" || a.type === "relationship") {
+      const dot = a.id.indexOf(".");
+      const d = dot > 0 ? describes.get(a.id.slice(0, dot)) : undefined;
+      const field = d?.fields.find((f) => f.name === (dot > 0 ? a.id.slice(dot + 1) : a.id));
+      if (!field) return null;
+      const facts = {
+        kind: "field" as const,
+        type: field.type,
+        required: !field.nillable && !field.defaultedOnCreate,
+        referenceTo: [...(field.referenceTo ?? [])].sort(),
+        label: field.label,
+      };
+      return { fingerprint: { value: fingerprintField({ name: field.name, ...facts }), at: Date.now() }, anchorFacts: facts };
+    }
+    const d = describes.get(a.id);
+    if (!d) return null;
+    const facts = {
+      kind: "entity" as const,
+      fieldNames: [...d.fields.map((f) => f.name)].sort(),
+      childNames: [...new Set((d.childRelationships ?? []).map((r) => r.childSObject).filter(Boolean))].sort(),
+    };
+    return { fingerprint: { value: fingerprintEntity({ apiName: a.id, fieldCount: d.fields.length, fieldNames: facts.fieldNames, childNames: facts.childNames }), at: Date.now() }, anchorFacts: facts };
+  }, [describes]);
+
+  const setEntityMeta = useCallback((api: string, patch: Partial<InboxMeta>, what: string) => {
+    const baseline = patch.anchor ? baselineFor(api, patch.anchor) : null;
+    setEntityNotes((prev) => {
+      const cur = prev[api] ?? { text: "", todo: false, done: false, updatedAt: Date.now() };
+      const meta: InboxMeta = { ...(cur.meta ?? {}), ...patch };
+      if (baseline) {
+        meta.fingerprint = baseline.fingerprint;
+        meta.anchorFacts = baseline.anchorFacts;
+      } else if (!meta.fingerprint && !patch.fingerprint) {
+        const initial = baselineFor(api, meta.anchor ?? { type: "entity", id: api });
+        if (initial) {
+          meta.fingerprint = initial.fingerprint;
+          meta.anchorFacts = initial.anchorFacts;
+        }
+      }
+      meta.history = appendHistory(meta.history, what);
+      const next: EntityNote = { ...cur, meta, updatedAt: Date.now() };
+      // Keep legacy flags consistent with kind/status (documented mapping).
+      if (patch.kind === "task") next.todo = true;
+      if (patch.kind === "note") next.todo = false;
+      if (patch.status === "resolved") next.done = true;
+      if (patch.status === "open" || patch.status === "in-progress") next.done = false;
+      return { ...prev, [api]: next };
+    });
+    touchNotes();
+  }, [baselineFor, touchNotes]);
+
+  const setSnapshotNoteMeta = useCallback((snapshotId: string, patch: Partial<InboxMeta>, what: string) => {
+    const target = snapshots.find((s) => s.id === snapshotId);
+    if (!target) return;
+    const baseline = patch.anchor ? baselineFor(target.root, patch.anchor) : null;
+    const meta: InboxMeta = { ...(target.noteMeta ?? {}), ...patch };
+    if (baseline) {
+      meta.fingerprint = baseline.fingerprint;
+      meta.anchorFacts = baseline.anchorFacts;
+    }
+    meta.history = appendHistory(meta.history, what);
+    void (async () => {
+      try {
+        await persistSnapshot({ ...target, noteMeta: meta });
+        setSnapshots(await listSnapshotsByOrg(orgDomain));
+      } catch {
+        setError("Couldn't save metadata (IndexedDB unavailable).");
+      }
+    })();
+  }, [snapshots, orgDomain, baselineFor]);
+
+  /** Compare stored baseline facts with live schema for the review UI. */
+  const getAnchorReview = useCallback((item: ArchitectureInboxItem): { diffs: string[]; liveAvailable: boolean } | null => {
+    const a = item.anchor;
+    if (a.type !== "entity" && a.type !== "field" && a.type !== "relationship") return null;
+    const facts = item.anchorFacts;
+    if (!facts) return { diffs: [], liveAvailable: false };
+    if (facts.kind === "field") {
+      const dot = a.id.indexOf(".");
+      const d = dot > 0 ? describes.get(a.id.slice(0, dot)) : undefined;
+      const field = d?.fields.find((f) => f.name === (dot > 0 ? a.id.slice(dot + 1) : a.id));
+      if (!field) return { diffs: ["Anchor target no longer exists in the live schema."], liveAvailable: false };
+      return {
+        liveAvailable: true,
+        diffs: diffFieldFacts(facts, {
+          name: field.name, type: field.type,
+          required: !field.nillable && !field.defaultedOnCreate,
+          referenceTo: field.referenceTo ?? [], label: field.label,
+        }),
+      };
+    }
+    const d = describes.get(a.id);
+    if (!d) return { diffs: ["Anchor target no longer exists in the live schema."], liveAvailable: false };
+    return {
+      liveAvailable: true,
+      diffs: diffEntityFacts(facts, {
+        apiName: a.id, fieldCount: d.fields.length,
+        fieldNames: d.fields.map((f) => f.name),
+        childNames: [...new Set((d.childRelationships ?? []).map((r) => r.childSObject).filter(Boolean))],
+      }),
+    };
+  }, [describes]);
+
+  /** Accept the live schema as the new baseline (explicit architect action). */
+  const acceptAnchorReview = useCallback((id: string) => {
+    const baselineOf = (api: string, anchor: InboxAnchor) => baselineFor(api, anchor);
+    if (id === "live-canvas") return;
+    if (id.startsWith("live-entity-")) {
+      const api = id.slice("live-entity-".length);
+      const cur = entityNotes[api];
+      const anchor = cur?.meta?.anchor ?? { type: "entity" as const, id: api };
+      const baseline = baselineOf(api, anchor);
+      if (!baseline) return;
+      setEntityMeta(api, { fingerprint: baseline.fingerprint, anchorFacts: baseline.anchorFacts }, "Anchor reviewed - new baseline accepted");
+      return;
+    }
+    if (id.startsWith("snap-")) {
+      const s = snapshots.find((x) => x.id === id.slice(5));
+      if (!s) return;
+      const anchor = s.noteMeta?.anchor ?? { type: "canvas" as const, id: s.id };
+      if (anchor.type === "canvas") return;
+      const baseline = baselineOf(s.root, anchor);
+      if (!baseline) return;
+      setSnapshotNoteMeta(s.id, { fingerprint: baseline.fingerprint, anchorFacts: baseline.anchorFacts }, "Anchor reviewed - new baseline accepted");
+    }
+  }, [entityNotes, snapshots, baselineFor, setEntityMeta, setSnapshotNoteMeta]);
+
   const openTodos = useMemo(
     () =>
       Object.entries(entityNotes)
@@ -1000,24 +1300,6 @@ export default function SchemaPanel({
     }
     return out;
   }, [describes, rootName, hideSystem, systemAllow, filterMode, hiddenIds, isCustomName]);
-
-  const orgDomain = useMemo(() => {
-    try {
-      return new URL(instanceUrl).hostname;
-    } catch {
-      return "";
-    }
-  }, [instanceUrl]);
-
-  useEffect(() => {
-    if (!orgDomain) {
-      setSnapshots([]);
-      return;
-    }
-    listSnapshotsByOrg(orgDomain)
-      .then(setSnapshots)
-      .catch(() => setSnapshots([]));
-  }, [orgDomain]);
 
   // Popover values come from live describes - drop it if metadata changes underneath
   useEffect(() => {
@@ -1891,8 +2173,28 @@ export default function SchemaPanel({
       labels,
     });
     const fromSnaps = snapshots.flatMap((s) => normalizeSnapshotNotes({ snapshot: s, orgScopeId: orgKey }));
-    const known = new Set<string>([...describes.keys(), ...objects.map((o) => o.name)]);
-    return resolveStale([...live, ...fromSnaps], known);
+    // Live schema knowledge for staleness: known apis + per-entity/field facts.
+    const knownApis = new Set<string>([...describes.keys(), ...objects.map((o) => o.name)]);
+    const entities = new Map<string, EntityFacts>();
+    const fields = new Map<string, FieldFacts>();
+    for (const [api, d] of describes) {
+      entities.set(api, {
+        apiName: api,
+        fieldCount: d.fields.length,
+        fieldNames: d.fields.map((f) => f.name),
+        childNames: [...new Set((d.childRelationships ?? []).map((r) => r.childSObject).filter(Boolean))],
+      });
+      for (const f of d.fields) {
+        fields.set(`${api}.${f.name}`, {
+          name: f.name,
+          type: f.type,
+          required: !f.nillable && !f.defaultedOnCreate,
+          referenceTo: f.referenceTo ?? [],
+          label: f.label,
+        });
+      }
+    }
+    return resolveStale([...live, ...fromSnaps], { knownApis, entities, fields });
   }, [orgKey, notesText, notesSavedAt, entityNotes, labels, snapshots, describes, objects]);
   const inboxCounts = useMemo(() => countInbox(inboxItems), [inboxItems]);
   const inboxCanvases = useMemo(() => {
@@ -1932,6 +2234,18 @@ export default function SchemaPanel({
       setEntityNoteFlag(id.slice("live-entity-".length), { done });
     }
   }, [setEntityNoteFlag]);
+
+  /** Unified lifecycle writer: routes kind/status/owner metadata to the
+   * canonical entity or snapshot record with history. Canvas text has none. */
+  const inboxUpdateMeta = useCallback((id: string, patch: Partial<InboxMeta>, what: string) => {
+    if (id.startsWith("live-entity-")) {
+      setEntityMeta(id.slice("live-entity-".length), patch, what);
+      return;
+    }
+    if (id.startsWith("snap-")) {
+      setSnapshotNoteMeta(id.slice(5), patch, what);
+    }
+  }, [setEntityMeta, setSnapshotNoteMeta]);
 
   const inboxDelete = useCallback((id: string) => {
     if (id === "live-canvas") {
@@ -3796,13 +4110,20 @@ export default function SchemaPanel({
                 apiName={noteEntity}
                 note={entityNotes[noteEntity] ?? null}
                 tab={notesTab}
+                fields={(describes.get(noteEntity)?.fields ?? []).map((f) => ({ name: f.name, label: f.label, type: f.type, referenceTo: f.referenceTo ?? [] }))}
                 onText={(text) => setEntityNoteText(noteEntity, text)}
                 onToggleTask={(idx) => {
                   const cur = entityNotes[noteEntity]?.text ?? "";
                   setEntityNoteText(noteEntity, toggleTaskLine(cur, idx));
                 }}
-                onTodo={(todo) => setEntityNoteFlag(noteEntity, { todo })}
-                onDone={(done) => setEntityNoteFlag(noteEntity, { done })}
+                onMeta={(patch, what) => setEntityMeta(noteEntity, patch, what)}
+                onAnchor={(anchor) => {
+                  if (!anchor) {
+                    setEntityMeta(noteEntity, { anchor: { type: "entity", id: noteEntity } }, "Anchor reset to object");
+                    return;
+                  }
+                  setEntityMeta(noteEntity, { anchor }, `Anchor set to ${anchor.id}`);
+                }}
                 onBack={() => setNoteEntity(null)}
                 onClear={() => clearEntityNote(noteEntity)}
               />
@@ -3890,6 +4211,9 @@ export default function SchemaPanel({
         onSetTaskDone={inboxSetTaskDone}
         onDelete={inboxDelete}
         onNavigate={inboxNavigate}
+        onUpdateMeta={inboxUpdateMeta}
+        getAnchorReview={getAnchorReview}
+        onAcceptAnchor={acceptAnchorReview}
       />
 
       {/* Picklist inspector */}

@@ -12,9 +12,12 @@ export interface ErdSnapshot {
   positions: Record<string, { x: number; y: number }>;
   /** Design notes captured with the snapshot (markdown). */
   notes?: string;
+  /** Optional lifecycle/anchor metadata for the attached notes. */
+  noteMeta?: InboxMeta;
 }
 
 import { STORES, withStore } from "@/lib/db";
+import type { InboxMeta } from "@/lib/inbox/types";
 
 const STORE = STORES.erdSnapshots;
 const MAX_PER_ORG = 20;

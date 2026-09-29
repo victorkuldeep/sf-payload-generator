@@ -17,6 +17,7 @@ const item = (over: Partial<ArchitectureInboxItem> = {}): ArchitectureInboxItem 
   createdAt: 1000,
   updatedAt: 2000,
   stale: "ok",
+  history: [],
   provenance: { source: "live-entity" },
   ...over,
 });

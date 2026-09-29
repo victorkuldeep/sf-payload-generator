@@ -11,15 +11,55 @@ export type InboxItemKind = "note" | "task" | "question" | "decision";
 
 export type InboxStatus = "open" | "in-progress" | "resolved";
 
+export type InboxPriority = "low" | "normal" | "high" | "critical";
+
+export type DecisionState = "proposed" | "confirmed" | "rejected" | "superseded";
+
 export type AnchorType = "canvas" | "entity" | "field" | "relationship";
 
-export type StaleState = "ok" | "missing" | "unknown";
+export type StaleState = "ok" | "missing" | "changed" | "unknown";
 
 export interface InboxAnchor {
   type: AnchorType;
   /** Stable API name / canvas id - never a display label alone. */
   id: string;
   labelAtCreation?: string;
+}
+
+/** Meaningful-change log entry. Never keystrokes - explicit actions only. */
+export interface InboxHistoryEntry {
+  at: number;
+  what: string;
+}
+
+/** Baseline schema facts captured when an anchor is created or reviewed. */
+export type AnchorFacts =
+  | { kind: "field"; type: string; required: boolean; referenceTo: string[]; label: string }
+  | { kind: "entity"; fieldNames: string[]; childNames: string[] };
+
+/** Stored hash + timestamp of the baseline facts. */
+export interface InboxFingerprint {
+  value: string;
+  at: number;
+}
+
+/**
+ * Optional lifecycle/anchor metadata layered onto existing records.
+ * Everything optional - legacy records without meta keep working.
+ */
+export interface InboxMeta {
+  kind?: InboxItemKind;
+  status?: InboxStatus;
+  owner?: string;
+  team?: string;
+  priority?: InboxPriority;
+  dueDate?: string;
+  resolution?: string;
+  decisionState?: DecisionState;
+  anchor?: InboxAnchor;
+  fingerprint?: InboxFingerprint;
+  anchorFacts?: AnchorFacts;
+  history?: InboxHistoryEntry[];
 }
 
 export interface ArchitectureInboxItem {
@@ -37,6 +77,15 @@ export interface ArchitectureInboxItem {
   createdAt: number;
   updatedAt: number;
   stale: StaleState;
+  owner?: string;
+  team?: string;
+  priority?: InboxPriority;
+  dueDate?: string;
+  resolution?: string;
+  decisionState?: DecisionState;
+  fingerprint?: InboxFingerprint;
+  anchorFacts?: AnchorFacts;
+  history: InboxHistoryEntry[];
   provenance: {
     source: "live-canvas" | "live-entity" | "snapshot";
     snapshotId?: string;

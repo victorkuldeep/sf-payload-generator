@@ -82,7 +82,8 @@ describe("inbox normalization", () => {
   });
 
   it("resolves entity staleness against known apis, never guesses", () => {
-    const items = resolveStale(normalizeLiveNotes(liveInput), new Set(["Lead"]));
+    const ctx = { knownApis: new Set(["Lead"]), entities: new Map(), fields: new Map() };
+    const items = resolveStale(normalizeLiveNotes(liveInput), ctx);
     const byId = new Map(items.map((i) => [i.id, i]));
     expect(byId.get("live-entity-Lead")?.stale).toBe("ok");
     expect(byId.get("live-entity-Quote__c")?.stale).toBe("missing");
@@ -90,8 +91,49 @@ describe("inbox normalization", () => {
     expect(byId.get("live-canvas")?.stale).toBe("ok");
   });
 
+  it("marks changed when the stored fingerprint drifts from live facts", () => {
+    const withFp = {
+      ...liveInput,
+      text: "",
+      entities: {
+        Lead: { text: "x", todo: false, done: false, updatedAt: 1, meta: { fingerprint: { value: "e:stale", at: 1 } } },
+      },
+    };
+    const ctx = {
+      knownApis: new Set(["Lead"]),
+      entities: new Map([["Lead", { apiName: "Lead", fieldCount: 1, fieldNames: ["Id"], childNames: [] }]]),
+      fields: new Map(),
+    };
+    const items = resolveStale(normalizeLiveNotes(withFp), ctx);
+    expect(items[0].stale).toBe("changed");
+  });
+
+  it("honors explicit kind/status/owner metadata without rewriting legacy flags", () => {
+    const withMeta = {
+      ...liveInput,
+      text: "",
+      entities: {
+        Lead: {
+          text: "Should we?", todo: false, done: false, updatedAt: 1,
+          meta: { kind: "question" as const, owner: "Asha", team: "Integ", priority: "high" as const },
+        },
+      },
+    };
+    const items = normalizeLiveNotes(withMeta);
+    expect(items[0].kind).toBe("question");
+    expect(items[0].status).toBe("open");
+    expect(items[0].owner).toBe("Asha");
+    expect(items[0].team).toBe("Integ");
+    expect(items[0].history).toEqual([]);
+  });
+
   it("filters with AND semantics, case-insensitive", () => {
-    const items = resolveStale(normalizeLiveNotes(liveInput), new Set(["Lead", "Quote__c", "Account"]));
+    const ctx = {
+      knownApis: new Set(["Lead", "Quote__c", "Account"]),
+      entities: new Map(),
+      fields: new Map(),
+    };
+    const items = resolveStale(normalizeLiveNotes(liveInput), ctx);
     expect(queryInbox(items, { ...EMPTY_QUERY, text: "lead conversion" })).toHaveLength(1);
     expect(queryInbox(items, { ...EMPTY_QUERY, kinds: ["task"] })).toHaveLength(2);
     expect(queryInbox(items, { ...EMPTY_QUERY, statuses: ["resolved"] })).toHaveLength(1);
@@ -99,7 +141,12 @@ describe("inbox normalization", () => {
   });
 
   it("sorts open tasks before notes, then by recency, ties by id", () => {
-    const items = resolveStale(normalizeLiveNotes(liveInput), new Set(["Lead", "Quote__c", "Account"]));
+    const ctx = {
+      knownApis: new Set(["Lead", "Quote__c", "Account"]),
+      entities: new Map(),
+      fields: new Map(),
+    };
+    const items = resolveStale(normalizeLiveNotes(liveInput), ctx);
     const sorted = queryInbox(items, EMPTY_QUERY).map((i) => i.id);
     // open task first, then open notes (canvas note updatedAt 1000 < Account 4000)
     expect(sorted[0]).toBe("live-entity-Lead");
@@ -107,7 +154,8 @@ describe("inbox normalization", () => {
   });
 
   it("counts with the same semantics as the list", () => {
-    const items = resolveStale(normalizeLiveNotes(liveInput), new Set(["Lead"]));
+    const ctx = { knownApis: new Set(["Lead"]), entities: new Map(), fields: new Map() };
+    const items = resolveStale(normalizeLiveNotes(liveInput), ctx);
     const c = countInbox(items);
     expect(c.total).toBe(4);
     expect(c.open).toBe(3);

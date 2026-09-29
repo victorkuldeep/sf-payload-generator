@@ -10,20 +10,46 @@
  * - canvas markdown / snapshot notes -> kind "note" (never inferred as task)
  */
 
-import type { ArchitectureInboxItem, InboxQuery, StaleState } from "./types";
+import type {
+  ArchitectureInboxItem,
+  InboxMeta,
+  InboxQuery,
+  StaleState,
+} from "./types";
 import type { ErdSnapshot } from "@/lib/erd/snapshotDb";
+import { fingerprintEntity, fingerprintField, type EntityFacts, type FieldFacts } from "./schemaReview";
+
+export interface EntityNoteInput {
+  text: string;
+  todo: boolean;
+  done: boolean;
+  updatedAt: number;
+  meta?: InboxMeta;
+}
 
 export interface LiveNotesInput {
   orgScopeId: string;
   text: string;
   updatedAt: number | null;
-  entities: Record<string, { text: string; todo: boolean; done: boolean; updatedAt: number }>;
+  entities: Record<string, EntityNoteInput>;
   labels: Map<string, string>;
 }
 
+export interface SnapshotMetaInput {
+  notes?: string;
+  meta?: InboxMeta;
+}
+
 export interface SnapshotInput {
-  snapshot: ErdSnapshot;
+  snapshot: ErdSnapshot & { noteMeta?: InboxMeta };
   orgScopeId: string;
+}
+
+/** Live schema knowledge for staleness resolution. Pure data, no fetching. */
+export interface StaleContext {
+  knownApis: Set<string>;
+  entities: Map<string, EntityFacts>;
+  fields: Map<string, FieldFacts>;
 }
 
 function firstLine(text: string, max = 90): string {
@@ -49,25 +75,36 @@ export function normalizeLiveNotes(input: LiveNotesInput): ArchitectureInboxItem
       createdAt: updatedAt ?? Date.now(),
       updatedAt: updatedAt ?? Date.now(),
       stale: "ok",
+      history: [],
       provenance: { source: "live-canvas" },
     });
   }
   for (const [api, n] of Object.entries(entities)) {
-    if (!n.text.trim() && !n.todo) continue;
-    const isTask = n.todo;
+    if (!n.text.trim() && !n.todo && !n.meta) continue;
+    const meta = n.meta ?? {};
+    const kind = meta.kind ?? (n.todo ? "task" : "note");
     items.push({
       id: `live-entity-${api}`,
       orgScopeId,
       canvasId: "live",
       canvasName: "Live canvas",
-      kind: isTask ? "task" : "note",
-      status: n.done ? "resolved" : "open",
+      kind,
+      status: n.done ? "resolved" : (meta.status ?? "open"),
       title: labels.get(api) ?? api,
       body: n.text,
-      anchor: { type: "entity", id: api, labelAtCreation: labels.get(api) },
+      anchor: meta.anchor ?? { type: "entity", id: api, labelAtCreation: labels.get(api) },
       createdAt: n.updatedAt,
       updatedAt: n.updatedAt,
       stale: "unknown",
+      owner: meta.owner,
+      team: meta.team,
+      priority: meta.priority,
+      dueDate: meta.dueDate,
+      resolution: meta.resolution,
+      decisionState: meta.decisionState,
+      fingerprint: meta.fingerprint,
+      anchorFacts: meta.anchorFacts,
+      history: meta.history ?? [],
       provenance: { source: "live-entity" },
     });
   }
@@ -77,20 +114,30 @@ export function normalizeLiveNotes(input: LiveNotesInput): ArchitectureInboxItem
 export function normalizeSnapshotNotes(input: SnapshotInput): ArchitectureInboxItem[] {
   const { snapshot, orgScopeId } = input;
   if (!snapshot.notes?.trim()) return [];
+  const meta = snapshot.noteMeta ?? {};
   return [
     {
       id: `snap-${snapshot.id}`,
       orgScopeId,
       canvasId: snapshot.id,
       canvasName: snapshot.name,
-      kind: "note",
-      status: "open",
+      kind: meta.kind ?? "note",
+      status: meta.status ?? "open",
       title: `Snapshot notes - ${snapshot.name}`,
       body: snapshot.notes,
-      anchor: { type: "canvas", id: snapshot.id, labelAtCreation: snapshot.name },
+      anchor: meta.anchor ?? { type: "canvas", id: snapshot.id, labelAtCreation: snapshot.name },
       createdAt: snapshot.createdAt,
       updatedAt: snapshot.createdAt,
       stale: "unknown",
+      owner: meta.owner,
+      team: meta.team,
+      priority: meta.priority,
+      dueDate: meta.dueDate,
+      resolution: meta.resolution,
+      decisionState: meta.decisionState,
+      fingerprint: meta.fingerprint,
+      anchorFacts: meta.anchorFacts,
+      history: meta.history ?? [],
       provenance: { source: "snapshot", snapshotId: snapshot.id },
     },
   ];
@@ -99,17 +146,30 @@ export function normalizeSnapshotNotes(input: SnapshotInput): ArchitectureInboxI
 /** Resolve "unknown" staleness against live schema knowledge. Pure. */
 export function resolveStale(
   items: ArchitectureInboxItem[],
-  knownApis: Set<string>
+  ctx: StaleContext
 ): ArchitectureInboxItem[] {
   return items.map((item) => {
     if (item.stale !== "unknown") return item;
-    let stale: StaleState = "ok";
-    if (item.anchor.type === "entity") {
-      stale = knownApis.has(item.anchor.id) ? "ok" : "missing";
-    } else if (item.anchor.type === "canvas" && item.provenance.source === "snapshot") {
-      stale = "ok";
+    const anchor = item.anchor;
+    if (anchor.type === "entity") {
+      if (!ctx.knownApis.has(anchor.id)) return { ...item, stale: "missing" as StaleState };
+      if (item.fingerprint) {
+        const live = ctx.entities.get(anchor.id);
+        if (live && fingerprintEntity(live) !== item.fingerprint.value) {
+          return { ...item, stale: "changed" as StaleState };
+        }
+      }
+      return { ...item, stale: "ok" as StaleState };
     }
-    return { ...item, stale };
+    if (anchor.type === "field" || anchor.type === "relationship") {
+      const live = ctx.fields.get(anchor.id);
+      if (!live) return { ...item, stale: "missing" as StaleState };
+      if (item.fingerprint && fingerprintField(live) !== item.fingerprint.value) {
+        return { ...item, stale: "changed" as StaleState };
+      }
+      return { ...item, stale: "ok" as StaleState };
+    }
+    return { ...item, stale: "ok" as StaleState };
   });
 }
 
@@ -117,7 +177,7 @@ function matchesQuery(item: ArchitectureInboxItem, q: InboxQuery): boolean {
   if (q.kinds.length > 0 && !q.kinds.includes(item.kind)) return false;
   if (q.statuses.length > 0 && !q.statuses.includes(item.status)) return false;
   if (q.canvases.length > 0 && !q.canvases.includes(item.canvasId)) return false;
-  if (q.staleOnly && item.stale !== "missing") return false;
+  if (q.staleOnly && item.stale !== "missing" && item.stale !== "changed") return false;
   const t = q.text.trim().toLowerCase();
   if (t) {
     const hay = `${item.title}\n${item.body}\n${item.anchor.id}\n${item.anchor.labelAtCreation ?? ""}\n${item.canvasName}`.toLowerCase();
@@ -181,7 +241,7 @@ export function countInbox(items: ArchitectureInboxItem[]): InboxCounts {
     }
     if (item.kind === "question") counts.questions++;
     if (item.kind === "decision") counts.decisions++;
-    if (item.stale === "missing") counts.stale++;
+    if (item.stale === "missing" || item.stale === "changed") counts.stale++;
   }
   return counts;
 }

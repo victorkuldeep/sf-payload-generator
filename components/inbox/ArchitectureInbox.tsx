@@ -8,7 +8,9 @@ import { compileActionPack } from "@/lib/inbox/actionPack";
 import {
   EMPTY_QUERY,
   type ArchitectureInboxItem,
+  type InboxAnchor,
   type InboxItemKind,
+  type InboxMeta,
   type InboxStatus,
 } from "@/lib/inbox/types";
 
@@ -27,6 +29,9 @@ interface ArchitectureInboxProps {
   onSetTaskDone: (id: string, done: boolean) => void;
   onDelete: (id: string) => void;
   onNavigate: (item: ArchitectureInboxItem) => void;
+  onUpdateMeta: (id: string, patch: Partial<InboxMeta>, what: string) => void;
+  getAnchorReview: (item: ArchitectureInboxItem) => AnchorReview | null;
+  onAcceptAnchor: (id: string) => void;
 }
 
 function timeAgo(ts: number): string {
@@ -55,8 +60,7 @@ function KindPill({ kind }: { kind: InboxItemKind }) {
   );
 }
 
-function StatusPill({ status }: { status: InboxStatus }) {
-  const cls =
+function StatusPill({ status }: { status: InboxStatus }) {  const cls =
     status === "resolved"
       ? "bg-green-100 text-green-800 border-green-300"
       : status === "in-progress"
@@ -66,6 +70,94 @@ function StatusPill({ status }: { status: InboxStatus }) {
     <span className={`shrink-0 rounded-full border px-1.5 py-px text-[10px] font-semibold capitalize ${cls}`}>
       {status}
     </span>
+  );
+}
+
+export interface AnchorReview {
+  diffs: string[];
+  liveAvailable: boolean;
+}
+
+function ReviewBox({
+  item,
+  review,
+  onAccept,
+  onClose,
+}: {
+  item: ArchitectureInboxItem;
+  review: AnchorReview | null;
+  onAccept: () => void;
+  onClose: () => void;
+}) {
+  if (!review) {
+    return <p className="text-[11px] text-ivory-600">Canvas anchors need no schema review.</p>;
+  }
+  if (!review.liveAvailable) {
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 px-2 py-1.5">
+        <p className="text-[11px] leading-relaxed text-red-800">
+          <span className="font-mono font-semibold">{item.anchor.id}</span> is missing from the
+          live schema. The note is preserved - navigate to the canvas for context, never auto-remapped.
+        </p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-1 text-[11px] font-semibold text-ivory-700 hover:text-ivory-950 underline cursor-pointer"
+        >
+          Dismiss
+        </button>
+      </div>
+    );
+  }
+  if (review.diffs.length === 0) {
+    return (
+      <div className="rounded-lg border border-green-300 bg-green-50 px-2 py-1.5">
+        <p className="text-[11px] text-green-800">Anchor matches the live schema - nothing changed.</p>
+        <div className="mt-1 flex gap-2">
+          <button
+            type="button"
+            onClick={onAccept}
+            className="text-[11px] font-semibold text-green-800 hover:text-green-900 underline cursor-pointer"
+          >
+            Mark reviewed
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-[11px] text-ivory-600 hover:text-ivory-950 underline cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-1.5">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-amber-800">Changed since capture</p>
+      <ul className="mt-1 space-y-0.5">
+        {review.diffs.map((d) => (
+          <li key={d} className="text-[11px] text-amber-900">· {d}</li>
+        ))}
+      </ul>
+      <div className="mt-1 flex gap-2">
+        <button
+          type="button"
+          onClick={onAccept}
+          title="Accept the live schema as the new baseline - explicit architect action"
+          className="text-[11px] font-semibold text-amber-800 hover:text-amber-900 underline cursor-pointer"
+        >
+          Accept new baseline
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-[11px] text-ivory-600 hover:text-ivory-950 underline cursor-pointer"
+        >
+          Later
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -79,6 +171,9 @@ export function ArchitectureInbox({
   onSetTaskDone,
   onDelete,
   onNavigate,
+  onUpdateMeta,
+  getAnchorReview,
+  onAcceptAnchor,
 }: ArchitectureInboxProps) {
   const [text, setText] = useState("");
   const [kinds, setKinds] = useState<InboxItemKind[]>([]);
@@ -92,6 +187,7 @@ export function ArchitectureInbox({
   const [packOpen, setPackOpen] = useState(false);
   const [packScope, setPackScope] = useState<"outstanding" | "all">("outstanding");
   const [copied, setCopied] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
 
   const filtered = useMemo(
     () => queryInbox(items, { text, kinds, statuses, canvases: canvasIds, staleOnly }),
@@ -234,7 +330,7 @@ export function ArchitectureInbox({
             spellCheck={false}
             className="min-w-[180px] flex-1 rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-2.5 py-1.5 text-xs text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
           />
-          {(["note", "task"] as InboxItemKind[]).map((k) => (
+          {(["note", "task", "question", "decision"] as InboxItemKind[]).map((k) => (
             <button
               key={k}
               type="button"
@@ -310,6 +406,7 @@ export function ArchitectureInbox({
                             setSelectedId(item.id);
                             setEditing(false);
                             setConfirmDelete(false);
+                            setReviewOpen(false);
                           }}
                           aria-current={selectedId === item.id}
                           className={`block w-full rounded-xl border p-2.5 text-left transition-colors cursor-pointer ${selectedId === item.id ? "border-bronze-500 bg-bronze-100/40" : "border-[var(--color-line)] bg-[var(--color-surface)] hover:border-bronze-400"}`}
@@ -320,6 +417,11 @@ export function ArchitectureInbox({
                             {item.stale === "missing" && (
                               <span className="shrink-0 rounded-full border border-red-300 bg-red-50 px-1.5 py-px text-[10px] font-bold text-red-700" title="Anchor missing from the current schema - review required">
                                 Stale
+                              </span>
+                            )}
+                            {item.stale === "changed" && (
+                              <span className="shrink-0 rounded-full border border-amber-300 bg-amber-50 px-1.5 py-px text-[10px] font-bold text-amber-800" title="Anchor changed since capture - review required">
+                                Changed
                               </span>
                             )}
                             <span className="ml-auto shrink-0 font-mono text-[10px] text-ivory-500">{timeAgo(item.updatedAt)}</span>
@@ -357,6 +459,170 @@ export function ArchitectureInbox({
                     Anchor <span className="font-mono font-semibold">{selected.anchor.id}</span> is missing
                     from the current schema. Review before acting - never auto-remapped.
                   </p>
+                )}
+                {selected.stale === "changed" && (
+                  <p className="mt-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] leading-relaxed text-amber-800">
+                    Anchor <span className="font-mono font-semibold">{selected.anchor.id}</span> changed
+                    since capture. Review the diff below before acting.
+                  </p>
+                )}
+              </div>
+              {/* Anchor + review */}
+              <div className="border-b border-[var(--color-line-soft)] px-3 py-2">
+                <p className="font-mono text-[10px] text-ivory-600">
+                  {selected.anchor.type} · {selected.anchor.id}
+                  {selected.anchor.labelAtCreation && selected.anchor.labelAtCreation !== selected.anchor.id
+                    ? ` (${selected.anchor.labelAtCreation})`
+                    : ""}
+                </p>
+                {(selected.anchor.type === "entity" || selected.anchor.type === "field" || selected.anchor.type === "relationship") && (
+                  <div className="mt-1.5">
+                    {!reviewOpen ? (
+                      <button
+                        type="button"
+                        onClick={() => setReviewOpen(true)}
+                        className="text-[11px] font-semibold text-bronze-600 hover:text-bronze-700 underline cursor-pointer"
+                      >
+                        Review anchor against live schema
+                      </button>
+                    ) : (
+                      <ReviewBox
+                        item={selected}
+                        review={getAnchorReview(selected)}
+                        onAccept={() => {
+                          onAcceptAnchor(selected.id);
+                          setReviewOpen(false);
+                        }}
+                        onClose={() => setReviewOpen(false)}
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+              {/* Lifecycle */}
+              <div className="border-b border-[var(--color-line-soft)] px-3 py-2">
+                <div className="grid grid-cols-2 gap-1.5">
+                  <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+                    Kind
+                    <select
+                      value={selected.kind}
+                      onChange={(e) => onUpdateMeta(selected.id, { kind: e.target.value as InboxItemKind }, `Kind set to ${e.target.value}`)}
+                      className="mt-0.5 w-full rounded-lg border border-[var(--color-line)] bg-white px-1.5 py-1 text-xs font-medium normal-case tracking-normal text-ivory-950 cursor-pointer"
+                    >
+                      <option value="note">Note</option>
+                      <option value="task">Task</option>
+                      <option value="question">Question</option>
+                      <option value="decision">Decision</option>
+                    </select>
+                  </label>
+                  <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+                    Status
+                    <select
+                      value={selected.status}
+                      onChange={(e) => {
+                        const v = e.target.value as InboxStatus;
+                        if (selected.kind === "task" && (v === "resolved" || selected.status === "resolved")) {
+                          onSetTaskDone(selected.id, v === "resolved");
+                        } else {
+                          onUpdateMeta(selected.id, { status: v }, `Status set to ${v}`);
+                        }
+                      }}
+                      className="mt-0.5 w-full rounded-lg border border-[var(--color-line)] bg-white px-1.5 py-1 text-xs font-medium normal-case tracking-normal text-ivory-950 cursor-pointer"
+                    >
+                      <option value="open">Open</option>
+                      <option value="in-progress">In progress</option>
+                      <option value="resolved">Resolved</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                  <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+                    Owner
+                    <input
+                      value={selected.owner ?? ""}
+                      onChange={(e) => onUpdateMeta(selected.id, { owner: e.target.value.trim() || undefined }, e.target.value.trim() ? `Owner set to ${e.target.value.trim()}` : "Owner cleared")}
+                      placeholder="—"
+                      spellCheck={false}
+                      className="mt-0.5 w-full rounded-lg border border-[var(--color-line)] bg-white px-1.5 py-1 text-xs normal-case tracking-normal text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+                    />
+                  </label>
+                  <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+                    Team
+                    <input
+                      value={selected.team ?? ""}
+                      onChange={(e) => onUpdateMeta(selected.id, { team: e.target.value.trim() || undefined }, e.target.value.trim() ? `Team set to ${e.target.value.trim()}` : "Team cleared")}
+                      placeholder="—"
+                      spellCheck={false}
+                      className="mt-0.5 w-full rounded-lg border border-[var(--color-line)] bg-white px-1.5 py-1 text-xs normal-case tracking-normal text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+                    />
+                  </label>
+                </div>
+                <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                  <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+                    Priority
+                    <select
+                      value={selected.priority ?? ""}
+                      onChange={(e) => onUpdateMeta(selected.id, { priority: (e.target.value || undefined) as InboxMeta["priority"] }, e.target.value ? `Priority set to ${e.target.value}` : "Priority cleared")}
+                      className="mt-0.5 w-full rounded-lg border border-[var(--color-line)] bg-white px-1.5 py-1 text-xs font-medium normal-case tracking-normal text-ivory-950 cursor-pointer"
+                    >
+                      <option value="">—</option>
+                      <option value="low">Low</option>
+                      <option value="normal">Normal</option>
+                      <option value="high">High</option>
+                      <option value="critical">Critical</option>
+                    </select>
+                  </label>
+                  <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+                    Due
+                    <input
+                      type="date"
+                      value={selected.dueDate ?? ""}
+                      onChange={(e) => onUpdateMeta(selected.id, { dueDate: e.target.value || undefined }, e.target.value ? `Due date set to ${e.target.value}` : "Due date cleared")}
+                      className="mt-0.5 w-full rounded-lg border border-[var(--color-line)] bg-white px-1.5 py-1 text-xs normal-case tracking-normal text-ivory-950 cursor-pointer"
+                    />
+                  </label>
+                </div>
+                {selected.kind === "decision" && (
+                  <label className="mt-1.5 block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+                    Decision state
+                    <select
+                      value={selected.decisionState ?? "proposed"}
+                      onChange={(e) => onUpdateMeta(selected.id, { decisionState: e.target.value as InboxMeta["decisionState"] }, `Decision ${e.target.value}`)}
+                      className="mt-0.5 w-full rounded-lg border border-[var(--color-line)] bg-white px-1.5 py-1 text-xs font-medium normal-case tracking-normal text-ivory-950 cursor-pointer"
+                    >
+                      <option value="proposed">Proposed</option>
+                      <option value="confirmed">Confirmed</option>
+                      <option value="rejected">Rejected</option>
+                      <option value="superseded">Superseded</option>
+                    </select>
+                  </label>
+                )}
+                {(selected.status === "resolved" || selected.kind === "question" || selected.kind === "decision") && (
+                  <label className="mt-1.5 block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+                    {selected.kind === "question" ? "Answer / resolution" : "Resolution"}
+                    <textarea
+                      value={selected.resolution ?? ""}
+                      onChange={(e) => onUpdateMeta(selected.id, { resolution: e.target.value || undefined }, "Resolution updated")}
+                      rows={2}
+                      spellCheck={false}
+                      placeholder="—"
+                      className="mt-0.5 w-full resize-y rounded-lg border border-[var(--color-line)] bg-white p-1.5 text-xs normal-case tracking-normal text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+                    />
+                  </label>
+                )}
+                {selected.history.length > 0 && (
+                  <details className="mt-1.5">
+                    <summary className="cursor-pointer text-[11px] font-semibold text-ivory-700 hover:text-ivory-950">
+                      History ({selected.history.length})
+                    </summary>
+                    <ul className="mt-1 space-y-0.5">
+                      {[...selected.history].reverse().map((h, i) => (
+                        <li key={`${h.at}-${i}`} className="text-[11px] text-ivory-700">
+                          <span className="font-mono text-[10px] text-ivory-500">{timeAgo(h.at)}</span> — {h.what}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
                 )}
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto p-3">
