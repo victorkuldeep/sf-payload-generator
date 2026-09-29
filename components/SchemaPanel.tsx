@@ -2970,6 +2970,28 @@ export default function SchemaPanel({
                   <Button size="sm" variant="secondary" onClick={() => void restoreSaved()} disabled={!!busy || !orgKey} title="Reload the autosaved canvas for this org - the same workspace restore that runs on connect, on demand">
                     Restore saved
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      setNoteEntity(null);
+                      setNotesOpen((v) => !v);
+                    }}
+                    title="Canvas design notes - markdown, autosaved per org, attaches to snapshots"
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                        <path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3Z" />
+                        <path d="m13.5 6.5 3 3" />
+                      </svg>
+                      {notesOpen ? "Hide notes" : "Design notes"}
+                      {openTodos.length > 0 && (
+                        <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+                          {openTodos.length}
+                        </span>
+                      )}
+                    </span>
+                  </Button>
                   <div className="flex gap-1.5">
                     <Button size="sm" variant="ghost" onClick={removeNode} disabled={!focusName || focusName === rootName || !!busy} className="flex-1" title="Remove the focused object from the canvas">
                       Remove
