@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Button from "../ui/Button";
 import { apiFetch } from "@/lib/api";
 import { shareStructureBytes, type ShareStructure } from "@/lib/erd/shareLink";
@@ -26,6 +26,28 @@ export function ShareDialog({
   const [error, setError] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [backendDown, setBackendDown] = useState<boolean | null>(null);
+
+  // Probe backend status on open: a missing KV binding (added in dashboard
+  // but not yet deployed) must read as guidance, not a failed attempt.
+  useEffect(() => {
+    if (!open) return;
+    setBackendDown(null);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await fetch("/api/share/health");
+        const text = await r.text();
+        const data = JSON.parse(text) as { kv?: boolean };
+        if (!cancelled) setBackendDown(data.kv !== true);
+      } catch {
+        if (!cancelled) setBackendDown(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open ]);
 
   const bytes = useMemo(
     () => (open ? shareStructureBytes(getStructure(includeNotes)) : 0),
@@ -40,7 +62,19 @@ export function ShareDialog({
     setError(null);
     try {
       const response = await apiFetch("/api/share", getStructure(includeNotes), 30000);
-      const data = (await response.json()) as { id?: string; error?: string };
+      // Read text first: a crashed worker returns an empty body, and
+      // response.json() on it throws a useless parse error. Surface status.
+      const text = await response.text();
+      let data: { id?: string; error?: string };
+      try {
+        data = JSON.parse(text) as { id?: string; error?: string };
+      } catch {
+        throw new Error(
+          response.ok
+            ? "Share backend returned an unreadable response - check Observability logs."
+            : `Share backend failed (HTTP ${response.status}) - check Observability logs.`
+        );
+      }
       if (!response.ok || !data.id) {
         throw new Error(typeof data.error === "string" ? data.error : "Could not create share link.");
       }
@@ -89,6 +123,12 @@ export function ShareDialog({
                   <span className="block text-[11px] text-ivory-600">Off by default - meeting notes can hold anything.</span>
                 </span>
               </label>
+              {backendDown === true && (
+                <p className="mt-2.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-800" role="status">
+                  Share backend not connected on this deployment - add the SHARE_KV binding in
+                  Cloudflare Settings → Bindings, then redeploy.
+                </p>
+              )}
               {error && (
                 <p className="mt-2.5 rounded-lg border border-red-300 bg-red-50 px-2.5 py-2 text-xs text-red-700" role="alert">
                   {error}

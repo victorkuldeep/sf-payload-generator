@@ -11,6 +11,14 @@ import { shareKv, SHARE_TTL_SECONDS } from "./store";
 
 const KEY_PREFIX = "share:";
 
+/** Backend status probe: tells the UI whether the KV binding is live on
+ * this deployment (bindings attach at deploy time - adding one in the
+ * dashboard without redeploying still reads false here). */
+export async function GET() {
+  const kv = await shareKv();
+  return NextResponse.json({ ok: true, kv: kv !== null, now: Date.now() });
+}
+
 const shareBodySchema = z.object({
   v: z.number(),
   name: z.string().max(200).optional(),
