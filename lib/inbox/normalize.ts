@@ -12,6 +12,7 @@
 
 import type {
   ArchitectureInboxItem,
+  CanvasTodo,
   InboxMeta,
   InboxQuery,
   StaleState,
@@ -31,8 +32,7 @@ export interface LiveNotesInput {
   orgScopeId: string;
   text: string;
   updatedAt: number | null;
-  todo: boolean;
-  done: boolean;
+  todos?: CanvasTodo[];
   entities: Record<string, EntityNoteInput>;
   labels: Map<string, string>;
 }
@@ -69,14 +69,34 @@ export function normalizeLiveNotes(input: LiveNotesInput): ArchitectureInboxItem
       orgScopeId,
       canvasId: "live",
       canvasName: "Live canvas",
-      kind: input.todo ? "task" : "note",
-      status: input.done ? "resolved" : "open",
+      kind: "note",
+      status: "open",
       title: "Canvas design notes",
       body: text,
       anchor: { type: "canvas", id: "live" },
       createdAt: updatedAt ?? Date.now(),
       updatedAt: updatedAt ?? Date.now(),
       stale: "ok",
+      history: [],
+      provenance: { source: "live-canvas" },
+    });
+  }
+  for (const t of input.todos ?? []) {
+    items.push({
+      id: `live-canvas-todo-${t.id}`,
+      orgScopeId,
+      canvasId: "live",
+      canvasName: "Live canvas",
+      kind: "task",
+      status: t.status === "done" ? "resolved" : t.status,
+      title: t.title.trim() || "Untitled TODO",
+      body: t.body ?? "",
+      anchor: { type: "canvas", id: "live" },
+      createdAt: t.createdAt,
+      updatedAt: t.updatedAt,
+      stale: "ok",
+      owner: t.assignee,
+      dueDate: t.dueDate,
       history: [],
       provenance: { source: "live-canvas" },
     });

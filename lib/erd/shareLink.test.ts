@@ -34,6 +34,24 @@ describe("share link structure", () => {
     expect(validateShareStructure({ ...shape(), view: "sideways" })).toBeNull();
   });
 
+  it("round-trips canvas TODOs, sanitizing status", () => {
+    const p = validateShareStructure(shape({
+      todos: [
+        { id: "t1", title: "Verify", body: "x", assignee: "Asha", dueDate: "2026-10-05", status: "in-progress", createdAt: 1, updatedAt: 2 },
+        { id: "t2", title: "Bad", status: "weird" as "open", createdAt: 1, updatedAt: 2 },
+      ],
+    }));
+    expect(p?.todos).toHaveLength(2);
+    expect(p?.todos?.[0].status).toBe("in-progress");
+    expect(p?.todos?.[0].assignee).toBe("Asha");
+    expect(p?.todos?.[1].status).toBe("open");
+  });
+
+  it("rejects malformed todos", () => {
+    expect(validateShareStructure(shape({ todos: "nope" as unknown as ShareStructure["todos"] }))).toBeNull();
+    expect(validateShareStructure(shape({ todos: [{ title: "no id" }] as unknown as ShareStructure["todos"] }))).toBeNull();
+  });
+
   it("fills sane defaults for optional fields", () => {
     const p = validateShareStructure({ v: 1, root: "Lead", nodes: ["Lead"], positions: {} });
     expect(p?.name).toBe("Shared canvas");

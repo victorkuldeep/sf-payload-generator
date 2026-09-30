@@ -501,6 +501,12 @@ export function ArchitectureInbox({
               </div>
               {/* Lifecycle */}
               <div className="border-b border-[var(--color-line-soft)] px-3 py-2">
+                {selected.id === "live-canvas" ? (
+                  <p className="text-[11px] leading-relaxed text-ivory-600">
+                    Canvas notes stay free-form - track work as TODOs in the notes panel.
+                  </p>
+                ) : (
+                <>
                 <div className="grid grid-cols-2 gap-1.5">
                   <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
                     Kind
@@ -624,6 +630,8 @@ export function ArchitectureInbox({
                     </ul>
                   </details>
                 )}
+              </>
+              )}
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto p-3">
                 {editing ? (

@@ -51,13 +51,26 @@ describe("inbox normalization", () => {
     expect(items[0].status).toBe("open");
   });
 
-  it("maps the canvas TODO engine to task kind and done to resolved", () => {
-    const open = normalizeLiveNotes({ ...liveInput, text: "review all", entities: {}, todo: true, done: false });
-    expect(open[0].kind).toBe("task");
-    expect(open[0].status).toBe("open");
-    const done = normalizeLiveNotes({ ...liveInput, text: "review all", entities: {}, todo: true, done: true });
-    expect(done[0].kind).toBe("task");
-    expect(done[0].status).toBe("resolved");
+  it("maps canvas TODOs to individual task items with lifecycle", () => {
+    const items = normalizeLiveNotes({
+      ...liveInput,
+      text: "",
+      entities: {},
+      todos: [
+        { id: "t1", title: "Verify junction", body: "Checkea", assignee: "Asha", dueDate: "2026-10-05", status: "in-progress", createdAt: 100, updatedAt: 200 },
+        { id: "t2", title: "Old thing", status: "done", createdAt: 50, updatedAt: 60 },
+      ],
+    });
+    expect(items).toHaveLength(2);
+    const byId = new Map(items.map((i) => [i.id, i]));
+    const t1 = byId.get("live-canvas-todo-t1")!;
+    expect(t1.kind).toBe("task");
+    expect(t1.status).toBe("in-progress");
+    expect(t1.owner).toBe("Asha");
+    expect(t1.dueDate).toBe("2026-10-05");
+    expect(t1.body).toBe("Checkea");
+    expect(byId.get("live-canvas-todo-t2")?.status).toBe("resolved");
+    expect(byId.get("live-canvas-todo-t2")?.title).toBe("Old thing");
   });
 
   it("skips blank canvas text and empty non-todo entities", () => {

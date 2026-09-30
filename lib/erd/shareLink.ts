@@ -20,6 +20,16 @@ export interface ShareStructure {
   view?: "erd" | "graph";
   notes?: string;
   entityNotes?: Record<string, { text: string; todo: boolean; done: boolean; updatedAt: number }>;
+  todos?: {
+    id: string;
+    title: string;
+    body?: string;
+    assignee?: string;
+    dueDate?: string;
+    status: "open" | "in-progress" | "done";
+    createdAt: number;
+    updatedAt: number;
+  }[];
 }
 
 export function validateShareStructure(raw: unknown): ShareStructure | null {
@@ -45,6 +55,26 @@ export function validateShareStructure(raw: unknown): ShareStructure | null {
       if (!e || typeof e.text !== "string") return null;
     }
   }
+  let todos: ShareStructure["todos"];
+  if (p.todos !== undefined) {
+    if (!Array.isArray(p.todos)) return null;
+    todos = [];
+    for (const t of p.todos) {
+      const todo = t as Record<string, unknown>;
+      if (!todo || typeof todo.id !== "string" || !todo.id || typeof todo.title !== "string") return null;
+      const status = todo.status === "done" || todo.status === "in-progress" ? todo.status : "open";
+      todos.push({
+        id: todo.id,
+        title: todo.title,
+        body: typeof todo.body === "string" ? todo.body : undefined,
+        assignee: typeof todo.assignee === "string" ? todo.assignee : undefined,
+        dueDate: typeof todo.dueDate === "string" ? todo.dueDate : undefined,
+        status,
+        createdAt: typeof todo.createdAt === "number" ? todo.createdAt : Date.now(),
+        updatedAt: typeof todo.updatedAt === "number" ? todo.updatedAt : Date.now(),
+      });
+    }
+  }
   return {
     v: SHARE_LINK_VERSION,
     name: typeof p.name === "string" && p.name ? p.name : "Shared canvas",
@@ -54,6 +84,7 @@ export function validateShareStructure(raw: unknown): ShareStructure | null {
     view: p.view as ShareStructure["view"],
     notes: p.notes as string | undefined,
     entityNotes: p.entityNotes as ShareStructure["entityNotes"],
+    todos,
   };
 }
 

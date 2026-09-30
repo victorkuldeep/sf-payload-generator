@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { validateShareStructure } from "@/lib/erd/shareLink";
-import { shareKv } from "../route";
+import { shareKv } from "../store";
 
 const KEY_PREFIX = "share:";
 const ID_PATTERN = /^[a-z0-9]{16,64}$/i;

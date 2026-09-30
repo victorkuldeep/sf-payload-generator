@@ -30,7 +30,7 @@ import { validateSharePayload, shareFileName, ERD_SHARE_KIND, ERD_SHARE_VERSION,
 import { ArchitectureInbox } from "./inbox/ArchitectureInbox";
 import { normalizeLiveNotes, normalizeSnapshotNotes, resolveStale, countInbox } from "@/lib/inbox/normalize";
 import { fingerprintEntity, fingerprintField, diffFieldFacts, diffEntityFacts, type EntityFacts, type FieldFacts } from "@/lib/inbox/schemaReview";
-import type { ArchitectureInboxItem, InboxAnchor, InboxFingerprint, InboxHistoryEntry, InboxMeta, AnchorFacts } from "@/lib/inbox/types";
+import type { ArchitectureInboxItem, CanvasTodo, InboxAnchor, InboxFingerprint, InboxHistoryEntry, InboxMeta, AnchorFacts } from "@/lib/inbox/types";
 import { EmptyState } from "./EmptyState";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
@@ -710,6 +710,146 @@ function GraphDetailCardInner({  detail,
 // canvas tick would remount the card and wipe checked rows mid-selection.
 const GraphDetailCard = memo(GraphDetailCardInner);
 
+function isTodoOverdue(t: { dueDate?: string; status: string }): boolean {
+  if (!t.dueDate || t.status === "done") return false;
+  const today = new Date();
+  const ymd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  return t.dueDate < ymd;
+}
+
+// One canvas TODO: checkbox lifecycle, expandable editor (title, details,
+// assignee, due date, status), individual delete.
+function CanvasTodoCard({
+  todo,
+  expanded,
+  onToggleExpand,
+  onPatch,
+  onDelete,
+}: {
+  todo: CanvasTodo;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  onPatch: (patch: Partial<CanvasTodo>) => void;
+  onDelete: () => void;
+}) {
+  const done = todo.status === "done";
+  const overdue = isTodoOverdue(todo);
+  return (
+    <li className={`rounded-xl border bg-[var(--color-canvas)] transition-colors ${done ? "border-[var(--color-line-soft)] opacity-70" : "border-[var(--color-line)]"}`}>
+      <div className="flex items-center gap-1.5 px-2 py-1.5">
+        <button
+          type="button"
+          onClick={() => onPatch({ status: done ? "open" : "done" })}
+          role="checkbox"
+          aria-checked={done}
+          aria-label={done ? `Reopen ${todo.title || "TODO"}` : `Complete ${todo.title || "TODO"}`}
+          title={done ? "Reopen" : "Mark done"}
+          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors cursor-pointer ${done ? "bg-green-600 border-green-600 text-white" : "border-ivory-400 bg-white hover:border-green-600"}`}
+        >
+          {done && (
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" aria-hidden="true">
+              <path d="m4 12.5 5 5L20 6.5" />
+            </svg>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={onToggleExpand}
+          className="min-w-0 flex-1 truncate text-left text-xs font-semibold text-ivory-950 cursor-pointer"
+        >
+          <span className={done ? "line-through text-ivory-500" : ""}>{todo.title.trim() || "Untitled TODO"}</span>
+        </button>
+        {todo.status === "in-progress" && (
+          <span className="shrink-0 rounded-full bg-amber-100 border border-amber-300 px-1.5 py-px text-[9px] font-bold text-amber-800">
+            Active
+          </span>
+        )}
+        {todo.dueDate && (
+          <span className={`shrink-0 font-mono text-[10px] ${overdue ? "font-bold text-red-600" : "text-ivory-500"}`} title={overdue ? "Overdue" : `Due ${todo.dueDate}`}>
+            {todo.dueDate.slice(5)}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={onDelete}
+          aria-label={`Delete ${todo.title || "TODO"}`}
+          title="Delete TODO"
+          className="shrink-0 rounded p-1 text-ivory-400 hover:text-red-700 hover:bg-red-500/10 transition-colors cursor-pointer"
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+            <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-9 0 1 13h10l1-13" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={onToggleExpand}
+          aria-expanded={expanded}
+          aria-label={expanded ? "Collapse TODO editor" : "Expand TODO editor"}
+          className="shrink-0 rounded p-1 text-ivory-500 hover:text-ivory-950 transition-colors cursor-pointer"
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true" className={`transition-transform ${expanded ? "rotate-180" : ""}`}>
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </button>
+      </div>
+      {expanded && (
+        <div className="space-y-1.5 border-t border-[var(--color-line-soft)] p-2">
+          <input
+            value={todo.title}
+            onChange={(e) => onPatch({ title: e.target.value })}
+            placeholder="TODO title…"
+            aria-label="TODO title"
+            spellCheck={false}
+            className="w-full rounded-lg border border-[var(--color-line)] bg-white px-2 py-1 text-xs font-semibold text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+          />
+          <textarea
+            value={todo.body ?? ""}
+            onChange={(e) => onPatch({ body: e.target.value })}
+            placeholder="Details, acceptance, links…"
+            spellCheck={false}
+            aria-label="TODO details"
+            rows={2}
+            className="w-full resize-y rounded-lg border border-[var(--color-line)] bg-white p-2 font-mono text-[11px] leading-relaxed text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+          />
+          <div className="grid grid-cols-3 gap-1.5">
+            <label className="block text-[9px] font-semibold uppercase tracking-wider text-ivory-600">
+              Who
+              <input
+                value={todo.assignee ?? ""}
+                onChange={(e) => onPatch({ assignee: e.target.value.trim() || undefined })}
+                placeholder="—"
+                spellCheck={false}
+                className="mt-0.5 w-full rounded-lg border border-[var(--color-line)] bg-white px-1.5 py-1 text-[11px] normal-case tracking-normal text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+              />
+            </label>
+            <label className="block text-[9px] font-semibold uppercase tracking-wider text-ivory-600">
+              Due
+              <input
+                type="date"
+                value={todo.dueDate ?? ""}
+                onChange={(e) => onPatch({ dueDate: e.target.value || undefined })}
+                className="mt-0.5 w-full rounded-lg border border-[var(--color-line)] bg-white px-1.5 py-1 text-[11px] normal-case tracking-normal text-ivory-950 cursor-pointer"
+              />
+            </label>
+            <label className="block text-[9px] font-semibold uppercase tracking-wider text-ivory-600">
+              Status
+              <select
+                value={todo.status}
+                onChange={(e) => onPatch({ status: e.target.value as CanvasTodo["status"] })}
+                className="mt-0.5 w-full rounded-lg border border-[var(--color-line)] bg-white px-1.5 py-1 text-[11px] font-medium normal-case tracking-normal text-ivory-950 cursor-pointer"
+              >
+                <option value="open">Open</option>
+                <option value="in-progress">Active</option>
+                <option value="done">Done</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      )}
+    </li>
+  );
+}
+
 // Entity-scoped note editor inside the notes panel: markdown-lite + TODO/Done
 // + lifecycle (kind, status, owner, priority, anchor). Writes route through
 // onMeta so legacy todo/done flags stay consistent.
@@ -1065,15 +1205,13 @@ export default function SchemaPanel({
     text: string;
     updatedAt: number;
     entities: Record<string, EntityNote>;
-    todo: boolean;
-    done: boolean;
+    todos: CanvasTodo[];
   }
   const [notesOpen, setNotesOpen] = useState(false);
   const [notesTab, setNotesTab] = useState<"write" | "preview">("write");
   const [notesText, setNotesText] = useState("");
   const [notesSavedAt, setNotesSavedAt] = useState<number | null>(null);
-  const [canvasTodo, setCanvasTodo] = useState(false);
-  const [canvasDone, setCanvasDone] = useState(false);
+  const [canvasTodos, setCanvasTodos] = useState<CanvasTodo[]>([]);
   const [entityNotes, setEntityNotes] = useState<Record<string, EntityNote>>({});
   const [noteEntity, setNoteEntity] = useState<string | null>(null);
   const notesRestoredRef = useRef<string | null>(null);
@@ -1086,16 +1224,15 @@ export default function SchemaPanel({
       text: notesText,
       updatedAt: notesSavedAt ?? Date.now(),
       entities: entityNotes,
-      todo: canvasTodo,
-      done: canvasDone,
+      todos: canvasTodos,
     } satisfies CanvasNotesData, tabId);
-  }, [orgKey, tabId, notesText, notesSavedAt, entityNotes, canvasTodo, canvasDone]);
+  }, [orgKey, tabId, notesText, notesSavedAt, entityNotes, canvasTodos]);
 
   useEffect(() => {
     if (!orgKey || notesRestoredRef.current === orgKey) return;
     notesRestoredRef.current = orgKey;
     void (async () => {
-      const snap = await loadAutosave<CanvasNotesData>(orgKey, "notes", tabId);
+      const snap = await loadAutosave<CanvasNotesData & { todo?: boolean; done?: boolean }>(orgKey, "notes", tabId);
       const d = snap?.data;
       if (!d) return;
       if (d.text) {
@@ -1103,8 +1240,14 @@ export default function SchemaPanel({
         setNotesSavedAt(d.updatedAt ?? snap.savedAt);
       }
       if (d.entities) setEntityNotes(d.entities);
-      setCanvasTodo(!!d.todo);
-      setCanvasDone(!!d.done);
+      if (Array.isArray(d.todos)) {
+        setCanvasTodos(d.todos);
+      } else if (d.todo && d.text?.trim()) {
+        // One-time migration from the legacy single canvas TODO flag.
+        const title = d.text.split("\n").map((l) => l.trim()).find((l) => l.length > 0)?.slice(0, 80) ?? "Canvas TODO";
+        const now = Date.now();
+        setCanvasTodos([{ id: newItemId(), title, status: d.done ? "done" : "open", createdAt: now, updatedAt: now }]);
+      }
     })();
   }, [orgKey]);
 
@@ -1293,9 +1436,33 @@ export default function SchemaPanel({
     [entityNotes]
   );
 
-  // Canvas-level TODO engine: the whole canvas note can be flagged TODO/Done
-  // like any entity note - surfaced in Open TODOs, inbox and Action Pack.
-  const canvasTodoOpen = canvasTodo && !canvasDone && !!notesText.trim();
+  // Canvas TODO engine: full lifecycle list, tracked individually.
+  const [expandedTodoId, setExpandedTodoId] = useState<string | null>(null);
+
+  const addCanvasTodo = useCallback(() => {
+    const now = Date.now();
+    const id = newItemId();
+    setCanvasTodos((prev) => [{ id, title: "", body: "", status: "open", createdAt: now, updatedAt: now }, ...prev]);
+    setExpandedTodoId(id);
+    touchNotes();
+  }, [touchNotes]);
+
+  const patchCanvasTodo = useCallback((id: string, patch: Partial<CanvasTodo>) => {
+    setCanvasTodos((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch, updatedAt: Date.now() } : t)));
+    touchNotes();
+  }, [touchNotes]);
+
+  const deleteCanvasTodo = useCallback((id: string) => {
+    setCanvasTodos((prev) => prev.filter((t) => t.id !== id));
+    setExpandedTodoId((cur) => (cur === id ? null : cur));
+    touchNotes();
+  }, [touchNotes]);
+
+  const canvasOpenTodos = useMemo(
+    () => canvasTodos.filter((t) => t.status !== "done").sort((a, b) => b.updatedAt - a.updatedAt),
+    [canvasTodos]
+  );
+  const openTodoCount = openTodos.length + canvasOpenTodos.length;
 
   const customSet = useMemo(() => {
     const s = new Set<string>();
@@ -1751,6 +1918,10 @@ export default function SchemaPanel({
         }
         if (s.entityNotes) {
           setEntityNotes((prev) => ({ ...prev, ...s.entityNotes }));
+          touchNotes();
+        }
+        if (s.todos && s.todos.length > 0) {
+          setCanvasTodos(s.todos.map((t) => ({ ...t })));
           touchNotes();
         }
         setNotice(
@@ -2304,8 +2475,7 @@ export default function SchemaPanel({
       orgScopeId: orgKey,
       text: notesText,
       updatedAt: notesSavedAt,
-      todo: canvasTodo,
-      done: canvasDone,
+      todos: canvasTodos,
       entities: entityNotes,
       labels,
     });
@@ -2335,7 +2505,7 @@ export default function SchemaPanel({
       // Tab-scoped canvas identity: this tab's live items group under its tab.
       item.canvasId === "live" ? { ...item, canvasId: tabId, canvasName: tabName } : item
     );
-  }, [orgKey, tabId, tabName, notesText, notesSavedAt, canvasTodo, canvasDone, entityNotes, labels, snapshots, describes, objects]);
+  }, [orgKey, tabId, tabName, notesText, notesSavedAt, canvasTodos, entityNotes, labels, snapshots, describes, objects]);
   const inboxCounts = useMemo(() => countInbox(inboxItems), [inboxItems]);
   const inboxCanvases = useMemo(() => {
     const out = [{ id: tabId, name: tabName }];
@@ -2370,26 +2540,26 @@ export default function SchemaPanel({
   }, [snapshots, orgDomain, touchNotes, setEntityNoteText]);
 
   const inboxSetTaskDone = useCallback((id: string, done: boolean) => {
-    if (id === "live-canvas") {
-      setCanvasDone(done);
-      touchNotes();
+    if (id.startsWith("live-canvas-todo-")) {
+      patchCanvasTodo(id.slice("live-canvas-todo-".length), { status: done ? "done" : "open" });
       return;
     }
     if (id.startsWith("live-entity-")) {
       setEntityNoteFlag(id.slice("live-entity-".length), { done });
     }
-  }, [setEntityNoteFlag, touchNotes]);
+  }, [setEntityNoteFlag, patchCanvasTodo]);
 
   /** Unified lifecycle writer: routes kind/status/owner metadata to the
-   * canonical entity or snapshot record with history. Canvas text maps
-   * kind/status onto its TODO engine. */
+   * canonical entity, canvas TODO or snapshot record with history. */
   const inboxUpdateMeta = useCallback((id: string, patch: Partial<InboxMeta>, what: string) => {
-    if (id === "live-canvas") {
-      if (patch.kind === "task") setCanvasTodo(true);
-      if (patch.kind === "note") setCanvasTodo(false);
-      if (patch.status === "resolved") setCanvasDone(true);
-      if (patch.status === "open" || patch.status === "in-progress") setCanvasDone(false);
-      touchNotes();
+    if (id.startsWith("live-canvas-todo-")) {
+      const todoId = id.slice("live-canvas-todo-".length);
+      const todoPatch: Partial<CanvasTodo> = {};
+      if (patch.status === "resolved") todoPatch.status = "done";
+      else if (patch.status === "open" || patch.status === "in-progress") todoPatch.status = patch.status;
+      if (typeof patch.owner === "string" || patch.owner === undefined) todoPatch.assignee = patch.owner;
+      if (typeof patch.dueDate === "string" || patch.dueDate === undefined) todoPatch.dueDate = patch.dueDate;
+      if (Object.keys(todoPatch).length > 0) patchCanvasTodo(todoId, todoPatch);
       return;
     }
     if (id.startsWith("live-entity-")) {
@@ -2399,14 +2569,16 @@ export default function SchemaPanel({
     if (id.startsWith("snap-")) {
       setSnapshotNoteMeta(id.slice(5), patch, what);
     }
-  }, [setEntityMeta, setSnapshotNoteMeta, touchNotes]);
+  }, [setEntityMeta, setSnapshotNoteMeta, patchCanvasTodo]);
 
   const inboxDelete = useCallback((id: string) => {
     if (id === "live-canvas") {
       setNotesText("");
-      setCanvasTodo(false);
-      setCanvasDone(false);
       touchNotes();
+      return;
+    }
+    if (id.startsWith("live-canvas-todo-")) {
+      deleteCanvasTodo(id.slice("live-canvas-todo-".length));
       return;
     }
     if (id.startsWith("live-entity-")) {
@@ -2426,7 +2598,7 @@ export default function SchemaPanel({
         }
       })();
     }
-  }, [snapshots, orgDomain, touchNotes, clearEntityNote]);
+  }, [snapshots, orgDomain, touchNotes, clearEntityNote, deleteCanvasTodo]);
 
   const inboxNavigate = useCallback((item: ArchitectureInboxItem) => {
     setInboxOpen(false);
@@ -3329,9 +3501,21 @@ export default function SchemaPanel({
         if (note?.text) picked[api] = note;
       }
       if (Object.keys(picked).length > 0) out.entityNotes = picked;
+      if (canvasTodos.length > 0) {
+        out.todos = canvasTodos.map((t) => ({
+          id: t.id,
+          title: t.title,
+          body: t.body,
+          assignee: t.assignee,
+          dueDate: t.dueDate,
+          status: t.status,
+          createdAt: t.createdAt,
+          updatedAt: t.updatedAt,
+        }));
+      }
     }
     return out;
-  }, [baseElements, describes, rootName, view, notesText, entityNotes, labels]);
+  }, [baseElements, describes, rootName, view, notesText, entityNotes, canvasTodos, labels]);
 
   return (
     <div
@@ -3407,8 +3591,8 @@ export default function SchemaPanel({
                 <path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3Z" />
                 <path d="m13.5 6.5 3 3" />
               </svg>
-              {(openTodos.length > 0 || canvasTodoOpen || notesText) && (
-                <span className={`absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full border border-white ${openTodos.length > 0 || canvasTodoOpen ? "bg-red-500" : "bg-bronze-500"}`} aria-hidden="true" />
+              {(openTodoCount > 0 || notesText) && (
+                <span className={`absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full border border-white ${openTodoCount > 0 ? "bg-red-500" : "bg-bronze-500"}`} aria-hidden="true" />
               )}
             </button>
             <button
@@ -3625,9 +3809,9 @@ export default function SchemaPanel({
                         <path d="m13.5 6.5 3 3" />
                       </svg>
                       {notesOpen ? "Hide notes" : "Design notes"}
-                      {(openTodos.length > 0 || canvasTodoOpen) && (
+                      {openTodoCount > 0 && (
                         <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
-                          {openTodos.length + (canvasTodoOpen ? 1 : 0)}
+                          {openTodoCount}
                         </span>
                       )}
                     </span>
@@ -4315,27 +4499,30 @@ export default function SchemaPanel({
               />
             ) : (
               <>
-                {(openTodos.length > 0 || canvasTodoOpen) && (
+                {(openTodos.length > 0 || canvasOpenTodos.length > 0) && (
                   <div className="mb-3 rounded-xl border border-red-200 bg-red-50/50 p-2.5">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-red-700">
-                      Open TODOs ({openTodos.length + (canvasTodoOpen ? 1 : 0)})
+                      Open TODOs ({openTodoCount})
                     </p>
                     <ul className="mt-1.5 space-y-1">
-                      {canvasTodoOpen && (
-                        <li key="__canvas__">
+                      {canvasOpenTodos.map((t) => (
+                        <li key={`canvas-${t.id}`}>
                           <button
                             type="button"
-                            onClick={() => setNoteEntity(null)}
+                            onClick={() => {
+                              setNoteEntity(null);
+                              setExpandedTodoId(t.id);
+                            }}
                             className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left hover:bg-white/70 transition-colors cursor-pointer"
                           >
                             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" aria-hidden="true" />
                             <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-ivory-950">
-                              Canvas design notes
+                              {t.title.trim() || "Untitled TODO"}
                             </span>
-                            <span className="shrink-0 text-[10px] text-ivory-500">{notesSavedAt ? timeAgo(notesSavedAt) : ""}</span>
+                            <span className="shrink-0 text-[10px] text-ivory-500">{timeAgo(t.updatedAt)}</span>
                           </button>
                         </li>
-                      )}
+                      ))}
                       {openTodos.map(([api, n]) => (
                         <li key={api}>
                           <button
@@ -4354,6 +4541,38 @@ export default function SchemaPanel({
                     </ul>
                   </div>
                 )}
+                <div className="mb-3">
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-ivory-700">
+                      Canvas TODOs ({canvasTodos.length})
+                    </p>
+                    <button
+                      type="button"
+                      onClick={addCanvasTodo}
+                      className="rounded-lg bg-ivory-950 px-2.5 py-1 text-[11px] font-semibold text-ivory-100 hover:bg-bronze-600 transition-colors cursor-pointer"
+                    >
+                      + TODO
+                    </button>
+                  </div>
+                  {canvasTodos.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-[var(--color-line)] px-3 py-2.5 text-[11px] text-ivory-500">
+                      No TODOs yet - Add one to track design work with due dates and assignees.
+                    </p>
+                  ) : (
+                    <ul className="space-y-1.5">
+                      {canvasTodos.map((t) => (
+                        <CanvasTodoCard
+                          key={t.id}
+                          todo={t}
+                          expanded={expandedTodoId === t.id}
+                          onToggleExpand={() => setExpandedTodoId((cur) => (cur === t.id ? null : t.id))}
+                          onPatch={(patch) => patchCanvasTodo(t.id, patch)}
+                          onDelete={() => deleteCanvasTodo(t.id)}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </div>
                 {notesTab === "write" ? (
                   <textarea
                     value={notesText}
@@ -4383,30 +4602,6 @@ export default function SchemaPanel({
                     {notesText.trim().split(/\s+/).filter(Boolean).length} words · markdown-lite · attaches to snapshots
                   </p>
                   <div className="flex shrink-0 items-center gap-2">
-                    <label className="flex cursor-pointer items-center gap-1 text-[10px] font-medium text-ivory-700" title="Flag the whole canvas note as TODO">
-                      <input
-                        type="checkbox"
-                        checked={canvasTodo}
-                        onChange={(e) => {
-                          setCanvasTodo(e.target.checked);
-                          touchNotes();
-                        }}
-                        className="h-3 w-3 cursor-pointer accent-red-500"
-                      />
-                      TODO
-                    </label>
-                    <label className="flex cursor-pointer items-center gap-1 text-[10px] font-medium text-ivory-700" title="Mark the canvas TODO done">
-                      <input
-                        type="checkbox"
-                        checked={canvasDone}
-                        onChange={(e) => {
-                          setCanvasDone(e.target.checked);
-                          touchNotes();
-                        }}
-                        className="h-3 w-3 cursor-pointer accent-green-600"
-                      />
-                      Done
-                    </label>
                     {notesText && (
                       <button
                         type="button"

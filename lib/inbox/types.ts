@@ -15,6 +15,21 @@ export type InboxPriority = "low" | "normal" | "high" | "critical";
 
 export type DecisionState = "proposed" | "confirmed" | "rejected" | "superseded";
 
+/** Canvas-level TODO status. Maps to InboxStatus (done → resolved). */
+export type CanvasTodoStatus = "open" | "in-progress" | "done";
+
+/** One canvas TODO: title + lifecycle, tracked individually. */
+export interface CanvasTodo {
+  id: string;
+  title: string;
+  body?: string;
+  assignee?: string;
+  dueDate?: string;
+  status: CanvasTodoStatus;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export type AnchorType = "canvas" | "entity" | "field" | "relationship";
 
 export type StaleState = "ok" | "missing" | "changed" | "unknown";
