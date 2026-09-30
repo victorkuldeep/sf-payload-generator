@@ -18,13 +18,53 @@ interface ShareKV {
 }
 
 export async function shareKv(): Promise<ShareKV | null> {
+  // 1. Cloudflare KV binding (production on Workers/Pages).
   try {
     const { env } = await getCloudflareContext();
     const kv = (env as unknown as { SHARE_KV?: ShareKV }).SHARE_KV;
-    return kv ?? null;
+    if (kv) return kv;
   } catch {
-    return null;
+    /* not on Cloudflare - fall through */
   }
+  // 2. Future hosts plug in here behind the same ShareKV shape
+  //    (e.g. Upstash Redis on Vercel). Routes never change per host.
+  // 3. Local dev fallback: ephemeral in-memory store with identical TTL
+  //    semantics, so the full drill works on localhost. Never prod:
+  //    production without a binding must fail loudly (503), not silently
+  //    store shares in a single-worker's memory.
+  if (process.env.NODE_ENV !== "production") return memoryKv();
+  return null;
+}
+
+// Dev-only backing store. Same contract as KV: put with TTL, lazy expiry on
+// read plus timer sweep. Single dev-server process = shared instance.
+const memStore = new Map<string, { value: string; expiresAt: number }>();
+
+function memoryKv(): ShareKV {
+  return {
+    async get(key: string, type: "json") {
+      void type;
+      const entry = memStore.get(key);
+      if (!entry) return null;
+      if (Date.now() > entry.expiresAt) {
+        memStore.delete(key);
+        return null;
+      }
+      try {
+        return JSON.parse(entry.value) as unknown;
+      } catch {
+        return null;
+      }
+    },
+    async put(key: string, value: string, opts?: { expirationTtl?: number }) {
+      const ttlMs = (opts?.expirationTtl ?? SHARE_TTL_SECONDS) * 1000;
+      memStore.set(key, { value, expiresAt: Date.now() + ttlMs });
+      const timer = setTimeout(() => {
+        if ((memStore.get(key)?.expiresAt ?? 0) <= Date.now()) memStore.delete(key);
+      }, ttlMs);
+      (timer as unknown as { unref?: () => void }).unref?.();
+    },
+  };
 }
 
 const shareBodySchema = z.object({
