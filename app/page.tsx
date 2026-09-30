@@ -694,9 +694,20 @@ export default function Home() {
 
   // Deep route entry: /?mode=composite (from route headers) lands on that
   // builder - connect first when offline, via the pending-mode flow.
+  // Collaboration entry: /?share=<id> parks the id until connected, then the
+  // active schema tab imports it (structure in, metadata resolved locally).
+  const [shareId, setShareId] = useState<string | null>(null);
   useEffect(() => {
-    const m = new URLSearchParams(window.location.search).get("mode");
+    const params = new URLSearchParams(window.location.search);
+    const m = params.get("mode");
+    const share = params.get("share");
     const valid = ["single", "composite", "soql", "graphql", "schema", "rest", "home", "json", "contracts"];
+    if (share && /^[a-z0-9]{16,64}$/i.test(share)) {
+      setShareId(share);
+      history.replaceState(null, "", window.location.pathname);
+      jumpToMode("schema");
+      return;
+    }
     if (m && valid.includes(m)) {
       history.replaceState(null, "", window.location.pathname);
       if (m !== "home") jumpToMode(m as Exclude<BuilderMode, "home"> | "json" | "contracts");
@@ -1622,6 +1633,8 @@ export default function Home() {
                         orgKey={orgKey}
                         tabId={t.tabId}
                         tabName={t.name}
+                        shareId={active ? shareId : null}
+                        onShareConsumed={() => setShareId(null)}
                         getToken={() => tokenRef.current}
                         onSessionExpired={handleSessionExpired}
                       />

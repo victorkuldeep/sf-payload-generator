@@ -24,6 +24,8 @@ import {
 import { newItemId } from "@/lib/collection/types";
 import { loadAutosave, queueAutosave, clearAutosave } from "@/lib/workspace/autosave";
 import { renderMarkdownLite, toggleTaskLine } from "./erd/notesMd";
+import { ShareDialog } from "./erd/ShareDialog";
+import { validateShareStructure, type ShareStructure } from "@/lib/erd/shareLink";
 import { validateSharePayload, shareFileName, ERD_SHARE_KIND, ERD_SHARE_VERSION, type ErdSharePayload } from "@/lib/erd/share";
 import { ArchitectureInbox } from "./inbox/ArchitectureInbox";
 import { normalizeLiveNotes, normalizeSnapshotNotes, resolveStale, countInbox } from "@/lib/inbox/normalize";
@@ -43,6 +45,9 @@ interface SchemaPanelProps {
   /** Schema tab identity - each tab owns its slices, memory and restore. */
   tabId: string;
   tabName: string;
+  /** Inbound collaboration share (?share=) - consumed once per id. */
+  shareId: string | null;
+  onShareConsumed: () => void;
   getToken: () => string;
   onSessionExpired?: () => void;
 }
@@ -938,6 +943,8 @@ export default function SchemaPanel({
   orgKey,
   tabId,
   tabName,
+  shareId,
+  onShareConsumed,
   getToken,
   onSessionExpired,
 }: SchemaPanelProps) {
@@ -963,6 +970,7 @@ export default function SchemaPanel({
   const canvasRef = useRef<ErdCanvasHandle | null>(null);
   const [snapshots, setSnapshots] = useState<ErdSnapshot[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [showShare, setShowShare] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [snapNotesId, setSnapNotesId] = useState<string | null>(null);
   const [snapNotesDraft, setSnapNotesDraft] = useState("");
@@ -1658,6 +1666,97 @@ export default function SchemaPanel({
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgKey, objects]);
+
+  // ── Collaboration share import (?share=): structure in, metadata resolved
+  // locally, positions applied. Consumed once per id; retries cover KV's
+  // propagation tail. Autosave restore (IDB) usually lands first and loses -
+  // the share always wins because its fetches finish later.
+  const shareConsumedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!shareId || objects.length === 0 || shareConsumedRef.current === shareId) return;
+    shareConsumedRef.current = shareId;
+    void (async () => {
+      setError(null);
+      setNotice(null);
+      setBusy("Opening shared canvas…");
+      try {
+        let raw: unknown = null;
+        let invalid = false;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const r = await fetch(`/api/share/${encodeURIComponent(shareId)}`);
+            if (r.status === 404) {
+              invalid = true;
+              break;
+            }
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            raw = await r.json();
+            break;
+          } catch {
+            if (attempt < 2) await new Promise((res) => window.setTimeout(res, 1500));
+          }
+        }
+        const s = !invalid ? validateShareStructure(raw) : null;
+        if (!s) throw new Error("Share link expired or invalid.");
+        const settled = await mapLimit(s.nodes, 6, async (n) => {
+          try {
+            return { ok: true as const, value: await fetchDescribe(n) };
+          } catch {
+            return { ok: false as const, name: n };
+          }
+        });
+        const fresh = settled.filter((r) => r.ok).map((r) => r.value);
+        const missing = settled.filter((r) => !r.ok).map((r) => r.name);
+        if (fresh.length === 0) {
+          throw new Error("None of the shared objects exist on your org - nothing to rebuild.");
+        }
+        const alive = new Set(fresh.map((d) => d.name));
+        const root = alive.has(s.root) ? s.root : fresh[0].name;
+        const enforcedEntries = Object.entries(s.positions).filter(([k]) => alive.has(k)) as [string, { x: number; y: number }][];
+        applyAutosaveData({
+          rootName: root,
+          describes: fresh,
+          hiddenIds: [],
+          removedIds: [],
+          dismissedIds: [],
+          focusName: root,
+          graphSelected: null,
+          view: s.view ?? view,
+          filterMode,
+          familyMode,
+          hideSystem,
+          systemAllow: [...systemAllow],
+          designIds: [],
+          designMode: false,
+          expanded: [],
+          enforced: enforcedEntries.length > 0 ? enforcedEntries : null,
+          graphEnforced: null,
+          viewports: viewports.current,
+        }, null);
+        if (s.notes) {
+          setNotesText(s.notes);
+          touchNotes();
+        }
+        if (s.entityNotes) {
+          setEntityNotes((prev) => ({ ...prev, ...s.entityNotes }));
+          touchNotes();
+        }
+        setNotice(
+          `Imported shared canvas "${s.name}" (${fresh.length} objects` +
+            (missing.length > 0
+              ? `, ${missing.length} missing on your org: ${missing.slice(0, 5).join(", ")}${missing.length > 5 ? "…" : ""}`
+              : "") +
+            ")."
+        );
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not open share link.");
+      } finally {
+        setBusy(null);
+        onShareConsumed();
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shareId, objects]);
 
   const restoreSaved = useCallback(async () => {
     if (!orgKey || busy) return;
@@ -3174,6 +3273,36 @@ export default function SchemaPanel({
 
   const focusOptions = [...describes.keys()].sort();
 
+  // ── Collaboration share-out: live canvas → structure payload. Positions
+  // come from the laid-out ERD tables (drags included); links rebuild from
+  // metadata on the receiving side, so edges never travel.
+  const getShareStructure = useCallback((includeNotes: boolean): ShareStructure => {
+    const nodes = [...describes.keys()];
+    const positions: Record<string, { x: number; y: number }> = {};
+    for (const n of baseElements.nodes) {
+      const api = (n.data as ErdNodeData).apiName;
+      positions[api] = { x: n.position.x, y: n.position.y };
+    }
+    const out: ShareStructure = {
+      v: 1,
+      name: `${labels.get(rootName) ?? rootName} canvas`,
+      root: rootName,
+      nodes,
+      positions,
+      view,
+    };
+    if (includeNotes && notesText.trim()) out.notes = notesText;
+    const picked: NonNullable<ShareStructure["entityNotes"]> = {};
+    if (includeNotes) {
+      for (const api of nodes) {
+        const note = entityNotes[api];
+        if (note?.text) picked[api] = note;
+      }
+      if (Object.keys(picked).length > 0) out.entityNotes = picked;
+    }
+    return out;
+  }, [baseElements, describes, rootName, view, notesText, entityNotes, labels]);
+
   return (
     <div
       className="flex gap-3"
@@ -3299,6 +3428,18 @@ export default function SchemaPanel({
                   {inboxCounts.open > 99 ? "99+" : inboxCounts.open}
                 </span>
               )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowShare(true)}
+              disabled={describes.size === 0}
+              aria-label="Share this canvas with a link"
+              title="Share canvas - teammates connect their own org and rebuild it (self-destructs in 30 min)"
+              className="rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer disabled:opacity-40"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                <path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5" />
+              </svg>
             </button>
             </div>
           </div>
@@ -4215,8 +4356,7 @@ export default function SchemaPanel({
         </aside>
       )}
 
-      {/* Architecture Inbox overlay */}
-      <ArchitectureInbox
+      {/* Architecture Inbox overlay */}      <ArchitectureInbox
         open={inboxOpen}
         onClose={() => setInboxOpen(false)}
         orgLabel={orgDomain || "This org"}
@@ -4229,6 +4369,14 @@ export default function SchemaPanel({
         onUpdateMeta={inboxUpdateMeta}
         getAnchorReview={getAnchorReview}
         onAcceptAnchor={acceptAnchorReview}
+      />
+
+      {/* Collaboration share dialog */}
+      <ShareDialog
+        open={showShare}
+        onClose={() => setShowShare(false)}
+        objectCount={describes.size}
+        getStructure={getShareStructure}
       />
 
       {/* Picklist inspector */}
