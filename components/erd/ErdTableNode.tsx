@@ -157,6 +157,23 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
               <span className={`absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full ${data.hasTodo ? "bg-red-500" : "bg-bronze-500"}`} aria-hidden="true" />
             )}
           </button>
+          {!data.isRoot && data.onMakeRoot && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                data.onMakeRoot?.(data.apiName);
+              }}
+              title={`Make ${data.apiName} the canvas root (Graph + ERD follow)`}
+              aria-label={`Make ${data.apiName} the canvas root`}
+              className="nodrag shrink-0 rounded p-1 transition-colors cursor-pointer text-ivory-950 hover:text-bronze-600 hover:bg-ivory-200"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                <circle cx="12" cy="12" r="8.5" />
+                <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none" />
+              </svg>
+            </button>
+          )}
           <button
             type="button"
             onClick={copyApiName}

@@ -40,6 +40,8 @@ export interface ErdNodeData extends Record<string, unknown> {
   hasNote?: boolean;
   hasTodo?: boolean;
   onNoteClick?: (apiName: string) => void;
+  /** Promote this table to canvas root (shared re-root, both views follow). */
+  onMakeRoot?: (apiName: string) => void;
   onRefreshNode?: (id: string) => void;
   onPicklistClick?: (
     nodeId: string,

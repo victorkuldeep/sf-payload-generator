@@ -1323,8 +1323,26 @@ export default function SchemaPanel({
     [objects, rootSearch]
   );
 
-  const baseElements: { nodes: Node<ErdNodeData>[]; edges: Edge[] } = useMemo(() => {
-    if (visibleDescribes.size === 0 || !rootName) return { nodes: [], edges: [] };
+  // Clean re-root (shared by Graph + ERD): the new root shows ITS full
+  // neighborhood like day one - stale expansions, dismissals, design set
+  // and family state from the old root do not leak across. rootName is one
+  // shared state, so re-rooting either view re-roots both. Lives up here so
+  // the element memos below can inject it.
+  const makeRoot = useCallback((apiName: string) => {
+    if (!describes.has(apiName) || apiName === rootName) return;
+    setRootName(apiName);
+    setFocusName(apiName);
+    setSpot(null);
+    setGraphSelected(apiName);
+    setExpanded(new Map());
+    setDismissedIds(new Set());
+    setDesignIds(new Set());
+    setFamilyFor(null);
+    setFamily(null);
+    setNotice(`${apiName} is now the root - showing its full neighborhood in Graph + ERD.`);
+  }, [describes, rootName]);
+
+  const baseElements: { nodes: Node<ErdNodeData>[]; edges: Edge[] } = useMemo(() => {    if (visibleDescribes.size === 0 || !rootName) return { nodes: [], edges: [] };
     const built = buildErdElements(visibleDescribes, labels, rootName, spot, enforced);
     const describedSet = new Set(visibleDescribes.keys());
     return {
@@ -1343,11 +1361,12 @@ export default function SchemaPanel({
             hasNote: !!en?.text,
             hasTodo: !!en?.todo && !en?.done,
             onNoteClick: openEntityNote,
+            onMakeRoot: makeRoot,
           },
         };
       }),
     };
-  }, [visibleDescribes, describes, labels, rootName, spot, enforced, entityNotes, openEntityNote]);
+  }, [visibleDescribes, describes, labels, rootName, spot, enforced, entityNotes, openEntityNote, makeRoot]);
 
   // Graph default = FULL 1-level neighborhood (parents left, children right),
   // lite previews included - this is the intent of graph view. Family
@@ -3954,19 +3973,7 @@ export default function SchemaPanel({
               }}
               onMakeRoot={() => {
                 if (detail.kind === "loaded") {
-                  // Clean re-root: the new root shows ITS full neighborhood
-                  // like day one - stale expansions, dismissals, design set
-                  // and family state from the old root do not leak across.
-                  setRootName(detail.d.name);
-                  setFocusName(detail.d.name);
-                  setSpot(null);
-                  setGraphSelected(detail.d.name);
-                  setExpanded(new Map());
-                  setDismissedIds(new Set());
-                  setDesignIds(new Set());
-                  setFamilyFor(null);
-                  setFamily(null);
-                  setNotice(`${detail.d.name} is now the graph root - showing its full neighborhood.`);
+                  makeRoot(detail.d.name);
                 }
               }}
               onLoad={() => {
