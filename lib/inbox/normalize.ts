@@ -31,6 +31,8 @@ export interface LiveNotesInput {
   orgScopeId: string;
   text: string;
   updatedAt: number | null;
+  todo: boolean;
+  done: boolean;
   entities: Record<string, EntityNoteInput>;
   labels: Map<string, string>;
 }
@@ -67,8 +69,8 @@ export function normalizeLiveNotes(input: LiveNotesInput): ArchitectureInboxItem
       orgScopeId,
       canvasId: "live",
       canvasName: "Live canvas",
-      kind: "note",
-      status: "open",
+      kind: input.todo ? "task" : "note",
+      status: input.done ? "resolved" : "open",
       title: "Canvas design notes",
       body: text,
       anchor: { type: "canvas", id: "live" },

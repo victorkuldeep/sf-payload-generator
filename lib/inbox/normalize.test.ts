@@ -20,6 +20,8 @@ const liveInput = {
   orgScopeId: "org:00Dxx",
   text: "# Plan\n- [ ] Verify junction",
   updatedAt: 1000,
+  todo: false,
+  done: false,
   entities: {
     Lead: { text: "Check conversion", todo: true, done: false, updatedAt: 2000 },
     Quote__c: { text: "Pricing review", todo: true, done: true, updatedAt: 3000 },
@@ -47,6 +49,15 @@ describe("inbox normalization", () => {
     expect(items[0].id).toBe("live-canvas");
     expect(items[0].kind).toBe("note");
     expect(items[0].status).toBe("open");
+  });
+
+  it("maps the canvas TODO engine to task kind and done to resolved", () => {
+    const open = normalizeLiveNotes({ ...liveInput, text: "review all", entities: {}, todo: true, done: false });
+    expect(open[0].kind).toBe("task");
+    expect(open[0].status).toBe("open");
+    const done = normalizeLiveNotes({ ...liveInput, text: "review all", entities: {}, todo: true, done: true });
+    expect(done[0].kind).toBe("task");
+    expect(done[0].status).toBe("resolved");
   });
 
   it("skips blank canvas text and empty non-todo entities", () => {

@@ -1065,11 +1065,15 @@ export default function SchemaPanel({
     text: string;
     updatedAt: number;
     entities: Record<string, EntityNote>;
+    todo: boolean;
+    done: boolean;
   }
   const [notesOpen, setNotesOpen] = useState(false);
   const [notesTab, setNotesTab] = useState<"write" | "preview">("write");
   const [notesText, setNotesText] = useState("");
   const [notesSavedAt, setNotesSavedAt] = useState<number | null>(null);
+  const [canvasTodo, setCanvasTodo] = useState(false);
+  const [canvasDone, setCanvasDone] = useState(false);
   const [entityNotes, setEntityNotes] = useState<Record<string, EntityNote>>({});
   const [noteEntity, setNoteEntity] = useState<string | null>(null);
   const notesRestoredRef = useRef<string | null>(null);
@@ -1082,8 +1086,10 @@ export default function SchemaPanel({
       text: notesText,
       updatedAt: notesSavedAt ?? Date.now(),
       entities: entityNotes,
+      todo: canvasTodo,
+      done: canvasDone,
     } satisfies CanvasNotesData, tabId);
-  }, [orgKey, tabId, notesText, notesSavedAt, entityNotes]);
+  }, [orgKey, tabId, notesText, notesSavedAt, entityNotes, canvasTodo, canvasDone]);
 
   useEffect(() => {
     if (!orgKey || notesRestoredRef.current === orgKey) return;
@@ -1097,6 +1103,8 @@ export default function SchemaPanel({
         setNotesSavedAt(d.updatedAt ?? snap.savedAt);
       }
       if (d.entities) setEntityNotes(d.entities);
+      setCanvasTodo(!!d.todo);
+      setCanvasDone(!!d.done);
     })();
   }, [orgKey]);
 
@@ -1284,6 +1292,10 @@ export default function SchemaPanel({
         .sort((a, b) => b[1].updatedAt - a[1].updatedAt),
     [entityNotes]
   );
+
+  // Canvas-level TODO engine: the whole canvas note can be flagged TODO/Done
+  // like any entity note - surfaced in Open TODOs, inbox and Action Pack.
+  const canvasTodoOpen = canvasTodo && !canvasDone && !!notesText.trim();
 
   const customSet = useMemo(() => {
     const s = new Set<string>();
@@ -2292,6 +2304,8 @@ export default function SchemaPanel({
       orgScopeId: orgKey,
       text: notesText,
       updatedAt: notesSavedAt,
+      todo: canvasTodo,
+      done: canvasDone,
       entities: entityNotes,
       labels,
     });
@@ -2321,7 +2335,7 @@ export default function SchemaPanel({
       // Tab-scoped canvas identity: this tab's live items group under its tab.
       item.canvasId === "live" ? { ...item, canvasId: tabId, canvasName: tabName } : item
     );
-  }, [orgKey, tabId, tabName, notesText, notesSavedAt, entityNotes, labels, snapshots, describes, objects]);
+  }, [orgKey, tabId, tabName, notesText, notesSavedAt, canvasTodo, canvasDone, entityNotes, labels, snapshots, describes, objects]);
   const inboxCounts = useMemo(() => countInbox(inboxItems), [inboxItems]);
   const inboxCanvases = useMemo(() => {
     const out = [{ id: tabId, name: tabName }];
@@ -2356,14 +2370,28 @@ export default function SchemaPanel({
   }, [snapshots, orgDomain, touchNotes, setEntityNoteText]);
 
   const inboxSetTaskDone = useCallback((id: string, done: boolean) => {
+    if (id === "live-canvas") {
+      setCanvasDone(done);
+      touchNotes();
+      return;
+    }
     if (id.startsWith("live-entity-")) {
       setEntityNoteFlag(id.slice("live-entity-".length), { done });
     }
-  }, [setEntityNoteFlag]);
+  }, [setEntityNoteFlag, touchNotes]);
 
   /** Unified lifecycle writer: routes kind/status/owner metadata to the
-   * canonical entity or snapshot record with history. Canvas text has none. */
+   * canonical entity or snapshot record with history. Canvas text maps
+   * kind/status onto its TODO engine. */
   const inboxUpdateMeta = useCallback((id: string, patch: Partial<InboxMeta>, what: string) => {
+    if (id === "live-canvas") {
+      if (patch.kind === "task") setCanvasTodo(true);
+      if (patch.kind === "note") setCanvasTodo(false);
+      if (patch.status === "resolved") setCanvasDone(true);
+      if (patch.status === "open" || patch.status === "in-progress") setCanvasDone(false);
+      touchNotes();
+      return;
+    }
     if (id.startsWith("live-entity-")) {
       setEntityMeta(id.slice("live-entity-".length), patch, what);
       return;
@@ -2371,11 +2399,13 @@ export default function SchemaPanel({
     if (id.startsWith("snap-")) {
       setSnapshotNoteMeta(id.slice(5), patch, what);
     }
-  }, [setEntityMeta, setSnapshotNoteMeta]);
+  }, [setEntityMeta, setSnapshotNoteMeta, touchNotes]);
 
   const inboxDelete = useCallback((id: string) => {
     if (id === "live-canvas") {
       setNotesText("");
+      setCanvasTodo(false);
+      setCanvasDone(false);
       touchNotes();
       return;
     }
@@ -3377,8 +3407,8 @@ export default function SchemaPanel({
                 <path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3Z" />
                 <path d="m13.5 6.5 3 3" />
               </svg>
-              {(openTodos.length > 0 || notesText) && (
-                <span className={`absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full border border-white ${openTodos.length > 0 ? "bg-red-500" : "bg-bronze-500"}`} aria-hidden="true" />
+              {(openTodos.length > 0 || canvasTodoOpen || notesText) && (
+                <span className={`absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full border border-white ${openTodos.length > 0 || canvasTodoOpen ? "bg-red-500" : "bg-bronze-500"}`} aria-hidden="true" />
               )}
             </button>
             <button
@@ -3595,9 +3625,9 @@ export default function SchemaPanel({
                         <path d="m13.5 6.5 3 3" />
                       </svg>
                       {notesOpen ? "Hide notes" : "Design notes"}
-                      {openTodos.length > 0 && (
+                      {(openTodos.length > 0 || canvasTodoOpen) && (
                         <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
-                          {openTodos.length}
+                          {openTodos.length + (canvasTodoOpen ? 1 : 0)}
                         </span>
                       )}
                     </span>
@@ -4285,12 +4315,27 @@ export default function SchemaPanel({
               />
             ) : (
               <>
-                {openTodos.length > 0 && (
+                {(openTodos.length > 0 || canvasTodoOpen) && (
                   <div className="mb-3 rounded-xl border border-red-200 bg-red-50/50 p-2.5">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-red-700">
-                      Open TODOs ({openTodos.length})
+                      Open TODOs ({openTodos.length + (canvasTodoOpen ? 1 : 0)})
                     </p>
                     <ul className="mt-1.5 space-y-1">
+                      {canvasTodoOpen && (
+                        <li key="__canvas__">
+                          <button
+                            type="button"
+                            onClick={() => setNoteEntity(null)}
+                            className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left hover:bg-white/70 transition-colors cursor-pointer"
+                          >
+                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" aria-hidden="true" />
+                            <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-ivory-950">
+                              Canvas design notes
+                            </span>
+                            <span className="shrink-0 text-[10px] text-ivory-500">{notesSavedAt ? timeAgo(notesSavedAt) : ""}</span>
+                          </button>
+                        </li>
+                      )}
                       {openTodos.map(([api, n]) => (
                         <li key={api}>
                           <button
@@ -4337,18 +4382,44 @@ export default function SchemaPanel({
                   <p className="text-[10px] text-ivory-500">
                     {notesText.trim().split(/\s+/).filter(Boolean).length} words · markdown-lite · attaches to snapshots
                   </p>
-                  {notesText && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNotesText("");
-                        touchNotes();
-                      }}
-                      className="shrink-0 text-[10px] text-ivory-500 hover:text-red-700 underline cursor-pointer"
-                    >
-                      Delete note
-                    </button>
-                  )}
+                  <div className="flex shrink-0 items-center gap-2">
+                    <label className="flex cursor-pointer items-center gap-1 text-[10px] font-medium text-ivory-700" title="Flag the whole canvas note as TODO">
+                      <input
+                        type="checkbox"
+                        checked={canvasTodo}
+                        onChange={(e) => {
+                          setCanvasTodo(e.target.checked);
+                          touchNotes();
+                        }}
+                        className="h-3 w-3 cursor-pointer accent-red-500"
+                      />
+                      TODO
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-1 text-[10px] font-medium text-ivory-700" title="Mark the canvas TODO done">
+                      <input
+                        type="checkbox"
+                        checked={canvasDone}
+                        onChange={(e) => {
+                          setCanvasDone(e.target.checked);
+                          touchNotes();
+                        }}
+                        className="h-3 w-3 cursor-pointer accent-green-600"
+                      />
+                      Done
+                    </label>
+                    {notesText && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNotesText("");
+                          touchNotes();
+                        }}
+                        className="text-[10px] text-ivory-500 hover:text-red-700 underline cursor-pointer"
+                      >
+                        Delete note
+                      </button>
+                    )}
+                  </div>
                 </div>
               </>
             )}
