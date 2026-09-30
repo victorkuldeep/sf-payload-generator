@@ -40,6 +40,9 @@ interface SchemaPanelProps {
   apiVersion: string;
   /** Autosave org key (null until the session resolves it) - canvas persists per org. */
   orgKey: string | null;
+  /** Schema tab identity - each tab owns its slices, memory and restore. */
+  tabId: string;
+  tabName: string;
   getToken: () => string;
   onSessionExpired?: () => void;
 }
@@ -933,6 +936,8 @@ export default function SchemaPanel({
   instanceUrl,
   apiVersion,
   orgKey,
+  tabId,
+  tabName,
   getToken,
   onSessionExpired,
 }: SchemaPanelProps) {
@@ -1069,14 +1074,14 @@ export default function SchemaPanel({
       text: notesText,
       updatedAt: notesSavedAt ?? Date.now(),
       entities: entityNotes,
-    } satisfies CanvasNotesData);
-  }, [orgKey, notesText, notesSavedAt, entityNotes]);
+    } satisfies CanvasNotesData, tabId);
+  }, [orgKey, tabId, notesText, notesSavedAt, entityNotes]);
 
   useEffect(() => {
     if (!orgKey || notesRestoredRef.current === orgKey) return;
     notesRestoredRef.current = orgKey;
     void (async () => {
-      const snap = await loadAutosave<CanvasNotesData>(orgKey, "notes");
+      const snap = await loadAutosave<CanvasNotesData>(orgKey, "notes", tabId);
       const d = snap?.data;
       if (!d) return;
       if (d.text) {
@@ -1588,9 +1593,9 @@ export default function SchemaPanel({
       enforced: enforced ? [...enforced.entries()] : null,
       graphEnforced: graphEnforced ? [...graphEnforced.entries()] : null,
       viewports: viewports.current,
-    } satisfies SchemaAutosaveData);
+    } satisfies SchemaAutosaveData, tabId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgKey, rootName, describes, hiddenIds, removedIds, dismissedIds, focusName, graphSelected, view, filterMode, familyMode, hideSystem, systemAllow, designIds, designMode, expanded, enforced, graphEnforced]);
+  }, [orgKey, tabId, rootName, describes, hiddenIds, removedIds, dismissedIds, focusName, graphSelected, view, filterMode, familyMode, hideSystem, systemAllow, designIds, designMode, expanded, enforced, graphEnforced]);
 
   // First-class restore: reload the autosaved canvas on demand, anytime -
   // same apply path as the automatic restore on connect.
@@ -1629,7 +1634,7 @@ export default function SchemaPanel({
     if (!orgKey || objects.length === 0 || schemaRestoredRef.current === orgKey) return;
     schemaRestoredRef.current = orgKey;
     void (async () => {
-      const snap = await loadAutosave<SchemaAutosaveData>(orgKey, "schema");
+      const snap = await loadAutosave<SchemaAutosaveData>(orgKey, "schema", tabId);
       if (snap) applyAutosaveData(snap.data, snap.savedAt);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1638,12 +1643,12 @@ export default function SchemaPanel({
   const restoreSaved = useCallback(async () => {
     if (!orgKey || busy) return;
     setError(null);
-    const snap = await loadAutosave<SchemaAutosaveData>(orgKey, "schema");
+    const snap = await loadAutosave<SchemaAutosaveData>(orgKey, "schema", tabId);
     if (!snap || !applyAutosaveData(snap.data, snap.savedAt)) {
       setNotice("No autosaved workspace for this org yet - build a canvas and it saves itself.");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgKey, busy]);
+  }, [orgKey, tabId, busy]);
 
   const refreshNode = useCallback(
     async (id: string) => {
@@ -2194,16 +2199,19 @@ export default function SchemaPanel({
         });
       }
     }
-    return resolveStale([...live, ...fromSnaps], { knownApis, entities, fields });
-  }, [orgKey, notesText, notesSavedAt, entityNotes, labels, snapshots, describes, objects]);
+    return resolveStale([...live, ...fromSnaps], { knownApis, entities, fields }).map((item) =>
+      // Tab-scoped canvas identity: this tab's live items group under its tab.
+      item.canvasId === "live" ? { ...item, canvasId: tabId, canvasName: tabName } : item
+    );
+  }, [orgKey, tabId, tabName, notesText, notesSavedAt, entityNotes, labels, snapshots, describes, objects]);
   const inboxCounts = useMemo(() => countInbox(inboxItems), [inboxItems]);
   const inboxCanvases = useMemo(() => {
-    const out = [{ id: "live", name: "Live canvas" }];
+    const out = [{ id: tabId, name: tabName }];
     for (const s of snapshots) {
       if (s.notes?.trim()) out.push({ id: s.id, name: s.name });
     }
     return out;
-  }, [snapshots]);
+  }, [tabId, tabName, snapshots]);
 
   const inboxEditBody = useCallback((id: string, body: string) => {
     if (id === "live-canvas") {
@@ -3063,7 +3071,7 @@ export default function SchemaPanel({
   const clearCanvas = useCallback(() => {
     // Explicit wipe: delete the autosaved canvas too, or the next connect to
     // this org would resurrect the cleared canvas (empty mounts stay silent).
-    if (orgKey) void clearAutosave(orgKey, "schema");
+    if (orgKey) void clearAutosave(orgKey, "schema", tabId);
     setDescribes(new Map());
     setRemovedIds(new Set());
     setDismissedIds(new Set());
@@ -3085,7 +3093,7 @@ export default function SchemaPanel({
     setError(null);
     setConfirmClear(false);
     viewports.current = { erd: null, graph: null };
-  }, [orgKey]);
+  }, [orgKey, tabId]);
 
   const handleNodeClick = useCallback(
     (id: string) => {

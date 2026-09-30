@@ -38,7 +38,7 @@ import {
 import { ConnectModal } from "@/components/ConnectModal";
 import { ObjectSearchOverlay } from "@/components/ObjectSearchOverlay";
 import { getCachedConnection, setCachedConnection, clearCachedConnection } from "@/lib/session/cache";
-import { loadAutosave, queueAutosave, flushAutosaves } from "@/lib/workspace/autosave";
+import { loadAutosave, queueAutosave, flushAutosaves, clearAutosave, migrateLegacyWorkspace } from "@/lib/workspace/autosave";
 import Button from "@/components/ui/Button";
 import ObjectPanel from "@/components/ObjectPanel";
 import FieldPanel from "@/components/FieldPanel";
@@ -119,6 +119,15 @@ interface BuilderTab {
 }
 
 const MAX_BUILDER_TABS = 10;
+
+// ── Schema canvas tabs: each tab is a full SchemaPanel instance (own memory,
+// own autosave slices, own restore). Snapshots stay shared across tabs.
+interface SchemaTab {
+  tabId: string;
+  name: string;
+}
+
+const MAX_SCHEMA_TABS = 5;
 
 const freshBuilderDraft = (): BuilderDraft => ({
   selectedObject: null,
@@ -504,6 +513,13 @@ export default function Home() {
   ]);
   const [activeBuilderTabId, setActiveBuilderTabId] = useState<string>("");
   const [renamingBuilderTabId, setRenamingBuilderTabId] = useState<string | null>(null);
+  // Schema canvas tabs: full parallel SchemaPanel instances. Mounted once,
+  // kept alive across switches - each owns its memory + autosave slices.
+  const [schemaTabs, setSchemaTabs] = useState<SchemaTab[]>(() => [
+    { tabId: newItemId(), name: "Canvas 1" },
+  ]);
+  const [activeSchemaTabId, setActiveSchemaTabId] = useState<string>("");
+  const [renamingSchemaTabId, setRenamingSchemaTabId] = useState<string | null>(null);
   // Resolve active tab (defaults to first). updateDraft below writes through
   // the ref so async describe resolutions land in the tab that started them.
   const activeBuilderTabRef = useRef<string>("");
@@ -1190,15 +1206,34 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.connected, orgKey, state.objects]);
 
-  // ── Last-mode autosave: returning from JSON / Contracts / Architect lands
-  // back where work was happening instead of the home hero.
+  // ── Last-mode + schema-tab autosave: returning from JSON / Contracts /
+  // Architect lands back where work was happening instead of the home hero,
+  // with every canvas tab tracked and restorable.
+  interface MetaAutosaveData {
+    mode: string;
+    schemaTabs?: { tabId: string; name: string }[];
+    activeSchemaTab?: string;
+  }
   const modeRestoredRef = useRef(false);
   useEffect(() => {
     if (!state.connected || !orgKey || modeRestoredRef.current) return;
     modeRestoredRef.current = true;
-    if (new URLSearchParams(window.location.search).get("mode")) return; // deep link wins
+    const deepLink = new URLSearchParams(window.location.search).get("mode");
     void (async () => {
-      const snap = await loadAutosave<{ mode: string }>(orgKey, "meta");
+      const snap = await loadAutosave<MetaAutosaveData>(orgKey, "meta");
+      const tabs = snap?.data.schemaTabs?.filter((t) => t.tabId && t.name).slice(0, MAX_SCHEMA_TABS);
+      if (tabs && tabs.length > 0) {
+        setSchemaTabs(tabs);
+        const active = snap?.data.activeSchemaTab;
+        setActiveSchemaTabId(active && tabs.some((t) => t.tabId === active) ? active : tabs[0].tabId);
+      } else {
+        // First run on this org: Tab 1 inherits the legacy unscoped canvas.
+        const id = newItemId();
+        setSchemaTabs([{ tabId: id, name: "Canvas 1" }]);
+        setActiveSchemaTabId(id);
+        void migrateLegacyWorkspace(orgKey, id);
+      }
+      if (deepLink) return; // deep link wins for mode
       const m = snap?.data.mode;
       if (m && m !== "home" && (m as BuilderMode) !== state.mode) goMode(m as BuilderMode);
     })();
@@ -1206,8 +1241,46 @@ export default function Home() {
   useEffect(() => {
     if (!state.connected || !orgKey) return;
     if (!modeRestoredRef.current) return;
-    queueAutosave(orgKey, "meta", { mode: state.mode });
-  }, [state.mode, state.connected, orgKey]);
+    queueAutosave(orgKey, "meta", {
+      mode: state.mode,
+      schemaTabs: schemaTabs.map((t) => ({ tabId: t.tabId, name: t.name })),
+      activeSchemaTab: activeSchemaTabId || schemaTabs[0]?.tabId,
+    } satisfies MetaAutosaveData);
+  }, [state.mode, state.connected, orgKey, schemaTabs, activeSchemaTabId]);
+
+  // ── Schema canvas tabs ──
+  const addSchemaTab = useCallback(() => {
+    setSchemaTabs((prev) => {
+      if (prev.length >= MAX_SCHEMA_TABS) return prev;
+      const tabId = newItemId();
+      const next = [...prev, { tabId, name: `Canvas ${prev.length + 1}` }];
+      setActiveSchemaTabId(tabId);
+      return next;
+    });
+  }, []);
+
+  const closeSchemaTab = useCallback((tabId: string) => {
+    setSchemaTabs((prev) => {
+      const tab = prev.find((t) => t.tabId === tabId);
+      if (!tab) return prev;
+      if (!window.confirm(`Close tab "${tab.name}"? Its canvas will be deleted.`)) return prev;
+      if (orgKey) {
+        void clearAutosave(orgKey, "schema", tabId);
+        void clearAutosave(orgKey, "notes", tabId);
+      }
+      if (prev.length <= 1) return [{ tabId, name: "Canvas 1" }];
+      const remaining = prev.filter((t) => t.tabId !== tabId);
+      setActiveSchemaTabId((cur) => (cur === tabId || !cur ? remaining[remaining.length - 1].tabId : cur));
+      return remaining;
+    });
+  }, [orgKey]);
+
+  const renameSchemaTab = useCallback((tabId: string, name: string) => {
+    setSchemaTabs((prev) =>
+      prev.map((t) => (t.tabId === tabId ? { ...t, name: name.trim() || t.name } : t))
+    );
+    setRenamingSchemaTabId(null);
+  }, []);
 
   const handleDisconnect = useCallback(() => {
     tokenRef.current = "";
@@ -1224,6 +1297,9 @@ export default function Home() {
     setBuilderTabs([{ tabId: newItemId(), name: null, draft: freshBuilderDraft() }]);
     setActiveBuilderTabId("");
     setRenamingBuilderTabId(null);
+    setSchemaTabs([{ tabId: newItemId(), name: "Canvas 1" }]);
+    setActiveSchemaTabId("");
+    setRenamingSchemaTabId(null);
     setErrors({ connect: null, objects: null, describe: null });
   }, []);
 
@@ -1473,17 +1549,85 @@ export default function Home() {
               </section>
             </div>
 
-            {/* ── Schema deep-dive mode ── */}
+            {/* ── Schema deep-dive mode: tabbed canvases, all mounted, active shown ── */}
             <div hidden={state.mode !== "schema"}>
+              {/* Canvas tabs - up to 5 parallel SchemaPanel instances, state kept per tab */}
+              <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Schema canvases">
+                {schemaTabs.map((t) => {
+                  const active = (schemaTabs.find((x) => x.tabId === activeSchemaTabId) ?? schemaTabs[0]).tabId === t.tabId;
+                  return (
+                    <span
+                      key={t.tabId}
+                      role="tab"
+                      aria-selected={active}
+                      className={`flex items-center gap-1 rounded-lg border pl-2.5 pr-1 py-1 text-[12px] font-medium transition-colors ${
+                        active
+                          ? "border-ivory-950 bg-ivory-950 text-ivory-100"
+                          : "border-[var(--color-line)] bg-[var(--color-surface)] text-ivory-600 hover:text-ivory-950"
+                      }`}
+                    >
+                      {renamingSchemaTabId === t.tabId ? (
+                        <input
+                          autoFocus
+                          defaultValue={t.name}
+                          onBlur={(e) => renameSchemaTab(t.tabId, e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                            if (e.key === "Escape") setRenamingSchemaTabId(null);
+                          }}
+                          aria-label="Canvas name"
+                          className="w-28 rounded border border-bronze-500 px-1 py-0.5 text-[12px] text-ivory-950 focus:outline-none"
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setActiveSchemaTabId(t.tabId)}
+                          onDoubleClick={() => setRenamingSchemaTabId(t.tabId)}
+                          title="Switch canvas (double-click to rename)"
+                          className="max-w-[160px] truncate cursor-pointer"
+                        >
+                          {t.name}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => closeSchemaTab(t.tabId)}
+                        aria-label={`Close ${t.name}`}
+                        title="Close canvas"
+                        className={`rounded px-1 cursor-pointer ${active ? "hover:bg-white/20" : "hover:bg-ivory-200"}`}
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  );
+                })}
+                <Button
+                  size="sm"
+                  onClick={addSchemaTab}
+                  disabled={schemaTabs.length >= MAX_SCHEMA_TABS}
+                  title={schemaTabs.length >= MAX_SCHEMA_TABS ? `Up to ${MAX_SCHEMA_TABS} canvases` : "Open a new blank canvas (keeps current work)"}
+                >
+                  + New tab
+                </Button>
+              </div>
               <section id="schema" aria-label="Schema Deep Dive" className="scroll-mt-20">
-                <SchemaPanel
-                  objects={state.objects}
-                  instanceUrl={state.instanceUrl}
-                  apiVersion={state.apiVersion}
-                  orgKey={orgKey}
-                  getToken={() => tokenRef.current}
-                  onSessionExpired={handleSessionExpired}
-                />
+                {schemaTabs.map((t) => {
+                  const active = (schemaTabs.find((x) => x.tabId === activeSchemaTabId) ?? schemaTabs[0]).tabId === t.tabId;
+                  return (
+                    <div key={t.tabId} hidden={!active}>
+                      <SchemaPanel
+                        objects={state.objects}
+                        instanceUrl={state.instanceUrl}
+                        apiVersion={state.apiVersion}
+                        orgKey={orgKey}
+                        tabId={t.tabId}
+                        tabName={t.name}
+                        getToken={() => tokenRef.current}
+                        onSessionExpired={handleSessionExpired}
+                      />
+                    </div>
+                  );
+                })}
               </section>
             </div>
 

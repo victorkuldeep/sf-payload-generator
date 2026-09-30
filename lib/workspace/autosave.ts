@@ -25,14 +25,15 @@ export interface AutosaveRecord<T = unknown> {
   data: T;
 }
 
-const recordId = (orgKey: string, slice: AutosaveSlice) => `${orgKey}::${slice}`;
+const recordId = (orgKey: string, slice: AutosaveSlice, tabId?: string) =>
+  tabId ? `${orgKey}::tab:${tabId}::${slice}` : `${orgKey}::${slice}`;
 
-export async function loadAutosave<T>(orgKey: string, slice: AutosaveSlice): Promise<{ savedAt: number; data: T } | null> {
+export async function loadAutosave<T>(orgKey: string, slice: AutosaveSlice, tabId?: string): Promise<{ savedAt: number; data: T } | null> {
   try {
     const rec = await withStore<AutosaveRecord<T> | undefined>(
       STORES.workspaces,
       "readonly",
-      (store) => store.get(recordId(orgKey, slice))
+      (store) => store.get(recordId(orgKey, slice, tabId))
     );
     if (!rec) return null;
     return { savedAt: rec.savedAt, data: rec.data };
@@ -41,20 +42,38 @@ export async function loadAutosave<T>(orgKey: string, slice: AutosaveSlice): Pro
   }
 }
 
-async function putAutosave<T>(orgKey: string, slice: AutosaveSlice, data: T): Promise<void> {
+async function putAutosave<T>(orgKey: string, slice: AutosaveSlice, data: T, tabId?: string): Promise<void> {
   try {
-    const rec: AutosaveRecord<T> = { id: recordId(orgKey, slice), orgKey, slice, savedAt: Date.now(), data };
+    const rec: AutosaveRecord<T> = { id: recordId(orgKey, slice, tabId), orgKey, slice, savedAt: Date.now(), data };
     await withStore(STORES.workspaces, "readwrite", (store) => store.put(rec));
   } catch {
     /* quota or unavailable - autosave is best-effort */
   }
 }
 
-export async function clearAutosave(orgKey: string, slice: AutosaveSlice): Promise<void> {
+export async function clearAutosave(orgKey: string, slice: AutosaveSlice, tabId?: string): Promise<void> {
   try {
-    await withStore(STORES.workspaces, "readwrite", (store) => store.delete(recordId(orgKey, slice)));
+    await withStore(STORES.workspaces, "readwrite", (store) => store.delete(recordId(orgKey, slice, tabId)));
   } catch {
     /* ignore */
+  }
+}
+
+/**
+ * One-time lazy migration: legacy unscoped schema/notes slices become Tab 1's
+ * slices. Runs once per org when no tab list exists yet - existing canvases
+ * survive the upgrade to tabbed Schema untouched.
+ */
+export async function migrateLegacyWorkspace(orgKey: string, tabId: string): Promise<void> {
+  for (const slice of ["schema", "notes"] as AutosaveSlice[]) {
+    try {
+      const legacy = await loadAutosave<unknown>(orgKey, slice);
+      if (!legacy) continue;
+      await putAutosave(orgKey, slice, legacy.data, tabId);
+      await clearAutosave(orgKey, slice);
+    } catch {
+      /* best-effort */
+    }
   }
 }
 
@@ -64,23 +83,23 @@ export async function clearAutosave(orgKey: string, slice: AutosaveSlice): Promi
 const AUTOSAVE_DEBOUNCE_MS = 800;
 const AUTOSAVE_INTERVAL_MS = 20_000;
 
-const pending = new Map<string, { orgKey: string; slice: AutosaveSlice; data: unknown }>();
+const pending = new Map<string, { orgKey: string; slice: AutosaveSlice; tabId?: string; data: unknown }>();
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 let intervalStarted = false;
 let pagehideHooked = false;
 
-function key(orgKey: string, slice: AutosaveSlice) {
-  return recordId(orgKey, slice);
+function key(orgKey: string, slice: AutosaveSlice, tabId?: string) {
+  return recordId(orgKey, slice, tabId);
 }
 
-function writeNow(entry: { orgKey: string; slice: AutosaveSlice; data: unknown }): Promise<void> {
-  return putAutosave(entry.orgKey, entry.slice, entry.data);
+function writeNow(entry: { orgKey: string; slice: AutosaveSlice; tabId?: string; data: unknown }): Promise<void> {
+  return putAutosave(entry.orgKey, entry.slice, entry.data, entry.tabId);
 }
 
-export function queueAutosave(orgKey: string, slice: AutosaveSlice, data: unknown): void {
+export function queueAutosave(orgKey: string, slice: AutosaveSlice, data: unknown, tabId?: string): void {
   if (typeof window === "undefined" || !orgKey) return;
-  const k = key(orgKey, slice);
-  pending.set(k, { orgKey, slice, data });
+  const k = key(orgKey, slice, tabId);
+  pending.set(k, { orgKey, slice, tabId, data });
   hookPagehide();
   startInterval();
   const existing = timers.get(k);
