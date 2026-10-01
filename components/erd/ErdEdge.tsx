@@ -54,7 +54,7 @@ function ErdEdgeInner({
   // owns the last stretch - nothing grazes tangentially, nothing overlaps.
   // Clamped for stubby edges so the path can never invert.
   const span = Math.hypot(targetX - sourceX, targetY - sourceY);
-  const TRIM = Math.min(30, span * 0.3);
+  const TRIM = Math.min(12, span * 0.3);
   const tX = targetX - td.x * TRIM;
   const tY = targetY - td.y * TRIM;
   const bezier = getBezierPath({
@@ -85,9 +85,9 @@ function ErdEdgeInner({
   // line touches the circle's outer boundary, then three prongs exit the
   // far side - the middle one diametrically straight through to the box
   // edge, the other two flanking left and right. Feet land on the table.
-  const CIRCLE_R = 5.5;
+  const CIRCLE_R = 4;
   const cc = { x: tX - td.x * CIRCLE_R, y: tY - td.y * CIRCLE_R };
-  const FAN_HALF = 14;
+  const FAN_HALF = 6;
   const foot = (side: number) => ({
     x: targetX + tp.x * side,
     y: targetY + tp.y * side,
