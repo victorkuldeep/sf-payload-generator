@@ -706,6 +706,44 @@ function GraphDetailCardInner({  detail,
   );
 }
 
+// Canvas markdown editor shared by the notes panel and the fullscreen zen
+// overlay. `fill` stretches it to the overlay height instead of a fixed min.
+function CanvasNotesField({
+  tab,
+  text,
+  onText,
+  onToggleTask,
+  fill,
+}: {
+  tab: "write" | "preview";
+  text: string;
+  onText: (text: string) => void;
+  onToggleTask: (lineIndex: number) => void;
+  fill?: boolean;
+}) {
+  if (tab === "write") {
+    return (
+      <textarea
+        value={text}
+        onChange={(e) => onText(e.target.value)}
+        placeholder={"# Design log\n- [ ] Confirm junction on Quote_Line__c\n- 14:32 — Lead conversion mapping…"}
+        spellCheck={false}
+        aria-label="Canvas design notes (markdown)"
+        className={`${fill ? "min-h-0 flex-1 resize-none" : "min-h-[320px] flex-1 resize-y"} w-full rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-3 font-mono text-xs leading-relaxed text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none`}
+      />
+    );
+  }
+  return (
+    <div className={`${fill ? "min-h-0 flex-1 overflow-y-auto" : "min-h-[320px] flex-1"} rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-3`}>
+      {text.trim() ? (
+        renderMarkdownLite(text, onToggleTask)
+      ) : (
+        <p className="text-xs text-ivory-500">Nothing to preview yet - write some markdown.</p>
+      )}
+    </div>
+  );
+}
+
 // Memo: family panel holds checkbox state - without this, every graph pan or
 // canvas tick would remount the card and wipe checked rows mid-selection.
 const GraphDetailCard = memo(GraphDetailCardInner);
@@ -1208,6 +1246,7 @@ export default function SchemaPanel({
     todos: CanvasTodo[];
   }
   const [notesOpen, setNotesOpen] = useState(false);
+  const [notesZen, setNotesZen] = useState(false);
   const [notesTab, setNotesTab] = useState<"write" | "preview">("write");
   const [notesText, setNotesText] = useState("");
   const [notesSavedAt, setNotesSavedAt] = useState<number | null>(null);
@@ -1257,6 +1296,7 @@ export default function SchemaPanel({
   const openEntityNote = useCallback((apiName: string) => {
     setNoteEntity(apiName);
     setNotesOpen(true);
+    setNotesZen(false);
   }, []);
 
   const setEntityNoteText = useCallback((api: string, text: string) => {
@@ -4458,11 +4498,25 @@ export default function SchemaPanel({
                 <path d="M12 7.5V12l3 2" />
               </svg>
             </button>
+            {!noteEntity && (
+              <button
+                type="button"
+                onClick={() => setNotesZen(true)}
+                title="Pop out fullscreen editor (Outlook-style) - collapse back anytime"
+                aria-label="Open fullscreen notes editor"
+                className="rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                  <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                </svg>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
                 setNotesOpen(false);
                 setNoteEntity(null);
+                setNotesZen(false);
               }}
               aria-label="Close design notes"
               title="Close notes"
@@ -4474,7 +4528,7 @@ export default function SchemaPanel({
             </button>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-3.5">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3.5">
             {noteEntity ? (
               <EntityNoteEditor
                 apiName={noteEntity}
@@ -4498,7 +4552,7 @@ export default function SchemaPanel({
                 onClear={() => clearEntityNote(noteEntity)}
               />
             ) : (
-              <>
+              <div className="flex min-h-0 flex-1 flex-col">
                 {(openTodos.length > 0 || canvasOpenTodos.length > 0) && (
                   <div className="mb-3 rounded-xl border border-red-200 bg-red-50/50 p-2.5">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-red-700">
@@ -4573,30 +4627,18 @@ export default function SchemaPanel({
                     </ul>
                   )}
                 </div>
-                {notesTab === "write" ? (
-                  <textarea
-                    value={notesText}
-                    onChange={(e) => {
-                      setNotesText(e.target.value);
-                      touchNotes();
-                    }}
-                    placeholder={"# Design log\n- [ ] Confirm junction on Quote_Line__c\n- 14:32 — Lead conversion mapping…"}
-                    spellCheck={false}
-                    aria-label="Canvas design notes (markdown)"
-                    className="min-h-[320px] w-full resize-y rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-3 font-mono text-xs leading-relaxed text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
-                  />
-                ) : (
-                  <div className="min-h-[320px] rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-3">
-                    {notesText.trim() ? (
-                      renderMarkdownLite(notesText, (idx) => {
-                        setNotesText((p) => toggleTaskLine(p, idx));
-                        touchNotes();
-                      })
-                    ) : (
-                      <p className="text-xs text-ivory-500">Nothing to preview yet - write some markdown.</p>
-                    )}
-                  </div>
-                )}
+                <CanvasNotesField
+                  tab={notesTab}
+                  text={notesText}
+                  onText={(v) => {
+                    setNotesText(v);
+                    touchNotes();
+                  }}
+                  onToggleTask={(idx) => {
+                    setNotesText((p) => toggleTaskLine(p, idx));
+                    touchNotes();
+                  }}
+                />
                 <div className="mt-2 flex items-center justify-between gap-2">
                   <p className="text-[10px] text-ivory-500">
                     {notesText.trim().split(/\s+/).filter(Boolean).length} words · markdown-lite · attaches to snapshots
@@ -4616,10 +4658,64 @@ export default function SchemaPanel({
                     )}
                   </div>
                 </div>
-              </>
+              </div>
             )}
           </div>
         </aside>
+      )}
+
+      {/* Fullscreen notes editor (Outlook-style pop-out) - same canvas text,
+          collapses straight back to the vertical panel. */}
+      {notesZen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-ivory-950/40 p-4 sm:p-10" role="dialog" aria-modal="true" aria-label="Design notes fullscreen editor">
+          <div className="flex h-full w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] shadow-2xl">
+            <div className="flex items-center gap-2 border-b border-[var(--color-line-soft)] px-4 py-2.5">
+              <div className="min-w-0 flex-1">
+                <h2 className="truncate text-sm font-bold text-ivory-950">Design Notes</h2>
+                <p className="truncate font-mono text-[10px] text-ivory-600">
+                  {notesText.trim().split(/\s+/).filter(Boolean).length} words · {notesSavedAt ? `Auto-saved ${timeAgo(notesSavedAt)}` : "Autosaves per org"}
+                </p>
+              </div>
+              <div className="flex rounded-lg border border-[var(--color-line)] overflow-hidden" role="tablist" aria-label="Notes mode">
+                {(["write", "preview"] as const).map((t) => (
+                  <button
+                    key={t}
+                    role="tab"
+                    aria-selected={notesTab === t}
+                    onClick={() => setNotesTab(t)}
+                    className={`px-2.5 py-1 text-[11px] font-semibold capitalize transition-colors cursor-pointer ${notesTab === t ? "bg-ivory-950 text-ivory-100" : "text-ivory-600 hover:text-ivory-950"}`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setNotesZen(false)}
+                title="Collapse back to the side panel"
+                aria-label="Collapse back to side panel"
+                className="rounded-lg bg-ivory-950 px-3 py-1.5 text-[11px] font-semibold text-ivory-100 hover:bg-bronze-600 transition-colors cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col p-4">
+              <CanvasNotesField
+                tab={notesTab}
+                text={notesText}
+                onText={(v) => {
+                  setNotesText(v);
+                  touchNotes();
+                }}
+                onToggleTask={(idx) => {
+                  setNotesText((p) => toggleTaskLine(p, idx));
+                  touchNotes();
+                }}
+                fill
+              />
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Architecture Inbox overlay */}      <ArchitectureInbox
