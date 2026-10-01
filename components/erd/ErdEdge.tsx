@@ -19,8 +19,10 @@ function dirFor(pos: Position): { x: number; y: number } {
 }
 
 /**
- * ERD relationship edge: plain geometry, no marker refs.
- * Single bar at the "one" (parent) end, crow's foot at the "many" (child) end.
+ * ERD relationship edge in crow's foot notation: parallel double bar at the
+ * "one" (parent) end, hollow circle + three-line fan at the "many" end.
+ * Glyphs are drawn from handle geometry (no marker refs) so they stay crisp
+ * on curves; solid = master-detail, dotted = lookup.
  */
 function ErdEdgeInner({
   id,
@@ -64,17 +66,24 @@ function ErdEdgeInner({
   const sp = { x: -sd.y, y: sd.x };
   const tp = { x: -td.y, y: td.x };
 
-  // "One" bar across the line at the source end
+  // "One" end: parallel double bar across the line at the source end.
+  // "Many" end: hollow circle (optional) + three-line crow's foot fanning
+  // back from behind the circle. Glyphs stay solid even on dotted lookups.
   const BAR_HALF = 5;
-  const bar = `M ${sourceX + sp.x * BAR_HALF},${sourceY + sp.y * BAR_HALF} L ${sourceX - sp.x * BAR_HALF},${sourceY - sp.y * BAR_HALF}`;
+  const BAR_GAP = 4;
+  const tick = (bx: number, by: number) =>
+    `M ${bx + sp.x * BAR_HALF},${by + sp.y * BAR_HALF} L ${bx - sp.x * BAR_HALF},${by - sp.y * BAR_HALF}`;
+  const bar = `${tick(sourceX, sourceY)} ${tick(sourceX - sd.x * BAR_GAP, sourceY - sd.y * BAR_GAP)}`;
 
-  // Crow's foot fanning back from the target end
+  // Crow's foot fanning back from behind the circle at the target end
+  const CIRCLE_R = 4;
+  const cc = { x: targetX - td.x * CIRCLE_R, y: targetY - td.y * CIRCLE_R };
   const FAN_LEN = 10;
   const FAN_HALF = 6;
-  const apex = { x: targetX, y: targetY };
+  const apex = { x: targetX - td.x * CIRCLE_R * 2, y: targetY - td.y * CIRCLE_R * 2 };
   const back = (side: number) => ({
-    x: targetX - td.x * FAN_LEN + tp.x * side,
-    y: targetY - td.y * FAN_LEN + tp.y * side,
+    x: apex.x - td.x * FAN_LEN + tp.x * side,
+    y: apex.y - td.y * FAN_LEN + tp.y * side,
   });
   const f1 = back(FAN_HALF);
   const f2 = back(0);
@@ -101,6 +110,7 @@ function ErdEdgeInner({
         strokeDasharray={dash}
       />
       <path d={bar} stroke={stroke} strokeWidth={2} strokeLinecap="round" />
+      <circle cx={cc.x} cy={cc.y} r={CIRCLE_R} fill="none" stroke={stroke} strokeWidth={1.5} />
       <path d={fan} stroke={stroke} strokeWidth={1.5} strokeLinecap="round" fill="none" />
       {selected && label != null && String(label) !== "" && (
         <EdgeLabelRenderer>
