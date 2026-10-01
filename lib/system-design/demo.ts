@@ -1,0 +1,24 @@
+"use client";
+
+import { newProject, newSystemFromTemplate, SYSTEM_TEMPLATES, type SystemProject } from "./model";
+
+/**
+ * Demo topology: Lead lands in Salesforce, flows through middleware into
+ * ServiceNow, surfaced by a React app. Explains the product in one glance:
+ * place, connect, inspect - then replace with your own systems.
+ */
+export function buildDemoProject(): SystemProject {
+  const project = newProject("Demo: Lead triage flow");
+  const by = (type: string) => SYSTEM_TEMPLATES.find((t) => t.systemType === type)!;
+  const sf = { ...newSystemFromTemplate(by("salesforce"), { x: 80, y: 200 }, 1), name: "Salesforce CRM", id: "sys_demo_sf" };
+  const mw = { ...newSystemFromTemplate(by("middleware"), { x: 460, y: 200 }, 1), name: "Integration Broker", id: "sys_demo_mw" };
+  const sn = { ...newSystemFromTemplate(by("servicenow"), { x: 840, y: 80 }, 1), name: "ServiceNow ITSM", id: "sys_demo_sn" };
+  const app = { ...newSystemFromTemplate(by("webapp"), { x: 840, y: 330 }, 1), name: "Triage Console", id: "sys_demo_app" };
+  project.systems = [sf, mw, sn, app];
+  project.connections = [
+    { id: "conn_demo_1", sourceId: sf.id, targetId: mw.id, label: "Lead created event", status: "draft" as const },
+    { id: "conn_demo_2", sourceId: mw.id, targetId: sn.id, label: "Create incident", status: "draft" as const },
+    { id: "conn_demo_3", sourceId: mw.id, targetId: app.id, label: "Push triage view", status: "draft" as const },
+  ];
+  return project;
+}
