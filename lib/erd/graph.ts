@@ -42,6 +42,10 @@ export interface ErdNodeData extends Record<string, unknown> {
   onNoteClick?: (apiName: string) => void;
   /** Promote this table to canvas root (shared re-root, both views follow). */
   onMakeRoot?: (apiName: string) => void;
+  /** Record-walk eye state: live data aboard, one-click reachable, or locked. */
+  recordState?: "live" | "reachable" | "locked";
+  recordHint?: string;
+  onRecordClick?: (apiName: string, anchor: { x: number; y: number; width: number; height: number }) => void;
   onRefreshNode?: (id: string) => void;
   onPicklistClick?: (
     nodeId: string,

@@ -24,6 +24,20 @@ import {
 import { newItemId } from "@/lib/collection/types";
 import { loadAutosave, queueAutosave, clearAutosave } from "@/lib/workspace/autosave";
 import { renderMarkdownLite, toggleTaskLine } from "./erd/notesMd";
+import { RecordPopover, type RecordPopData } from "./erd/RecordPopover";
+import {
+  isValidRecordId,
+  displayFieldNames,
+  buildRootQuery,
+  buildChildrenQuery,
+  resolveTarget,
+  nodeRecordState,
+  emptyLoadedState,
+  childPageKey,
+  RECORD_ROW_LIMIT,
+  type LoadedState,
+  type ResolveContext,
+} from "@/lib/erd/recordWalk";
 import { ShareDialog } from "./erd/ShareDialog";
 import { validateShareStructure, type ShareStructure } from "@/lib/erd/shareLink";
 import { validateSharePayload, shareFileName, ERD_SHARE_KIND, ERD_SHARE_VERSION, type ErdSharePayload } from "@/lib/erd/share";
@@ -1332,6 +1346,248 @@ export default function SchemaPanel({
     setNoteEntity(null);
   }, [touchNotes]);
 
+  const labels = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const o of objects) m.set(o.name, o.label);
+    for (const d of describes.values()) m.set(d.name, d.label);
+    return m;
+  }, [objects, describes]);
+
+  // ── Record Walk (session-only live data): root auto-loads from a Record Id,
+  // every other node pulls on demand via reachability. Nothing persists -
+  // the store dies with the tab and never enters autosave/share/export.
+  const [recordRoot, setRecordRoot] = useState<{ apiName: string; id: string } | null>(null);
+  const [recordStore, setRecordStore] = useState<LoadedState>(() => emptyLoadedState());
+  const [recordBusy, setRecordBusy] = useState<string | null>(null);
+  const [recordModalOpen, setRecordModalOpen] = useState(false);
+  const [recordInput, setRecordInput] = useState("");
+  const [recordError, setRecordError] = useState<string | null>(null);
+  const [recordPop, setRecordPop] = useState<{ apiName: string; x: number; y: number } | null>(null);
+  const [recordPopError, setRecordPopError] = useState<string | null>(null);
+  const [recordMoreBusy, setRecordMoreBusy] = useState<string | null>(null);
+
+  const recordCtx = useMemo((): ResolveContext => {
+    const canvasApis = [...describes.keys()];
+    return {
+      rootApi: recordRoot?.apiName ?? null,
+      rootId: recordRoot?.id ?? null,
+      canvasApis,
+      getDescribe: (api) => {
+        const d = describes.get(api);
+        if (!d) return undefined;
+        return {
+          fields: d.fields.map((f) => ({ name: f.name, type: f.type, referenceTo: f.referenceTo ?? [], nameField: f.nameField })),
+          childRelationships: (d.childRelationships ?? []).map((r) => ({ childSObject: r.childSObject, relationshipName: r.relationshipName ?? null })),
+        };
+      },
+      labelOf: (api) => labels.get(api) ?? api,
+    };
+  }, [recordRoot, describes, labels]);
+
+  const runRecordQuery = useCallback(async (soql: string): Promise<Record<string, unknown>[]> => {
+    const token = getToken();
+    if (!token) throw new Error("Session token unavailable. Please reconnect.");
+    const response = await apiFetch("/api/salesforce/soql", { instanceUrl, token, apiVersion, soql });
+    const data = (await response.json()) as { records?: Record<string, unknown>[]; error?: string; success?: boolean };
+    if (!response.ok || data.success === false) {
+      const message = typeof data.error === "string" ? data.error : "Query failed";
+      if (isSessionExpiredMessage(message)) onSessionExpired?.();
+      throw new Error(message);
+    }
+    return data.records ?? [];
+  }, [instanceUrl, apiVersion, getToken, onSessionExpired]);
+
+  const fetchRootRecord = useCallback(async (id: string) => {
+    const clean = id.trim();
+    if (!isValidRecordId(clean)) throw new Error("Enter a 15- or 18-character Salesforce record Id.");
+    if (!rootName) throw new Error("Pick a root object first.");
+    const d = describes.get(rootName);
+    if (!d) throw new Error(`Describe ${rootName} first - add it to the canvas.`);
+    const { select } = displayFieldNames(
+      d.fields.map((f) => ({ name: f.name, type: f.type, referenceTo: f.referenceTo ?? [], nameField: f.nameField }))
+    );
+    const rows = await runRecordQuery(buildRootQuery(rootName, select, clean));
+    const rec = rows[0] as ({ attributes?: { type?: string } } & Record<string, unknown>) | undefined;
+    if (!rec) throw new Error("No record found with that Id (or access denied).");
+    const actual = rec.attributes?.type;
+    if (actual && actual !== rootName) {
+      throw new Error(`That Id belongs to ${actual}, not ${rootName}. Switch root or use a ${rootName} Id.`);
+    }
+    const { attributes: _attrs, ...fields } = rec;
+    void _attrs;
+    setRecordRoot({ apiName: rootName, id: clean });
+    setRecordStore((prev) => {
+      const next = new Map(prev.singles);
+      next.set(rootName, new Map([[clean, { id: clean, fields }]]));
+      return { singles: next, children: prev.children };
+    });
+  }, [rootName, describes, runRecordQuery]);
+
+  const openNodeRecord = useCallback(async (
+    apiName: string,
+    anchor: { x: number; y: number; width: number; height: number }
+  ) => {
+    setRecordPop({ apiName, x: anchor.x, y: anchor.y });
+    setRecordPopError(null);
+    const plan = resolveTarget(apiName, recordStoreRef.current, recordCtxRef.current);
+    try {
+      if (plan.kind === "blocked") return; // popover shows the hint + shortcut
+      if (recordBusyRef.current) return;
+      // Already aboard? Just reveal (no refetch - deliberate pulls only).
+      if (plan.kind === "single" && recordStoreRef.current.singles.get(apiName)?.has(plan.id)) return;
+      if (plan.kind === "children") {
+        const key = childPageKey(plan.childApi, plan.lookupField, plan.parentId);
+        if (recordStoreRef.current.children.has(key)) return;
+      }
+      setRecordBusy(apiName);
+      recordBusyRef.current = apiName;
+      if (plan.kind === "single") {
+        const d = describes.get(apiName);
+        if (!d) throw new Error(`${apiName} is not on canvas - add it first.`);
+        const { select } = displayFieldNames(
+          d.fields.map((f) => ({ name: f.name, type: f.type, referenceTo: f.referenceTo ?? [], nameField: f.nameField }))
+        );
+        const rows = await runRecordQuery(buildRootQuery(apiName, select, plan.id));
+        const rec = rows[0] as Record<string, unknown> | undefined;
+        if (!rec) throw new Error("No record found (or access denied).");
+        const { attributes: _a, ...fields } = rec as { attributes?: unknown } & Record<string, unknown>;
+        void _a;
+        setRecordStore((prev) => {
+          const next = new Map(prev.singles);
+          const per = new Map(next.get(apiName) ?? []);
+          per.set(plan.id, { id: plan.id, fields });
+          next.set(apiName, per);
+          return { singles: next, children: prev.children };
+        });
+      } else {
+        const d = describes.get(plan.childApi);
+        const nameField = d?.fields.find((f) => f.nameField)?.name ?? (d?.fields.some((f) => f.name === "Name") ? "Name" : null);
+        const select = ["Id", ...(nameField && nameField !== "Id" ? [nameField] : []), plan.lookupField];
+        const rows = await runRecordQuery(buildChildrenQuery(plan.childApi, plan.lookupField, plan.parentId, [...new Set(select)], 0));
+        const key = childPageKey(plan.childApi, plan.lookupField, plan.parentId);
+        setRecordStore((prev) => {
+          const next = new Map(prev.children);
+          next.set(key, {
+            childApi: plan.childApi, lookupField: plan.lookupField,
+            parentApi: plan.parentApi, parentId: plan.parentId,
+            rows, offset: rows.length, exhausted: rows.length < RECORD_ROW_LIMIT,
+          });
+          return { singles: prev.singles, children: next };
+        });
+      }
+    } catch (err) {
+      setRecordPopError(err instanceof Error ? err.message : "Record pull failed.");
+    } finally {
+      recordBusyRef.current = null;
+      setRecordBusy(null);
+    }
+  }, [describes, runRecordQuery]);
+
+  const recordStoreRef = useRef(recordStore);
+  recordStoreRef.current = recordStore;
+  const recordCtxRef = useRef(recordCtx);
+  recordCtxRef.current = recordCtx;
+  const recordBusyRef = useRef<string | null>(null);
+
+  const loadMoreRecords = useCallback(async (sectionKey: string) => {
+    const page = recordStoreRef.current.children.get(sectionKey);
+    if (!page || page.exhausted || recordMoreBusy) return;
+    setRecordMoreBusy(sectionKey);
+    setRecordPopError(null);
+    try {
+      const d = describes.get(page.childApi);
+      const nameField = d?.fields.find((f) => f.nameField)?.name ?? (d?.fields.some((f) => f.name === "Name") ? "Name" : null);
+      const select = ["Id", ...(nameField && nameField !== "Id" ? [nameField] : []), page.lookupField];
+      const rows = await runRecordQuery(buildChildrenQuery(page.childApi, page.lookupField, page.parentId, [...new Set(select)], page.offset));
+      setRecordStore((prev) => {
+        const next = new Map(prev.children);
+        const cur = next.get(sectionKey);
+        if (!cur) return prev;
+        next.set(sectionKey, {
+          ...cur,
+          rows: [...cur.rows, ...rows],
+          offset: cur.offset + rows.length,
+          exhausted: rows.length < RECORD_ROW_LIMIT,
+        });
+        return { singles: prev.singles, children: next };
+      });
+    } catch (err) {
+      setRecordPopError(err instanceof Error ? err.message : "Load-more failed.");
+    } finally {
+      setRecordMoreBusy(null);
+    }
+  }, [describes, runRecordQuery, recordMoreBusy]);
+
+  const clearRecordData = useCallback(() => {
+    setRecordRoot(null);
+    setRecordStore(emptyLoadedState());
+    setRecordPop(null);
+    setRecordPopError(null);
+    setRecordInput("");
+    setRecordError(null);
+    setRecordModalOpen(false);
+  }, []);
+
+  const recordNodeData = useCallback((apiName: string) => {
+    const { state, hint } = nodeRecordState(apiName, recordStore, recordCtx);
+    return {
+      recordState: state as "live" | "reachable" | "locked",
+      recordHint: hint ?? undefined,
+      onRecordClick: (
+        api: string,
+        anchor: { x: number; y: number; width: number; height: number }
+      ) => {
+        void openNodeRecord(api, anchor);
+      },
+    };
+  }, [recordStore, recordCtx, openNodeRecord]);
+
+  const buildRecordPop = useCallback((apiName: string, x: number, y: number): RecordPopData => {
+    const label = labels.get(apiName) ?? apiName;
+    const loading = recordBusy === apiName;
+    const singles = [...(recordStore.singles.get(apiName)?.values() ?? [])];
+    const sections: RecordPopData["sections"] = [];
+    for (const [key, page] of recordStore.children) {
+      if (page.childApi !== apiName) continue;
+      sections.push({
+        key,
+        viaLabel: `${labels.get(page.parentApi) ?? page.parentApi} · ${page.lookupField}`,
+        rows: page.rows,
+        exhausted: page.exhausted,
+        loadingMore: recordMoreBusy === key,
+      });
+    }
+    if (singles.length === 0 && sections.length === 0 && !loading) {
+      const plan = resolveTarget(apiName, recordStore, recordCtx);
+      if (plan.kind === "blocked") {
+        return {
+          apiName, nodeLabel: label, single: null, sections, loading, error: recordPopError, x, y,
+          blockedHint: plan.missingApi === apiName
+            ? "No lookup path from a loaded record reaches this object yet."
+            : `Nothing loaded connects here yet.`,
+          blockedApi: plan.missingApi === apiName ? null : plan.missingApi,
+        };
+      }
+    }
+    const first = singles[0];
+    return {
+      apiName,
+      nodeLabel: label,
+      single: first
+        ? Object.entries(first.fields)
+            .filter(([, v]) => v === null || v === undefined || typeof v !== "object")
+            .map(([k, v]) => ({ label: k, value: v === null || v === undefined ? "—" : String(v) }))
+        : null,
+      sections,
+      loading,
+      error: recordPopError,
+      x,
+      y,
+      blockedHint: null,
+      blockedApi: null,
+    };
+  }, [labels, recordStore, recordBusy, recordPopError, recordCtx]);
+
   // ── Inbox lifecycle writers (Phase 2): meta merges onto the canonical
   // entity/snapshot records with history entries. Legacy todo/done flags
   // stay meaningful: kind task ↔ todo, done ↔ resolved.
@@ -1537,13 +1793,6 @@ export default function SchemaPanel({
   useEffect(() => {
     setPopover(null);
   }, [describes]);
-
-  const labels = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const o of objects) m.set(o.name, o.label);
-    for (const d of describes.values()) m.set(d.name, d.label);
-    return m;
-  }, [objects, describes]);
 
   const filteredObjects = useMemo(
     () => rankObjects(objects, rootSearch, 80),
@@ -2055,10 +2304,11 @@ export default function SchemaPanel({
           refreshing: refreshingIds.has(n.id),
           onRefreshNode: refreshNode,
           onPicklistClick: openPicklist,
+          ...recordNodeData(n.id),
         },
       })),
     }),
-    [baseElements, refreshingIds, refreshNode, openPicklist]
+    [baseElements, refreshingIds, refreshNode, openPicklist, recordNodeData]
   );
 
   // Retired with the recursive "Discover full": the chain explorer walks
@@ -3432,6 +3682,11 @@ export default function SchemaPanel({
     // Explicit wipe: delete the autosaved canvas too, or the next connect to
     // this org would resurrect the cleared canvas (empty mounts stay silent).
     if (orgKey) void clearAutosave(orgKey, "schema", tabId);
+    // Session-only record data dies with the canvas.
+    setRecordRoot(null);
+    setRecordStore(emptyLoadedState());
+    setRecordPop(null);
+    setRecordPopError(null);
     setDescribes(new Map());
     setRemovedIds(new Set());
     setDismissedIds(new Set());
@@ -3694,6 +3949,26 @@ export default function SchemaPanel({
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
                 <path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5" />
               </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setRecordError(null);
+                setRecordModalOpen(true);
+              }}
+              disabled={describes.size === 0 || !rootName}
+              aria-label="Walk live record data from a root record Id"
+              title="Record Walk - enter a root record Id, then pull live data node by node (session only, never stored)"
+              className="relative rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer disabled:opacity-40"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                <ellipse cx="12" cy="5.5" rx="7.5" ry="2.8" />
+                <path d="M4.5 5.5v13c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-13" />
+                <path d="M4.5 12c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8" />
+              </svg>
+              {recordRoot && (
+                <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full border border-white bg-bronze-500" aria-hidden="true" />
+              )}
             </button>
             </div>
           </div>
@@ -4769,6 +5044,105 @@ export default function SchemaPanel({
 
       {/* Picklist inspector */}
       {popover && <PicklistPopover pop={popover} onClose={() => setPopover(null)} />}
+
+      {/* Record Walk popover */}
+      {recordPop && (
+        <RecordPopover
+          pop={buildRecordPop(recordPop.apiName, recordPop.x, recordPop.y)}
+          onClose={() => {
+            setRecordPop(null);
+            setRecordPopError(null);
+          }}
+          onLoadMore={(key) => void loadMoreRecords(key)}
+          onFetchMissing={(api) => {
+            // Chain guidance: open the missing parent the same way.
+            const rect = { x: recordPop.x, y: recordPop.y, width: 12, height: 12 };
+            void openNodeRecord(api, rect);
+          }}
+          onClear={clearRecordData}
+        />
+      )}
+
+      {/* Record Walk entry */}
+      {recordModalOpen && (
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="record-title"
+          onClick={() => setRecordModalOpen(false)}
+        >
+          <div className="modal-card max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 pt-5 pb-4 border-b border-[var(--color-line-soft)]">
+              <p className="text-[10px] font-semibold uppercase tracking-[2px] text-[var(--color-accent-dark)]">
+                Record Walk · {rootName || "no root"}
+              </p>
+              <h2 id="record-title" className="mt-1 text-lg font-bold text-ivory-950">
+                Walk live data from a record
+              </h2>
+              <p className="mt-1 text-xs leading-relaxed text-ivory-600">
+                Enter a {rootName || "root"} record Id. It loads automatically; every other
+                node pulls on demand with one click. Session only - nothing is stored.
+              </p>
+            </div>
+            <div className="px-6 py-4">
+              <div className="flex gap-1.5">
+                <Input
+                  placeholder="e.g. 00Qxx0000012345…"
+                  value={recordInput}
+                  onChange={(e) => setRecordInput(e.target.value)}
+                  aria-label="Root record Id"
+                />
+                <Button
+                  size="sm"
+                  disabled={recordBusy !== null || !recordInput.trim()}
+                  onClick={() => {
+                    setRecordError(null);
+                    const id = recordInput.trim();
+                    const api = rootName;
+                    setRecordBusy(api);
+                    void (async () => {
+                      try {
+                        await fetchRootRecord(id);
+                        setRecordModalOpen(false);
+                        setNotice(`Root record ${id} loaded - eye icons pull the rest, one node at a time.`);
+                      } catch (err) {
+                        setRecordError(err instanceof Error ? err.message : "Record fetch failed.");
+                      } finally {
+                        setRecordBusy(null);
+                      }
+                    })();
+                  }}
+                >
+                  {recordBusy ? "Fetching…" : "Fetch"}
+                </Button>
+              </div>
+              {recordError && (
+                <p className="mt-2.5 rounded-lg border border-red-300 bg-red-50 px-2.5 py-2 text-xs text-red-700" role="alert">
+                  {recordError}
+                </p>
+              )}
+              {recordRoot && (
+                <p className="mt-2.5 font-mono text-[11px] text-ivory-700">
+                  Root: {recordRoot.apiName} · {recordRoot.id}
+                </p>
+              )}
+              <div className="mt-3 flex justify-between">
+                <button
+                  type="button"
+                  onClick={clearRecordData}
+                  className="text-[11px] text-ivory-500 hover:text-red-700 underline cursor-pointer"
+                >
+                  Clear record data
+                </button>
+                <Button size="sm" variant="ghost" onClick={() => setRecordModalOpen(false)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Unified Hide panel: System sweep review + all graph entities */}
       {hidePanel && (

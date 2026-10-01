@@ -183,6 +183,46 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
           >
             {copied ? <CheckIcon /> : <CopyIcon />}
           </button>
+          {data.onRecordClick && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                const rect = e.currentTarget.getBoundingClientRect();
+                data.onRecordClick?.(data.apiName, {
+                  x: rect.right + 8,
+                  y: rect.top,
+                  width: rect.width,
+                  height: rect.height,
+                });
+              }}
+              title={
+                data.recordState === "live"
+                  ? `Live record data aboard for ${data.apiName} - click to view`
+                  : data.recordState === "locked"
+                    ? (data.recordHint ?? "Load a connected record first")
+                    : `Pull live record data for ${data.apiName}`
+              }
+              aria-label={
+                data.recordState === "live"
+                  ? `View live record data for ${data.apiName}`
+                  : `Pull live record data for ${data.apiName}`
+              }
+              className={`nodrag relative shrink-0 rounded p-1 transition-colors cursor-pointer ${
+                data.recordState === "locked" ? "opacity-40" : ""
+              } ${
+                data.isRoot ? "text-ivory-300 hover:text-white hover:bg-ivory-800" : "text-ivory-950 hover:text-bronze-600 hover:bg-ivory-200"
+              }`}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+              {data.recordState === "live" && (
+                <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-bronze-500" aria-hidden="true" />
+              )}
+            </button>
+          )}
           {data.onRefreshNode && (
             <button
               type="button"
