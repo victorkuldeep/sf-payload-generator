@@ -729,12 +729,12 @@ function CanvasNotesField({
         placeholder={"# Design log\n- [ ] Confirm junction on Quote_Line__c\n- 14:32 — Lead conversion mapping…"}
         spellCheck={false}
         aria-label="Canvas design notes (markdown)"
-        className={`${fill ? "min-h-0 flex-1 resize-none" : "min-h-[320px] flex-1 resize-y"} w-full rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-3 font-mono text-xs leading-relaxed text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none`}
+        className={`${fill ? "min-h-0 flex-1 resize-none" : "min-h-[320px] max-h-[50vh] flex-1 resize-y"} w-full rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-3 font-mono text-xs leading-relaxed text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none`}
       />
     );
   }
   return (
-    <div className={`${fill ? "min-h-0 flex-1 overflow-y-auto" : "min-h-[320px] flex-1"} rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-3`}>
+    <div className={`${fill ? "min-h-0 flex-1 overflow-y-auto" : "min-h-[320px] max-h-[50vh] flex-1 overflow-y-auto"} break-words overflow-x-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-3`}>
       {text.trim() ? (
         renderMarkdownLite(text, onToggleTask)
       ) : (
@@ -984,7 +984,7 @@ function EntityNoteEditor({
           className="min-h-[220px] w-full resize-y rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-3 font-mono text-xs leading-relaxed text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
         />
       ) : (
-        <div className="min-h-[220px] rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-3">
+        <div className="min-h-[220px] max-h-[40vh] overflow-y-auto break-words overflow-x-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-3">
           {text.trim() ? (
             renderMarkdownLite(text, onToggleTask)
           ) : (
