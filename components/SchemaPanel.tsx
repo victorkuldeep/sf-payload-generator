@@ -24,7 +24,7 @@ import {
 import { newItemId } from "@/lib/collection/types";
 import { loadAutosave, queueAutosave, clearAutosave } from "@/lib/workspace/autosave";
 import { renderMarkdownLite, toggleTaskLine } from "./erd/notesMd";
-import { RecordPopover, type RecordPopData } from "./erd/RecordPopover";
+import { RecordPopover, type RecordPopData, type RecordFieldMeta } from "./erd/RecordPopover";
 import {
   isValidRecordId,
   displayFieldNames,
@@ -1423,6 +1423,61 @@ export default function SchemaPanel({
     });
   }, [rootName, describes, runRecordQuery]);
 
+  const childSelectFor = useCallback((apiName: string, lookupField: string): string[] => {
+    const d = describes.get(apiName);
+    const nameField = d?.fields.find((f) => f.nameField)?.name ?? (d?.fields.some((f) => f.name === "Name") ? "Name" : null);
+    return [...new Set(["Id", ...(nameField && nameField !== "Id" ? [nameField] : []), lookupField])];
+  }, [describes]);
+
+  /** Pull one record by id and store it (fresh truth, replaces cached). */
+  const pullSingle = useCallback(async (apiName: string, id: string): Promise<Record<string, unknown>> => {
+    const d = describes.get(apiName);
+    if (!d) throw new Error(`${apiName} is not on canvas - add it first.`);
+    const { select } = displayFieldNames(
+      d.fields.map((f) => ({ name: f.name, type: f.type, referenceTo: f.referenceTo ?? [], nameField: f.nameField }))
+    );
+    const rows = await runRecordQuery(buildRootQuery(apiName, select, id));
+    const rec = rows[0] as Record<string, unknown> | undefined;
+    if (!rec) throw new Error("No record found (or access denied).");
+    const { attributes: _a, ...fields } = rec as { attributes?: unknown } & Record<string, unknown>;
+    void _a;
+    setRecordStore((prev) => {
+      const next = new Map(prev.singles);
+      const per = new Map(next.get(apiName) ?? []);
+      per.set(id, { id, fields });
+      next.set(apiName, per);
+      return { singles: next, children: prev.children };
+    });
+    return fields;
+  }, [describes, runRecordQuery]);
+
+  /** Pull one children page; append=false replaces (refresh), true appends (load-more). */
+  const pullChildPage = useCallback(async (
+    childApi: string,
+    lookupField: string,
+    parentApi: string,
+    parentId: string,
+    offset: number,
+    append: boolean
+  ): Promise<void> => {
+    const rows = await runRecordQuery(
+      buildChildrenQuery(childApi, lookupField, parentId, childSelectFor(childApi, lookupField), offset)
+    );
+    const key = childPageKey(childApi, lookupField, parentId);
+    setRecordStore((prev) => {
+      const next = new Map(prev.children);
+      const cur = next.get(key);
+      const base = append && cur ? cur.rows : [];
+      next.set(key, {
+        childApi, lookupField, parentApi, parentId,
+        rows: [...base, ...rows],
+        offset: (append && cur ? cur.offset : 0) + rows.length,
+        exhausted: rows.length < RECORD_ROW_LIMIT,
+      });
+      return { singles: prev.singles, children: next };
+    });
+  }, [runRecordQuery, childSelectFor]);
+
   const openNodeRecord = useCallback(async (
     apiName: string,
     anchor: { x: number; y: number; width: number; height: number }
@@ -1442,38 +1497,9 @@ export default function SchemaPanel({
       setRecordBusy(apiName);
       recordBusyRef.current = apiName;
       if (plan.kind === "single") {
-        const d = describes.get(apiName);
-        if (!d) throw new Error(`${apiName} is not on canvas - add it first.`);
-        const { select } = displayFieldNames(
-          d.fields.map((f) => ({ name: f.name, type: f.type, referenceTo: f.referenceTo ?? [], nameField: f.nameField }))
-        );
-        const rows = await runRecordQuery(buildRootQuery(apiName, select, plan.id));
-        const rec = rows[0] as Record<string, unknown> | undefined;
-        if (!rec) throw new Error("No record found (or access denied).");
-        const { attributes: _a, ...fields } = rec as { attributes?: unknown } & Record<string, unknown>;
-        void _a;
-        setRecordStore((prev) => {
-          const next = new Map(prev.singles);
-          const per = new Map(next.get(apiName) ?? []);
-          per.set(plan.id, { id: plan.id, fields });
-          next.set(apiName, per);
-          return { singles: next, children: prev.children };
-        });
+        await pullSingle(apiName, plan.id);
       } else {
-        const d = describes.get(plan.childApi);
-        const nameField = d?.fields.find((f) => f.nameField)?.name ?? (d?.fields.some((f) => f.name === "Name") ? "Name" : null);
-        const select = ["Id", ...(nameField && nameField !== "Id" ? [nameField] : []), plan.lookupField];
-        const rows = await runRecordQuery(buildChildrenQuery(plan.childApi, plan.lookupField, plan.parentId, [...new Set(select)], 0));
-        const key = childPageKey(plan.childApi, plan.lookupField, plan.parentId);
-        setRecordStore((prev) => {
-          const next = new Map(prev.children);
-          next.set(key, {
-            childApi: plan.childApi, lookupField: plan.lookupField,
-            parentApi: plan.parentApi, parentId: plan.parentId,
-            rows, offset: rows.length, exhausted: rows.length < RECORD_ROW_LIMIT,
-          });
-          return { singles: prev.singles, children: next };
-        });
+        await pullChildPage(plan.childApi, plan.lookupField, plan.parentApi, plan.parentId, 0, false);
       }
     } catch (err) {
       setRecordPopError(err instanceof Error ? err.message : "Record pull failed.");
@@ -1481,7 +1507,7 @@ export default function SchemaPanel({
       recordBusyRef.current = null;
       setRecordBusy(null);
     }
-  }, [describes, runRecordQuery]);
+  }, [pullSingle, pullChildPage]);
 
   const recordStoreRef = useRef(recordStore);
   recordStoreRef.current = recordStore;
@@ -1495,28 +1521,125 @@ export default function SchemaPanel({
     setRecordMoreBusy(sectionKey);
     setRecordPopError(null);
     try {
-      const d = describes.get(page.childApi);
-      const nameField = d?.fields.find((f) => f.nameField)?.name ?? (d?.fields.some((f) => f.name === "Name") ? "Name" : null);
-      const select = ["Id", ...(nameField && nameField !== "Id" ? [nameField] : []), page.lookupField];
-      const rows = await runRecordQuery(buildChildrenQuery(page.childApi, page.lookupField, page.parentId, [...new Set(select)], page.offset));
-      setRecordStore((prev) => {
-        const next = new Map(prev.children);
-        const cur = next.get(sectionKey);
-        if (!cur) return prev;
-        next.set(sectionKey, {
-          ...cur,
-          rows: [...cur.rows, ...rows],
-          offset: cur.offset + rows.length,
-          exhausted: rows.length < RECORD_ROW_LIMIT,
-        });
-        return { singles: prev.singles, children: next };
-      });
+      await pullChildPage(page.childApi, page.lookupField, page.parentApi, page.parentId, page.offset, true);
     } catch (err) {
       setRecordPopError(err instanceof Error ? err.message : "Load-more failed.");
     } finally {
       setRecordMoreBusy(null);
     }
-  }, [describes, runRecordQuery, recordMoreBusy]);
+  }, [pullChildPage, recordMoreBusy]);
+
+  /** Re-pull everything aboard (root + singles + first pages) - latest truth from the server. */
+  const refreshAllRecords = useCallback(async () => {
+    const store = recordStoreRef.current;
+    const failures: string[] = [];
+    let refreshed = 0;
+    setRecordBusy("__all__");
+    try {
+      for (const [api, per] of store.singles) {
+        for (const id of per.keys()) {
+          try {
+            await pullSingle(api, id);
+            refreshed++;
+          } catch {
+            failures.push(api);
+          }
+        }
+      }
+      for (const page of store.children.values()) {
+        try {
+          await pullChildPage(page.childApi, page.lookupField, page.parentApi, page.parentId, 0, false);
+          refreshed++;
+        } catch {
+          failures.push(page.childApi);
+        }
+      }
+    } finally {
+      setRecordBusy(null);
+    }
+    if (refreshed === 0 && failures.length > 0) {
+      setRecordPopError(`Refresh failed: ${[...new Set(failures)].join(", ")}`);
+    } else {
+      setNotice(
+        `Record data refreshed (${refreshed} pull${refreshed === 1 ? "" : "s"})` +
+          (failures.length > 0 ? ` - failed: ${[...new Set(failures)].join(", ")}` : ".")
+      );
+    }
+  }, [pullSingle, pullChildPage]);
+
+  /** PATCH one record, then re-pull it so the box shows server truth. */
+  const saveRecordEdit = useCallback(async (
+    apiName: string,
+    id: string,
+    changes: Record<string, unknown>
+  ): Promise<void> => {
+    const token = getToken();
+    if (!token) throw new Error("Session token unavailable. Please reconnect.");
+    const ver = apiVersion.startsWith("v") ? apiVersion : `v${apiVersion}`;
+    const response = await apiFetch("/api/salesforce/rest", {
+      instanceUrl,
+      token,
+      scope: "org",
+      method: "PATCH",
+      path: `/services/data/${ver}/sobjects/${apiName}/${id}`,
+      body: JSON.stringify(changes),
+      auth: { type: "bearer", token },
+    });
+    const data = (await response.json()) as {
+      success?: boolean;
+      status?: number;
+      statusText?: string;
+      body?: unknown;
+      error?: string;
+    };
+    if (!response.ok || !data.success) {
+      let message =
+        typeof data.error === "string" ? data.error : `Save failed (HTTP ${data.status ?? response.status})`;
+      const issues = data.body as { message?: string; fields?: string[] }[] | undefined;
+      if (Array.isArray(issues) && issues.length > 0 && issues[0]?.message) {
+        message = issues.map((i) => i.message).join("; ");
+      }
+      if (isSessionExpiredMessage(message)) onSessionExpired?.();
+      throw new Error(message);
+    }
+    await pullSingle(apiName, id);
+    setNotice(`${apiName} saved - box refreshed from the server.`);
+  }, [instanceUrl, apiVersion, getToken, onSessionExpired, pullSingle]);
+
+  const recordFieldMeta = useCallback((apiName: string): RecordFieldMeta[] | null => {
+    const d = describes.get(apiName);
+    if (!d) return null;
+    return d.fields.map((f) => ({
+      name: f.name,
+      label: f.label,
+      type: f.type,
+      updateable: f.updateable,
+      picklistValues: (f.picklistValues ?? []).map((p) => ({ label: p.label ?? p.value, value: p.value })),
+    }));
+  }, [describes]);
+
+  const refreshNodeRecord = useCallback(async (apiName: string) => {
+    setRecordPopError(null);
+    setRecordBusy(apiName);
+    try {
+      const store = recordStoreRef.current;
+      const singles = store.singles.get(apiName);
+      if (singles) {
+        for (const id of singles.keys()) {
+          await pullSingle(apiName, id);
+        }
+      }
+      for (const page of store.children.values()) {
+        if (page.childApi !== apiName) continue;
+        await pullChildPage(page.childApi, page.lookupField, page.parentApi, page.parentId, 0, false);
+      }
+      setNotice(`${apiName} record data refreshed from the server.`);
+    } catch (err) {
+      setRecordPopError(err instanceof Error ? err.message : "Refresh failed.");
+    } finally {
+      setRecordBusy(null);
+    }
+  }, [pullSingle, pullChildPage]);
 
   const clearRecordData = useCallback(() => {
     setRecordRoot(null);
@@ -1544,13 +1667,14 @@ export default function SchemaPanel({
 
   const buildRecordPop = useCallback((apiName: string, x: number, y: number): RecordPopData => {
     const label = labels.get(apiName) ?? apiName;
-    const loading = recordBusy === apiName;
+    const loading = recordBusy === apiName || recordBusy === "__all__";
     const singles = [...(recordStore.singles.get(apiName)?.values() ?? [])];
     const sections: RecordPopData["sections"] = [];
     for (const [key, page] of recordStore.children) {
       if (page.childApi !== apiName) continue;
       sections.push({
         key,
+        childApi: page.childApi,
         viaLabel: `${labels.get(page.parentApi) ?? page.parentApi} · ${page.lookupField}`,
         rows: page.rows,
         exhausted: page.exhausted,
@@ -1561,7 +1685,7 @@ export default function SchemaPanel({
       const plan = resolveTarget(apiName, recordStore, recordCtx);
       if (plan.kind === "blocked") {
         return {
-          apiName, nodeLabel: label, single: null, sections, loading, error: recordPopError, x, y,
+          apiName, nodeLabel: label, single: null, singleId: null, sections, loading, error: recordPopError, x, y,
           blockedHint: plan.missingApi === apiName
             ? "No lookup path from a loaded record reaches this object yet."
             : `Nothing loaded connects here yet.`,
@@ -1578,6 +1702,7 @@ export default function SchemaPanel({
             .filter(([, v]) => v === null || v === undefined || typeof v !== "object")
             .map(([k, v]) => ({ label: k, value: v === null || v === undefined ? "—" : String(v) }))
         : null,
+      singleId: first?.id ?? null,
       sections,
       loading,
       error: recordPopError,
@@ -5049,6 +5174,8 @@ export default function SchemaPanel({
       {recordPop && (
         <RecordPopover
           pop={buildRecordPop(recordPop.apiName, recordPop.x, recordPop.y)}
+          fieldMeta={recordFieldMeta(recordPop.apiName)}
+          sectionFieldMeta={{ [recordPop.apiName]: recordFieldMeta(recordPop.apiName) ?? [] }}
           onClose={() => {
             setRecordPop(null);
             setRecordPopError(null);
@@ -5060,6 +5187,9 @@ export default function SchemaPanel({
             void openNodeRecord(api, rect);
           }}
           onClear={clearRecordData}
+          onRefresh={() => void refreshNodeRecord(recordPop.apiName)}
+          refreshing={recordBusy !== null}
+          onSave={(api, id, changes) => saveRecordEdit(api, id, changes)}
         />
       )}
 
@@ -5127,7 +5257,7 @@ export default function SchemaPanel({
                   Root: {recordRoot.apiName} · {recordRoot.id}
                 </p>
               )}
-              <div className="mt-3 flex justify-between">
+              <div className="mt-3 flex items-center justify-between gap-2">
                 <button
                   type="button"
                   onClick={clearRecordData}
@@ -5135,9 +5265,25 @@ export default function SchemaPanel({
                 >
                   Clear record data
                 </button>
-                <Button size="sm" variant="ghost" onClick={() => setRecordModalOpen(false)}>
-                  Close
-                </Button>
+                <div className="flex gap-1.5">
+                  {recordRoot && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={recordBusy !== null}
+                      title="Re-pull the root, every loaded record and every open list - latest truth from the server"
+                      onClick={() => {
+                        setRecordModalOpen(false);
+                        void refreshAllRecords();
+                      }}
+                    >
+                      {recordBusy ? "Refreshing…" : "Refresh all loaded"}
+                    </Button>
+                  )}
+                  <Button size="sm" variant="ghost" onClick={() => setRecordModalOpen(false)}>
+                    Close
+                  </Button>
+                </div>
               </div>
             </div>
           </div>

@@ -86,6 +86,29 @@ export function buildChildrenQuery(
 
 const str = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
 
+const NUMBER_FIELD_TYPES = new Set(["int", "double", "currency", "percent", "long", "number"]);
+
+/**
+ * Serialize one edited draft value for the PATCH body: type-aware, skips
+ * empties (never sends "" into number/date fields - the server would reject).
+ */
+export function serializeDraftValue(
+  fieldType: string | undefined,
+  value: string | boolean
+): unknown {
+  if (typeof value === "boolean") return value;
+  const v = value.trim();
+  if (v === "") return undefined;
+  if (fieldType && NUMBER_FIELD_TYPES.has(fieldType)) {
+    const n = Number(v);
+    return Number.isNaN(n) ? v : n;
+  }
+  if (fieldType === "datetime" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v)) {
+    return `${v}:00.000+0000`;
+  }
+  return v;
+}
+
 /** Every known record id for an object: singles first, then child-row ids. */
 export function knownIdsFor(state: LoadedState, apiName: string): string[] {
   const out: string[] = [];
