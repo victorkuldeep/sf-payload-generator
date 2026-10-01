@@ -4656,6 +4656,32 @@ export default function SchemaPanel({
                         Delete note
                       </button>
                     )}
+                    {notesText.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const d = new Date();
+                          const pad = (v: number) => String(v).padStart(2, "0");
+                          const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+                          const slug = (rootName || "canvas").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "canvas";
+                          const blob = new Blob([notesText], { type: "text/markdown" });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = url;
+                          a.download = `design-notes-${slug}-${stamp}.md`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        }}
+                        title="Download canvas notes as a Markdown file"
+                        aria-label="Download canvas notes as Markdown"
+                        className="rounded p-1 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-200 transition-colors cursor-pointer"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                          <path d="M12 4v11m0 0 4-4m-4 4-4-4" />
+                          <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+                        </svg>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
