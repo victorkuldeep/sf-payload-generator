@@ -75,20 +75,22 @@ function ErdEdgeInner({
     `M ${bx + sp.x * BAR_HALF},${by + sp.y * BAR_HALF} L ${bx - sp.x * BAR_HALF},${by - sp.y * BAR_HALF}`;
   const bar = `${tick(sourceX, sourceY)} ${tick(sourceX - sd.x * BAR_GAP, sourceY - sd.y * BAR_GAP)}`;
 
-  // Crow's foot fanning back from behind the circle at the target end
+  // Crow's foot at the target end: hollow circle just off the box, then
+  // three lines from the circle feeding INTO the box edge (feet on the box,
+  // vertex at the circle). The circle is canvas-filled so it visually breaks
+  // the main line - line stub, circle, fan merging into the table.
   const CIRCLE_R = 4;
-  const cc = { x: targetX - td.x * CIRCLE_R, y: targetY - td.y * CIRCLE_R };
-  const FAN_LEN = 10;
-  const FAN_HALF = 6;
-  const apex = { x: targetX - td.x * CIRCLE_R * 2, y: targetY - td.y * CIRCLE_R * 2 };
-  const back = (side: number) => ({
-    x: apex.x - td.x * FAN_LEN + tp.x * side,
-    y: apex.y - td.y * FAN_LEN + tp.y * side,
+  const CIRCLE_GAP = 10;
+  const FAN_HALF = 5.5;
+  const cc = { x: targetX - td.x * CIRCLE_GAP, y: targetY - td.y * CIRCLE_GAP };
+  const foot = (side: number) => ({
+    x: targetX + tp.x * side,
+    y: targetY + tp.y * side,
   });
-  const f1 = back(FAN_HALF);
-  const f2 = back(0);
-  const f3 = back(-FAN_HALF);
-  const fan = `M ${apex.x},${apex.y} L ${f1.x},${f1.y} M ${apex.x},${apex.y} L ${f2.x},${f2.y} M ${apex.x},${apex.y} L ${f3.x},${f3.y}`;
+  const f1 = foot(FAN_HALF);
+  const f2 = foot(0);
+  const f3 = foot(-FAN_HALF);
+  const fan = `M ${cc.x},${cc.y} L ${f1.x},${f1.y} M ${cc.x},${cc.y} L ${f2.x},${f2.y} M ${cc.x},${cc.y} L ${f3.x},${f3.y}`;
 
   const stroke = selected ? STROKE_ACTIVE : STROKE;
   // Solid = master-detail, dotted = lookup (kind travels in edge data).
@@ -110,7 +112,7 @@ function ErdEdgeInner({
         strokeDasharray={dash}
       />
       <path d={bar} stroke={stroke} strokeWidth={2} strokeLinecap="round" />
-      <circle cx={cc.x} cy={cc.y} r={CIRCLE_R} fill="none" stroke={stroke} strokeWidth={1.5} />
+      <circle cx={cc.x} cy={cc.y} r={CIRCLE_R} fill="#FAF8F2" stroke={stroke} strokeWidth={1.5} />
       <path d={fan} stroke={stroke} strokeWidth={1.5} strokeLinecap="round" fill="none" />
       {selected && label != null && String(label) !== "" && (
         <EdgeLabelRenderer>
