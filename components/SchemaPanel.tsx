@@ -28,6 +28,8 @@ import { RecordPopover, type RecordPopData, type RecordFieldMeta } from "./erd/R
 import {
   isValidRecordId,
   displayFieldNames,
+  queryableFieldNames,
+  chunkSelect,
   buildRootQuery,
   buildChildrenQuery,
   resolveTarget,
@@ -1429,26 +1431,38 @@ export default function SchemaPanel({
     return [...new Set(["Id", ...(nameField && nameField !== "Id" ? [nameField] : []), lookupField])];
   }, [describes]);
 
-  /** Pull one record by id and store it (fresh truth, replaces cached). */
+  /** Pull one record by id and store it (fresh truth, replaces cached).
+   * Full row: every queryable field, chunked into parallel SOQL calls so
+   * huge objects stay under the query-length cap. */
   const pullSingle = useCallback(async (apiName: string, id: string): Promise<Record<string, unknown>> => {
     const d = describes.get(apiName);
     if (!d) throw new Error(`${apiName} is not on canvas - add it first.`);
-    const { select } = displayFieldNames(
-      d.fields.map((f) => ({ name: f.name, type: f.type, referenceTo: f.referenceTo ?? [], nameField: f.nameField }))
+    const names = queryableFieldNames(
+      d.fields.map((f) => ({ name: f.name, type: f.type, referenceTo: f.referenceTo ?? [] }))
     );
-    const rows = await runRecordQuery(buildRootQuery(apiName, select, id));
-    const rec = rows[0] as Record<string, unknown> | undefined;
-    if (!rec) throw new Error("No record found (or access denied).");
-    const { attributes: _a, ...fields } = rec as { attributes?: unknown } & Record<string, unknown>;
-    void _a;
+    const chunks = chunkSelect(names);
+    const settled = await Promise.all(
+      chunks.map(async (select) => {
+        const rows = await runRecordQuery(buildRootQuery(apiName, select, id));
+        return rows[0] as Record<string, unknown> | undefined;
+      })
+    );
+    const merged: Record<string, unknown> = {};
+    for (const row of settled) {
+      if (!row) continue;
+      const { attributes: _a, ...fields } = row as { attributes?: unknown } & Record<string, unknown>;
+      void _a;
+      Object.assign(merged, fields);
+    }
+    if (Object.keys(merged).length === 0) throw new Error("No record found (or access denied).");
     setRecordStore((prev) => {
       const next = new Map(prev.singles);
       const per = new Map(next.get(apiName) ?? []);
-      per.set(id, { id, fields });
+      per.set(id, { id, fields: merged });
       next.set(apiName, per);
       return { singles: next, children: prev.children };
     });
-    return fields;
+    return merged;
   }, [describes, runRecordQuery]);
 
   /** Pull one children page; append=false replaces (refresh), true appends (load-more). */

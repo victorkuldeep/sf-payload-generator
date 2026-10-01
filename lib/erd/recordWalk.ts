@@ -62,8 +62,7 @@ export function escapeSoqlString(value: string): string {
 }
 
 /** Id + name field + every lookup (traversal needs all of them). */
-export function displayFieldNames(fields: WalkField[]): { select: string[]; nameField: string | null } {
-  const has = (n: string) => fields.some((f) => f.name === n);
+export function displayFieldNames(fields: WalkField[]): { select: string[]; nameField: string | null } {  const has = (n: string) => fields.some((f) => f.name === n);
   const nameField = fields.find((f) => f.nameField)?.name ?? (has("Name") ? "Name" : null);
   const lookups = fields.filter((f) => f.type === "reference" && (f.referenceTo ?? []).length > 0).map((f) => f.name);
   const select = ["Id", ...(nameField && nameField !== "Id" ? [nameField] : []), ...lookups.filter((l) => l !== "Id" && l !== nameField)];
@@ -72,6 +71,39 @@ export function displayFieldNames(fields: WalkField[]): { select: string[]; name
 
 export function buildRootQuery(apiName: string, select: string[], id: string): string {
   return `SELECT ${select.join(", ")} FROM ${apiName} WHERE Id = '${escapeSoqlString(id.trim())}' LIMIT 1`;
+}
+
+/** Compound/blob types SOQL cannot select directly - excluded from full-row pulls. */
+const UNQUERYABLE_TYPES = new Set(["address", "location", "base64"]);
+
+/** Every directly-selectable field, Id first (full-row pulls for single views). */
+export function queryableFieldNames(fields: WalkField[]): string[] {
+  const names = fields
+    .filter((f) => !UNQUERYABLE_TYPES.has(f.type))
+    .map((f) => f.name);
+  const rest = names.filter((n) => n !== "Id");
+  return ["Id", ...rest];
+}
+
+/** Split a select list into chunks that stay under maxChars joined - one
+ * SOQL call per chunk, merged afterward. Keeps huge objects under the
+ * query-length cap without dropping fields. */
+export function chunkSelect(names: string[], maxChars = 15000): string[][] {
+  const chunks: string[][] = [];
+  let cur: string[] = [];
+  let len = 0;
+  for (const n of names) {
+    const add = cur.length === 0 ? n.length : 2 + n.length;
+    if (cur.length > 0 && len + add > maxChars) {
+      chunks.push(cur);
+      cur = [];
+      len = 0;
+    }
+    len += cur.length === 0 ? n.length : 2 + n.length;
+    cur.push(n);
+  }
+  if (cur.length > 0) chunks.push(cur);
+  return chunks.length > 0 ? chunks : [[]];
 }
 
 export function buildChildrenQuery(

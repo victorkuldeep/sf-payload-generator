@@ -5,6 +5,8 @@ import {
   isValidRecordId,
   escapeSoqlString,
   displayFieldNames,
+  queryableFieldNames,
+  chunkSelect,
   buildRootQuery,
   buildChildrenQuery,
   resolveTarget,
@@ -72,6 +74,30 @@ describe("record walk engine", () => {
   it("escapes soql strings", () => {
     expect(escapeSoqlString("o'b\\c")).toBe("o\\'b\\\\c");
     expect(buildRootQuery("Lead", ["Id"], "00Q'xx")).toContain("00Q\\'xx");
+  });
+
+  it("excludes compound/blob types from full-row pulls, Id first", () => {
+    const names = queryableFieldNames([
+      { name: "Name", type: "string", referenceTo: [] },
+      { name: "BillingAddress", type: "address", referenceTo: [] },
+      { name: "VersionData", type: "base64", referenceTo: [] },
+      { name: "Id", type: "id", referenceTo: [] },
+    ]);
+    expect(names[0]).toBe("Id");
+    expect(names).not.toContain("BillingAddress");
+    expect(names).not.toContain("VersionData");
+    expect(names).toContain("Name");
+  });
+
+  it("chunks long select lists under the cap", () => {
+    const names = Array.from({ length: 100 }, (_, i) => `Custom_Field_${i}__c`);
+    const chunks = chunkSelect(names, 500);
+    expect(chunks.flat()).toEqual(names);
+    for (const c of chunks) {
+      expect(c.join(", ").length).toBeLessThanOrEqual(500);
+    }
+    expect(chunkSelect(["Id", "Name"], 500)).toEqual([["Id", "Name"]]);
+    expect(chunkSelect([], 500)).toEqual([[]]);
   });
 
   it("picks Id + name + lookups for display", () => {
