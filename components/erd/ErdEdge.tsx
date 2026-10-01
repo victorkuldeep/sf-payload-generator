@@ -43,21 +43,6 @@ function ErdEdgeInner({
   const isLoop = source === target;
   const lane = (data as { loopLane?: number } | undefined)?.loopLane ?? 0;
   const LOOP = 44 + lane * 26;
-  const bezier = getBezierPath({
-    sourceX,
-    sourceY,
-    sourcePosition,
-    targetX,
-    targetY,
-    targetPosition,
-  });
-  const path = isLoop
-    ? `M ${sourceX},${sourceY} C ${sourceX - LOOP},${sourceY} ${targetX - LOOP},${targetY} ${targetX},${targetY}`
-    : bezier[0];
-  const labelX = isLoop ? sourceX - LOOP * 0.55 : bezier[1];
-  // Stacked loop labels step upward per lane so pills never collide.
-  const labelY = isLoop ? (sourceY + targetY) / 2 - lane * 30 : bezier[2];
-
   // Direction of travel at each end (drives the 1-bar / crow's-foot glyphs)
   const sd = isLoop ? { x: -1, y: 0 } : dirFor(sourcePosition);
   const td = isLoop
@@ -65,6 +50,27 @@ function ErdEdgeInner({
     : { x: -dirFor(targetPosition).x, y: -dirFor(targetPosition).y };
   const sp = { x: -sd.y, y: sd.x };
   const tp = { x: -td.y, y: td.x };
+  // Glyph runway: the main line stops short of the box so the crow's foot
+  // owns the last stretch - nothing grazes tangentially, nothing overlaps.
+  // Clamped for stubby edges so the path can never invert.
+  const span = Math.hypot(targetX - sourceX, targetY - sourceY);
+  const TRIM = Math.min(30, span * 0.3);
+  const tX = targetX - td.x * TRIM;
+  const tY = targetY - td.y * TRIM;
+  const bezier = getBezierPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX: tX,
+    targetY: tY,
+    targetPosition,
+  });
+  const path = isLoop
+    ? `M ${sourceX},${sourceY} C ${sourceX - LOOP},${sourceY} ${targetX - LOOP},${targetY} ${tX},${tY}`
+    : bezier[0];
+  const labelX = isLoop ? sourceX - LOOP * 0.55 : bezier[1];
+  // Stacked loop labels step upward per lane so pills never collide.
+  const labelY = isLoop ? (sourceY + targetY) / 2 - lane * 30 : bezier[2];
 
   // "One" end: parallel double bar across the line at the source end.
   // "Many" end: hollow circle (optional) + three-line crow's foot fanning
@@ -75,14 +81,13 @@ function ErdEdgeInner({
     `M ${bx + sp.x * BAR_HALF},${by + sp.y * BAR_HALF} L ${bx - sp.x * BAR_HALF},${by - sp.y * BAR_HALF}`;
   const bar = `${tick(sourceX, sourceY)} ${tick(sourceX - sd.x * BAR_GAP, sourceY - sd.y * BAR_GAP)}`;
 
-  // Crow's foot at the target end: hollow circle just off the box, then
-  // three lines from the circle feeding INTO the box edge (feet on the box,
-  // vertex at the circle). The circle is canvas-filled so it visually breaks
-  // the main line - line stub, circle, fan merging into the table.
-  const CIRCLE_R = 4;
-  const CIRCLE_GAP = 10;
-  const FAN_HALF = 5.5;
-  const cc = { x: targetX - td.x * CIRCLE_GAP, y: targetY - td.y * CIRCLE_GAP };
+  // Crow's foot at the target end, drawn in the cleared runway: the main
+  // line touches the circle's outer boundary, then three prongs exit the
+  // far side - the middle one diametrically straight through to the box
+  // edge, the other two flanking left and right. Feet land on the table.
+  const CIRCLE_R = 5.5;
+  const cc = { x: tX - td.x * CIRCLE_R, y: tY - td.y * CIRCLE_R };
+  const FAN_HALF = 14;
   const foot = (side: number) => ({
     x: targetX + tp.x * side,
     y: targetY + tp.y * side,
