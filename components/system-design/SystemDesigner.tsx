@@ -43,6 +43,7 @@ import {
 } from "@/lib/system-design/store";
 import { buildDemoProject } from "@/lib/system-design/demo";
 import { SystemNodeView, SystemGlyph, type SystemNodeData } from "./SystemNode";
+import { TestRunner } from "./TestRunner";
 
 const nodeTypes = { system: SystemNodeView } as const;
 
@@ -224,6 +225,7 @@ export function SystemDesigner() {
   const [future, setFuture] = useState<Snapshot[]>([]);
   const [selNodeId, setSelNodeId] = useState<string | null>(null);
   const [selEdgeId, setSelEdgeId] = useState<string | null>(null);
+  const [testOpId, setTestOpId] = useState<string | null>(null);
   const [inventoryOpen, setInventoryOpen] = useState(true);
   const [inventorySearch, setInventorySearch] = useState("");
   const [showList, setShowList] = useState(false);
@@ -479,6 +481,9 @@ export function SystemDesigner() {
   const selNode = project?.systems.find((s) => s.id === selNodeId) ?? null;
   const selEdge = project?.connections.find((c) => c.id === selEdgeId) ?? null;
   const edgeName = (id: string) => project?.systems.find((s) => s.id === id)?.name ?? id;
+  const testOp = testOpId ? project?.operations.find((o) => o.id === testOpId) ?? null : null;
+  const testIface = testOp ? project?.interfaces.find((i) => i.id === testOp.interfaceId) ?? null : null;
+  const testSystem = testIface ? project?.systems.find((s) => s.id === testIface.systemId) ?? null : null;
 
   if (!project) {
     return (
@@ -778,6 +783,7 @@ export function SystemDesigner() {
                   systems: p.systems.map((s) => (s.id === selNode.id ? { ...s, ...patch } : s)),
                 }))}
                 onMutateProject={(fn) => mutate(fn)}
+                onTestOperation={(opId) => setTestOpId(opId)}
                 onDuplicate={() => {
                   mutate((p) => ({
                     ...p,
@@ -903,6 +909,17 @@ export function SystemDesigner() {
           </div>
         </aside>
       </div>
+
+      {testOp && testIface && testSystem && project && (
+        <TestRunner
+          operation={testOp}
+          iface={testIface}
+          system={testSystem}
+          environments={project.environments}
+          activeEnvironmentId={project.activeEnvironmentId}
+          onClose={() => setTestOpId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -912,6 +929,7 @@ function NodeInspector({
   project,
   onPatch,
   onMutateProject,
+  onTestOperation,
   onDuplicate,
   onDelete,
 }: {
@@ -919,6 +937,7 @@ function NodeInspector({
   project: SystemProject;
   onPatch: (patch: Partial<SystemNode>) => void;
   onMutateProject: (fn: (p: SystemProject) => SystemProject) => void;
+  onTestOperation: (opId: string) => void;
   onDuplicate: () => void;
   onDelete: () => void;
 }) {
@@ -1106,6 +1125,15 @@ function NodeInspector({
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
                         <path d="M6 6l12 12M18 6 6 18" />
                       </svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onTestOperation(op.id)}
+                      aria-label={`Test operation ${op.name}`}
+                      title="Run this operation in Test mode (preflight + redacted history)"
+                      className="shrink-0 rounded-md border border-[var(--color-line)] bg-white px-1.5 py-1 font-mono text-[10px] font-bold text-bronze-700 hover:border-bronze-500 transition-colors cursor-pointer"
+                    >
+                      Test
                     </button>
                   </li>
                 ))}
