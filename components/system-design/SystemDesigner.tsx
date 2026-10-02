@@ -50,6 +50,7 @@ import { RunEdgeDialog } from "./RunEdgeDialog";
 import { ChainRunDialog } from "./ChainRunDialog";
 import { ProjectNotesModal } from "./ProjectNotesModal";
 import { CredentialsModal } from "./CredentialsModal";
+import { TemplatesModal } from "./TemplatesModal";
 import {
   findMissingVars,
   resolveEnvVars,
@@ -148,6 +149,8 @@ function DesignerCanvas({
   present,
   onTogglePresent,
   runVis,
+  miniMapOn,
+  onToggleMiniMap,
 }: {
   project: SystemProject;
   onMoveSystems: (moves: { id: string; x: number; y: number }[]) => void;
@@ -161,6 +164,8 @@ function DesignerCanvas({
   present: boolean;
   onTogglePresent: () => void;
   runVis: Record<string, "running" | "ok" | "failed">;
+  miniMapOn: boolean;
+  onToggleMiniMap: () => void;
 }) {
   const { screenToFlowPosition, fitView } = useReactFlow();
   const nodes = useMemo(() => toFlowNodes(project), [project]);
@@ -217,15 +222,17 @@ function DesignerCanvas({
         fitView
       >
         <Background gap={22} size={1.2} color="#DDD3BC" bgColor="#FAF8F2" />
-        <MiniMap
-          pannable
-          zoomable
-          position="bottom-right"
-          nodeColor="#D9CFB6"
-          nodeStrokeColor="#9A7653"
-          style={{ background: "#FFFFFF", border: "1px solid #DDD3BC", borderRadius: 8 }}
-          maskColor="rgba(250, 248, 242, 0.75)"
-        />
+        {miniMapOn && (
+          <MiniMap
+            pannable
+            zoomable
+            position="bottom-right"
+            nodeColor="#D9CFB6"
+            nodeStrokeColor="#9A7653"
+            style={{ background: "#FFFFFF", border: "1px solid #DDD3BC", borderRadius: 8 }}
+            maskColor="rgba(250, 248, 242, 0.75)"
+          />
+        )}
         <Controls position="bottom-left" />
       </ReactFlow>
       {project.systems.length === 0 && (
@@ -235,11 +242,11 @@ function DesignerCanvas({
               System Design
             </p>
             <p className="mt-1.5 text-xs leading-relaxed text-ivory-700">
-              Drag a system in from the inventory - or load the demo architecture.
+              Drag a system in from the inventory - or start from a template.
             </p>
             <p className="mt-2.5 text-[11px] text-ivory-500">⌘/Ctrl+Z undo · Del removes · drag between nodes to connect</p>
             <Button size="sm" className="mt-3" onClick={emptyAction}>
-              Load demo architecture
+              Browse templates
             </Button>
           </div>
         </div>
@@ -277,6 +284,15 @@ function DesignerCanvas({
         >
           Fit view
         </button>
+        <button
+          type="button"
+          onClick={onToggleMiniMap}
+          aria-pressed={miniMapOn}
+          title={miniMapOn ? "Hide the overview map" : "Show the overview map"}
+          className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors cursor-pointer ${miniMapOn ? "border-bronze-500 bg-bronze-100 text-bronze-700" : "border-[var(--color-line)] bg-[var(--color-surface)] text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950"}`}
+        >
+          Map
+        </button>
       </div>
       {project.systems.length > 0 && project.connections.length === 0 && (
         <div className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2">
@@ -301,6 +317,22 @@ export function SystemDesigner() {
   const [runVis, setRunVis] = useState<Record<string, "running" | "ok" | "failed">>({});
   const [notesOpen, setNotesOpen] = useState(false);
   const [credOpen, setCredOpen] = useState(false);
+  const [tplOpen, setTplOpen] = useState(false);
+  /** Overview map: hidden by default, toggle lives on the canvas. Choice persists per browser. */
+  const [miniMapOn, setMiniMapOn] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("sd_minimap") === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("sd_minimap", miniMapOn ? "1" : "0");
+    } catch {
+      /* private mode - session default stands */
+    }
+  }, [miniMapOn]);
   /** Session credential vault: tab memory + sessionStorage mirror, never in IDB/projects/exports. */
   const [vault, setVault] = useState<CredVault>(() => loadCredVault());
   useEffect(() => {
@@ -716,11 +748,8 @@ export function SystemDesigner() {
           <Button size="sm" variant="secondary" onClick={newCanvas} title="Start a blank canvas">
             New
           </Button>
-          <Button size="sm" variant="secondary" onClick={loadDemo} title="Load the demo architecture">
-            Demo
-          </Button>
-          <Button size="sm" variant="secondary" onClick={loadGroqSample} title="Load the User Input to GROQ chat sample (needs GROQ_API_KEY in Credentials)">
-            Groq sample
+          <Button size="sm" variant="secondary" onClick={() => setTplOpen(true)} title="Browse starter canvases - demo architecture and runnable samples">
+            Templates
           </Button>
           <Button size="sm" variant="secondary" onClick={doExport} title="Download the project as portable JSON (no secrets exist in this slice)">
             Export
@@ -996,10 +1025,12 @@ export function SystemDesigner() {
                 selNodeId={selNodeId}
                 selEdgeId={selEdgeId}
                 onDropTemplate={(t, at) => addSystem(t, at)}
-                emptyAction={loadDemo}
+                emptyAction={() => setTplOpen(true)}
                 present={present}
                 onTogglePresent={() => setPresent((v) => !v)}
                 runVis={runVis}
+                miniMapOn={miniMapOn}
+                onToggleMiniMap={() => setMiniMapOn((v) => !v)}
               />
             )}
           </ReactFlowProvider>
@@ -1237,6 +1268,15 @@ export function SystemDesigner() {
             }
             setRunVis((prev) => ({ ...prev, [edgeId]: status }));
           }}
+        />
+      )}
+
+      {project && (
+        <TemplatesModal
+          open={tplOpen}
+          onClose={() => setTplOpen(false)}
+          onLoadDemo={loadDemo}
+          onLoadGroq={loadGroqSample}
         />
       )}
 
