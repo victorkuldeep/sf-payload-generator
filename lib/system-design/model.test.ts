@@ -25,8 +25,8 @@ describe("system design model", () => {
     expect(p.environments).toHaveLength(1);
   });
 
-  it("ships ten templates with icon keys", () => {
-    expect(SYSTEM_TEMPLATES).toHaveLength(10);
+  it("ships templates with icon keys", () => {
+    expect(SYSTEM_TEMPLATES.length).toBeGreaterThanOrEqual(19);
     for (const t of SYSTEM_TEMPLATES) {
       expect(t.name.length).toBeGreaterThan(0);
       expect(t.iconKey.length).toBeGreaterThan(0);

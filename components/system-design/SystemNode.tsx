@@ -51,6 +51,42 @@ export function SystemGlyph({ iconKey }: { iconKey: string }) {
       return (
         <svg {...common}><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" /></svg>
       );
+    case "server":
+      return (
+        <svg {...common}><rect x="4" y="4" width="16" height="7" rx="1.5" /><rect x="4" y="13" width="16" height="7" rx="1.5" /><path d="M7.5 7.5h.01M7.5 16.5h.01" /></svg>
+      );
+    case "activity":
+      return (
+        <svg {...common}><path d="M3 12h4l2.5-6 4 12L16 12h5" /></svg>
+      );
+    case "globe":
+      return (
+        <svg {...common}><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c-4.5 4.5-4.5 12.5 0 17M12 3.5c4.5 4.5 4.5 12.5 0 17" /></svg>
+      );
+    case "doc":
+      return (
+        <svg {...common}><path d="M6 3h8l4 4v14H6V3Z" /><path d="M14 3v4h4M9 12h6M9 16h6" /></svg>
+      );
+    case "briefcase":
+      return (
+        <svg {...common}><rect x="3.5" y="8" width="17" height="12" rx="2" /><path d="M9 8V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3.5 13h17" /></svg>
+      );
+    case "card":
+      return (
+        <svg {...common}><rect x="3" y="6" width="18" height="13" rx="2" /><path d="M3 10.5h18M7 15h4" /></svg>
+      );
+    case "shield":
+      return (
+        <svg {...common}><path d="M12 3 5 6v6c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6l-7-3Z" /><path d="m9.5 12 2 2 3.5-4" /></svg>
+      );
+    case "bank":
+      return (
+        <svg {...common}><path d="m3 9 9-5 9 5M4.5 9.5V18M9.5 9.5V18M14.5 9.5V18M19.5 9.5V18M3 18.5h18M3 21h18" /></svg>
+      );
+    case "bell":
+      return (
+        <svg {...common}><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2.5h-15L6 16Z" /><path d="M10 21a2.2 2.2 0 0 0 4 0" /></svg>
+      );
     default:
       return (
         <svg {...common}><path d="M12 5v14M5 12h14" /></svg>

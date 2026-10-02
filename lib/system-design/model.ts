@@ -20,7 +20,16 @@ export type SystemType =
   | "database"
   | "queue"
   | "saas"
-  | "custom";
+  | "custom"
+  | "cloud"
+  | "streaming"
+  | "edge"
+  | "clm"
+  | "erp"
+  | "billing"
+  | "identity"
+  | "warehouse"
+  | "notify";
 
 export type ConnectionStatus = "draft" | "partial" | "ready";
 
@@ -105,6 +114,15 @@ export const SYSTEM_TEMPLATES: SystemTemplate[] = [
   { systemType: "queue", name: "Event Broker / Queue", description: "Async messaging backbone.", iconKey: "layers" },
   { systemType: "saas", name: "External SaaS", description: "Third-party cloud service.", iconKey: "grid" },
   { systemType: "custom", name: "Custom System", description: "Anything else - label it.", iconKey: "plus" },
+  { systemType: "cloud", name: "Cloud Platform", description: "Hyperscaler landing zone (AWS / Azure / GCP).", iconKey: "server" },
+  { systemType: "streaming", name: "Event Streaming", description: "Log streaming backbone (Kafka / Confluent).", iconKey: "activity" },
+  { systemType: "edge", name: "Edge & CDN", description: "Edge network (Cloudflare): DNS, CDN, WAF, workers.", iconKey: "globe" },
+  { systemType: "clm", name: "CLM / Contracts", description: "Contract lifecycle (DocuSign / Ironclad / Conga).", iconKey: "doc" },
+  { systemType: "erp", name: "ERP", description: "ERP backbone (SAP / Oracle / NetSuite).", iconKey: "briefcase" },
+  { systemType: "billing", name: "Billing", description: "Billing and invoicing (Stripe / Zuora).", iconKey: "card" },
+  { systemType: "identity", name: "Identity & Access", description: "IdP and SSO (Okta / Entra ID).", iconKey: "shield" },
+  { systemType: "warehouse", name: "Data Warehouse", description: "Analytics store (Snowflake / BigQuery).", iconKey: "bank" },
+  { systemType: "notify", name: "Notifications", description: "Human alerts (Slack / Email / SMS).", iconKey: "bell" },
 ];
 
 export function newId(prefix: string): string {
