@@ -47,6 +47,7 @@ import { buildDemoProject } from "@/lib/system-design/demo";
 import { SystemNodeView, SystemGlyph, type SystemNodeData } from "./SystemNode";
 import { TestRunner } from "./TestRunner";
 import { RunEdgeDialog } from "./RunEdgeDialog";
+import { ChainRunDialog } from "./ChainRunDialog";
 import { ProjectNotesModal } from "./ProjectNotesModal";
 import type { CanvasTodo } from "@/lib/inbox/types";
 
@@ -82,26 +83,28 @@ function toFlowNodes(project: SystemProject): Node<SystemNodeData>[] {
   }));
 }
 
-function toFlowEdges(project: SystemProject): Edge[] {
+function toFlowEdges(project: SystemProject, viz?: Record<string, "running" | "ok" | "failed">): Edge[] {
   return project.connections.map((c) => {
     const ready = connectionReadiness(c, project) === "ready";
+    const v = viz?.[c.id];
+    const color = v === "failed" ? "#B84C42" : v === "running" ? "#A98450" : v === "ok" || ready ? "#32815B" : undefined;
     return {
       id: c.id,
       source: c.sourceId,
       target: c.targetId,
       label: c.label || undefined,
-      animated: ready,
+      animated: !!v || ready,
       markerEnd: {
         type: MarkerType.ArrowClosed,
         width: 18,
         height: 18,
-        color: ready ? "#32815B" : "#8A8070",
+        color: color ?? "#8A8070",
       },
       labelBgPadding: [6, 3] as [number, number],
       labelBgBorderRadius: 6,
       labelBgStyle: { fill: "#FFFFFF", fillOpacity: 0.92 },
       labelStyle: { fontSize: 10, fontFamily: "monospace" },
-      style: ready ? { stroke: "#32815B", strokeWidth: 2 } : undefined,
+      style: color ? { stroke: color, strokeWidth: 2 } : undefined,
     };
   });
 }
@@ -118,6 +121,7 @@ function DesignerCanvas({
   emptyAction,
   present,
   onTogglePresent,
+  runVis,
 }: {
   project: SystemProject;
   onMoveSystems: (moves: { id: string; x: number; y: number }[]) => void;
@@ -130,6 +134,7 @@ function DesignerCanvas({
   emptyAction: () => void;
   present: boolean;
   onTogglePresent: () => void;
+  runVis: Record<string, "running" | "ok" | "failed">;
 }) {
   const { screenToFlowPosition, fitView } = useReactFlow();
   const nodes = useMemo(() => toFlowNodes(project), [project]);
@@ -138,7 +143,7 @@ function DesignerCanvas({
     () => nodes.map((n) => ({ ...n, selected: n.id === selNodeId })),
     [nodes, selNodeId]
   );
-  const edges = useMemo(() => toFlowEdges(project), [project]);
+  const edges = useMemo(() => toFlowEdges(project, runVis), [project, runVis]);
   const selEdges = useMemo(
     () => edges.map((e) => ({ ...e, selected: e.id === selEdgeId })),
     [edges, selEdgeId]
@@ -265,6 +270,9 @@ export function SystemDesigner() {
   const [selNodeId, setSelNodeId] = useState<string | null>(null);
   const [selEdgeId, setSelEdgeId] = useState<string | null>(null);
   const [testOpId, setTestOpId] = useState<string | null>(null);
+  const [runChainEdgeId, setRunChainEdgeId] = useState<string | null>(null);
+  /** Ephemeral execution paint: edgeId -> run status. Cleared on close/rerun. */
+  const [runVis, setRunVis] = useState<Record<string, "running" | "ok" | "failed">>({});
   const [notesOpen, setNotesOpen] = useState(false);
   const [runEdgeId, setRunEdgeId] = useState<string | null>(null);
   const [present, setPresent] = useState(false);
@@ -920,6 +928,7 @@ export function SystemDesigner() {
                 emptyAction={loadDemo}
                 present={present}
                 onTogglePresent={() => setPresent((v) => !v)}
+                runVis={runVis}
               />
             )}
           </ReactFlowProvider>
@@ -987,6 +996,10 @@ export function SystemDesigner() {
                 connections: p.connections.map((c) => (c.id === selEdge.id ? { ...c, ...patch } : c)),
               }))}
               onRun={() => setRunEdgeId(selEdge.id)}
+              onRunChain={() => {
+                setRunChainEdgeId(selEdge.id);
+                setRunVis({});
+              }}
               runReady={connectionReadiness(selEdge, project) === "ready"}
               onDelete={() => {
                 mutate((p) => ({ ...p, connections: p.connections.filter((c) => c.id !== selEdge.id) }));
@@ -1129,6 +1142,30 @@ export function SystemDesigner() {
         />
       )}
 
+      {runChainEdgeId && project && (
+        <ChainRunDialog
+          startEdgeId={runChainEdgeId}
+          project={project}
+          environments={project.environments}
+          activeEnvironmentId={project.activeEnvironmentId}
+          onClose={() => {
+            setRunChainEdgeId(null);
+            setRunVis({});
+          }}
+          onVisUpdate={(edgeId, status) => {
+            if (status === null) {
+              setRunVis((prev) => {
+                const next = { ...prev };
+                delete next[edgeId];
+                return next;
+              });
+              return;
+            }
+            setRunVis((prev) => ({ ...prev, [edgeId]: status }));
+          }}
+        />
+      )}
+
       {project && (
         <ProjectNotesModal
           open={notesOpen}
@@ -1214,6 +1251,17 @@ function NodeInspector({
           rows={3}
           spellCheck={false}
           className="mt-0.5 w-full resize-y rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] p-2 text-xs leading-relaxed text-ivory-950 focus:border-bronze-500 focus:outline-none"
+        />
+      </label>
+      <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+        Base URL
+        <input
+          value={node.baseUrl ?? ""}
+          onChange={(e) => onPatch({ baseUrl: e.target.value })}
+          placeholder="https://… (falls back to environment)"
+          spellCheck={false}
+          aria-label="System base URL"
+          className="mt-0.5 w-full rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-2 py-1.5 font-mono text-[11px] normal-case tracking-normal text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
         />
       </label>
       <div className="flex gap-1.5">
@@ -1427,6 +1475,7 @@ function EdgeInspector({
   onPatch,
   onDelete,
   onRun,
+  onRunChain,
   runReady,
 }: {
   edge: SystemConnection;
@@ -1436,6 +1485,7 @@ function EdgeInspector({
   onPatch: (patch: Partial<SystemConnection>) => void;
   onDelete: () => void;
   onRun: () => void;
+  onRunChain: () => void;
   runReady: boolean;
 }) {
   const readiness = connectionReadiness(edge, project);
@@ -1497,6 +1547,40 @@ function EdgeInspector({
       </div>
       {bindSelect("source", edge.sourceOperationId, sourceGroups, sourceName)}
       {bindSelect("target", edge.targetOperationId, targetGroups, targetName)}
+      <details className="rounded-xl border border-[var(--color-line-soft)] bg-[var(--color-canvas)]">
+        <summary className="cursor-pointer px-2.5 py-2 text-[11px] font-semibold text-ivory-900 hover:text-ivory-950">
+          Mapping {edge.mapping ? `· ${edge.mapping.mode}` : "· none (passthrough at run)"}
+        </summary>
+        <div className="space-y-1.5 border-t border-[var(--color-line-soft)] p-2.5">
+          <div className="flex gap-1.5" role="radiogroup" aria-label="Mapping mode">
+            {(["passthrough", "template"] as const).map((m) => (
+              <button
+                key={m}
+                role="radio"
+                aria-checked={(edge.mapping?.mode ?? "passthrough") === m}
+                onClick={() => onPatch({ mapping: { mode: m, template: edge.mapping?.template ?? '{\n  "data": {{response}}\n}' } })}
+                className={`rounded-lg border px-2 py-1 text-[11px] font-semibold capitalize transition-colors cursor-pointer ${((edge.mapping?.mode ?? "passthrough") === m) ? "bg-ivory-950 text-ivory-100 border-ivory-950" : "bg-[var(--color-surface)] border-[var(--color-line)] text-ivory-600 hover:text-ivory-950"}`}
+              >
+                {m === "passthrough" ? "Pass-through" : "Template"}
+              </button>
+            ))}
+          </div>
+          {(edge.mapping?.mode ?? "passthrough") === "template" && (
+            <textarea
+              value={edge.mapping?.template ?? ""}
+              onChange={(e) => onPatch({ mapping: { mode: "template", template: e.target.value } })}
+              spellCheck={false}
+              rows={4}
+              aria-label="Mapping template"
+              placeholder={'{\n  "x": {{field}}\n}'}
+              className="w-full resize-y rounded-lg border border-[var(--color-line)] bg-white p-2 font-mono text-[11px] leading-relaxed text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+            />
+          )}
+          <p className="text-[10px] text-ivory-500">
+            Stored on the edge - chains run unattended. {"{{dotted.path}}"} refs resolve against the previous hop.
+          </p>
+        </div>
+      </details>
       <Button
         size="sm"
         onClick={onRun}
@@ -1505,6 +1589,16 @@ function EdgeInspector({
         className="w-full"
       >
         Run edge end-to-end
+      </Button>
+      <Button
+        size="sm"
+        variant="secondary"
+        onClick={onRunChain}
+        disabled={!runReady}
+        title={runReady ? "Run the full downstream flow from this edge - every branch, with trace on canvas" : "Bind both ends first - chains start from ready edges"}
+        className="w-full"
+      >
+        Run chain from here
       </Button>
       <Button size="sm" variant="ghost" onClick={onDelete} className="w-full">
         Delete connection

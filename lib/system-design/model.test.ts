@@ -153,8 +153,23 @@ describe("system design model", () => {
     expect(issues.some((i) => i.path.includes("targetOperationId"))).toBe(true);
   });
 
-  it("rejects bad methods and dangling interface refs", () => {
+  it("validates edge mappings and system base URLs", () => {
     const demo = buildDemoProject();
+    const file = exportProject(demo);
+    const tampered = JSON.parse(JSON.stringify(file)) as typeof file;
+    const conn = tampered.project.connections[0] as unknown as Record<string, unknown>;
+    conn.mapping = { mode: "sideways", template: "x".repeat(20000) };
+    const bad = importProject(tampered);
+    expect(bad.project).toBeNull();
+    expect(bad.issues.some((i) => i.path.includes("mapping.mode"))).toBe(true);
+    const sys = tampered.project.systems[0] as unknown as Record<string, unknown>;
+    sys.baseUrl = 42;
+    const bad2 = importProject(tampered);
+    expect(bad2.project).toBeNull();
+    expect(bad2.issues.some((i) => i.path.includes("baseUrl"))).toBe(true);
+  });
+
+  it("rejects bad methods and dangling interface refs", () => {    const demo = buildDemoProject();
     const file = exportProject(demo);
     const tampered = JSON.parse(JSON.stringify(file)) as typeof file;
     tampered.project.operations.push({

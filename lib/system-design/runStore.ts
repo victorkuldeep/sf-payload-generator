@@ -30,8 +30,8 @@ export interface SystemRunRecord {
   requestBodyPreview: string;
   responseHeaders: Record<string, string>;
   responseBodyPreview: string;
-  /** Edge runs: "single" for TestRunner sends, "edge" with per-hop evidence. */
-  kind?: "single" | "edge";
+  /** Edge runs: "single" for TestRunner sends, "edge"/"chain" with per-hop evidence. */
+  kind?: "single" | "edge" | "chain";
   steps?: SystemRunStep[];
 }
 

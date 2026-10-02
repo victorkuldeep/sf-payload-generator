@@ -42,8 +42,20 @@ export interface SystemNode {
   name: string;
   systemType: SystemType;
   description: string;
+  /** Own base URL (https origin + prefix). Falls back to the active
+   * environment at run time. Never a secret - tokens stay per-run only. */
+  baseUrl?: string;
   position: { x: number; y: number };
   iconKey: string;
+}
+
+export type MappingMode = "passthrough" | "template";
+
+/** Stored step mapping: how this edge turns the inbound payload into the
+ * next hop's body. Absent = passthrough at run time (stated, not silent). */
+export interface EdgeMapping {
+  mode: MappingMode;
+  template: string;
 }
 
 export interface SystemConnection {
@@ -55,6 +67,7 @@ export interface SystemConnection {
   /** Exact operation bound at each end (ids into project.operations). */
   sourceOperationId?: string;
   targetOperationId?: string;
+  mapping?: EdgeMapping;
 }
 
 /** A named API surface on a system (REST base, GraphQL endpoint, events). */
@@ -233,6 +246,9 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
     else if (ids.has(s.id)) issues.push({ path: `${at}.id`, message: `Duplicate system id ${s.id}.` });
     else ids.add(s.id);
     if (typeof s.name !== "string" || !s.name.trim()) issues.push({ path: `${at}.name`, message: "Missing system name." });
+    if (s.baseUrl !== undefined && typeof s.baseUrl !== "string") {
+      issues.push({ path: `${at}.baseUrl`, message: "Base URL must be a string." });
+    }
     if (!s.position || typeof (s.position as { x?: unknown }).x !== "number" || typeof (s.position as { y?: unknown }).y !== "number") {
       issues.push({ path: `${at}.position`, message: "Position must be {x, y} numbers." });
     }
@@ -305,6 +321,19 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
       const iface = (interfaces as Record<string, unknown>[]).find((f) => f.id === op?.interfaceId) as { systemId?: string } | undefined;
       if (!iface || iface.systemId !== c[sysKey]) {
         issues.push({ path: `${at}.${key}`, message: `Operation ${opId} does not belong to the ${sysKey === "sourceId" ? "source" : "target"} system.` });
+      }
+    }
+    const mapping = c.mapping as { mode?: unknown; template?: unknown } | undefined;
+    if (mapping !== undefined) {
+      if (typeof mapping !== "object" || mapping === null) {
+        issues.push({ path: `${at}.mapping`, message: "Mapping must be an object." });
+      } else {
+        if (mapping.mode !== "passthrough" && mapping.mode !== "template") {
+          issues.push({ path: `${at}.mapping.mode`, message: "Mapping mode must be passthrough or template." });
+        }
+        if (typeof mapping.template !== "string" || mapping.template.length > 10000) {
+          issues.push({ path: `${at}.mapping.template`, message: "Mapping template must be a string under 10 KB." });
+        }
       }
     }
   }

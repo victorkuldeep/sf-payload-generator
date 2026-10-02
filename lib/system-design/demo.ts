@@ -14,7 +14,7 @@ export function buildDemoProject(): SystemProject {
   const mw = { ...newSystemFromTemplate(by("middleware"), { x: 460, y: 200 }, 1), name: "Integration Broker", id: "sys_demo_mw" };
   const sn = { ...newSystemFromTemplate(by("servicenow"), { x: 840, y: 80 }, 1), name: "ServiceNow ITSM", id: "sys_demo_sn" };
   const app = { ...newSystemFromTemplate(by("webapp"), { x: 840, y: 330 }, 1), name: "Triage Console", id: "sys_demo_app" };
-  const echo = { ...newSystemFromTemplate(by("rest"), { x: 1220, y: 200 }, 1), name: "Echo Service", id: "sys_demo_echo" };
+  const echo = { ...newSystemFromTemplate(by("rest"), { x: 1220, y: 200 }, 1), name: "Echo Service", id: "sys_demo_echo", baseUrl: "https://postman-echo.com" };
   project.systems = [sf, mw, sn, app, echo];
   project.connections = [
     { id: "conn_demo_1", sourceId: sf.id, targetId: mw.id, label: "Lead created event", status: "draft" as const, sourceOperationId: "op_demo_lead" },
