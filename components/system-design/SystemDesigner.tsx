@@ -8,6 +8,8 @@ import {
   MiniMap,
   Controls,
   useReactFlow,
+  MarkerType,
+  ConnectionMode,
   type Node,
   type Edge,
   type Connection,
@@ -86,6 +88,12 @@ function toFlowEdges(project: SystemProject): Edge[] {
       target: c.targetId,
       label: c.label || undefined,
       animated: ready,
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        width: 18,
+        height: 18,
+        color: ready ? "#32815B" : "#8A8070",
+      },
       labelBgPadding: [6, 3] as [number, number],
       labelBgBorderRadius: 6,
       labelBgStyle: { fill: "#FFFFFF", fillOpacity: 0.92 },
@@ -150,8 +158,8 @@ function DesignerCanvas({
         nodes={selNodes}
         edges={selEdges}
         nodeTypes={nodeTypes}
-        onNodesChange={(changes) => {
-          const moves: { id: string; x: number; y: number }[] = [];
+        connectionMode={ConnectionMode.Loose}
+        onNodesChange={(changes) => {          const moves: { id: string; x: number; y: number }[] = [];
           for (const c of changes) {
             if (c.type === "position" && c.position && !c.dragging) {
               moves.push({ id: c.id, x: c.position.x, y: c.position.y });
@@ -354,10 +362,16 @@ export function SystemDesigner() {
 
   const connectSystems = useCallback((sourceId: string, targetId: string) => {
     if (!project || !project.systems.some((s) => s.id === sourceId) || !project.systems.some((s) => s.id === targetId)) return;
+    const id = newId("conn");
     mutate((p) => ({
       ...p,
-      connections: [...p.connections, { id: newId("conn"), sourceId, targetId, label: "", status: "draft" as const }],
+      connections: [...p.connections, { id, sourceId, targetId, label: "", status: "draft" as const }],
     }));
+    // Reveal the new edge in the inspector immediately: label it, bind
+    // operations, watch readiness flip. A drawn edge is topology - it never
+    // creates interfaces; those are defined per system and bound explicitly.
+    setSelEdgeId(id);
+    setSelNodeId(null);
   }, [mutate, project]);
 
   const moveSystems = useCallback((moves: { id: string; x: number; y: number }[]) => {
