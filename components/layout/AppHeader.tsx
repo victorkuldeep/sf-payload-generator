@@ -159,6 +159,18 @@ export function AppHeader({
           >
             Architect
           </Link>
+          <Link
+            href="/system"
+            aria-current={pathname === "/system" ? "page" : undefined}
+            className={
+              pathname === "/system"
+                ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors"
+                : "hover:text-[var(--color-ink)] transition-colors"
+            }
+            title="System Design Studio - visual architecture and integration workbench"
+          >
+            System
+          </Link>
         </nav>
 
         <div className="flex items-center gap-2">
@@ -327,6 +339,14 @@ export function AppHeader({
           title="API Contract Architect - design custom APIs"
         >
           Architect
+        </Link>
+        <Link
+          href="/system"
+          aria-current={pathname === "/system" ? "page" : undefined}
+          className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
+          title="System Design Studio - visual architecture and integration workbench"
+        >
+          System
         </Link>
       </nav>
     </header>
