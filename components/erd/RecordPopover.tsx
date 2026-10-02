@@ -52,6 +52,7 @@ export interface RecordPopData {
     targetLabel: string;
     targetId: string;
     keyField: string | null;
+    kind: string | null;
   } | null;
 }
 
@@ -357,6 +358,11 @@ export function RecordPopover({
           <div className="flex items-center gap-1">
             <p className="min-w-0 flex-1 truncate text-[11px] font-semibold text-ivory-950">
               {lk ? `${lk.sourceName} · ${lk.fieldName}` : "Lookup target"}
+              {lk?.kind && (
+                <span className="ml-1.5 rounded-full border border-bronze-300 bg-bronze-100 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-bronze-700">
+                  {lk.kind}
+                </span>
+              )}
             </p>
             <button
               type="button"

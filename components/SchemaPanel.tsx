@@ -33,8 +33,10 @@ import {
   chunkSelect,
   buildRootQuery,
   buildChildrenQuery,
-  buildLabelQuery,
   labelFromRow,
+  queueLabelFromRow,
+  targetApiForId,
+  kindForId,
   keyFieldFor,
   resolveTarget,
   nodeRecordState,
@@ -1243,6 +1245,7 @@ export default function SchemaPanel({
     targetId: string;
     targetLabel: string;
     keyField: string | null;
+    kind: string | null;
   } | null>(null);
   const recordSelRef = useRef(recordSel);
   recordSelRef.current = recordSel;
@@ -1437,60 +1440,89 @@ export default function SchemaPanel({
       setRecordPop({ apiName: sourceApi, x: anchor.x, y: anchor.y, mode: "picker" });
       return;
     }
-    // Which object? First canvas describe claiming the field, else the edge's own refs.
+    // Which object? Id prefix first (005 = User, 00G = Group/queue -
+    // covers polymorphic OwnerId/CreatedById without a fetch), then first
+    // on-canvas describe, else the edge's own first declared target.
     const holderDesc = describes.get(sourceApi);
     const declared = holderDesc?.fields.find((f) => f.name === fieldName)?.referenceTo ?? [];
-    // Prefer the target whose records (or Id prefix knowledge) match - in
-    // practice the first declared target; polymorphs (WhoId/WhatId) fall back
-    // to the first on-canvas target.
+    const byPrefix = targetApiForId(declared, targetId);
     const candidates = declared.filter((t) => describes.has(t));
-    const targetApi = candidates[0] ?? declared[0] ?? null;
+    const targetApi = byPrefix ?? candidates[0] ?? declared[0] ?? null;
     if (!targetApi) {
       setRecordPopError(`${fieldName} has no described lookup target on ${sourceApi}.`);
       setRecordPop({ apiName: sourceApi, x: anchor.x, y: anchor.y, mode: "picker" });
       return;
     }
+    const kind = kindForId(targetApi);
+    // Land in the row's peek panel (same chrome as plain fields): dispatch
+    // first with the resolving state so the panel never opens empty, then
+    // replace with the resolved label (or raw-Id fallback) when it lands.
+    const fire = (value: string, context: string) => {
+      window.dispatchEvent(new CustomEvent("erd-peek-at", {
+        detail: { nodeApi: sourceApi, field: fieldName, value, context, x: anchor.x, y: anchor.y },
+      }));
+    };
+    fire("Resolving…", `${sourceApi} · ${fieldName} · ${targetId}`);
     // Target aboard? Reuse its row label without a query.
     const aboard = recordStoreRef.current.singles.get(targetApi)?.get(targetId)?.fields;
-    const targetDesc = describes.get(targetApi);
+    // Off-canvas targets: fetch the describe live (cached after first use),
+    // so User/Group resolve even when only Account is on canvas.
+    let targetDesc = describes.get(targetApi);
+    if (!targetDesc) {
+      try {
+        const token = getToken();
+        if (!token) throw new Error("Session token unavailable. Please reconnect.");
+        const response = await apiFetch("/api/salesforce/describe", { instanceUrl, token, apiVersion, objectName: targetApi });
+        const data = (await response.json()) as { error?: string; name?: string; fields?: { name: string; type: string; referenceTo?: string[]; nameField?: boolean }[] };
+        if (response.ok && data.name) {
+          targetDesc = data as unknown as typeof targetDesc;
+        }
+      } catch {
+        targetDesc = undefined;
+      }
+    }
     const keyField = targetDesc
       ? keyFieldFor(targetDesc.fields.map((f) => ({ name: f.name, type: f.type, referenceTo: f.referenceTo ?? [], nameField: f.nameField })))
       : null;
-    if (aboard && keyField) {
-      const hit = labelFromRow(aboard as Record<string, unknown>, keyField);
-      if (hit) {
-        setRecordLookup({ sourceApi, fieldName, targetApi, targetId, targetLabel: hit, keyField });
-        setRecordPop({ apiName: targetApi, x: anchor.x, y: anchor.y, mode: "lookup" });
-        return;
-      }
+    const aboardLabel = targetApi === "Group"
+      ? queueLabelFromRow(aboard as Record<string, unknown> | undefined)
+      : keyField
+        ? labelFromRow(aboard as Record<string, unknown> | undefined, keyField)
+        : null;
+    if (aboardLabel) {
+      const badge = kind ? ` · ${kind}` : "";
+      const via = targetApi === "Group" ? "Name" : keyField;
+      fire(aboardLabel, `${sourceApi} · ${fieldName}${badge}${via ? ` · via ${via}` : ""} · ${targetId}`);
+      return;
     }
-    if (!targetDesc || !keyField) {
+    if (!targetDesc || (!keyField && targetApi !== "Group")) {
       // No text key on the target (or undescribed): show the raw Id honestly.
-      setRecordLookup({ sourceApi, fieldName, targetApi, targetId, targetLabel: targetId, keyField: null });
-      setRecordPop({ apiName: targetApi, x: anchor.x, y: anchor.y, mode: "lookup" });
+      fire(targetId, `${sourceApi} · ${fieldName}${kind ? ` · ${kind}` : ""} · ${targetId}`);
       return;
     }
     if (recordBusyRef.current) return;
     setRecordBusy(targetApi);
     recordBusyRef.current = targetApi;
     try {
-      const rows = await runRecordQuery(buildLabelQuery(targetApi, keyField, targetId));
-      const hit = labelFromRow(rows[0], keyField);
-      setRecordLookup({
-        sourceApi, fieldName, targetApi, targetId,
-        targetLabel: hit ?? targetId, keyField: hit ? keyField : null,
-      });
-      if (!hit) setRecordPopError(`No text key on ${targetApi} - showing the raw Id.`);
+      // Queues need Type alongside Name for the "(queue)" suffix.
+      const select = targetApi === "Group" ? "Id, Name, Type" : `Id, ${keyField}`;
+      const rows = await runRecordQuery(`SELECT ${select} FROM ${targetApi} WHERE Id = '${targetId.trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'")}' LIMIT 1`);
+      const hit = targetApi === "Group" ? queueLabelFromRow(rows[0]) : labelFromRow(rows[0], keyField!);
+      const badge = kind ? ` · ${kind}` : "";
+      if (hit) {
+        const via = targetApi === "Group" ? "Name" : keyField;
+        fire(hit, `${sourceApi} · ${fieldName}${badge} · via ${via} · ${targetId}`);
+      } else {
+        fire(targetId, `${sourceApi} · ${fieldName}${badge} · ${targetId} (no display name)`);
+      }
     } catch (err) {
       // FLS/denied: raw Id + hint, never a dead click.
-      setRecordLookup({ sourceApi, fieldName, targetApi, targetId, targetLabel: targetId, keyField: null });
-      setRecordPopError(err instanceof Error ? err.message : "Lookup pull failed - showing the raw Id.");
+      fire(targetId, `${sourceApi} · ${fieldName} · ${targetId} (${err instanceof Error ? err.message : "pull failed"})`);
     } finally {
       recordBusyRef.current = null;
       setRecordBusy(null);
     }
-    setRecordPop({ apiName: targetApi, x: anchor.x, y: anchor.y, mode: "lookup" });
-  }, [describes, runRecordQuery]);
+  }, [describes, instanceUrl, apiVersion, getToken, runRecordQuery]);
 
   const openNodeRecord = useCallback(async (
     apiName: string,
@@ -1837,6 +1869,7 @@ export default function SchemaPanel({
           targetLabel: recordLookup.targetLabel,
           targetId: recordLookup.targetId,
           keyField: recordLookup.keyField,
+          kind: recordLookup.kind,
         },
       };
     }

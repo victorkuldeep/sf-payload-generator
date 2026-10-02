@@ -14,6 +14,9 @@ import {
   selectedRecordId,
   formatWalkValue,
   keyFieldFor,
+  targetApiForId,
+  kindForId,
+  queueLabelFromRow,
   buildLabelQuery,
   labelFromRow,
   emptyLoadedState,
@@ -193,5 +196,18 @@ describe("record walk engine", () => {
     expect(labelFromRow({ Id: "005x", Name: "Ada" }, "Name")).toBe("Ada");
     expect(labelFromRow({ Id: "005x" }, "Name")).toBeNull();
     expect(labelFromRow(undefined, "Name")).toBeNull();
+  });
+
+  it("routes polymorphic owner ids by prefix (User vs Queue)", () => {
+    expect(targetApiForId(["User", "Group"], "005h0000009Yhb4AAC")).toBe("User");
+    expect(targetApiForId(["User", "Group"], "00G000000123456E")).toBe("Group");
+    expect(targetApiForId(["User"], "00G000000123456E")).toBeNull();
+    expect(targetApiForId(["Account"], "001xx000003DGbP")).toBeNull();
+    expect(kindForId("User")).toBe("User");
+    expect(kindForId("Group")).toBe("Queue");
+    expect(kindForId("Account")).toBeNull();
+    expect(queueLabelFromRow({ Name: "Ops", Type: "Queue" })).toBe("Ops (queue)");
+    expect(queueLabelFromRow({ Name: "Ops", Type: "Regular" })).toBe("Ops");
+    expect(queueLabelFromRow({ Id: "00G1" })).toBeNull();
   });
 });

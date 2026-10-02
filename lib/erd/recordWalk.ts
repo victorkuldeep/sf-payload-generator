@@ -74,8 +74,11 @@ export function displayFieldNames(fields: WalkField[]): { select: string[]; name
  * (covers Name, OrderNumber, CaseNumber…), then well-known key fields,
  * else null (caller renders the raw Id). Resolves against the TARGET's
  * describe so e.g. Order.OwnerId shows the User's Name.
+ *
+ * Special case: User and Group (queues) have no nameField flag in some
+ * describes - cascade covers them (User.Name, Group Name/Type fallback).
  */
-const KEY_FIELD_FALLBACKS = ["Name", "Subject", "OrderNumber", "Order_Name__c", "CaseNumber", "ContractNumber", "Title", "DeveloperName", "Label", "Email", "Username"];
+const KEY_FIELD_FALLBACKS = ["Name", "Subject", "OrderNumber", "CaseNumber", "ContractNumber", "Title", "DeveloperName", "Label", "Email", "Username", "Type"];
 
 export function keyFieldFor(fields: WalkField[]): string | null {
   const named = fields.find((f) => f.nameField)?.name;
@@ -84,6 +87,35 @@ export function keyFieldFor(fields: WalkField[]): string | null {
     if (fields.some((f) => f.name === cand)) return cand;
   }
   return null;
+}
+
+/**
+ * Salesforce Id prefixes for polymorphic owner-style lookups (no describe
+ * needed): 005 = User, 00G = Group (queue). Used to pick the right target
+ * object when the field declares both (OwnerId, CreatedById…).
+ */
+export function targetApiForId(declared: string[], targetId: string): string | null {
+  const prefix = targetId.slice(0, 3);
+  if (prefix === "005" && declared.includes("User")) return "User";
+  if (prefix === "00G" && declared.includes("Group")) return "Group";
+  return null;
+}
+
+/** Human kind for a target id: "User", "Queue" (Group), or null. */
+export function kindForId(targetApi: string): string | null {
+  if (targetApi === "User") return "User";
+  if (targetApi === "Group") return "Queue";
+  return null;
+}
+
+/** Queue display: Group rows carry Name + Type - "Ops Queue", never an Id. */
+export function queueLabelFromRow(row: Record<string, unknown> | undefined): string | null {
+  if (!row) return null;
+  const name = row.Name;
+  if (typeof name !== "string" || !name) return null;
+  const type = row.Type;
+  const suffix = typeof type === "string" && type.toLowerCase() === "queue" ? " (queue)" : "";
+  return `${name}${suffix}`;
 }
 
 /** Pull the single human label for one record id (one deliberate query).

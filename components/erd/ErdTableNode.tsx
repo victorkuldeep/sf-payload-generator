@@ -77,6 +77,39 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
   const [copiedValue, setCopiedValue] = useState(false);
   const peekRef = useRef<HTMLDivElement>(null);
 
+  // One peek panel for BOTH field kinds: reference jumps land here when they
+  // carry a resolved label + Id; plain fields open it directly. Header (with
+  // close), body (value), footer (context) - same chrome everywhere.
+  const openPeek = (field: string, value: string, context: string, anchor: HTMLElement) => {
+    const rect = anchor.getBoundingClientRect();
+    setPeek({ field, x: rect.right + 8, y: rect.top });
+    setPeekValue(value);
+    setPeekContext(context);
+    setCopiedValue(false);
+  };
+  const [peekValue, setPeekValue] = useState("");
+  const [peekContext, setPeekContext] = useState("");
+
+  // Peek-at events from panel-level resolvers (lookup jumps): same chrome,
+  // opened by the row that asked. Detail: { nodeApi, field, value, context,
+  // x, y } - ignored when it names another node.
+  useEffect(() => {
+    const onPeekAt = (e: Event) => {
+      const d = (e as CustomEvent).detail as
+        | { nodeApi?: string; field?: string; value?: string; context?: string; x?: number; y?: number }
+        | undefined;
+      if (!d || typeof d.field !== "string") return;
+      if (typeof d.nodeApi === "string" && d.nodeApi !== data.apiName) return;
+      setPeek({ field: d.field, x: typeof d.x === "number" ? d.x : window.innerWidth / 2 - 120, y: typeof d.y === "number" ? d.y : 120 });
+      setPeekValue(typeof d.value === "string" ? d.value : "");
+      setPeekContext(typeof d.context === "string" ? d.context : "");
+      setCopiedValue(false);
+    };
+    window.addEventListener("erd-peek-at", onPeekAt);
+    return () => window.removeEventListener("erd-peek-at", onPeekAt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.apiName]);
+
   // Peek panel dismiss: outside pointer + Escape.
   useEffect(() => {
     if (!peek) return;
@@ -95,6 +128,13 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
   }, [peek]);
 
   const liveValues = data.recordValues ?? null;
+  const peekLabel = (field: string): string => {
+    const raw = liveValues?.[field];
+    if (raw !== undefined) return formatWalkValue(raw);
+    // Not in the loaded row: the jump panel shows the honest state
+    // (raw Id, error, or resolving) - same chrome, never silent.
+    return "Not in the loaded row - click the field name to fetch its target.";
+  };
   const rowIcons = (r: { name: string }) => (
     <>
       <span
@@ -119,17 +159,13 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
           onClick={(e) => {
             e.stopPropagation();
             e.preventDefault();
-            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-            setPeek({ field: r.name, x: rect.right + 8, y: rect.top });
-            setCopiedValue(false);
+            openPeek(r.name, peekLabel(r.name), data.recordId ? `${data.apiName} Id · ${data.recordId}` : data.apiName, e.currentTarget as HTMLElement);
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
               e.stopPropagation();
               e.preventDefault();
-              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-              setPeek({ field: r.name, x: rect.right + 8, y: rect.top });
-              setCopiedValue(false);
+              openPeek(r.name, peekLabel(r.name), data.recordId ? `${data.apiName} Id · ${data.recordId}` : data.apiName, e.currentTarget as HTMLElement);
             }
           }}
           className="shrink-0 rounded p-0.5 text-ivory-400 hover:text-bronze-600 hover:bg-ivory-200 transition-colors cursor-pointer"
@@ -492,7 +528,7 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
           </span>
         </div>
       </div>
-      {peek && liveValues && createPortal(
+      {peek && createPortal(
         <div
           ref={peekRef}
           role="dialog"
@@ -513,7 +549,7 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
               onClick={() => {
                 void (async () => {
                   try {
-                    await navigator.clipboard.writeText(formatWalkValue(liveValues[peek.field]));
+                    await navigator.clipboard.writeText(peekValue);
                     setCopiedValue(true);
                     window.setTimeout(() => setCopiedValue(false), 1200);
                   } catch {
@@ -540,13 +576,11 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
             </button>
           </div>
           <p className="mt-1 break-all font-mono text-[11px] leading-relaxed text-ivory-950">
-            {formatWalkValue(liveValues[peek.field])}
+            {peekValue}
           </p>
-          {data.recordId && (
-            <p className="mt-1 truncate font-mono text-[10px] text-ivory-500" title={`${data.apiName} Id ${data.recordId}`}>
-              {data.apiName} Id · {data.recordId}
-            </p>
-          )}
+          <p className="mt-1 truncate font-mono text-[10px] text-ivory-500" title={peekContext}>
+            {peekContext}
+          </p>
         </div>,
         document.body
       )}
