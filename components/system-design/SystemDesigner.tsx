@@ -54,6 +54,7 @@ import { TemplatesModal } from "./TemplatesModal";
 import {
   findMissingVars,
   resolveEnvVars,
+  looksLikeSecret,
   type CredVault,
 } from "@/lib/system-design/credentials";
 
@@ -1710,7 +1711,8 @@ function OperationHttpConfig({
               </p>
               <div className="space-y-1">
                 {(op.headers ?? []).map((h, i) => (
-                  <div key={i} className="flex gap-1">
+                  <div key={i}>
+                    <div className="flex gap-1">
                     <input
                       value={h.key}
                       onChange={(e) => setHeader(i, { key: e.target.value })}
@@ -1737,6 +1739,13 @@ function OperationHttpConfig({
                         <path d="M6 6l12 12M18 6 6 18" />
                       </svg>
                     </button>
+                    </div>
+                    {looksLikeSecret(h.value) && (
+                      <p className="mt-0.5 rounded-md border border-red-300 bg-red-50 px-1.5 py-1 text-[10px] leading-snug text-red-700" role="alert">
+                        Looks like a literal secret - it saves and exports with the project. Replace with{" "}
+                        <span className="font-mono font-bold">$env.NAME</span> from Credentials and rotate this key.
+                      </p>
+                    )}
                   </div>
                 ))}
                 {(op.headers ?? []).length < 20 && (

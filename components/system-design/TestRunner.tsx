@@ -44,7 +44,7 @@ export function TestRunner({
       ? operation.headers.map((h) => ({ key: h.key, value: h.value }))
       : [{ key: "Content-Type", value: "application/json" }]
   );
-  const [body, setBody] = useState("{}");
+  const [body, setBody] = useState(() => operation.sampleBody ?? "{}");
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<null | {
     status: number;

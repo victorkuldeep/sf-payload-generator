@@ -8,6 +8,7 @@ import {
   findMissingVars,
   resolveEnvVars,
   scrubSecrets,
+  looksLikeSecret,
 } from "./credentials";
 
 describe("credential vault", () => {
@@ -43,5 +44,16 @@ describe("credential vault", () => {
     // short values are not scrubbed (avoid mangling common substrings)
     expect(scrubSecrets("has xy inside", vault)).toBe("has xy inside");
     expect(scrubSecrets("nothing here", vault)).toBe("nothing here");
+  });
+
+  it("flags literal secrets but passes vault refs and plain values", () => {
+    expect(looksLikeSecret("gsk_Xy4bdvE9IYqEEupD2oLAWGdy")).toBe(true);
+    expect(looksLikeSecret("Bearer sk-abc123def456ghi789jkl01")).toBe(true);
+    expect(looksLikeSecret("-----BEGIN PRIVATE KEY-----\nabc")).toBe(true);
+    expect(looksLikeSecret("Bearer $env.GROQ_API_KEY")).toBe(false);
+    expect(looksLikeSecret("$env.K")).toBe(false);
+    expect(looksLikeSecret("application/json")).toBe(false);
+    expect(looksLikeSecret("Bearer short")).toBe(false);
+    expect(looksLikeSecret("")).toBe(false);
   });
 });

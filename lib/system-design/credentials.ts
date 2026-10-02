@@ -49,14 +49,27 @@ export interface ResolvedText {
 
 /** Scrub resolved secret values from text before persisting to history/IDB.
  * Vault values are never written to disk - previews keep their shape. */
-export function scrubSecrets(text: string, vault: CredVault): string {
-  let out = text;
+export function scrubSecrets(text: string, vault: CredVault): string {  let out = text;
   const values = Object.values(vault).filter((v) => v.length >= 3);
   values.sort((a, b) => b.length - a.length);
   for (const v of values) {
     if (out.includes(v)) out = out.split(v).join("***");
   }
   return out;
+}
+
+/**
+ * Heuristic tripwire for literal secrets typed into STORED config (headers,
+ * samples) - stored values export with the project, vault refs do not.
+ * $env refs always pass. Conservative on purpose: unknown shapes pass, only
+ * known provider prefixes, private keys and long opaque Bearer tokens flag.
+ */
+const SECRET_PREFIXES = /gsk_|sk-|xox[bpa]-|github_pat_|ghp_|gho_|ghu_|AKIA|AIza|-----BEGIN [A-Z ]*PRIVATE KEY/i;
+const LONG_BEARER = /Bearer\s+[A-Za-z0-9_\-~+/=]{24,}/;
+
+export function looksLikeSecret(value: string): boolean {
+  if (!value || value.includes("$env.")) return false;
+  return SECRET_PREFIXES.test(value) || LONG_BEARER.test(value);
 }
 
 /** Substitute known refs. Unknown refs are left literal AND reported -
