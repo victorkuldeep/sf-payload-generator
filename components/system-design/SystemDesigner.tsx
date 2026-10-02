@@ -49,6 +49,32 @@ import { TestRunner } from "./TestRunner";
 import { RunEdgeDialog } from "./RunEdgeDialog";
 import { ChainRunDialog } from "./ChainRunDialog";
 import { ProjectNotesModal } from "./ProjectNotesModal";
+import { CredentialsModal } from "./CredentialsModal";
+import {
+  findMissingVars,
+  resolveEnvVars,
+  type CredVault,
+} from "@/lib/system-design/credentials";
+
+const CRED_VAULT_KEY = "sd_cred_vault";
+
+function loadCredVault(): CredVault {
+  try {
+    const raw = sessionStorage.getItem(CRED_VAULT_KEY);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const out: CredVault = {};
+      for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+        if (typeof v === "string" && v) out[k] = v;
+      }
+      return out;
+    }
+  } catch {
+    /* corrupted vault never blocks the canvas */
+  }
+  return {};
+}
 import type { CanvasTodo } from "@/lib/inbox/types";
 
 const nodeTypes = { system: SystemNodeView } as const;
@@ -274,6 +300,17 @@ export function SystemDesigner() {
   /** Ephemeral execution paint: edgeId -> run status. Cleared on close/rerun. */
   const [runVis, setRunVis] = useState<Record<string, "running" | "ok" | "failed">>({});
   const [notesOpen, setNotesOpen] = useState(false);
+  const [credOpen, setCredOpen] = useState(false);
+  /** Session credential vault: tab memory + sessionStorage mirror, never in IDB/projects/exports. */
+  const [vault, setVault] = useState<CredVault>(() => loadCredVault());
+  useEffect(() => {
+    try {
+      if (Object.keys(vault).length === 0) sessionStorage.removeItem(CRED_VAULT_KEY);
+      else sessionStorage.setItem(CRED_VAULT_KEY, JSON.stringify(vault));
+    } catch {
+      /* private mode etc - memory still holds the tab session */
+    }
+  }, [vault]);
   const [runEdgeId, setRunEdgeId] = useState<string | null>(null);
   const [present, setPresent] = useState(false);
   useEffect(() => {
@@ -695,6 +732,25 @@ export function SystemDesigner() {
             title="Delete this saved project"
           >
             Delete
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setCredOpen(true)}
+            title="Session credentials ($env.NAME) - one-time setup, kept for this tab only"
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                <rect x="4" y="10" width="16" height="10" rx="2" />
+                <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+              </svg>
+              Credentials
+              {Object.keys(vault).length > 0 && (
+                <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-bronze-500 px-1 text-[9px] font-bold text-white">
+                  {Object.keys(vault).length}
+                </span>
+              )}
+            </span>
           </Button>
           <Button
             size="sm"
@@ -1124,6 +1180,7 @@ export function SystemDesigner() {
           system={testSystem}
           environments={project.environments}
           activeEnvironmentId={project.activeEnvironmentId}
+          vault={vault}
           onClose={() => setTestOpId(null)}
         />
       )}
@@ -1134,6 +1191,7 @@ export function SystemDesigner() {
           project={project}
           environments={project.environments}
           activeEnvironmentId={project.activeEnvironmentId}
+          vault={vault}
           onClose={() => setRunEdgeId(null)}
           onSaveSample={(opId, body) => mutate((p) => ({
             ...p,
@@ -1148,6 +1206,7 @@ export function SystemDesigner() {
           project={project}
           environments={project.environments}
           activeEnvironmentId={project.activeEnvironmentId}
+          vault={vault}
           onClose={() => {
             setRunChainEdgeId(null);
             setRunVis({});
@@ -1163,6 +1222,23 @@ export function SystemDesigner() {
             }
             setRunVis((prev) => ({ ...prev, [edgeId]: status }));
           }}
+        />
+      )}
+
+      {project && (
+        <CredentialsModal
+          open={credOpen}
+          onClose={() => setCredOpen(false)}
+          vault={vault}
+          onSet={(name, value) => setVault((v) => ({ ...v, [name]: value }))}
+          onRemove={(name) =>
+            setVault((v) => {
+              const next = { ...v };
+              delete next[name];
+              return next;
+            })
+          }
+          onClear={() => setVault({})}
         />
       )}
 

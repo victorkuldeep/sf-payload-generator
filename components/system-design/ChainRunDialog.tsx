@@ -7,6 +7,7 @@ import { preflightRun } from "@/lib/system-design/runner";
 import { compileMapping } from "@/lib/system-design/mapping";
 import { resolveChain, CHAIN_MAX_HOPS } from "@/lib/system-design/chain";
 import { saveSystemRun } from "@/lib/system-design/runStore";
+import { findMissingVars, resolveEnvVars, type CredVault } from "@/lib/system-design/credentials";
 import {
   newId,
   type SystemConnection,
@@ -98,6 +99,7 @@ export function ChainRunDialog({
   project,
   environments,
   activeEnvironmentId,
+  vault = {},
   onClose,
   onVisUpdate,
 }: {
@@ -105,6 +107,7 @@ export function ChainRunDialog({
   project: SystemProject;
   environments: SystemEnvironment[];
   activeEnvironmentId: string | null;
+  vault?: CredVault;
   onClose: () => void;
   onVisUpdate: (edgeId: string, status: "running" | "ok" | "failed" | null) => void;
 }) {
@@ -181,6 +184,19 @@ export function ChainRunDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lanes, bases, seedCallable]);
 
+  // Session-credential refs ($env.NAME) across seed, token and stored
+  // edge templates - missing entries block the run before anything fires.
+  const credMissing: string[] = useMemo(() => {
+    const texts = [seedBody, token];
+    for (const lane of lanes) {
+      for (const e of lane.edges) {
+        if (e.mapping?.template) texts.push(e.mapping.template);
+      }
+    }
+    return findMissingVars(texts, vault);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lanes, seedBody, token, vault]);
+
   const run = async () => {
     if (running || lanes.length === 0) return;
     setRunning(true);
@@ -200,6 +216,14 @@ export function ChainRunDialog({
       onVisUpdate(edgeId, !ok ? "failed" : "ok");
     };
     try {
+      const missingNow = findMissingVars([seedBody, token], vault);
+      if (missingNow.length > 0) {
+        throw new Error(
+          `Missing session credentials: ${missingNow.map((m) => `$env.${m}`).join(", ")}. Add them under Credentials in the project bar.`
+        );
+      }
+      const resolvedSeed = resolveEnvVars(seedBody, vault).text;
+      const resolvedToken = resolveEnvVars(token, vault).text;
       let laneNo = 0;
       for (const lane of lanes) {
         laneNo++;
@@ -228,7 +252,7 @@ export function ChainRunDialog({
                   baseUrl: bases[startEdge!.sourceId] ?? "",
                   allowHost: hostOf(bases[startEdge!.sourceId] ?? ""),
                   method: firstSourceOp.method, path: firstSourceOp.path,
-                  body: seedBody, token,
+                  body: resolvedSeed, token: resolvedToken,
                 });
                 inbound = r.bodyPreview;
                 push({
@@ -252,7 +276,7 @@ export function ChainRunDialog({
                 break;
               }
             } else {
-              inbound = seedBody;
+              inbound = resolvedSeed;
             }
           }
           // Mapping: stored on the edge, passthrough when absent (stated).
@@ -273,13 +297,15 @@ export function ChainRunDialog({
             markEdge(e.id, false);
             break;
           }
-          // Target call.
+          // Target call ($env refs in stored templates resolve at send time).
           onVisUpdate(e.id, "running");
           try {
             const r = await callApi({
               baseUrl: bases[e.targetId] ?? "",
               allowHost: hostOf(bases[e.targetId] ?? ""),
-              method: top.method, path: top.path, body: compiled.body, token,
+              method: top.method, path: top.path,
+              body: resolveEnvVars(compiled.body, vault).text,
+              token: resolvedToken,
             });
             const ok = r.status >= 200 && r.status < 300;
             push({
@@ -414,7 +440,7 @@ export function ChainRunDialog({
               </label>
             ))}
             <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
-              Bearer token, all hops (memory only)
+              Bearer token, all hops (memory only; $env.NAME works)
               <input
                 type="password"
                 value={token}
@@ -446,6 +472,17 @@ export function ChainRunDialog({
                   {error}
                 </p>
               )}
+              {credMissing.length > 0 && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-amber-800">
+                    Missing session credentials
+                  </p>
+                  <p className="mt-1 text-[11px] text-amber-900">
+                    {credMissing.map((m) => `$env.${m}`).join(", ")} - add them under Credentials
+                    in the project bar before running.
+                  </p>
+                </div>
+              )}
               {blocks.length > 0 && (
                 <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-amber-800">
@@ -458,7 +495,7 @@ export function ChainRunDialog({
                   </ul>
                 </div>
               )}
-              <Button size="sm" onClick={() => void run()} disabled={running || lanes.length === 0 || blocks.length > 0} className="w-full">
+              <Button size="sm" onClick={() => void run()} disabled={running || lanes.length === 0 || blocks.length > 0 || credMissing.length > 0} className="w-full">
                 {running ? "Running flow…" : done ? "Run again" : "Run full flow (Test mode)"}
               </Button>
 

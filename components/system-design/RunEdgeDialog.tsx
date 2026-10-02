@@ -6,6 +6,7 @@ import { apiFetch } from "@/lib/api";
 import { preflightRun } from "@/lib/system-design/runner";
 import { compileMapping, type MappingMode } from "@/lib/system-design/mapping";
 import { saveSystemRun } from "@/lib/system-design/runStore";
+import { findMissingVars, resolveEnvVars, scrubSecrets, type CredVault } from "@/lib/system-design/credentials";
 import {
   newId,
   type SystemConnection,
@@ -94,6 +95,7 @@ export function RunEdgeDialog({
   project,
   environments,
   activeEnvironmentId,
+  vault = {},
   onClose,
   onSaveSample,
 }: {
@@ -101,6 +103,7 @@ export function RunEdgeDialog({
   project: SystemProject;
   environments: SystemEnvironment[];
   activeEnvironmentId: string | null;
+  vault?: CredVault;
   onClose: () => void;
   onSaveSample: (opId: string, body: string) => void;
 }) {
@@ -149,10 +152,18 @@ export function RunEdgeDialog({
     setStep2(null);
     setRendered(null);
     try {
+      const missing = findMissingVars([body1, token], vault);
+      if (missing.length > 0) {
+        throw new Error(
+          `Missing session credentials: ${missing.map((m) => `$env.${m}`).join(", ")}. Add them under Credentials in the project bar.`
+        );
+      }
+      const resolvedBody1 = resolveEnvVars(body1, vault).text;
+      const resolvedToken = resolveEnvVars(token, vault).text;
       setPhase("step1");
       const r1 = await sendStep({
         baseUrl: base1, allowHost: hostOf(base1), method: sourceOp.method,
-        path: sourceOp.path, body: body1, token,
+        path: sourceOp.path, body: resolvedBody1, token: resolvedToken,
       });
       setStep1(r1);
       if (r1.status < 200 || r1.status >= 300) {
@@ -167,7 +178,7 @@ export function RunEdgeDialog({
       setPhase("step2");
       const r2 = await sendStep({
         baseUrl: base2, allowHost: hostOf(base2), method: targetOp.method,
-        path: targetOp.path, body: compiled.body, token,
+        path: targetOp.path, body: resolveEnvVars(compiled.body, vault).text, token: resolvedToken,
       });
       setStep2(r2);
       setPhase("done");
@@ -185,9 +196,9 @@ export function RunEdgeDialog({
           durationMs: r1.durationMs + r2.durationMs,
           truncated: r1.truncated || r2.truncated,
           requestHeaders: {},
-          requestBodyPreview: compiled.body.slice(0, 10000),
+          requestBodyPreview: scrubSecrets(compiled.body, vault).slice(0, 10000),
           responseHeaders: {},
-          responseBodyPreview: r2.bodyPreview.slice(0, 10000),
+          responseBodyPreview: scrubSecrets(r2.bodyPreview, vault).slice(0, 10000),
           kind: "edge",
           steps: [
             { label: `1 · ${sourceOp.name}`, status: r1.status, statusText: r1.statusText, durationMs: r1.durationMs, endpoint: r1.endpoint },
@@ -269,7 +280,7 @@ export function RunEdgeDialog({
                     />
                   </label>
                   <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
-                    Bearer token (memory only)
+                    Bearer token (memory only; $env.NAME works)
                     <input
                       type="password"
                       value={token}

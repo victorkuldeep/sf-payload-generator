@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Button from "../ui/Button";
 import Input from "../ui/Input";
 import { preflightRun, redactHeaders, type PreflightVerdict } from "@/lib/system-design/runner";
+import { findMissingVars, resolveEnvVars, scrubSecrets, type CredVault } from "@/lib/system-design/credentials";
 import { saveSystemRun, listSystemRuns, deleteSystemRun, type SystemRunRecord } from "@/lib/system-design/runStore";
 import { newId, type SystemEnvironment, type SystemOperation, type SystemNode, type SystemInterface } from "@/lib/system-design/model";
 
@@ -18,6 +19,7 @@ export function TestRunner({
   system,
   environments,
   activeEnvironmentId,
+  vault = {},
   onClose,
 }: {
   operation: SystemOperation;
@@ -25,6 +27,7 @@ export function TestRunner({
   system: SystemNode;
   environments: SystemEnvironment[];
   activeEnvironmentId: string | null;
+  vault?: CredVault;
   onClose: () => void;
 }) {
   const activeEnv = environments.find((e) => e.id === activeEnvironmentId) ?? environments[0] ?? null;
@@ -88,6 +91,17 @@ export function TestRunner({
     setError(null);
     setResult(null);
     try {
+      const missing = findMissingVars(
+        [body, token, ...headers.map((h) => h.value)],
+        vault
+      );
+      if (missing.length > 0) {
+        throw new Error(
+          `Missing session credentials: ${missing.map((m) => `$env.${m}`).join(", ")}. Add them under Credentials in the project bar.`
+        );
+      }
+      const resolvedBody = resolveEnvVars(method === "GET" ? "" : body, vault).text;
+      const resolvedToken = resolveEnvVars(token, vault).text;
       const response = await fetch("/api/system/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -95,10 +109,13 @@ export function TestRunner({
           url: verdict.url,
           allowHost,
           method,
-          headers: headers.filter((h) => h.key.trim()).map((h) => ({ key: h.key.trim(), value: h.value })),
-          body: method === "GET" ? "" : body,
+          headers: headers.filter((h) => h.key.trim()).map((h) => ({
+            key: h.key.trim(),
+            value: resolveEnvVars(h.value, vault).text,
+          })),
+          body: resolvedBody,
           timeoutMs: 25000,
-          authToken: token || undefined,
+          authToken: resolvedToken || undefined,
         }),
       });
       const data = (await response.json()) as {
@@ -141,10 +158,11 @@ export function TestRunner({
           statusText: data.statusText ?? "",
           durationMs: data.durationMs ?? 0,
           truncated: !!data.truncated,
+          // Vault secrets resolve at send time only - scrub before IDB history.
           requestHeaders: redactHeaders(data.requestHeaders ?? {}),
-          requestBodyPreview: (data.requestBodyPreview ?? "").slice(0, 10000),
+          requestBodyPreview: scrubSecrets(data.requestBodyPreview ?? "", vault).slice(0, 10000),
           responseHeaders: redactHeaders(data.responseHeaders ?? {}),
-          responseBodyPreview: (data.responseBodyPreview ?? "").slice(0, 10000),
+          responseBodyPreview: scrubSecrets(data.responseBodyPreview ?? "", vault).slice(0, 10000),
         };
         await saveSystemRun(record);
         setHistory(await listSystemRuns(20));
@@ -219,7 +237,7 @@ export function TestRunner({
             </label>
           </div>
           <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
-            Bearer token (memory only - never stored, never exported)
+            Bearer token (memory only - never stored, never exported; $env.NAME works too)
             <input
               type="password"
               value={token}
