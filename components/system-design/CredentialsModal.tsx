@@ -115,6 +115,9 @@ export function CredentialsModal({
             <input
               value={name}
               onChange={(e) => setName(e.target.value.toUpperCase())}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") add();
+              }}
               placeholder="NAME"
               spellCheck={false}
               aria-label="Credential name"
@@ -125,6 +128,9 @@ export function CredentialsModal({
                 type={reveal ? "text" : "password"}
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") add();
+                }}
                 placeholder="secret value"
                 autoComplete="off"
                 spellCheck={false}

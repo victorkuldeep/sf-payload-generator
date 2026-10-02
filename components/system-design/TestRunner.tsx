@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Button from "../ui/Button";
 import Input from "../ui/Input";
 import { preflightRun, redactHeaders, type PreflightVerdict } from "@/lib/system-design/runner";
-import { findMissingVars, resolveEnvVars, scrubSecrets, type CredVault } from "@/lib/system-design/credentials";
+import { findEnvRefs, findMissingVars, resolveEnvVars, scrubSecrets, type CredVault } from "@/lib/system-design/credentials";
 import { buildSendHeaders } from "@/lib/system-design/headers";
 import { saveSystemRun, listSystemRuns, deleteSystemRun, type SystemRunRecord } from "@/lib/system-design/runStore";
 import { newId, type SystemEnvironment, type SystemOperation, type SystemNode, type SystemInterface } from "@/lib/system-design/model";
@@ -196,6 +196,42 @@ export function TestRunner({
     setHeaders((prev) => prev.map((h, j) => (j === i ? { ...h, ...patch } : h)));
   };
 
+  // Postman-style reveal: masked by default, click the eye to inspect the
+  // resolved value, auto-remasks after 10s. Same-tab eyes only.
+  const [revealed, setRevealed] = useState<string | null>(null);
+  const revealTimer = useRef<number | null>(null);
+  useEffect(() => {
+    const t = revealTimer.current;
+    return () => {
+      if (t !== null) window.clearTimeout(t);
+    };
+  }, []);
+  const toggleReveal = (name: string) => {
+    if (revealTimer.current !== null) window.clearTimeout(revealTimer.current);
+    if (revealed === name) {
+      setRevealed(null);
+      revealTimer.current = null;
+      return;
+    }
+    setRevealed(name);
+    revealTimer.current = window.setTimeout(() => {
+      setRevealed(null);
+      revealTimer.current = null;
+    }, 10000);
+  };
+
+  // Resolution proof: every $env ref across body/token/headers with its
+  // vault status. Names and lengths only - values never render.
+  const envStatus: { name: string; chars: number | null }[] = useMemo(() => {
+    const names: string[] = [];
+    for (const t of [body, token, ...headers.map((h) => h.value)]) {
+      for (const n of findEnvRefs(t)) {
+        if (!names.includes(n)) names.push(n);
+      }
+    }
+    return names.map((n) => ({ name: n, chars: n in vault ? vault[n].length : null }));
+  }, [body, token, headers, vault]);
+
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="runner-title" onClick={onClose}>
       <div
@@ -368,6 +404,46 @@ export function TestRunner({
             <p className="rounded-lg border border-red-300 bg-red-50 px-2.5 py-2 text-xs text-red-700" role="alert">
               {error}
             </p>
+          )}
+          {envStatus.length > 0 && (
+            <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-2">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-ivory-600">
+                Vault refs at send time
+              </p>
+              <ul className="mt-1 space-y-0.5">
+                {envStatus.map((s) => (
+                  <li key={s.name} className="flex items-center gap-1.5 font-mono text-[11px]">
+                    {s.chars === null ? (
+                      <span className="text-red-700">✗ $env.{s.name} - missing in vault, send will block</span>
+                    ) : (
+                      <>
+                        <span className="text-green-800">
+                          ✓ $env.{s.name} - resolves (
+                          {revealed === s.name ? (
+                            <span className="break-all rounded bg-ivory-950 px-1 text-ivory-100">{vault[s.name]}</span>
+                          ) : (
+                            <>•••, {s.chars} chars</>
+                          )}
+                          )
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => toggleReveal(s.name)}
+                          aria-label={revealed === s.name ? `Hide $env.${s.name} value` : `Reveal $env.${s.name} value for 10 seconds`}
+                          title={revealed === s.name ? "Hide again" : "Reveal value for 10 seconds"}
+                          className="rounded p-0.5 text-ivory-500 hover:text-ivory-950 cursor-pointer"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                            <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
+                            <circle cx="12" cy="12" r="3" />
+                          </svg>
+                        </button>
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
           <Button size="sm" onClick={() => void send()} disabled={!verdict.ok || sending} className="w-full">
             {sending ? "Sending…" : "Send (Test mode)"}
