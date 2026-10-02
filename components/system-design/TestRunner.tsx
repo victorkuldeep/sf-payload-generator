@@ -124,7 +124,8 @@ export function TestRunner({
           authToken: resolvedToken || undefined,
         }),
       });
-      const data = (await response.json()) as {
+      const text = await response.text();
+      let data: {
         success?: boolean;
         status?: number;
         statusText?: string;
@@ -138,6 +139,15 @@ export function TestRunner({
         truncated?: boolean;
         error?: string;
       };
+      try {
+        data = JSON.parse(text) as typeof data;
+      } catch {
+        throw new Error(
+          response.ok
+            ? "Execution backend returned an unreadable response."
+            : `Execution backend failed (HTTP ${response.status})${text ? `: ${text.slice(0, 200)}` : "."}`
+        );
+      }
       if (!response.ok || data.error) {
         throw new Error(typeof data.error === "string" ? data.error : `Run failed (HTTP ${response.status}).`);
       }

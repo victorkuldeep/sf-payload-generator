@@ -1,5 +1,3 @@
-"use client";
-
 /**
  * Test-runner policy (pure, shared by UI preflight and documentation).
  * Server re-verifies everything - the client verdict is advisory only.
