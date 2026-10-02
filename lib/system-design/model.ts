@@ -8,6 +8,8 @@
  * (operations binding arrives in a later slice).
  */
 
+import type { CanvasTodo } from "@/lib/inbox/types";
+
 export const SYSTEM_DESIGN_SCHEMA_VERSION = 1;
 
 export type SystemType =
@@ -94,6 +96,10 @@ export interface SystemProject {
   operations: SystemOperation[];
   environments: SystemEnvironment[];
   activeEnvironmentId: string | null;
+  /** Project design notes (markdown) + TODO tracker. Absent on vintage
+   * records - default to empty. Exported/imported with the project. */
+  notes: string;
+  todos: CanvasTodo[];
 }
 
 export interface SystemTemplate {
@@ -146,6 +152,8 @@ export function newProject(name = "Untitled architecture"): SystemProject {
     operations: [],
     environments: [{ id: newId("env"), name: "Sandbox", baseUrl: "" }],
     activeEnvironmentId: null,
+    notes: "",
+    todos: [],
   };
 }
 
@@ -297,6 +305,44 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
   }
   if (issues.length > 0) return { project: null, issues };
   const activeEnv = typeof p.activeEnvironmentId === "string" ? p.activeEnvironmentId : null;
+  // Notes + TODOs are optional (vintage records) - validated when present.
+  const notes = typeof p.notes === "string" ? p.notes : "";
+  const rawTodos = Array.isArray(p.todos) ? p.todos : [];
+  const todos: CanvasTodo[] = [];
+  const todoIds = new Set<string>();
+  const STATUSES = ["open", "in-progress", "done"];
+  for (let i = 0; i < rawTodos.length; i++) {
+    const t = rawTodos[i] as Record<string, unknown>;
+    const at = `$.todos[${i}]`;
+    if (typeof t.id !== "string" || !t.id) {
+      issues.push({ path: `${at}.id`, message: "Missing TODO id." });
+      continue;
+    }
+    if (todoIds.has(t.id)) {
+      issues.push({ path: `${at}.id`, message: `Duplicate TODO id ${t.id}.` });
+      continue;
+    }
+    todoIds.add(t.id);
+    if (typeof t.title !== "string") {
+      issues.push({ path: `${at}.title`, message: "TODO title must be a string." });
+      continue;
+    }
+    if (typeof t.status !== "string" || !STATUSES.includes(t.status)) {
+      issues.push({ path: `${at}.status`, message: "TODO status must be open, in-progress or done." });
+      continue;
+    }
+    todos.push({
+      id: t.id,
+      title: t.title,
+      body: typeof t.body === "string" ? t.body : undefined,
+      assignee: typeof t.assignee === "string" ? t.assignee : undefined,
+      dueDate: typeof t.dueDate === "string" ? t.dueDate : undefined,
+      status: t.status as CanvasTodo["status"],
+      createdAt: typeof t.createdAt === "number" ? t.createdAt : Date.now(),
+      updatedAt: typeof t.updatedAt === "number" ? t.updatedAt : Date.now(),
+    });
+  }
+  if (issues.length > 0) return { project: null, issues };
   return {
     project: {
       id: p.id as string,
@@ -312,12 +358,16 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
       operations: operations as unknown as SystemOperation[],
       environments: environments as unknown as SystemEnvironment[],
       activeEnvironmentId: activeEnv,
+      notes,
+      todos,
     },
     issues: [],
   };
 }
 
-/** Export envelope: manifest + project. Secrets must never reach here (none exist in slice 1). */
+/** Export envelope: manifest + project. Notes/TODOs travel with the project
+ * (user-authored design text). Secrets must never reach here - environments
+ * carry base URLs only, tokens are never stored anywhere in this module. */
 export function exportProject(project: SystemProject): { kind: string; version: number; exportedAt: number; project: SystemProject } {
   return {
     kind: "sobject-studio-system-design",

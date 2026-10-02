@@ -46,6 +46,8 @@ import {
 import { buildDemoProject } from "@/lib/system-design/demo";
 import { SystemNodeView, SystemGlyph, type SystemNodeData } from "./SystemNode";
 import { TestRunner } from "./TestRunner";
+import { ProjectNotesModal } from "./ProjectNotesModal";
+import type { CanvasTodo } from "@/lib/inbox/types";
 
 const nodeTypes = { system: SystemNodeView } as const;
 
@@ -241,6 +243,7 @@ export function SystemDesigner() {
   const [selNodeId, setSelNodeId] = useState<string | null>(null);
   const [selEdgeId, setSelEdgeId] = useState<string | null>(null);
   const [testOpId, setTestOpId] = useState<string | null>(null);
+  const [notesOpen, setNotesOpen] = useState(false);
   const [inventoryOpen, setInventoryOpen] = useState(true);
   const [inventorySearch, setInventorySearch] = useState("");
   const [showList, setShowList] = useState(false);
@@ -249,6 +252,12 @@ export function SystemDesigner() {
   const [projectList, setProjectList] = useState<{ id: string; name: string; updatedAt: number }[]>([]);
   const [importIssues, setImportIssues] = useState<string[] | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  // Autosave: debounced IDB write on every change + flush on tab hide/close,
+  // so refresh never loses canvas work. Explicit Save stays for certainty +
+  // project-list refresh. Guards: never before the initial load completes.
+  const readyRef = useRef(false);
+  const projectRef = useRef<SystemProject | null>(null);
+  projectRef.current = project;
 
   // Initial load: most recent project, else a fresh one (unsaved until Save).
   useEffect(() => {
@@ -268,6 +277,45 @@ export function SystemDesigner() {
       }
       setProject(newProject());
     })();
+    readyRef.current = true;
+  }, []);
+
+  // Debounced autosave: every mutation persists ~800ms later. Guards keep the
+  // initial load from ever being overwritten by a blank state.
+  useEffect(() => {
+    if (!readyRef.current || !project) return;
+    const t = window.setTimeout(() => {
+      const p = projectRef.current;
+      if (!p) return;
+      void (async () => {
+        try {
+          await saveSystemProject(p);
+          setSaveState((s) => (s === "dirty" ? "saved" : s));
+          setProjectList(await listSystemProjects());
+        } catch {
+          setSaveState("error");
+          setSaveError("Autosave failed - hit Save to retry (IndexedDB unavailable or quota exceeded).");
+        }
+      })();
+    }, 800);
+    return () => window.clearTimeout(t);
+  }, [project]);
+
+  // Flush on tab hide/close so the last strokes survive.
+  useEffect(() => {
+    const flush = () => {
+      const p = projectRef.current;
+      if (p && readyRef.current) void saveSystemProject(p).catch(() => {});
+    };
+    const onVis = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, []);
 
   const pushHistory = useCallback((p: SystemProject | null) => {
@@ -276,8 +324,7 @@ export function SystemDesigner() {
     setFuture([]);
   }, []);
 
-  const mutate = useCallback((fn: (p: SystemProject) => SystemProject) => {
-    setProject((prev) => {
+  const mutate = useCallback((fn: (p: SystemProject) => SystemProject) => {    setProject((prev) => {
       if (!prev) return prev;
       pushHistory(prev);
       const next = fn({ ...prev, systems: [...prev.systems], connections: [...prev.connections] });
@@ -505,6 +552,24 @@ export function SystemDesigner() {
   const testOp = testOpId ? project?.operations.find((o) => o.id === testOpId) ?? null : null;
   const testIface = testOp ? project?.interfaces.find((i) => i.id === testOp.interfaceId) ?? null : null;
   const testSystem = testIface ? project?.systems.find((s) => s.id === testIface.systemId) ?? null : null;
+  const openTodoCount = project?.todos.filter((t) => t.status !== "done").length ?? 0;
+
+  const patchProjectTodo = useCallback((id: string, patch: Partial<CanvasTodo>) => {
+    mutate((p) => ({
+      ...p,
+      todos: p.todos.map((t) => (t.id === id ? { ...t, ...patch, updatedAt: Date.now() } : t)),
+    }));
+  }, [mutate]);
+
+  const addProjectTodo = useCallback((): string => {
+    const id = newId("todo");
+    const now = Date.now();
+    mutate((p) => ({
+      ...p,
+      todos: [{ id, title: "", status: "open" as const, createdAt: now, updatedAt: now }, ...p.todos],
+    }));
+    return id;
+  }, [mutate]);
 
   if (!project) {
     return (
@@ -574,6 +639,27 @@ export function SystemDesigner() {
             title="Delete this saved project"
           >
             Delete
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setNotesOpen(true)}
+            title="Project design notes and TODOs (markdown, autosaved with the project)"
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                <path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3Z" />
+                <path d="m13.5 6.5 3 3" />
+              </svg>
+              Notes
+              {openTodoCount > 0 ? (
+                <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+                  {openTodoCount}
+                </span>
+              ) : project.notes.trim() ? (
+                <span className="h-2 w-2 rounded-full bg-bronze-500" aria-hidden="true" />
+              ) : null}
+            </span>
           </Button>
           <span className="flex-1" />
           <Button size="sm" variant="ghost" onClick={undo} disabled={past.length === 0} title="Undo (Ctrl+Z)">
@@ -940,6 +1026,20 @@ export function SystemDesigner() {
           environments={project.environments}
           activeEnvironmentId={project.activeEnvironmentId}
           onClose={() => setTestOpId(null)}
+        />
+      )}
+
+      {project && (
+        <ProjectNotesModal
+          open={notesOpen}
+          onClose={() => setNotesOpen(false)}
+          projectName={project.name}
+          notes={project.notes}
+          todos={project.todos}
+          onNotes={(text) => mutate((p) => ({ ...p, notes: text }))}
+          onAddTodo={addProjectTodo}
+          onPatchTodo={patchProjectTodo}
+          onDeleteTodo={(id) => mutate((p) => ({ ...p, todos: p.todos.filter((t) => t.id !== id) }))}
         />
       )}
     </div>

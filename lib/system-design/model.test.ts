@@ -97,6 +97,30 @@ describe("system design model", () => {
     expect(issues).toEqual([]);
     expect(project?.interfaces).toEqual([]);
     expect(project?.operations).toEqual([]);
+    expect(project?.notes).toBe("");
+    expect(project?.todos).toEqual([]);
+  });
+
+  it("validates project TODOs and rejects bad ones", () => {
+    const good = {
+      id: "t1", title: "Verify", body: "x", assignee: "Asha",
+      dueDate: "2026-10-05", status: "in-progress", createdAt: 1, updatedAt: 2,
+    };
+    const base = {
+      id: "p1", name: "P", schemaVersion: 1, updatedAt: 1,
+      systems: [], connections: [], notes: "# Plan",
+      todos: [good, { id: "t1", title: "dup", status: "open" }],
+    };
+    const dup = validateProject(base);
+    expect(dup.project).toBeNull();
+    expect(dup.issues.some((i) => i.message.includes("Duplicate TODO"))).toBe(true);
+    const bad = validateProject({ ...base, todos: [{ id: "t2", title: 42, status: "open" }, { id: "t3", title: "x", status: "eventually" }] });
+    expect(bad.project).toBeNull();
+    expect(bad.issues.length).toBeGreaterThanOrEqual(2);
+    const ok = validateProject({ ...base, todos: [good] });
+    expect(ok.issues).toEqual([]);
+    expect(ok.project?.notes).toBe("# Plan");
+    expect(ok.project?.todos[0].assignee).toBe("Asha");
   });
 
   it("derives readiness from live bindings, never stored status", () => {
