@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Button from "../ui/Button";
 import { apiFetch } from "@/lib/api";
 import { preflightRun } from "@/lib/system-design/runner";
@@ -125,6 +125,34 @@ export function RunEdgeDialog({
   const [step2, setStep2] = useState<StepResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const tplRef = useRef<HTMLTextAreaElement>(null);
+
+  const insertRef = (ref: string) => {
+    const ta = tplRef.current;
+    if (!ta) {
+      setTemplate((t) => t + ref);
+      return;
+    }
+    const start = ta.selectionStart ?? template.length;
+    const end = ta.selectionEnd ?? template.length;
+    setTemplate(template.slice(0, start) + ref + template.slice(end));
+    const caret = start + ref.length;
+    window.setTimeout(() => {
+      tplRef.current?.focus();
+      tplRef.current?.setSelectionRange(caret, caret);
+    }, 0);
+  };
+  const tplChip = (label: string, ref: string, title: string) => (
+    <button
+      key={ref}
+      type="button"
+      onClick={() => insertRef(ref)}
+      title={`${title} - click to insert`}
+      className="rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] px-1.5 py-0.5 font-mono text-[10px] text-ivory-800 hover:border-bronze-500 hover:text-ivory-950 transition-colors cursor-pointer"
+    >
+      {label}
+    </button>
+  );
 
   const pre1 = useMemo(
     () =>
@@ -170,7 +198,10 @@ export function RunEdgeDialog({
         throw new Error(`Step 1 stopped the run (HTTP ${r1.status}) - fix the source call first.`);
       }
       setPhase("mapping");
-      const compiled = compileMapping(mode, template, r1.bodyPreview);
+      const compiled = compileMapping(mode, template, r1.bodyPreview, {
+        seed: resolvedBody1,
+        steps: { [edge.sourceId]: r1.bodyPreview },
+      });
       if (!compiled.ok) {
         throw new Error(`Mapping failed (not HTTP): ${compiled.error}`);
       }
@@ -349,15 +380,24 @@ export function RunEdgeDialog({
                   ))}
                 </div>
                 {mode === "template" ? (
-                  <textarea
-                    value={template}
-                    onChange={(e) => setTemplate(e.target.value)}
-                    spellCheck={false}
-                    rows={4}
-                    aria-label="Mapping template"
-                    placeholder={'{\n  "x": {{response}}\n}'}
-                    className="mt-1.5 w-full resize-y rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] p-2 font-mono text-[11px] leading-relaxed text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
-                  />
+                  <>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {tplChip("response", "{{response}}", "Step 1 output")}
+                      {tplChip("seed", "{{seed}}", "Step 1 input body")}
+                      {tplChip(sourceSys?.name ?? "source step", `{{steps.${edge.sourceId}}}`, "Step 1 output by system")}
+                      {tplChip("$env", "$env.", "Session credential prefix")}
+                    </div>
+                    <textarea
+                      ref={tplRef}
+                      value={template}
+                      onChange={(e) => setTemplate(e.target.value)}
+                      spellCheck={false}
+                      rows={4}
+                      aria-label="Mapping template"
+                      placeholder={'{\n  "x": {{response}}\n}'}
+                      className="mt-1.5 w-full resize-y rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] p-2 font-mono text-[11px] leading-relaxed text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+                    />
+                  </>
                 ) : (
                   <p className="mt-1.5 text-[11px] text-ivory-600">
                     Forwards the step-1 response body untouched. Fails loudly when it is not JSON.

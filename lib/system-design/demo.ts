@@ -39,3 +39,63 @@ export function buildDemoProject(): SystemProject {
   project.activeEnvironmentId = "env_demo";
   return project;
 }
+
+/**
+ * Sample topology: static User Input seed flows 1:1 into GROQ chat
+ * completions. Proves the concept end to end - the edge template grabs the
+ * seed prompt ({{seed.prompt}}) and builds the chat body, auth arrives via
+ * the session vault ($env.GROQ_API_KEY in the run token field). No real keys
+ * live in this file - the vault holds them for the tab only.
+ */
+export function buildGroqSampleProject(): SystemProject {
+  const project = newProject("Sample: User input → GROQ chat");
+  const by = (type: string) => SYSTEM_TEMPLATES.find((t) => t.systemType === type)!;
+  const ui = { ...newSystemFromTemplate(by("custom"), { x: 80, y: 200 }, 1), name: "User Input", id: "sys_groq_ui" };
+  const groq = {
+    ...newSystemFromTemplate(by("rest"), { x: 520, y: 200 }, 1),
+    name: "GROQ", id: "sys_groq_api", baseUrl: "https://api.groq.com",
+  };
+  project.systems = [ui, groq];
+  project.interfaces = [
+    { id: "iface_groq_ui", systemId: ui.id, name: "Prompt channel", protocol: "Events", basePath: "/prompt" },
+    { id: "iface_groq_api", systemId: groq.id, name: "Chat API", protocol: "REST", basePath: "/openai/v1" },
+  ];
+  project.operations = [
+    { id: "op_groq_prompt", interfaceId: "iface_groq_ui", name: "Prompt submitted", method: "EVENT", path: "/prompt/submitted", version: "v1" },
+    { id: "op_groq_chat", interfaceId: "iface_groq_api", name: "Chat completions", method: "POST", path: "/openai/v1/chat/completions", version: "v1" },
+  ];
+  project.connections = [
+    {
+      id: "conn_groq_1",
+      sourceId: ui.id,
+      targetId: groq.id,
+      label: "Ask GROQ",
+      status: "draft" as const,
+      sourceOperationId: "op_groq_prompt",
+      targetOperationId: "op_groq_chat",
+      mapping: {
+        mode: "template" as const,
+        template: '{\n  "model": "openai/gpt-oss-20b",\n  "messages": [\n    {\n      "role": "user",\n      "content": {{seed.prompt}}\n    }\n  ],\n  "stream": false\n}',
+      },
+    },
+  ];
+  project.environments = [{ id: "env_groq", name: "Production", baseUrl: "https://api.groq.com" }];
+  project.activeEnvironmentId = "env_groq";
+  project.notes = [
+    "## GROQ chat sample (1:1)",
+    "",
+    "Static prompt in, chat completion out. Run it:",
+    "",
+    "1. Project bar → Credentials → add `GROQ_API_KEY` = your key (tab session only).",
+    "2. Select the edge → Run chain from here.",
+    "3. Token field: `$env.GROQ_API_KEY`. Seed payload:",
+    "",
+    "```json",
+    '{ "prompt": "Explain Revenue Cloud order-to-cash architecture in 5 bullet points." }',
+    "```",
+    "",
+    "The edge template grabs `{{seed.prompt}}` and builds the GROQ body - the",
+    "same grab-and-map shape scales to Salesforce-vs-ZSP comparisons.",
+  ].join("\n");
+  return project;
+}

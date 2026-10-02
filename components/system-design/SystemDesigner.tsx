@@ -43,7 +43,7 @@ import {
   loadSystemProject,
   deleteSystemProject,
 } from "@/lib/system-design/store";
-import { buildDemoProject } from "@/lib/system-design/demo";
+import { buildDemoProject, buildGroqSampleProject } from "@/lib/system-design/demo";
 import { SystemNodeView, SystemGlyph, type SystemNodeData } from "./SystemNode";
 import { TestRunner } from "./TestRunner";
 import { RunEdgeDialog } from "./RunEdgeDialog";
@@ -543,6 +543,18 @@ export function SystemDesigner() {
     setSaveState("dirty");
   }, [project, saveState]);
 
+  const loadGroqSample = useCallback(() => {
+    if (project && (project.systems.length > 0 || saveState === "dirty")) {
+      if (!window.confirm("Replace the current canvas with the GROQ chat sample? Unsaved work will be lost.")) return;
+    }
+    setProject(buildGroqSampleProject());
+    setPast([]);
+    setFuture([]);
+    setSelNodeId(null);
+    setSelEdgeId(null);
+    setSaveState("dirty");
+  }, [project, saveState]);
+
   const newCanvas = useCallback(() => {
     if (project && (project.systems.length > 0 || saveState === "dirty")) {
       if (!window.confirm("Start a blank canvas? Unsaved work will be lost.")) return;
@@ -706,6 +718,9 @@ export function SystemDesigner() {
           </Button>
           <Button size="sm" variant="secondary" onClick={loadDemo} title="Load the demo architecture">
             Demo
+          </Button>
+          <Button size="sm" variant="secondary" onClick={loadGroqSample} title="Load the User Input to GROQ chat sample (needs GROQ_API_KEY in Credentials)">
+            Groq sample
           </Button>
           <Button size="sm" variant="secondary" onClick={doExport} title="Download the project as portable JSON (no secrets exist in this slice)">
             Export
@@ -1543,6 +1558,59 @@ function NodeInspector({
   );
 }
 
+function VariableChips({
+  project,
+  edge,
+  onInsert,
+}: {
+  project: SystemProject;
+  edge: SystemConnection;
+  onInsert: (ref: string) => void;
+}) {
+  const upstream = useMemo(() => {
+    const names: { id: string; name: string }[] = [];
+    const seen = new Set<string>([edge.targetId]);
+    const queue = [edge.sourceId];
+    while (queue.length > 0) {
+      const cur = queue.shift()!;
+      if (seen.has(cur)) continue;
+      seen.add(cur);
+      const sys = project.systems.find((s) => s.id === cur);
+      if (sys) names.push({ id: sys.id, name: sys.name });
+      for (const c of project.connections) {
+        if (c.targetId === cur) queue.push(c.sourceId);
+      }
+    }
+    return names;
+  }, [project, edge]);
+
+  const chip = (label: string, ref: string, title: string) => (
+    <button
+      key={ref}
+      type="button"
+      onClick={() => onInsert(ref)}
+      title={`${title} - click to insert`}
+      className="rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] px-1.5 py-0.5 font-mono text-[10px] text-ivory-800 hover:border-bronze-500 hover:text-ivory-950 transition-colors cursor-pointer"
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div>
+      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+        Variables available here - click to insert
+      </p>
+      <div className="flex flex-wrap gap-1">
+        {chip("response", "{{response}}", "Previous hop output")}
+        {chip("seed", "{{seed}}", "Flow seed payload")}
+        {upstream.map((u) => chip(u.name, `{{steps.${u.id}}}`, `Output of the hop targeting ${u.name}`))}
+        {chip("$env", "$env.", "Session credential prefix")}
+      </div>
+    </div>
+  );
+}
+
 function EdgeInspector({
   edge,
   project,
@@ -1564,6 +1632,7 @@ function EdgeInspector({
   onRunChain: () => void;
   runReady: boolean;
 }) {
+  const tplRef = useRef<HTMLTextAreaElement>(null);
   const readiness = connectionReadiness(edge, project);
   const sourceGroups = operationsForSystem(project, edge.sourceId);
   const targetGroups = operationsForSystem(project, edge.targetId);
@@ -1642,18 +1711,43 @@ function EdgeInspector({
             ))}
           </div>
           {(edge.mapping?.mode ?? "passthrough") === "template" && (
-            <textarea
-              value={edge.mapping?.template ?? ""}
+            <>
+              <VariableChips
+                project={project}
+                edge={edge}
+                onInsert={(ref) => {
+                  const ta = tplRef.current;
+                  const cur = edge.mapping?.template ?? "";
+                  if (!ta) {
+                    onPatch({ mapping: { mode: "template", template: cur + ref } });
+                    return;
+                  }
+                  const start = ta.selectionStart ?? cur.length;
+                  const end = ta.selectionEnd ?? cur.length;
+                  const next = cur.slice(0, start) + ref + cur.slice(end);
+                  onPatch({ mapping: { mode: "template", template: next } });
+                  const caret = start + ref.length;
+                  window.setTimeout(() => {
+                    tplRef.current?.focus();
+                    tplRef.current?.setSelectionRange(caret, caret);
+                  }, 0);
+                }}
+              />
+              <textarea
+                ref={tplRef}
+                value={edge.mapping?.template ?? ""}
               onChange={(e) => onPatch({ mapping: { mode: "template", template: e.target.value } })}
               spellCheck={false}
               rows={4}
               aria-label="Mapping template"
               placeholder={'{\n  "x": {{field}}\n}'}
               className="w-full resize-y rounded-lg border border-[var(--color-line)] bg-white p-2 font-mono text-[11px] leading-relaxed text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
-            />
+              />
+            </>
           )}
           <p className="text-[10px] text-ivory-500">
-            Stored on the edge - chains run unattended. {"{{dotted.path}}"} refs resolve against the previous hop.
+            Stored on the edge - chains run unattended. {"{{response}}"} is the previous hop, {"{{seed}}"} the
+            flow input, {"{{steps.<system>}}"} any earlier hop output.
           </p>
         </div>
       </details>

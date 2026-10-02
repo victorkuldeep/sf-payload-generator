@@ -27,8 +27,7 @@ describe("step mapping", () => {
     expect(compileMapping("passthrough", "", "   ").ok).toBe(false);
   });
 
-  it("validates rendered templates as JSON", () => {
-    const good = compileMapping("template", '{"x": {{v}}}', '{"v": "hello world"}');
+  it("validates rendered templates as JSON", () => {    const good = compileMapping("template", '{"x": {{v}}}', '{"v": "hello world"}');
     expect(good.ok).toBe(true);
     expect(JSON.parse(good.body)).toEqual({ x: "hello world" });
     const bad = compileMapping("template", '{"x": {{v}}}', "nope");
@@ -37,5 +36,43 @@ describe("step mapping", () => {
     const broken = compileMapping("template", "{oops {{v}}", '{"v":1}');
     expect(broken.ok).toBe(false);
     expect(broken.error).toMatch(/not valid JSON/);
+  });
+
+  it("resolves response/seed/steps namespaces", () => {
+    const ctx = {
+      seed: '{"prompt":"hi"}',
+      steps: { sys_groq: '{"id":"chatcmpl-1","choices":[{"message":{"content":"hello"}}]}' },
+    };
+    const { text, missing } = renderTemplate(
+      '{"a": {{response.token}}, "whole": {{response}}, "p": {{seed.prompt}}, "c": {{steps.sys_groq.choices.0.message.content}}, "full": {{steps.sys_groq}}, "gone": {{steps.sys_missing.x}}}',
+      { token: "tok-1" },
+      ctx
+    );
+    expect(missing).toEqual(["steps.sys_missing.x"]);
+    expect(JSON.parse(text)).toEqual({
+      a: "tok-1",
+      whole: { token: "tok-1" },
+      p: "hi",
+      c: "hello",
+      full: { id: "chatcmpl-1", choices: [{ message: { content: "hello" } }] },
+      gone: null,
+    });
+  });
+
+  it("keeps legacy response-key templates working", () => {
+    const { text, missing } = renderTemplate('{"x": {{response.token}}}', { response: { token: "legacy" } });
+    expect(missing).toEqual([]);
+    expect(JSON.parse(text)).toEqual({ x: "legacy" });
+  });
+
+  it("compileMapping threads step context through", () => {
+    const out = compileMapping(
+      "template",
+      '{"content": {{steps.sys_in.prompt}}}',
+      '{"ignored": true}',
+      { steps: { sys_in: '{"prompt":"say hi"}' } }
+    );
+    expect(out.ok).toBe(true);
+    expect(JSON.parse(out.body)).toEqual({ content: "say hi" });
   });
 });

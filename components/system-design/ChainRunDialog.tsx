@@ -224,6 +224,9 @@ export function ChainRunDialog({
       }
       const resolvedSeed = resolveEnvVars(seedBody, vault).text;
       const resolvedToken = resolveEnvVars(token, vault).text;
+      // Every hop output stays addressable as {{steps.<systemId>}}; the seed
+      // doubles as the source output when the first op is an event.
+      const outputs: Record<string, string> = {};
       let laneNo = 0;
       for (const lane of lanes) {
         laneNo++;
@@ -255,6 +258,7 @@ export function ChainRunDialog({
                   body: resolvedSeed, token: resolvedToken,
                 });
                 inbound = r.bodyPreview;
+                outputs[startEdge!.sourceId] = r.bodyPreview;
                 push({
                   lane: laneNo, edgeId: e.id,
                   label: `Seed · ${firstSourceOp.method} ${firstSourceOp.name} (${sys?.name ?? "?"})`,
@@ -277,11 +281,17 @@ export function ChainRunDialog({
               }
             } else {
               inbound = resolvedSeed;
+              outputs[startEdge!.sourceId] = resolvedSeed;
             }
           }
           // Mapping: stored on the edge, passthrough when absent (stated).
+          // Templates see {{response}} (previous hop), {{seed}} and every
+          // {{steps.<systemId>}} captured so far - cross-hop by design.
           const mapping = e.mapping ?? { mode: "passthrough" as const, template: "" };
-          const compiled = compileMapping(mapping.mode, mapping.template, inbound);
+          const compiled = compileMapping(mapping.mode, mapping.template, inbound, {
+            seed: resolvedSeed,
+            steps: outputs,
+          });
           push({
             lane: laneNo, edgeId: e.id,
             label: `Mapping · ${mapping.mode}${e.mapping ? "" : " (default)"}`,
@@ -318,6 +328,7 @@ export function ChainRunDialog({
             markEdge(e.id, ok);
             if (!ok) break;
             inbound = r.bodyPreview;
+            outputs[e.targetId] = r.bodyPreview;
           } catch (err) {
             push({
               lane: laneNo, edgeId: e.id,
