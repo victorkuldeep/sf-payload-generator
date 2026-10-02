@@ -8,6 +8,18 @@ export interface HeaderRow {
   value: string;
 }
 
+/** Prefill for run-dialog token fields: the stored Authorization header is
+ * declarative intent (Postman habit) but the backend only forwards auth from
+ * the per-run token - so the dialog opens carrying the stored value and the
+ * wire stays memory-only. Returns "" when no stored auth exists. Refs stay
+ * refs ($env resolves at send, tracking vault edits). */
+export function authTokenPrefill(stored: OperationHeader[] | undefined): string {
+  const found = (stored ?? []).find((h) => h.key.trim().toLowerCase() === "authorization");
+  if (!found) return "";
+  const m = found.value.match(/^\s*Bearer\s+(.+?)\s*$/i);
+  return (m ? m[1] : found.value).trim();
+}
+
 /** Stored op headers + ad-hoc dialog rows, resolved against the vault.
  * Ad-hoc rows win on name conflict (case-insensitive). Empty names drop.
  * Returns rows ready to send plus any missing $env names (senders block). */

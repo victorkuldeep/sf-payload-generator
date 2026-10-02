@@ -7,7 +7,7 @@ import { preflightRun } from "@/lib/system-design/runner";
 import { compileMapping } from "@/lib/system-design/mapping";
 import { resolveChain, CHAIN_MAX_HOPS } from "@/lib/system-design/chain";
 import { saveSystemRun } from "@/lib/system-design/runStore";
-import { buildSendHeaders } from "@/lib/system-design/headers";
+import { buildSendHeaders, authTokenPrefill } from "@/lib/system-design/headers";
 import { findMissingVars, resolveEnvVars, type CredVault } from "@/lib/system-design/credentials";
 import {
   newId,
@@ -135,7 +135,14 @@ export function ChainRunDialog({
     for (const s of involvedSystems) out[s.id] = s.baseUrl || activeEnv?.baseUrl || "";
     return out;
   });
-  const [token, setToken] = useState("");
+  const [token, setToken] = useState(() => {
+    const src = startEdge
+      ? project.operations.find((o) => o.id === startEdge.sourceOperationId)?.headers
+      : undefined;
+    const firstTargetId = lanes[0]?.edges[0]?.targetOperationId;
+    const first = firstTargetId ? project.operations.find((o) => o.id === firstTargetId)?.headers : undefined;
+    return authTokenPrefill(src) || authTokenPrefill(first);
+  });
   // Seed defaults to the start operation's stored sample body (the User
   // Input pattern) - the user edits per run, never configures twice.
   const [seedBody, setSeedBody] = useState(() =>

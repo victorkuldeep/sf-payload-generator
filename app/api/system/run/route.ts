@@ -5,6 +5,7 @@ import { screenTargetHost } from "@/lib/salesforce/url";
 import { isAbortError } from "@/lib/salesforce/client";
 import {
   clampTimeoutMs,
+  normalizeAuthToken,
   redactHeaders,
   endpointForStorage,
   RUNNER_MAX_REQUEST_BYTES,
@@ -111,7 +112,8 @@ export async function POST(req: NextRequest) {
     if (["host", "content-length", "connection", "authorization", "cookie"].includes(k)) continue;
     outHeaders[h.key] = h.value;
   }
-  if (authToken) outHeaders["Authorization"] = `Bearer ${authToken}`;
+  const cleanToken = normalizeAuthToken(authToken);
+  if (cleanToken) outHeaders["Authorization"] = `Bearer ${cleanToken}`;
 
   const started = Date.now();
   let response: Response;

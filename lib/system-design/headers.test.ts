@@ -1,9 +1,18 @@
 "use client";
 
 import { describe, it, expect } from "vitest";
-import { buildSendHeaders } from "./headers";
+import { authTokenPrefill, buildSendHeaders } from "./headers";
 
 describe("send headers", () => {
+  it("prefills run tokens from stored auth intent", () => {
+    expect(authTokenPrefill(undefined)).toBe("");
+    expect(authTokenPrefill([])).toBe("");
+    expect(authTokenPrefill([{ key: "X-Api-Key", value: "abc" }])).toBe("");
+    expect(authTokenPrefill([{ key: "Authorization", value: "Bearer $env.K" }])).toBe("$env.K");
+    expect(authTokenPrefill([{ key: "authorization", value: "  Bearer  live-key-1  " }])).toBe("live-key-1");
+    expect(authTokenPrefill([{ key: "Authorization", value: "raw-token" }])).toBe("raw-token");
+  });
+
   it("merges stored + ad-hoc with ad-hoc winning, defaults content type", () => {
     const { headers, missing } = buildSendHeaders(
       [

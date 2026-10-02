@@ -7,7 +7,7 @@ import { preflightRun } from "@/lib/system-design/runner";
 import { compileMapping, type MappingMode } from "@/lib/system-design/mapping";
 import { saveSystemRun } from "@/lib/system-design/runStore";
 import { findMissingVars, resolveEnvVars, scrubSecrets, type CredVault } from "@/lib/system-design/credentials";
-import { buildSendHeaders } from "@/lib/system-design/headers";
+import { buildSendHeaders, authTokenPrefill } from "@/lib/system-design/headers";
 import {
   newId,
   type SystemConnection,
@@ -117,7 +117,9 @@ export function RunEdgeDialog({
 
   const [base1, setBase1] = useState(activeEnv?.baseUrl ?? "");
   const [base2, setBase2] = useState(activeEnv?.baseUrl ?? "");
-  const [token, setToken] = useState("");
+  const [token, setToken] = useState(() =>
+    authTokenPrefill(targetOp?.headers) || authTokenPrefill(sourceOp?.headers)
+  );
   const [body1, setBody1] = useState(sourceOp?.sampleBody ?? "{}");
   const [mode, setMode] = useState<MappingMode>("passthrough");
   const [template, setTemplate] = useState('{\n  "data": {{response}}\n}');

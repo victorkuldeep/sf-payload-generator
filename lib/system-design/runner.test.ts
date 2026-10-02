@@ -6,6 +6,7 @@ import {
   redactHeaders,
   endpointForStorage,
   clampTimeoutMs,
+  normalizeAuthToken,
   RUNNER_MAX_TIMEOUT_MS,
 } from "./runner";
 
@@ -62,5 +63,14 @@ describe("runner policy", () => {
   it("strips query strings for storage", () => {
     expect(endpointForStorage("https://a.test/v1?token=secret")).toBe("https://a.test/v1");
     expect(endpointForStorage("garbage")).toBe("garbage");
+  });
+
+  it("normalizes pasted tokens (Bearer prefix, stray whitespace)", () => {
+    expect(normalizeAuthToken("gsk_abc123")).toBe("gsk_abc123");
+    expect(normalizeAuthToken("Bearer gsk_abc123")).toBe("gsk_abc123");
+    expect(normalizeAuthToken("bearer   gsk_abc123  ")).toBe("gsk_abc123");
+    expect(normalizeAuthToken("  gsk_abc123\n")).toBe("gsk_abc123");
+    expect(normalizeAuthToken("")).toBe("");
+    expect(normalizeAuthToken(undefined)).toBe("");
   });
 });

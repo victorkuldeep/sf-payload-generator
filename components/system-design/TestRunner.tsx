@@ -5,7 +5,7 @@ import Button from "../ui/Button";
 import Input from "../ui/Input";
 import { preflightRun, redactHeaders, type PreflightVerdict } from "@/lib/system-design/runner";
 import { findEnvRefs, findMissingVars, resolveEnvVars, scrubSecrets, type CredVault } from "@/lib/system-design/credentials";
-import { buildSendHeaders } from "@/lib/system-design/headers";
+import { buildSendHeaders, authTokenPrefill } from "@/lib/system-design/headers";
 import { saveSystemRun, listSystemRuns, deleteSystemRun, type SystemRunRecord } from "@/lib/system-design/runStore";
 import { newId, type SystemEnvironment, type SystemOperation, type SystemNode, type SystemInterface } from "@/lib/system-design/model";
 
@@ -34,7 +34,7 @@ export function TestRunner({
   const activeEnv = environments.find((e) => e.id === activeEnvironmentId) ?? environments[0] ?? null;
   const [envId, setEnvId] = useState<string>(activeEnv?.id ?? "");
   const [baseUrl, setBaseUrl] = useState(activeEnv?.baseUrl ?? "");
-  const [token, setToken] = useState("");
+  const [token, setToken] = useState(() => authTokenPrefill(operation.headers));
   const [method, setMethod] = useState<"GET" | "POST" | "PUT" | "PATCH" | "DELETE">(
     ["GET", "POST", "PUT", "PATCH", "DELETE"].includes(operation.method) ? operation.method as "GET" | "POST" | "PUT" | "PATCH" | "DELETE" : "GET"
   );

@@ -28,10 +28,10 @@ describe("groq chat sample", () => {
     });
   });
 
-  it("keeps auth out of stored config and prefills the seed", () => {
+  it("keeps auth as a vault ref for token prefill and prefills the seed", () => {
     const project = buildGroqSampleProject();
     const chat = project.operations.find((o) => o.id === "op_groq_chat");
-    expect(chat?.headers ?? []).toEqual([]);
+    expect(chat?.headers).toEqual([{ key: "Authorization", value: "Bearer $env.GROQ_API_KEY" }]);
     const prompt = project.operations.find((o) => o.id === "op_groq_prompt");
     expect(prompt?.sampleBody).toContain("order-to-cash");
     const { issues } = validateProject(JSON.parse(JSON.stringify(project)));

@@ -43,7 +43,7 @@ export function CredentialsModal({
       return;
     }
     setError(null);
-    onSet(clean, value);
+    onSet(clean, value.trim());
     setName("");
     setValue("");
   };

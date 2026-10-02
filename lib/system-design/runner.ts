@@ -77,6 +77,14 @@ export function redactHeaders(headers: Record<string, string>): Record<string, s
   return out;
 }
 
+/** Normalize a pasted token: users habitually paste the whole
+ * `Bearer <key>` header value into token fields - the route adds the scheme
+ * itself, so strip it (plus stray whitespace) at the trust boundary. */
+export function normalizeAuthToken(v: unknown): string {
+  const s = typeof v === "string" ? v.trim() : "";
+  return s.replace(/^Bearer\s+/i, "").trim();
+}
+
 /** Strip query strings before persisting endpoint references. */
 export function endpointForStorage(url: string): string {
   try {
