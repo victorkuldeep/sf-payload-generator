@@ -73,8 +73,18 @@ function SystemNodeInner({ data, selected }: NodeProps<Node<SystemNodeData>>) {
         selected ? "border-bronze-500" : "border-[var(--color-line)]"
       }`}
     >
-      <Handle type="target" position={Position.Left} style={{ width: 8, height: 8 }} />
-      <Handle type="source" position={Position.Right} style={{ width: 8, height: 8 }} />
+      <Handle
+        type="target"
+        position={Position.Left}
+        title="Drop a connection here"
+        style={{ width: 12, height: 12, background: "#fff", border: "2px solid #A98450" }}
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        title="Drag from here to another node to connect"
+        style={{ width: 12, height: 12, background: "#fff", border: "2px solid #A98450" }}
+      />
       <div className="flex items-center gap-2.5 px-3 py-2.5">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-bronze-100 text-bronze-700">
           <SystemGlyph iconKey={data.iconKey} />

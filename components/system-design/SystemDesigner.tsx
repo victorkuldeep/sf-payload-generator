@@ -215,6 +215,13 @@ function DesignerCanvas({
           Fit view
         </button>
       </div>
+      {project.systems.length > 0 && project.connections.length === 0 && (
+        <div className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2">
+          <p className="rounded-full border border-bronze-300 bg-bronze-100 px-3 py-1.5 text-[11px] font-semibold text-bronze-700 shadow-sm">
+            Drag from a bronze dot to another node - or pick Connect to… in the inspector
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -784,6 +791,7 @@ export function SystemDesigner() {
                 }))}
                 onMutateProject={(fn) => mutate(fn)}
                 onTestOperation={(opId) => setTestOpId(opId)}
+                onConnectTo={(targetId) => connectSystems(selNode.id, targetId)}
                 onDuplicate={() => {
                   mutate((p) => ({
                     ...p,
@@ -930,6 +938,7 @@ function NodeInspector({
   onPatch,
   onMutateProject,
   onTestOperation,
+  onConnectTo,
   onDuplicate,
   onDelete,
 }: {
@@ -938,11 +947,14 @@ function NodeInspector({
   onPatch: (patch: Partial<SystemNode>) => void;
   onMutateProject: (fn: (p: SystemProject) => SystemProject) => void;
   onTestOperation: (opId: string) => void;
+  onConnectTo: (targetId: string) => void;
   onDuplicate: () => void;
   onDelete: () => void;
 }) {
   const groups = operationsForSystem(project, node.id);
   const opCount = groups.reduce((n, g) => n + g.ops.length, 0);
+  const [connectTarget, setConnectTarget] = useState<string>("");
+  const connectables = project.systems.filter((s) => s.id !== node.id);
   return (
     <div className="space-y-2.5">
       <div className="flex items-center gap-2 rounded-xl border border-[var(--color-line-soft)] bg-[var(--color-canvas)] p-2.5">
@@ -997,6 +1009,40 @@ function NodeInspector({
         <Button size="sm" variant="ghost" onClick={onDelete} className="flex-1">
           Delete
         </Button>
+      </div>
+      <div>
+        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ivory-600" title="Or drag from the bronze dot on the node's right edge to another node">
+          Connect to…
+        </p>
+        {connectables.length === 0 ? (
+          <p className="text-[11px] text-ivory-500">Add another system first.</p>
+        ) : (
+          <div className="flex gap-1.5">
+            <select
+              value={connectTarget}
+              onChange={(e) => setConnectTarget(e.target.value)}
+              aria-label="Target system to connect"
+              className="min-w-0 flex-1 cursor-pointer rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-2 py-1.5 text-xs font-medium text-ivory-950"
+            >
+              <option value="">Pick a system…</option>
+              {connectables.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+            <Button
+              size="sm"
+              disabled={!connectTarget}
+              onClick={() => {
+                if (connectTarget) {
+                  onConnectTo(connectTarget);
+                  setConnectTarget("");
+                }
+              }}
+            >
+              Link
+            </Button>
+          </div>
+        )}
       </div>
       <div>
         <div className="mb-1.5 flex items-center justify-between">
