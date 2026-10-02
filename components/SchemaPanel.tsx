@@ -1676,85 +1676,22 @@ export default function SchemaPanel({
   }, [pullSingle, pullChildPage]);
 
   /** Resolved lookup display labels: `${sourceApi}::${targetId}` -> label.
-   * Cached across pulls (Id keys never change); cleared with record data. */
+   * Cached across pulls (Id keys never change); cleared with record data.
+   * OFF until lookup jumps prove out - refs render as plain on-demand links
+   * (one query per click), no prefetch storms. Wiring stays for later. */
   const [refLabels, setRefLabels] = useState<Record<string, string>>({});
   const refLabelsRef = useRef(refLabels);
   refLabelsRef.current = refLabels;
 
-  /** Prefetch every lookup label for the visualized record: one Id-only
-   * query per DISTINCT target object (not per row), labels attached to rows
-   * when they arrive. Quiet by design - failures stay as raw Ids. */
-  const prefetchRefLabels = useCallback(async (sourceApi: string, values: Record<string, unknown>) => {
-    const holderDesc = describes.get(sourceApi);
-    if (!holderDesc) return;
-    // Group target ids by resolved target object.
-    const byTarget = new Map<string, { keyField: string; ids: Set<string> }>();
-    for (const f of holderDesc.fields) {
-      if (f.type !== "reference") continue;
-      const v = values[f.name];
-      if (typeof v !== "string" || !v) continue;
-      const cacheKey = `${sourceApi}::${v}`;
-      if (refLabelsRef.current[cacheKey]) continue;
-      const targets = (f.referenceTo ?? []).filter((t) => describes.has(t));
-      const targetApi = targets[0];
-      if (!targetApi) continue;
-      const targetDesc = describes.get(targetApi);
-      if (!targetDesc) continue;
-      const keyField = keyFieldFor(targetDesc.fields.map((x) => ({ name: x.name, type: x.type, referenceTo: x.referenceTo ?? [], nameField: x.nameField })));
-      if (!keyField) continue;
-      let g = byTarget.get(targetApi);
-      if (!g) {
-        g = { keyField, ids: new Set() };
-        byTarget.set(targetApi, g);
-      }
-      g.ids.add(v);
-    }
-    if (byTarget.size === 0) return;
-    const settled = await Promise.all(
-      [...byTarget.entries()].map(async ([targetApi, g]) => {
-        // Skip ids already labeled (refLabels is state - read via updater below).
-        const fresh = [...g.ids];
-        if (fresh.length === 0) return null;
-        const ors = fresh.map((id) => `Id = '${id.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`).join(" OR ");
-        try {
-          const rows = await runRecordQuery(`SELECT Id, ${g.keyField} FROM ${targetApi} WHERE ${ors} LIMIT ${fresh.length}`);
-          const out: Record<string, string> = {};
-          for (const row of rows) {
-            const id = row.Id;
-            const hit = labelFromRow(row, g.keyField);
-            if (typeof id === "string" && hit) out[`${sourceApi}::${id}`] = hit;
-          }
-          return out;
-        } catch {
-          return null;
-        }
-      })
-    );
-    const merged: Record<string, string> = {};
-    for (const part of settled) {
-      if (part) Object.assign(merged, part);
-    }
-    if (Object.keys(merged).length > 0) {
-      setRefLabels((prev) => ({ ...prev, ...merged }));
-    }
-  }, [describes, runRecordQuery]);
+  /** Prefetch stub: lookup jumps resolve on click (one query each), so
+   * rows stay plain links until the jump panel proves out. Kept as the
+   * seam for batched labels later. */
+  const prefetchRefLabels = useCallback(async (_sourceApi: string, _values: Record<string, unknown>) => {}, []);
 
-  /** Row ref labels for one visualized record: field -> "label". */
-  const refLabelsFor = useCallback((sourceApi: string, values: Record<string, unknown> | null): Record<string, string> => {
-    if (!values) return {};
-    const holderDesc = describes.get(sourceApi);
-    const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(values)) {
-      if (typeof v !== "string" || !v) continue;
-      // Only label genuine reference fields - a coincidental 18-char string
-      // in a text field must never show a foreign label.
-      const isRef = holderDesc?.fields.some((f) => f.name === k && f.type === "reference");
-      if (!isRef) continue;
-      const hit = refLabelsRef.current[`${sourceApi}::${v}`];
-      if (hit) out[k] = hit;
-    }
-    return out;
-  }, [describes]);
+  /** Row ref labels for one visualized record: field -> "label".
+   * Currently always empty (prefetch off) - the row keeps its plain
+   * on-demand link. Returns the cached map when prefetch returns. */
+  const refLabelsFor = useCallback((_sourceApi: string, _values: Record<string, unknown> | null): Record<string, string> => ({}), []);
 
   // Late-bound ref so early callbacks (openNodeRecord/select) can prefetch
   // without a declaration-order cycle.

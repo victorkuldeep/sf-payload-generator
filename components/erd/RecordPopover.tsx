@@ -296,7 +296,7 @@ export function RecordPopover({
     setDraft({});
     setSaveError(null);
     setCopiedLookup(false);
-  }, [pop.apiName, pop.mode]);
+  }, [pop.apiName, pop.mode, pop.lookup?.targetId]);
 
   const W = 320;
   const left = Math.min(Math.max(8, pop.x), Math.max(8, window.innerWidth - W - 8));
@@ -340,6 +340,87 @@ export function RecordPopover({
   };
 
   const singleEditable = !!fieldMeta?.some((m) => m.updateable && m.name !== "Id");
+
+  // Lookup mode shows a live status line: resolving, then the key field (or
+  // raw-Id fallback). Never a silent empty panel.
+  if (pop.mode === "lookup") {
+    const lk = pop.lookup;
+    return (
+      <div
+        ref={rootRef}
+        role="dialog"
+        aria-label={`Lookup target for ${lk?.fieldName ?? "field"}`}
+        className="fixed z-[80] w-[320px] overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] shadow-[0_16px_48px_-12px_rgba(24,20,12,0.4)]"
+        style={{ left, top }}
+      >
+        <div className="border-b border-[var(--color-line-soft)] bg-[var(--color-surface-soft)] px-3 py-2">
+          <div className="flex items-center gap-1">
+            <p className="min-w-0 flex-1 truncate text-[11px] font-semibold text-ivory-950">
+              {lk ? `${lk.sourceName} · ${lk.fieldName}` : "Lookup target"}
+            </p>
+            <button
+              type="button"
+              onClick={onRefresh}
+              disabled={refreshing || pop.loading}
+              aria-label="Retry lookup pull"
+              title="Retry lookup pull"
+              className="rounded p-1 text-ivory-500 hover:text-bronze-600 hover:bg-ivory-200 transition-colors cursor-pointer disabled:opacity-40"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true" className={refreshing ? "animate-spin" : ""}>
+                <path d="M20 11a8 8 0 0 0-14.9-3M4 13a8 8 0 0 0 14.9 3" />
+                <path d="M18 4v4h-4M6 20v-4h4" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close lookup panel"
+              title="Close lookup panel"
+              className="rounded p-1 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-200 transition-colors cursor-pointer"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+                <path d="M6 6l12 12M18 6 6 18" />
+              </svg>
+            </button>
+          </div>
+          <p className="text-[10px] text-ivory-600">Live record data · session only, never stored</p>
+        </div>
+        <div className="max-h-[300px] overflow-y-auto p-2.5">
+          {pop.loading && <p className="px-1 py-2 text-xs text-bronze-600">Pulling target…</p>}
+          {pop.error && (
+            <p className="rounded-lg border border-red-300 bg-red-50 px-2 py-1.5 text-[11px] text-red-700" role="alert">
+              {pop.error}
+            </p>
+          )}
+          {lk && (
+            <div className="px-1 py-1">
+              <p className="mt-0.5 break-all font-mono text-[11px] font-bold leading-relaxed text-ivory-950" title={lk.targetId}>
+                {lk.targetLabel}
+              </p>
+              <p className="mt-0.5 break-all font-mono text-[10px] text-ivory-500" title={lk.targetId}>
+                {lk.targetId}
+                {lk.keyField && lk.targetLabel !== lk.targetId ? ` · via ${lk.keyField}` : ""}
+              </p>
+              <div className="mt-1.5 flex gap-1.5">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="flex-1"
+                  onClick={() => {
+                    onCopyLookup(lk.targetLabel === lk.targetId ? lk.targetId : `${lk.targetLabel} (${lk.targetId})`);
+                    setCopiedLookup(true);
+                    window.setTimeout(() => setCopiedLookup(false), 1200);
+                  }}
+                >
+                  {copiedLookup ? "Copied ✓" : "Copy"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -468,41 +549,6 @@ export function RecordPopover({
             </button>
           </div>
         )}
-        {pop.mode === "lookup" && pop.lookup && (
-          <div className="px-1 py-1">
-            <p className="font-mono text-[10px] uppercase tracking-wider text-ivory-500">
-              {pop.lookup.sourceApi} · {pop.lookup.fieldName}
-            </p>
-            <p className="mt-0.5 break-all font-mono text-[11px] font-bold leading-relaxed text-ivory-950" title={pop.lookup.targetId}>
-              {pop.lookup.targetLabel}
-            </p>
-            <p className="mt-0.5 break-all font-mono text-[10px] text-ivory-500" title={pop.lookup.targetId}>
-              {pop.lookup.targetId}
-              {pop.lookup.keyField && pop.lookup.targetLabel !== pop.lookup.targetId
-                ? ` · via ${pop.lookup.keyField}`
-                : ""}
-            </p>
-            <div className="mt-1.5 flex gap-1.5">
-              <Button
-                size="sm"
-                variant="secondary"
-                className="flex-1"
-                onClick={() => {
-                  onCopyLookup(pop.lookup!.targetLabel === pop.lookup!.targetId
-                    ? pop.lookup!.targetId
-                    : `${pop.lookup!.targetLabel} (${pop.lookup!.targetId})`);
-                  setCopiedLookup(true);
-                  window.setTimeout(() => setCopiedLookup(false), 1200);
-                }}
-              >
-                {copiedLookup ? "Copied ✓" : "Copy"}
-              </Button>
-              <Button size="sm" className="flex-1" onClick={() => onModeChange("record")}>
-                Inspect record
-              </Button>
-            </div>
-          </div>
-        )}
         {pop.mode === "record" && pop.single && (
           editingSingle ? (
             <div>
@@ -611,10 +657,9 @@ export function RecordPopover({
           <p className="px-1 py-2 text-[11px] text-ivory-600">No rows returned for this node.</p>
         )}
       </div>
-      <div className="flex gap-1.5 border-t border-[var(--color-line-soft)] p-2">
+      <div className="flex gap-1.5 p-2">
         <Button
           size="sm"
-          variant="ghost"
           className="flex-1"
           onClick={onClear}
           title="Forget this node's loaded records only. The root record Id you typed stays saved in the Record Walk box, so fetching again is one click."

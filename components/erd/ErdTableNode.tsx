@@ -336,11 +336,11 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
           const pickable = r.pickValues.length > 0 && data.onPicklistClick;
           const shortType = r.type === "reference" ? "ref" : r.type;
           const inner = (
-            <>
+              <>
               {(r.isId || r.isName) && <KeyIcon />}
               {!(r.isId || r.isName) && r.refs.length > 0 && <LinkIcon />}
               {!(r.isId || r.isName) && r.refs.length === 0 && <span className="w-[11px] shrink-0" aria-hidden="true" />}
-              {r.refs.length > 0 && data.onLookupClick ? (
+              {r.refs.length > 0 ? (
                 <button
                   type="button"
                   data-lookup-jump
@@ -356,13 +356,17 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
                   }}
                   title={`Fetch ${r.refs.join(" / ")} target${r.refs.length === 1 ? "" : "s"} for this record`}
                   aria-label={`Fetch ${r.name} target record`}
-                  className="min-w-0 flex-1 cursor-pointer truncate text-left font-mono text-[11px] text-bronze-700 underline decoration-dotted underline-offset-2 hover:text-bronze-800"
+                  className={`min-w-0 flex-1 cursor-pointer truncate rounded border border-transparent px-1 py-px text-left font-mono text-[11px] font-bold underline decoration-dotted underline-offset-2 transition-colors ${
+                    data.recordValues
+                      ? "border-bronze-300 bg-bronze-100 text-bronze-800 hover:bg-bronze-200"
+                      : "border-[var(--color-line-soft)] bg-[var(--color-canvas)] text-bronze-700 hover:border-bronze-400 hover:text-bronze-800"
+                  }`}
                 >
                   {r.name}
                   {r.required && <span className="text-red-600"> *</span>}
                 </button>
               ) : (
-                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ivory-950" title={r.refs.length > 0 ? `→ ${r.refs.join(", ")}` : r.name}>
+                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ivory-950" title={r.name}>
                   {r.name}
                   {r.required && <span className="text-red-600"> *</span>}
                 </span>

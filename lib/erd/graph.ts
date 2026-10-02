@@ -14,7 +14,8 @@ export interface ErdFieldRow {
   type: string;
   isId: boolean;
   isName: boolean;
-  /** Lookup targets, e.g. ["Account", "Opportunity"] */
+  /** All declared lookup targets, e.g. ["Account", "Opportunity"].
+   * Never canvas-filtered: lookup jumps resolve off-canvas. */
   refs: string[];
   required: boolean;
   /** Picklist options (picklist/multipicklist only, capped). */
@@ -184,7 +185,9 @@ function toRow(
     type: f.type,
     isId: f.name === "Id",
     isName: !!f.nameField,
-    refs: (f.referenceTo ?? []).filter((t) => targetLabels.has(t)),
+    /** All declared lookup targets (NOT canvas-filtered): lookup jumps work
+     * even when the target object is off-canvas. */
+    refs: [...(f.referenceTo ?? [])],
     required: !f.nillable,
     pickValues:
       isPick && Array.isArray(f.picklistValues)
