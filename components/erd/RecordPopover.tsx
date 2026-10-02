@@ -366,6 +366,17 @@ export function RecordPopover({
               </svg>
             </button>
           )}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close record panel"
+            title="Close record panel"
+            className="rounded p-1 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-200 transition-colors cursor-pointer"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
         </div>
         <p className="text-[10px] text-ivory-600">Live record data · session only, never stored</p>
       </div>
@@ -551,8 +562,14 @@ export function RecordPopover({
         )}
       </div>
       <div className="flex gap-1.5 border-t border-[var(--color-line-soft)] p-2">
-        <Button size="sm" variant="ghost" className="flex-1" onClick={onClear} title="Drop this node's loaded records - the root Id stays put">
-          Clear node data (keeps Id)
+        <Button
+          size="sm"
+          variant="ghost"
+          className="flex-1"
+          onClick={onClear}
+          title="Forget this node's loaded records only. The root record Id you typed stays saved in the Record Walk box, so fetching again is one click."
+        >
+          Drop {pop.nodeLabel} data · root Id stays
         </Button>
       </div>
     </div>

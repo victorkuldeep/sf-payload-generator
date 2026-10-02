@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import type { ErdNodeData } from "@/lib/erd/graph";
 import { formatWalkValue } from "@/lib/erd/recordWalk";
@@ -456,7 +457,7 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
           </span>
         </div>
       </div>
-      {peek && liveValues && (
+      {peek && liveValues && createPortal(
         <div
           ref={peekRef}
           role="dialog"
@@ -496,7 +497,8 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
           >
             {copiedValue ? "Copied ✓" : "Copy value"}
           </button>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
