@@ -11,6 +11,8 @@ import {
   buildChildrenQuery,
   resolveTarget,
   nodeRecordState,
+  selectedRecordId,
+  formatWalkValue,
   emptyLoadedState,
   type LoadedState,
   type ResolveContext,
@@ -145,5 +147,31 @@ describe("record walk engine", () => {
     expect(live.state).toBe("live");
     const reach = nodeRecordState("Account", withRoot(), ctx());
     expect(reach.state).toBe("reachable");
+  });
+
+  it("selects the explicit pick, else first child row, else first single", () => {
+    const s = withRoot();
+    // singles only: first single wins
+    expect(selectedRecordId("Lead", s)).toBe("00Qxx0000012345");
+    expect(selectedRecordId("Task", s)).toBeNull();
+    // child rows beat cached singles
+    s.singles.set("Task", new Map([["00Told", { id: "00Told", fields: { Id: "00Told" } }]]));
+    s.children.set("Task::WhoId::00Qxx0000012345", {
+      childApi: "Task", lookupField: "WhoId", parentApi: "Lead", parentId: "00Qxx0000012345",
+      rows: [{ Id: "00Tfresh", Subject: "Call" }, { Id: "00Tsecond", Subject: "Email" }], offset: 11, exhausted: false,
+    });
+    expect(selectedRecordId("Task", s)).toBe("00Tfresh");
+    // explicit pick wins when aboard, falls back when unknown
+    expect(selectedRecordId("Task", s, "00Tsecond")).toBe("00Tsecond");
+    expect(selectedRecordId("Task", s, "00Tghost")).toBe("00Tfresh");
+  });
+
+  it("formats walk values for peeks", () => {
+    expect(formatWalkValue(null)).toBe("—");
+    expect(formatWalkValue(undefined)).toBe("—");
+    expect(formatWalkValue("Acme")).toBe("Acme");
+    expect(formatWalkValue(42)).toBe("42");
+    expect(formatWalkValue({ a: 1 })).toBe('{"a":1}');
+    expect(formatWalkValue("x".repeat(200))).toHaveLength(120);
   });
 });

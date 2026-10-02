@@ -35,6 +35,8 @@ import {
   buildChildrenQuery,
   resolveTarget,
   nodeRecordState,
+  selectedRecordId,
+  knownIdsFor,
   emptyLoadedState,
   childPageKey,
   RECORD_ROW_LIMIT,
@@ -1225,9 +1227,11 @@ export default function SchemaPanel({
   const [recordModalOpen, setRecordModalOpen] = useState(false);
   const [recordInput, setRecordInput] = useState("");
   const [recordError, setRecordError] = useState<string | null>(null);
-  const [recordPop, setRecordPop] = useState<{ apiName: string; x: number; y: number } | null>(null);
+  const [recordPop, setRecordPop] = useState<{ apiName: string; x: number; y: number; mode: "picker" | "record" } | null>(null);
   const [recordPopError, setRecordPopError] = useState<string | null>(null);
   const [recordMoreBusy, setRecordMoreBusy] = useState<string | null>(null);
+  /** Explicit per-node visualized record. Absent = first child row, else first single. */
+  const [recordSel, setRecordSel] = useState<Record<string, string>>({});
 
   const recordCtx = useMemo((): ResolveContext => {
     const canvasApis = [...describes.keys()];
@@ -1326,7 +1330,8 @@ export default function SchemaPanel({
     return merged;
   }, [describes, runRecordQuery]);
 
-  /** Pull one children page; append=false replaces (refresh), true appends (load-more). */
+  /** Pull one children page; append=false replaces (refresh), true appends (load-more).
+   * Returns the fetched rows so callers can chain (default-first selection). */
   const pullChildPage = useCallback(async (
     childApi: string,
     lookupField: string,
@@ -1334,7 +1339,7 @@ export default function SchemaPanel({
     parentId: string,
     offset: number,
     append: boolean
-  ): Promise<void> => {
+  ): Promise<Record<string, unknown>[]> => {
     const rows = await runRecordQuery(
       buildChildrenQuery(childApi, lookupField, parentId, childSelectFor(childApi, lookupField), offset)
     );
@@ -1351,33 +1356,52 @@ export default function SchemaPanel({
       });
       return { singles: prev.singles, children: next };
     });
+    return rows;
   }, [runRecordQuery, childSelectFor]);
 
   const openNodeRecord = useCallback(async (
     apiName: string,
     anchor: { x: number; y: number; width: number; height: number }
   ) => {
-    setRecordPop({ apiName, x: anchor.x, y: anchor.y });
     setRecordPopError(null);
+    // Live already? Open the full record panel (inspect + edit) - the eye
+    // never dumps data on first pull; the entity box carries it instead.
+    if (knownIdsFor(recordStoreRef.current, apiName).length > 0) {
+      setRecordPop({ apiName, x: anchor.x, y: anchor.y, mode: "record" });
+      return;
+    }
     const plan = resolveTarget(apiName, recordStoreRef.current, recordCtxRef.current);
+    // Unreachable? The popover shows the hint + shortcut.
+    if (plan.kind === "blocked") {
+      setRecordPop({ apiName, x: anchor.x, y: anchor.y, mode: "picker" });
+      return;
+    }
+    if (recordBusyRef.current) return;
+    setRecordBusy(apiName);
+    recordBusyRef.current = apiName;
     try {
-      if (plan.kind === "blocked") return; // popover shows the hint + shortcut
-      if (recordBusyRef.current) return;
-      // Already aboard? Just reveal (no refetch - deliberate pulls only).
-      if (plan.kind === "single" && recordStoreRef.current.singles.get(apiName)?.has(plan.id)) return;
-      if (plan.kind === "children") {
-        const key = childPageKey(plan.childApi, plan.lookupField, plan.parentId);
-        if (recordStoreRef.current.children.has(key)) return;
-      }
-      setRecordBusy(apiName);
-      recordBusyRef.current = apiName;
       if (plan.kind === "single") {
+        // One record: pull silently, entity box + field peeks carry it.
         await pullSingle(apiName, plan.id);
       } else {
-        await pullChildPage(plan.childApi, plan.lookupField, plan.parentApi, plan.parentId, 0, false);
+        const rows = await pullChildPage(plan.childApi, plan.lookupField, plan.parentApi, plan.parentId, 0, false);
+        if (rows.length === 0) {
+          setRecordPop({ apiName, x: anchor.x, y: anchor.y, mode: "picker" });
+          return;
+        }
+        // First row visualizes by default (full row, not the list subset).
+        const firstId = rows[0].Id;
+        if (typeof firstId === "string" && firstId) {
+          await pullSingle(apiName, firstId);
+        }
+        // Many rows: open the picker table so one can be chosen.
+        if (rows.length > 1) {
+          setRecordPop({ apiName, x: anchor.x, y: anchor.y, mode: "picker" });
+        }
       }
     } catch (err) {
       setRecordPopError(err instanceof Error ? err.message : "Record pull failed.");
+      setRecordPop({ apiName, x: anchor.x, y: anchor.y, mode: "picker" });
     } finally {
       recordBusyRef.current = null;
       setRecordBusy(null);
@@ -1516,9 +1540,52 @@ export default function SchemaPanel({
     }
   }, [pullSingle, pullChildPage]);
 
+  /** Pick which aboard record a node visualizes; pulls the full row when
+   * the pick only exists as a list subset (child pages carry Id + name). */
+  const selectNodeRecord = useCallback(async (apiName: string, id: string) => {
+    setRecordSel((prev) => ({ ...prev, [apiName]: id }));
+    setRecordPopError(null);
+    if (recordStoreRef.current.singles.get(apiName)?.has(id)) return;
+    if (recordBusyRef.current) return;
+    setRecordBusy(apiName);
+    recordBusyRef.current = apiName;
+    try {
+      await pullSingle(apiName, id);
+    } catch (err) {
+      setRecordPopError(err instanceof Error ? err.message : "Record pull failed.");
+    } finally {
+      recordBusyRef.current = null;
+      setRecordBusy(null);
+    }
+  }, [pullSingle]);
+
+  /** Drop one node's data (singles, child pages, selection) - the root Id
+   * and its input stay put; only the root modal clears those. */
+  const clearNodeRecordData = useCallback((apiName: string) => {
+    setRecordSel((prev) => {
+      if (!(apiName in prev)) return prev;
+      const next = { ...prev };
+      delete next[apiName];
+      return next;
+    });
+    setRecordStore((prev) => {
+      const singles = new Map(prev.singles);
+      singles.delete(apiName);
+      const children = new Map(prev.children);
+      for (const [key, page] of children) {
+        if (page.childApi === apiName) children.delete(key);
+      }
+      return { singles, children };
+    });
+    setRecordPop(null);
+    setRecordPopError(null);
+  }, []);
+
+  /** Global reset from the root modal: everything goes, including the root. */
   const clearRecordData = useCallback(() => {
     setRecordRoot(null);
     setRecordStore(emptyLoadedState());
+    setRecordSel({});
     setRecordPop(null);
     setRecordPopError(null);
     setRecordInput("");
@@ -1528,9 +1595,30 @@ export default function SchemaPanel({
 
   const recordNodeData = useCallback((apiName: string) => {
     const { state, hint } = nodeRecordState(apiName, recordStore, recordCtx);
+    // Visualized record: explicit pick, else first child row, else first single.
+    const selId = selectedRecordId(apiName, recordStore, recordSel[apiName] ?? null);
+    let values: Record<string, unknown> | null = null;
+    if (selId) {
+      const full = recordStore.singles.get(apiName)?.get(selId)?.fields;
+      if (full) {
+        values = full;
+      } else {
+        for (const page of recordStore.children.values()) {
+          if (page.childApi !== apiName) continue;
+          const row = page.rows.find((r) => r.Id === selId);
+          if (row) {
+            values = row;
+            break;
+          }
+        }
+      }
+    }
     return {
       recordState: state as "live" | "reachable" | "locked",
       recordHint: hint ?? undefined,
+      recordValues: values,
+      recordId: selId,
+      recordCount: knownIdsFor(recordStore, apiName).length,
       onRecordClick: (
         api: string,
         anchor: { x: number; y: number; width: number; height: number }
@@ -1538,7 +1626,7 @@ export default function SchemaPanel({
         void openNodeRecord(api, anchor);
       },
     };
-  }, [recordStore, recordCtx, openNodeRecord]);
+  }, [recordStore, recordSel, recordCtx, openNodeRecord]);
 
   const buildRecordPop = useCallback((apiName: string, x: number, y: number): RecordPopData => {
     const label = labels.get(apiName) ?? apiName;
@@ -1556,6 +1644,27 @@ export default function SchemaPanel({
         loadingMore: recordMoreBusy === key,
       });
     }
+    // Picker candidates: every aboard id with a human name when one exists.
+    const NAME_KEYS = ["Name", "Subject", "DeveloperName", "Title", "Label"];
+    const nameOf = (id: string): string => {
+      const single = recordStore.singles.get(apiName)?.get(id)?.fields;
+      const pools: (Record<string, unknown> | undefined)[] = [single];
+      for (const page of recordStore.children.values()) {
+        if (page.childApi !== apiName) continue;
+        pools.push(page.rows.find((r) => r.Id === id));
+      }
+      for (const pool of pools) {
+        if (!pool) continue;
+        for (const k of NAME_KEYS) {
+          const v = pool[k];
+          if (typeof v === "string" && v) return v;
+        }
+      }
+      return id;
+    };
+    const candidates = knownIdsFor(recordStore, apiName).map((id) => ({ id, name: nameOf(id) }));
+    const selectedId = selectedRecordId(apiName, recordStore, recordSel[apiName] ?? null);
+    const mode = recordPop?.apiName === apiName ? recordPop.mode : "picker";
     if (singles.length === 0 && sections.length === 0 && !loading) {
       const plan = resolveTarget(apiName, recordStore, recordCtx);
       if (plan.kind === "blocked") {
@@ -1565,10 +1674,12 @@ export default function SchemaPanel({
             ? "No lookup path from a loaded record reaches this object yet."
             : `Nothing loaded connects here yet.`,
           blockedApi: plan.missingApi === apiName ? null : plan.missingApi,
+          mode: "picker", candidates, selectedId,
         };
       }
     }
-    const first = singles[0];
+    // Record mode dumps the SELECTED record (the entity box shows the same one).
+    const first = (selectedId ? singles.find((s) => s.id === selectedId) : undefined) ?? singles[0];
     return {
       apiName,
       nodeLabel: label,
@@ -1585,8 +1696,9 @@ export default function SchemaPanel({
       y,
       blockedHint: null,
       blockedApi: null,
+      mode, candidates, selectedId,
     };
-  }, [labels, recordStore, recordBusy, recordPopError, recordCtx]);
+  }, [labels, recordStore, recordSel, recordBusy, recordPopError, recordCtx, recordPop]);
 
   // ── Inbox lifecycle writers (Phase 2): meta merges onto the canonical
   // entity/snapshot records with history entries. Legacy todo/done flags
@@ -5061,10 +5173,12 @@ export default function SchemaPanel({
             const rect = { x: recordPop.x, y: recordPop.y, width: 12, height: 12 };
             void openNodeRecord(api, rect);
           }}
-          onClear={clearRecordData}
+          onClear={() => clearNodeRecordData(recordPop.apiName)}
           onRefresh={() => void refreshNodeRecord(recordPop.apiName)}
           refreshing={recordBusy !== null}
           onSave={(api, id, changes) => saveRecordEdit(api, id, changes)}
+          onSelectRecord={(api, id) => void selectNodeRecord(api, id)}
+          onModeChange={(mode) => setRecordPop((prev) => (prev ? { ...prev, mode } : prev))}
         />
       )}
 
@@ -5110,7 +5224,7 @@ export default function SchemaPanel({
                       try {
                         await fetchRootRecord(id);
                         setRecordModalOpen(false);
-                        setNotice(`Root record ${id} loaded - eye icons pull the rest, one node at a time.`);
+                        setNotice(`Root record ${id} loaded - eye pulls silently, field icons peek values, lists open a picker.`);
                       } catch (err) {
                         setRecordError(err instanceof Error ? err.message : "Record fetch failed.");
                       } finally {

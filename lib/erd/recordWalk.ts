@@ -232,8 +232,7 @@ export function resolveTarget(targetApi: string, state: LoadedState, ctx: Resolv
 }
 
 /** Node eye state from the loaded set: live, one-click reachable, or locked. */
-export function nodeRecordState(
-  apiName: string,
+export function nodeRecordState(  apiName: string,
   state: LoadedState,
   ctx: ResolveContext
 ): { state: "live" | "reachable" | "locked"; hint: string | null } {
@@ -246,4 +245,36 @@ export function nodeRecordState(
     };
   }
   return { state: "reachable", hint: plan.kind === "single" ? "Click to pull this record" : `Click to pull via ${ctx.labelOf(plan.parentApi)}` };
+}
+
+/**
+ * Which record a node visualizes: the explicit pick wins, otherwise the
+ * first child-row id across pages (fresh on-demand rows beat cached
+ * singles), otherwise the first cached single. Null = nothing aboard.
+ */
+export function selectedRecordId(
+  apiName: string,
+  state: LoadedState,
+  explicit?: string | null
+): string | null {
+  if (explicit && knownIdsFor(state, apiName).includes(explicit)) return explicit;
+  for (const page of state.children.values()) {
+    if (page.childApi !== apiName) continue;
+    const id = str(page.rows[0]?.Id);
+    if (id) return id;
+  }
+  const singles = state.singles.get(apiName);
+  if (singles) {
+    for (const id of singles.keys()) return id;
+  }
+  return null;
+}
+
+/** Display a loaded field value in peeks and pickers: objects stringify,
+ * nullish renders as an em dash, long text truncates at 120 chars. */
+export function formatWalkValue(v: unknown): string {
+  if (v === null || v === undefined) return "—";
+  if (typeof v === "object") return JSON.stringify(v);
+  const s = String(v);
+  return s.length > 120 ? `${s.slice(0, 119)}…` : s;
 }

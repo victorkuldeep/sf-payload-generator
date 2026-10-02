@@ -46,6 +46,11 @@ export interface ErdNodeData extends Record<string, unknown> {
   recordState?: "live" | "reachable" | "locked";
   recordHint?: string;
   onRecordClick?: (apiName: string, anchor: { x: number; y: number; width: number; height: number }) => void;
+  /** Visualized record for this node: selected-row fields (full single when
+   * pulled, child-row subset otherwise), its id, and candidate count. */
+  recordValues?: Record<string, unknown> | null;
+  recordId?: string | null;
+  recordCount?: number;
   onRefreshNode?: (id: string) => void;
   onPicklistClick?: (
     nodeId: string,

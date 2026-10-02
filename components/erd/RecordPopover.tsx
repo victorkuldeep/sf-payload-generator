@@ -37,6 +37,12 @@ export interface RecordPopData {
   /** Viewport anchor (icon rect) - panel flips to fit. */
   x: number;
   y: number;
+  /** Picker = choose which aboard record the entity box visualizes.
+   * Record = full dump + edit for the selected record. */
+  mode: "picker" | "record";
+  /** Every aboard id with a human name; the entity box shows selectedId. */
+  candidates: { id: string; name: string }[];
+  selectedId: string | null;
 }
 
 const cell = (v: unknown): string => {
@@ -144,6 +150,8 @@ function SectionRows({
   draft,
   onDraft,
   onEditRow,
+  selectedId,
+  onSelectRow,
 }: {
   rows: Record<string, unknown>[];
   metas: RecordFieldMeta[];
@@ -151,18 +159,30 @@ function SectionRows({
   draft: Record<string, string | boolean>;
   onDraft: (field: string, v: string | boolean) => void;
   onEditRow: (id: string) => void;
+  selectedId: string | null;
+  onSelectRow?: (id: string) => void;
 }) {
   return (
     <ul className="space-y-1">
       {rows.map((r, i) => {
         const id = typeof r.Id === "string" ? r.Id : String(i);
         const isEditing = editingId === id;
+        const isSelected = selectedId === id;
         const metaOf = (k: string) => metas.find((m) => m.name === k);
         return (
           <li
             key={id}
-            className="rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-canvas)] px-2 py-1.5"
+            onClick={onSelectRow && !isEditing ? () => onSelectRow(id) : undefined}
+            title={onSelectRow && !isEditing ? "Visualize this record in the entity box" : undefined}
+            className={`rounded-lg border px-2 py-1.5 bg-[var(--color-canvas)] ${
+              isSelected ? "border-bronze-500 ring-1 ring-bronze-500" : "border-[var(--color-line-soft)]"
+            } ${onSelectRow && !isEditing ? "cursor-pointer hover:border-bronze-400" : ""}`}
           >
+            {isSelected && onSelectRow && (
+              <p className="pb-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-bronze-700">
+                Visualizing
+              </p>
+            )}
             {Object.entries(r).map(([k, v]) => {
               const meta = metaOf(k);
               const editable = isEditing && !!meta?.updateable && k !== "Id";
@@ -180,7 +200,10 @@ function SectionRows({
             {!isEditing && metas.some((m) => m.updateable && m.name !== "Id") && (
               <button
                 type="button"
-                onClick={() => onEditRow(id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEditRow(id);
+                }}
                 aria-label="Edit this row"
                 title="Edit this row"
                 className="mt-1 rounded p-1 text-ivory-400 hover:text-bronze-600 hover:bg-ivory-200 transition-colors cursor-pointer"
@@ -209,6 +232,8 @@ export function RecordPopover({
   onRefresh,
   refreshing,
   onSave,
+  onSelectRecord,
+  onModeChange,
 }: {
   pop: RecordPopData;
   /** Editable metadata for the single record's object (null = read-only). */
@@ -222,6 +247,9 @@ export function RecordPopover({
   onRefresh: () => void;
   refreshing: boolean;
   onSave: (apiName: string, id: string, changes: Record<string, unknown>) => Promise<void>;
+  /** Visualize an aboard record in the entity box (picker + section rows). */
+  onSelectRecord: (apiName: string, id: string) => void;
+  onModeChange: (mode: "picker" | "record") => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [editingSingle, setEditingSingle] = useState(false);
@@ -253,7 +281,7 @@ export function RecordPopover({
     setEditingRow(null);
     setDraft({});
     setSaveError(null);
-  }, [pop.apiName]);
+  }, [pop.apiName, pop.mode]);
 
   const W = 320;
   const left = Math.min(Math.max(8, pop.x), Math.max(8, window.innerWidth - W - 8));
@@ -363,7 +391,58 @@ export function RecordPopover({
             )}
           </div>
         )}
-        {pop.single && (
+        {pop.mode === "picker" && !pop.blockedHint && (
+          <div className="px-1 py-1">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+              {pop.candidates.length === 0
+                ? "No records aboard yet"
+                : pop.candidates.length === 1
+                  ? "1 record aboard - visualizing it"
+                  : `${pop.candidates.length} records aboard - pick one to visualize`}
+            </p>
+            {pop.candidates.length > 0 && (
+              <ul className="mt-1.5 max-h-[180px] space-y-1 overflow-y-auto">
+                {pop.candidates.map((c) => {
+                  const active = pop.selectedId === c.id;
+                  return (
+                    <li key={c.id}>
+                      <button
+                        type="button"
+                        onClick={() => onSelectRecord(pop.apiName, c.id)}
+                        title={active ? "Visualizing in the entity box" : "Visualize in the entity box"}
+                        className={`w-full rounded-lg border px-2 py-1.5 text-left transition-colors cursor-pointer ${
+                          active
+                            ? "border-bronze-500 bg-bronze-100 ring-1 ring-bronze-500"
+                            : "border-[var(--color-line-soft)] bg-[var(--color-canvas)] hover:border-bronze-400"
+                        }`}
+                      >
+                        <p className="truncate text-[11px] font-bold text-ivory-950">{c.name}</p>
+                        <p className="truncate font-mono text-[10px] text-ivory-500">{c.id}</p>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {pop.single && (
+              <Button size="sm" variant="secondary" className="mt-1.5 w-full" onClick={() => onModeChange("record")}>
+                Inspect selected record
+              </Button>
+            )}
+          </div>
+        )}
+        {pop.mode === "record" && pop.candidates.length > 1 && (
+          <div className="px-1 pb-1">
+            <button
+              type="button"
+              onClick={() => onModeChange("picker")}
+              className="text-[11px] font-semibold text-bronze-600 hover:text-bronze-700 cursor-pointer"
+            >
+              ← {pop.candidates.length} records aboard
+            </button>
+          </div>
+        )}
+        {pop.mode === "record" && pop.single && (
           editingSingle ? (
             <div>
               <dl className="divide-y divide-[var(--color-line-soft)]">
@@ -424,6 +503,8 @@ export function RecordPopover({
                 editingId={rowEditingId}
                 draft={draft}
                 onDraft={(field, v) => setDraft((p) => ({ ...p, [field]: v }))}
+                selectedId={pop.selectedId}
+                onSelectRow={(id) => onSelectRecord(s.childApi, id)}
                 onEditRow={(id) => {
                   setDraft({});
                   setSaveError(null);
@@ -470,8 +551,8 @@ export function RecordPopover({
         )}
       </div>
       <div className="flex gap-1.5 border-t border-[var(--color-line-soft)] p-2">
-        <Button size="sm" variant="ghost" className="flex-1" onClick={onClear}>
-          Clear record data
+        <Button size="sm" variant="ghost" className="flex-1" onClick={onClear} title="Drop this node's loaded records - the root Id stays put">
+          Clear node data (keeps Id)
         </Button>
       </div>
     </div>

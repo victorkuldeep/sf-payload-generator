@@ -1,8 +1,9 @@
 "use client";
 
-import { memo, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import type { ErdNodeData } from "@/lib/erd/graph";
+import { formatWalkValue } from "@/lib/erd/recordWalk";
 import { ERD_MAX_ROWS, ERD_HEADER_H, ERD_FOOTER_H, parentExitHandleId, childEntryHandleId, loopOutHandleId, loopInHandleId } from "@/lib/erd/graph";
 
 function KeyIcon() {
@@ -56,12 +57,43 @@ function CheckIcon() {
   );
 }
 
+function PeekIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+      <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
 function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const [query, setQuery] = useState("");
   const [sortAZ, setSortAZ] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [peek, setPeek] = useState<{ field: string; x: number; y: number } | null>(null);
+  const [copiedValue, setCopiedValue] = useState(false);
+  const peekRef = useRef<HTMLDivElement>(null);
+
+  // Peek panel dismiss: outside pointer + Escape.
+  useEffect(() => {
+    if (!peek) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPeek(null);
+    };
+    const onDown = (e: PointerEvent) => {
+      if (peekRef.current && !peekRef.current.contains(e.target as globalThis.Node)) setPeek(null);
+    };
+    window.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onDown, true);
+    };
+  }, [peek]);
+
+  const liveValues = data.recordValues ?? null;
 
   const q = query.trim().toLowerCase();
   const searched = q
@@ -198,14 +230,14 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
               }}
               title={
                 data.recordState === "live"
-                  ? `Live record data aboard for ${data.apiName} - click to view`
+                  ? `Record aboard for ${data.apiName} - click to inspect and edit`
                   : data.recordState === "locked"
                     ? (data.recordHint ?? "Load a connected record first")
-                    : `Pull live record data for ${data.apiName}`
+                    : `Pull ${data.apiName} silently - the entity box carries it`
               }
               aria-label={
                 data.recordState === "live"
-                  ? `View live record data for ${data.apiName}`
+                  ? `Inspect live record data for ${data.apiName}`
                   : `Pull live record data for ${data.apiName}`
               }
               className={`nodrag relative shrink-0 rounded p-1 transition-colors cursor-pointer ${
@@ -287,6 +319,33 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
               >
                 {copiedField === r.name ? <CheckIcon /> : <CopyIcon />}
               </span>
+              {liveValues && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  title={r.name in liveValues ? `Show ${r.name} value for this record` : `${r.name} is not in the loaded row`}
+                  aria-label={`Show ${r.name} value`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    setPeek({ field: r.name, x: rect.right + 8, y: rect.top });
+                    setCopiedValue(false);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      setPeek({ field: r.name, x: rect.right + 8, y: rect.top });
+                      setCopiedValue(false);
+                    }
+                  }}
+                  className="shrink-0 rounded p-0.5 text-ivory-400 hover:text-bronze-600 hover:bg-ivory-200 transition-colors cursor-pointer"
+                >
+                  <PeekIcon />
+                </span>
+              )}
             </>
           );
           return pickable ? (
@@ -375,7 +434,9 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
           </button>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-ivory-600">{data.apiName}</span>
+          <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-ivory-600" title={data.recordId ? `${data.apiName} · visualizing ${data.recordId}` : data.apiName}>
+            {data.apiName}{data.recordId ? ` · ${data.recordId.slice(0, 8)}…` : ""}
+          </span>
           <span className="shrink-0 text-[10px] font-medium text-ivory-600">
             {q
               ? `${searched!.length} match${searched!.length === 1 ? "" : "es"}${capped ? " (top 100)" : ""}`
@@ -383,6 +444,48 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
           </span>
         </div>
       </div>
+      {peek && liveValues && (
+        <div
+          ref={peekRef}
+          role="dialog"
+          aria-label={`${peek.field} value`}
+          className="fixed z-[90] w-[240px] rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-2.5 shadow-[0_16px_48px_-12px_rgba(24,20,12,0.4)]"
+          style={{
+            left: Math.min(Math.max(8, peek.x), Math.max(8, window.innerWidth - 248)),
+            top: Math.min(Math.max(8, peek.y), Math.max(8, window.innerHeight - 160)),
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <p className="truncate font-mono text-[10px] font-bold uppercase tracking-wider text-ivory-600" title={peek.field}>
+            {peek.field}
+          </p>
+          <p className="mt-1 break-all font-mono text-[11px] leading-relaxed text-ivory-950">
+            {formatWalkValue(liveValues[peek.field])}
+          </p>
+          {data.recordId && (
+            <p className="mt-1 truncate font-mono text-[10px] text-ivory-500" title={data.recordId}>
+              {data.recordId}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              void (async () => {
+                try {
+                  await navigator.clipboard.writeText(formatWalkValue(liveValues[peek.field]));
+                  setCopiedValue(true);
+                  window.setTimeout(() => setCopiedValue(false), 1200);
+                } catch {
+                  /* clipboard unavailable */
+                }
+              })();
+            }}
+            className="mt-1.5 text-[11px] font-semibold text-bronze-600 hover:text-bronze-700 cursor-pointer"
+          >
+            {copiedValue ? "Copied ✓" : "Copy value"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
