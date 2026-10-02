@@ -469,34 +469,49 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          <p className="truncate font-mono text-[10px] font-bold uppercase tracking-wider text-ivory-600" title={peek.field}>
-            {peek.field}
-          </p>
+          <div className="flex items-start gap-1.5">
+            <p className="min-w-0 flex-1 truncate font-mono text-[10px] font-bold uppercase tracking-wider text-ivory-600" title={peek.field}>
+              {peek.field}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                void (async () => {
+                  try {
+                    await navigator.clipboard.writeText(formatWalkValue(liveValues[peek.field]));
+                    setCopiedValue(true);
+                    window.setTimeout(() => setCopiedValue(false), 1200);
+                  } catch {
+                    /* clipboard unavailable */
+                  }
+                })();
+              }}
+              title={copiedValue ? "Copied" : `Copy ${peek.field} value`}
+              aria-label={copiedValue ? "Copied" : `Copy ${peek.field} value`}
+              className="shrink-0 rounded p-0.5 text-ivory-400 hover:text-bronze-600 hover:bg-ivory-200 transition-colors cursor-pointer"
+            >
+              {copiedValue ? <CheckIcon /> : <CopyIcon />}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPeek(null)}
+              title="Close value panel"
+              aria-label="Close value panel"
+              className="shrink-0 rounded p-0.5 text-ivory-400 hover:text-ivory-950 hover:bg-ivory-200 transition-colors cursor-pointer"
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+                <path d="M6 6l12 12M18 6 6 18" />
+              </svg>
+            </button>
+          </div>
           <p className="mt-1 break-all font-mono text-[11px] leading-relaxed text-ivory-950">
             {formatWalkValue(liveValues[peek.field])}
           </p>
           {data.recordId && (
-            <p className="mt-1 truncate font-mono text-[10px] text-ivory-500" title={data.recordId}>
-              {data.recordId}
+            <p className="mt-1 truncate font-mono text-[10px] text-ivory-500" title={`${data.apiName} Id ${data.recordId}`}>
+              {data.apiName} Id · {data.recordId}
             </p>
           )}
-          <button
-            type="button"
-            onClick={() => {
-              void (async () => {
-                try {
-                  await navigator.clipboard.writeText(formatWalkValue(liveValues[peek.field]));
-                  setCopiedValue(true);
-                  window.setTimeout(() => setCopiedValue(false), 1200);
-                } catch {
-                  /* clipboard unavailable */
-                }
-              })();
-            }}
-            className="mt-1.5 text-[11px] font-semibold text-bronze-600 hover:text-bronze-700 cursor-pointer"
-          >
-            {copiedValue ? "Copied ✓" : "Copy value"}
-          </button>
         </div>,
         document.body
       )}

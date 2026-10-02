@@ -1273,12 +1273,44 @@ export default function SchemaPanel({
     const { select } = displayFieldNames(
       d.fields.map((f) => ({ name: f.name, type: f.type, referenceTo: f.referenceTo ?? [], nameField: f.nameField }))
     );
+    const names = queryableFieldNames(
+      d.fields.map((f) => ({ name: f.name, type: f.type, referenceTo: f.referenceTo ?? [] }))
+    );
+    const chunks = chunkSelect(names);
+    // Full row in one pass (chunked): the slim root select carries Id + name
+    // + lookups only, but entity peeks must never show "—" for fields that
+    // exist (e.g. CreatedDate). Validate + type-check first, then pull full.
     const rows = await runRecordQuery(buildRootQuery(rootName, select, clean));
     const rec = rows[0] as ({ attributes?: { type?: string } } & Record<string, unknown>) | undefined;
     if (!rec) throw new Error("No record found with that Id (or access denied).");
     const actual = rec.attributes?.type;
     if (actual && actual !== rootName) {
       throw new Error(`That Id belongs to ${actual}, not ${rootName}. Switch root or use a ${rootName} Id.`);
+    }
+    try {
+      const settled = await Promise.all(
+        chunks.map(async (sel) => (await runRecordQuery(buildRootQuery(rootName, sel, clean)))[0] as Record<string, unknown> | undefined)
+      );
+      const merged: Record<string, unknown> = {};
+      for (const row of settled) {
+        if (!row) continue;
+        const { attributes: _a, ...fields } = row as { attributes?: unknown } & Record<string, unknown>;
+        void _a;
+        Object.assign(merged, fields);
+      }
+      if (Object.keys(merged).length > 0) {
+        setRecordRoot({ apiName: rootName, id: clean });
+        setRecordStore((prev) => {
+          const next = new Map(prev.singles);
+          const per = new Map(next.get(rootName) ?? []);
+          per.set(clean, { id: clean, fields: merged });
+          next.set(rootName, per);
+          return { singles: next, children: prev.children };
+        });
+        return;
+      }
+    } catch {
+      // Fall through to the slim row when the full pull fails (e.g. FLS).
     }
     const { attributes: _attrs, ...fields } = rec;
     void _attrs;
