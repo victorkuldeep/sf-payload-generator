@@ -121,6 +121,8 @@ function toFlowEdges(project: SystemProject, viz?: Record<string, "running" | "o
       target: c.targetId,
       label: c.label || undefined,
       animated: !!v || ready,
+      // Fat invisible hit area: dashed links are one pixel wide visually.
+      interactionWidth: 40,
       markerEnd: {
         type: MarkerType.ArrowClosed,
         width: 18,
@@ -1111,14 +1113,50 @@ export function SystemDesigner() {
             ) : (
               <div>
                 <p className="text-xs leading-relaxed text-ivory-700">
-                  Select a system or connection to edit it. Everything here is a draft -
-                  edges become executable only once operations are bound (Phase 2).
+                  Select a system or connection to edit it. Links turn green once both ends bind
+                  operations - then they run end-to-end or as full chains.
                 </p>
                 <div className="mt-3 rounded-xl border border-[var(--color-line-soft)] bg-[var(--color-canvas)] p-2.5 font-mono text-[11px] text-ivory-700">
                   {project.systems.length} systems · {project.connections.length} connections ·{" "}
                   {project.connections.filter((c) => c.label.trim()).length} labeled ·{" "}
                   {project.connections.filter((c) => connectionReadiness(c, project) === "ready").length} ready
                 </div>
+                {project.connections.length > 0 && (
+                  <div className="mt-2.5">
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+                      Links - click to inspect and run
+                    </p>
+                    <ul className="space-y-1">
+                      {project.connections.map((c) => {
+                        const ready = connectionReadiness(c, project) === "ready";
+                        const sName = project.systems.find((s) => s.id === c.sourceId)?.name ?? "?";
+                        const tName = project.systems.find((s) => s.id === c.targetId)?.name ?? "?";
+                        return (
+                          <li key={c.id}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelNodeId(null);
+                                setSelEdgeId(c.id);
+                              }}
+                              title={ready ? "Inspect and run this link" : "Inspect - bind both ends to run"}
+                              className="flex w-full items-center gap-1.5 rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-canvas)] px-2 py-1.5 text-left hover:border-bronze-500 transition-colors cursor-pointer"
+                            >
+                              <span
+                                aria-hidden="true"
+                                className={`h-1.5 w-1.5 shrink-0 rounded-full ${ready ? "bg-[#32815B]" : "bg-amber-500"}`}
+                              />
+                              <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-ivory-950">
+                                {c.label || "Unlabeled link"}
+                                <span className="font-mono font-normal text-ivory-500"> · {sName} → {tName}</span>
+                              </span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
                 <div className="mt-2.5">
                   <div className="mb-1.5 flex items-center justify-between">
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
