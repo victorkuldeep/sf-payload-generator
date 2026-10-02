@@ -8,6 +8,7 @@ import {
   MiniMap,
   Controls,
   useReactFlow,
+  getViewportForBounds,
   MarkerType,
   ConnectionMode,
   type Node,
@@ -15,6 +16,7 @@ import {
   type Connection,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { toPng } from "html-to-image";
 import Button from "../ui/Button";
 import Input from "../ui/Input";
 import Badge from "../ui/Badge";
@@ -57,6 +59,21 @@ import {
   looksLikeSecret,
   type CredVault,
 } from "@/lib/system-design/credentials";
+
+function downloadDataUrl(dataUrl: string, fileName: string) {
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+function sdPngFileName(scale: 2 | 3): string {
+  const d = new Date();
+  const pad = (v: number) => String(v).padStart(2, "0");
+  return `system-design-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}@${scale}x.png`;
+}
 
 const CRED_VAULT_KEY = "sd_cred_vault";
 
@@ -134,7 +151,7 @@ function toFlowEdges(project: SystemProject, viz?: Record<string, "running" | "o
       labelBgBorderRadius: 6,
       labelBgStyle: { fill: "#FFFFFF", fillOpacity: 0.92 },
       labelStyle: { fontSize: 10, fontFamily: "monospace" },
-      style: color ? { stroke: color, strokeWidth: 2 } : undefined,
+      style: { stroke: color ?? "#8A8070", strokeWidth: color ? 2 : 1 },
     };
   });
 }
@@ -170,7 +187,8 @@ function DesignerCanvas({
   miniMapOn: boolean;
   onToggleMiniMap: () => void;
 }) {
-  const { screenToFlowPosition, fitView } = useReactFlow();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { screenToFlowPosition, fitView, getNodes, getNodesBounds } = useReactFlow();
   const nodes = useMemo(() => toFlowNodes(project), [project]);
   // Selection is derived from parent state so inspector and canvas agree.
   const selNodes = useMemo(
@@ -179,12 +197,96 @@ function DesignerCanvas({
   );
   const edges = useMemo(() => toFlowEdges(project, runVis), [project, runVis]);
   const selEdges = useMemo(
-    () => edges.map((e) => ({ ...e, selected: e.id === selEdgeId })),
+    () =>
+      edges.map((e) => {
+        const isSelected = e.id === selEdgeId;
+        return {
+          ...e,
+          selected: isSelected,
+          style: isSelected
+            ? { ...e.style, stroke: "#9A7653", strokeWidth: 2.5 }
+            : e.style,
+        };
+      }),
     [edges, selEdgeId]
+  );
+
+  // Snapshot PNG export — ported from ErdCanvas.
+  // Uses the React Flow instance's getNodesBounds (resolves through nodeLookup
+  // for measured width/height) and unions with the edge SVG bounding box so
+  // arrows, curves and labels are never clipped.
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const doExport = useCallback(
+    async (scale: 2 | 3) => {
+      setExporting(true);
+      setExportError(null);
+      try {
+        const viewportEl = containerRef.current?.querySelector(".react-flow__viewport");
+        if (!viewportEl) throw new Error("Canvas not ready");
+
+        // Instance getNodesBounds resolves through nodeLookup — measured dims.
+        const measured = getNodes();
+        const nodeBounds = getNodesBounds(measured);
+
+        // Union with edge SVG bbox so arrows and curves are included.
+        let bounds = { ...nodeBounds };
+        const edgesGroup = containerRef.current?.querySelector(".react-flow__edges > g");
+        if (edgesGroup instanceof SVGGraphicsElement) {
+          try {
+            const eb = edgesGroup.getBBox();
+            if (eb.width > 0 && eb.height > 0) {
+              const minX = Math.min(bounds.x, eb.x);
+              const minY = Math.min(bounds.y, eb.y);
+              const maxX = Math.max(bounds.x + bounds.width, eb.x + eb.width);
+              const maxY = Math.max(bounds.y + bounds.height, eb.y + eb.height);
+              bounds = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+            }
+          } catch {
+            // getBBox can throw if SVG is not rendered; node bounds still work.
+          }
+        }
+
+        // Generous padding: arrow markers (18px) + edge labels + breathing room.
+        const PAD = 100;
+        const imgW = Math.max(1200, bounds.width + PAD * 2);
+        const imgH = Math.max(800, bounds.height + PAD * 2);
+        const { x, y, zoom } = getViewportForBounds(
+          bounds,
+          imgW,
+          imgH,
+          0.1,
+          2,
+          PAD / Math.min(imgW, imgH),
+        );
+        const dataUrl = await toPng(viewportEl as HTMLElement, {
+          backgroundColor: "#FAF8F2",
+          pixelRatio: scale,
+          cacheBust: true,
+          width: imgW,
+          height: imgH,
+          style: {
+            width: `${imgW}px`,
+            height: `${imgH}px`,
+            transform: `translate(${x}px, ${y}px) scale(${zoom})`,
+          },
+          filter: (n) =>
+            !(n instanceof HTMLElement) ||
+            !n.classList.contains("react-flow__handle"),
+        });
+        downloadDataUrl(dataUrl, sdPngFileName(scale));
+      } catch (err) {
+        setExportError(err instanceof Error ? err.message : "PNG export failed");
+      } finally {
+        setExporting(false);
+      }
+    },
+    [getNodes, getNodesBounds],
   );
 
   return (
     <div
+      ref={containerRef}
       className="relative h-full min-h-[420px] w-full overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)]"
       onDrop={(e) => {
         e.preventDefault();
@@ -217,9 +319,8 @@ function DesignerCanvas({
         onConnect={(c: Connection) => {
           if (c.source && c.target && c.source !== c.target) onConnectSystems(c.source, c.target);
         }}
-        onSelectionChange={({ nodes: ns, edges: es }) => {
-          onSelect(ns[0]?.id ?? null, es[0]?.id ?? null);
-        }}
+        onNodeClick={(_, node) => onSelect(node.id, null)}
+        onEdgeClick={(_, edge) => onSelect(null, edge.id)}
         onPaneClick={() => onSelect(null, null)}
         minZoom={0.15}
         fitView
@@ -295,6 +396,29 @@ function DesignerCanvas({
           className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors cursor-pointer ${miniMapOn ? "border-bronze-500 bg-bronze-100 text-bronze-700" : "border-[var(--color-line)] bg-[var(--color-surface)] text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950"}`}
         >
           Map
+        </button>
+        {exportError && (
+          <span className="rounded-lg border border-red-300 bg-red-50 px-2 py-1.5 text-[11px] text-red-700" role="alert">
+            {exportError}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={() => doExport(2)}
+          disabled={exporting || nodes.length === 0}
+          title="Download the full diagram as PNG (2x)"
+          className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer disabled:opacity-40"
+        >
+          {exporting ? "Exporting…" : "Snapshot PNG"}
+        </button>
+        <button
+          type="button"
+          onClick={() => doExport(3)}
+          disabled={exporting || nodes.length === 0}
+          title="Download the full diagram as hi-res PNG (3x) for decks"
+          className="rounded-lg border border-ivory-950 bg-ivory-950 px-2.5 py-1.5 text-[11px] font-semibold text-ivory-100 hover:bg-bronze-600 hover:border-bronze-600 transition-colors cursor-pointer disabled:opacity-40"
+        >
+          3x Hi-Res
         </button>
       </div>
       {project.systems.length > 0 && project.connections.length === 0 && (
@@ -510,6 +634,11 @@ export function SystemDesigner() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [selNodeId, selEdgeId, mutate, undo, redo]);
+
+  const handleSelect = useCallback((nodeId: string | null, edgeId: string | null) => {
+    setSelNodeId(nodeId);
+    setSelEdgeId(edgeId);
+  }, []);
 
   const addSystem = useCallback((t: SystemTemplate, at?: { x: number; y: number }) => {
     mutate((p) => {
@@ -1021,13 +1150,7 @@ export function SystemDesigner() {
                 onMoveSystems={moveSystems}
                 onDragStartNode={() => pushHistory(project)}
                 onConnectSystems={connectSystems}
-                onSelect={(n, e) => {
-                  // Compare-before-set: React Flow echoes prop-applied
-                  // selection back through onSelectionChange - committing
-                  // identical values would ping-pong into an update loop.
-                  setSelNodeId((prev) => (prev === n ? prev : n));
-                  setSelEdgeId((prev) => (prev === e ? prev : e));
-                }}
+                onSelect={handleSelect}
                 selNodeId={selNodeId}
                 selEdgeId={selEdgeId}
                 onDropTemplate={(t, at) => addSystem(t, at)}
@@ -1142,12 +1265,7 @@ export function SystemDesigner() {
                           <li key={c.id}>
                             <button
                               type="button"
-                              onClick={() => {
-                                // Same guard as canvas selection: identical
-                                // commits ping-pong with React Flow's echo.
-                                setSelNodeId((prev) => (prev === null ? prev : null));
-                                setSelEdgeId((prev) => (prev === c.id ? prev : c.id));
-                              }}
+                              onClick={() => handleSelect(null, c.id)}
                               title={ready ? "Inspect and run this link" : "Inspect - bind both ends to run"}
                               className="flex w-full items-center gap-1.5 rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-canvas)] px-2 py-1.5 text-left hover:border-bronze-500 transition-colors cursor-pointer"
                             >
