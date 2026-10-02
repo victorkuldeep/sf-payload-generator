@@ -1746,6 +1746,12 @@ function OperationHttpConfig({
                         <span className="font-mono font-bold">$env.NAME</span> from Credentials and rotate this key.
                       </p>
                     )}
+                    {["authorization", "cookie", "set-cookie", "proxy-authorization"].includes(h.key.trim().toLowerCase()) && (
+                      <p className="mt-0.5 rounded-md border border-amber-300 bg-amber-50 px-1.5 py-1 text-[10px] leading-snug text-amber-800" role="alert">
+                        Never forwarded - the execution backend drops auth headers from stored config. Auth travels
+                        per run via the Bearer token field (+ vault).
+                      </p>
+                    )}
                   </div>
                 ))}
                 {(op.headers ?? []).length < 20 && (
@@ -1759,7 +1765,8 @@ function OperationHttpConfig({
                 )}
               </div>
               <p className="mt-1 text-[10px] text-ivory-500">
-                $env.NAME resolves at send time. Values export with the project - never paste secrets, use the vault.
+                $env.NAME resolves at send time. Auth/cookie headers are never forwarded - use the run token
+                field. Values export with the project - never paste secrets, use the vault.
               </p>
             </div>
           )}

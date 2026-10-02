@@ -69,9 +69,9 @@ export function buildGroqSampleProject(): SystemProject {
     {
       id: "op_groq_chat", interfaceId: "iface_groq_api", name: "Chat completions",
       method: "POST", path: "/openai/v1/chat/completions", version: "v1",
-      // A vault REFERENCE, not a secret - safe to store and export. Add the
-      // real key once under Credentials and every runner resolves it.
-      headers: [{ key: "Authorization", value: "Bearer $env.GROQ_API_KEY" }],
+      // No stored Authorization: the execution backend strips auth/cookie
+      // headers from stored config (imported files must never auto-send live
+      // keys). Auth travels per run via the token field + vault instead.
     },
   ];
   project.connections = [
@@ -98,12 +98,12 @@ export function buildGroqSampleProject(): SystemProject {
     "",
     "1. Project bar → Credentials → add `GROQ_API_KEY` = your key (tab session only).",
     "2. Select the edge → Run chain from here.",
-    "3. Seed is prefilled from the User Input operation - just run.",
+    "3. Seed is prefilled - token field: `$env.GROQ_API_KEY`. Just run.",
     "",
-    "Auth rides on the Chat completions operation as a stored",
-    "`Authorization: Bearer $env.GROQ_API_KEY` header (a reference, not a",
-    "secret). The edge template grabs `{{seed.prompt}}` and builds the GROQ",
-    "body - the same grab-and-map shape scales to Salesforce-vs-ZSP comparisons.",
+    "Auth always travels per run via the token field (the backend drops",
+    "stored auth headers so shared files can never auto-send live keys). The",
+    "edge template grabs `{{seed.prompt}}` and builds the GROQ body - the same",
+    "grab-and-map shape scales to Salesforce-vs-ZSP comparisons.",
   ].join("\n");
   return project;
 }

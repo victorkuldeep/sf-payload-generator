@@ -307,7 +307,7 @@ export function TestRunner({
 
           {/* Headers */}
           <div>
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ivory-600">Headers (prefilled from the operation - edits apply to this send only)</p>
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ivory-600">Headers (prefilled from the operation - edits apply to this send only; Authorization/Cookie are never forwarded, use the token above)</p>
             <div className="space-y-1">
               {headers.map((h, i) => (
                 <div key={i} className="flex gap-1.5">
