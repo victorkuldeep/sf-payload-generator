@@ -115,6 +115,8 @@ function DesignerCanvas({
   selEdgeId,
   onDropTemplate,
   emptyAction,
+  present,
+  onTogglePresent,
 }: {
   project: SystemProject;
   onMoveSystems: (moves: { id: string; x: number; y: number }[]) => void;
@@ -125,6 +127,8 @@ function DesignerCanvas({
   selEdgeId: string | null;
   onDropTemplate: (t: SystemTemplate, at: { x: number; y: number }) => void;
   emptyAction: () => void;
+  present: boolean;
+  onTogglePresent: () => void;
 }) {
   const { screenToFlowPosition, fitView } = useReactFlow();
   const nodes = useMemo(() => toFlowNodes(project), [project]);
@@ -218,6 +222,23 @@ function DesignerCanvas({
         </span>
         <button
           type="button"
+          onClick={onTogglePresent}
+          aria-label={present ? "Exit full screen" : "Enter full screen"}
+          title={present ? "Exit full screen" : "Full screen: hide header, footer and bars for presenting"}
+          className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-1.5 text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer"
+        >
+          {present ? (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+              <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3" />
+            </svg>
+          ) : (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+              <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+            </svg>
+          )}
+        </button>
+        <button
+          type="button"
           onClick={() => fitView({ padding: 0.18, maxZoom: 1 })}
           title="Fit canvas to view"
           className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer"
@@ -244,7 +265,16 @@ export function SystemDesigner() {
   const [selEdgeId, setSelEdgeId] = useState<string | null>(null);
   const [testOpId, setTestOpId] = useState<string | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);
+  const [present, setPresent] = useState(false);
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.body.classList.toggle("sf-present", present);
+    return () => {
+      document.body.classList.remove("sf-present");
+    };
+  }, [present]);
   const [inventoryOpen, setInventoryOpen] = useState(true);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
   const [inventorySearch, setInventorySearch] = useState("");
   const [showList, setShowList] = useState(false);
   const [saveState, setSaveState] = useState<"saved" | "dirty" | "saving" | "error">("saved");
@@ -580,8 +610,23 @@ export function SystemDesigner() {
   }
 
   return (
-    <div className="space-y-3">
+    <div className={present ? "" : "space-y-3"}>
+      {present && (
+        <button
+          type="button"
+          onClick={() => setPresent(false)}
+          aria-label="Exit full-screen presentation"
+          title="Exit full screen"
+          className="fixed bottom-5 right-5 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-ivory-950 text-ivory-100 shadow-xl hover:bg-bronze-600 transition-colors cursor-pointer"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+            <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3" />
+          </svg>
+        </button>
+      )}
       {/* Project bar */}
+      {!present && (
+      <>
       <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] px-4 py-2.5">
         <div className="flex flex-wrap items-center gap-2">
           <select
@@ -720,9 +765,11 @@ export function SystemDesigner() {
           </span>
         ))}
       </div>
+      </>
+      )}
 
       {/* Workbench */}
-      <div className="flex gap-3" style={{ height: "calc(100vh - 240px)", minHeight: 480 }}>
+      <div className="flex gap-3" style={present ? { height: "calc(100vh - 12px)" } : { height: "calc(100vh - 240px)", minHeight: 480 }}>
         {inventoryOpen ? (
           <aside className="flex w-72 shrink-0 flex-col overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)]" aria-label="Systems inventory">
             <div className="flex items-center gap-2 border-b border-[var(--color-line-soft)] px-3.5 py-2">
@@ -868,17 +915,33 @@ export function SystemDesigner() {
                 selEdgeId={selEdgeId}
                 onDropTemplate={(t, at) => addSystem(t, at)}
                 emptyAction={loadDemo}
+                present={present}
+                onTogglePresent={() => setPresent((v) => !v)}
               />
             )}
           </ReactFlowProvider>
           </div>
 
+        {inspectorOpen ? (
         <aside className="flex w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)]" aria-label="Inspector">
-          <div className="border-b border-[var(--color-line-soft)] px-3.5 py-2">
-            <h2 className="truncate text-sm font-bold text-ivory-950">Inspector</h2>
-            <p className="truncate font-mono text-[10px] text-ivory-600">
-              {selNode ? selNode.name : selEdge ? `edge · ${selEdge.id.slice(-6)}` : `${project.systems.length} systems · ${project.connections.length} links`}
-            </p>
+          <div className="flex items-center gap-2 border-b border-[var(--color-line-soft)] px-3.5 py-2">
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate text-sm font-bold text-ivory-950">Inspector</h2>
+              <p className="truncate font-mono text-[10px] text-ivory-600">
+                {selNode ? selNode.name : selEdge ? `edge · ${selEdge.id.slice(-6)}` : `${project.systems.length} systems · ${project.connections.length} links`}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setInspectorOpen(false)}
+              aria-label="Collapse inspector"
+              title="Collapse inspector - canvas goes full width"
+              className="shrink-0 rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+                <path d="m10 6 6 6-6 6" />
+              </svg>
+            </button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-3.5">
             {selNode ? (
@@ -1016,6 +1079,24 @@ export function SystemDesigner() {
             )}
           </div>
         </aside>
+        ) : (
+          <div className="flex w-10 shrink-0 flex-col items-center gap-2 rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] py-3">
+            <button
+              type="button"
+              onClick={() => setInspectorOpen(true)}
+              aria-label="Expand inspector"
+              title="Expand inspector"
+              className="rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+                <path d="m14 6-6 6 6 6" />
+              </svg>
+            </button>
+            <span className="text-[10px] font-bold text-ivory-500" style={{ writingMode: "vertical-rl" }}>
+              Inspector
+            </span>
+          </div>
+        )}
       </div>
 
       {testOp && testIface && testSystem && project && (
