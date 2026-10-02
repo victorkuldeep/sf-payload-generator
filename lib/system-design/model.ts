@@ -74,6 +74,8 @@ export interface SystemOperation {
   method: OperationMethod;
   path: string;
   version: string;
+  /** Sample payload prefill for test runs and edge runs (optional). */
+  sampleBody?: string;
 }
 
 /** Named deployment target. Holds base URLs only - never secrets. */
@@ -277,6 +279,9 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
     if (typeof o.name !== "string" || !o.name.trim()) issues.push({ path: `${at}.name`, message: "Missing operation name." });
     if (typeof o.method !== "string" || !METHODS.includes(o.method)) {
       issues.push({ path: `${at}.method`, message: `Method must be one of ${METHODS.join("/")}.` });
+    }
+    if (o.sampleBody !== undefined && typeof o.sampleBody !== "string") {
+      issues.push({ path: `${at}.sampleBody`, message: "Sample body must be a string." });
     }
   }
   for (let i = 0; i < environments.length; i++) {

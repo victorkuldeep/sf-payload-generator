@@ -66,8 +66,10 @@ describe("system design model", () => {
     expect(file.kind).toBe("sobject-studio-system-design");
     const back = importProject(JSON.parse(JSON.stringify(file)));
     expect(back.issues).toEqual([]);
-    expect(back.project?.systems).toHaveLength(4);
-    expect(back.project?.connections).toHaveLength(3);
+    expect(back.project?.systems).toHaveLength(5);
+    expect(back.project?.connections).toHaveLength(4);
+    // The demo's echo leg ships fully bound (ready edge on load).
+    expect(back.project?.connections.find((c) => c.id === "conn_demo_4")?.sourceOperationId).toBe("op_demo_forward");
     expect(back.project?.connections.every((c) => c.status === "draft")).toBe(true);
   });
 

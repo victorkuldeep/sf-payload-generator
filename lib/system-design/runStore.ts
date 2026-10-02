@@ -2,6 +2,15 @@
 
 import { withStore, STORES } from "@/lib/db";
 
+/** One executed hop inside an edge run (Phase 4 traces). */
+export interface SystemRunStep {
+  label: string;
+  status: number;
+  statusText: string;
+  durationMs: number;
+  endpoint: string;
+}
+
 /** Persisted test-run evidence. Bodies are truncated previews; request
  * headers are stored redacted; query strings are stripped from endpoints.
  * Full bodies live in memory only, for the session response view. */
@@ -21,6 +30,9 @@ export interface SystemRunRecord {
   requestBodyPreview: string;
   responseHeaders: Record<string, string>;
   responseBodyPreview: string;
+  /** Edge runs: "single" for TestRunner sends, "edge" with per-hop evidence. */
+  kind?: "single" | "edge";
+  steps?: SystemRunStep[];
 }
 
 const MAX_RUNS = 100;

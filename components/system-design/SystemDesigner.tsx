@@ -46,6 +46,7 @@ import {
 import { buildDemoProject } from "@/lib/system-design/demo";
 import { SystemNodeView, SystemGlyph, type SystemNodeData } from "./SystemNode";
 import { TestRunner } from "./TestRunner";
+import { RunEdgeDialog } from "./RunEdgeDialog";
 import { ProjectNotesModal } from "./ProjectNotesModal";
 import type { CanvasTodo } from "@/lib/inbox/types";
 
@@ -265,6 +266,7 @@ export function SystemDesigner() {
   const [selEdgeId, setSelEdgeId] = useState<string | null>(null);
   const [testOpId, setTestOpId] = useState<string | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);
+  const [runEdgeId, setRunEdgeId] = useState<string | null>(null);
   const [present, setPresent] = useState(false);
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -582,6 +584,7 @@ export function SystemDesigner() {
   const testOp = testOpId ? project?.operations.find((o) => o.id === testOpId) ?? null : null;
   const testIface = testOp ? project?.interfaces.find((i) => i.id === testOp.interfaceId) ?? null : null;
   const testSystem = testIface ? project?.systems.find((s) => s.id === testIface.systemId) ?? null : null;
+  const runEdge = runEdgeId ? project?.connections.find((c) => c.id === runEdgeId) ?? null : null;
   const openTodoCount = project?.todos.filter((t) => t.status !== "done").length ?? 0;
 
   const patchProjectTodo = useCallback((id: string, patch: Partial<CanvasTodo>) => {
@@ -979,15 +982,17 @@ export function SystemDesigner() {
                 project={project}
                 sourceName={edgeName(selEdge.sourceId)}
                 targetName={edgeName(selEdge.targetId)}
-                onPatch={(patch) => mutate((p) => ({
-                  ...p,
-                  connections: p.connections.map((c) => (c.id === selEdge.id ? { ...c, ...patch } : c)),
-                }))}
-                onDelete={() => {
-                  mutate((p) => ({ ...p, connections: p.connections.filter((c) => c.id !== selEdge.id) }));
-                  setSelEdgeId(null);
-                }}
-              />
+              onPatch={(patch) => mutate((p) => ({
+                ...p,
+                connections: p.connections.map((c) => (c.id === selEdge.id ? { ...c, ...patch } : c)),
+              }))}
+              onRun={() => setRunEdgeId(selEdge.id)}
+              runReady={connectionReadiness(selEdge, project) === "ready"}
+              onDelete={() => {
+                mutate((p) => ({ ...p, connections: p.connections.filter((c) => c.id !== selEdge.id) }));
+                setSelEdgeId(null);
+              }}
+            />
             ) : (
               <div>
                 <p className="text-xs leading-relaxed text-ivory-700">
@@ -1107,6 +1112,20 @@ export function SystemDesigner() {
           environments={project.environments}
           activeEnvironmentId={project.activeEnvironmentId}
           onClose={() => setTestOpId(null)}
+        />
+      )}
+
+      {runEdge && project && (
+        <RunEdgeDialog
+          edge={runEdge}
+          project={project}
+          environments={project.environments}
+          activeEnvironmentId={project.activeEnvironmentId}
+          onClose={() => setRunEdgeId(null)}
+          onSaveSample={(opId, body) => mutate((p) => ({
+            ...p,
+            operations: p.operations.map((o) => (o.id === opId ? { ...o, sampleBody: body } : o)),
+          }))}
         />
       )}
 
@@ -1407,6 +1426,8 @@ function EdgeInspector({
   targetName,
   onPatch,
   onDelete,
+  onRun,
+  runReady,
 }: {
   edge: SystemConnection;
   project: SystemProject;
@@ -1414,6 +1435,8 @@ function EdgeInspector({
   targetName: string;
   onPatch: (patch: Partial<SystemConnection>) => void;
   onDelete: () => void;
+  onRun: () => void;
+  runReady: boolean;
 }) {
   const readiness = connectionReadiness(edge, project);
   const sourceGroups = operationsForSystem(project, edge.sourceId);
@@ -1474,6 +1497,15 @@ function EdgeInspector({
       </div>
       {bindSelect("source", edge.sourceOperationId, sourceGroups, sourceName)}
       {bindSelect("target", edge.targetOperationId, targetGroups, targetName)}
+      <Button
+        size="sm"
+        onClick={onRun}
+        disabled={!runReady}
+        title={runReady ? "Run this edge end-to-end: source call → mapping → target call, with trace" : "Bind both ends first - only ready edges run"}
+        className="w-full"
+      >
+        Run edge end-to-end
+      </Button>
       <Button size="sm" variant="ghost" onClick={onDelete} className="w-full">
         Delete connection
       </Button>
