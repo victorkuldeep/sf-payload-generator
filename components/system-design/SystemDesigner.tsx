@@ -25,10 +25,15 @@ import {
   exportProject,
   importProject,
   projectFileName,
+  connectionReadiness,
+  operationsForSystem,
   type SystemNode,
   type SystemConnection,
   type SystemProject,
   type SystemTemplate,
+  type SystemInterface,
+  type SystemOperation,
+  type OperationMethod,
 } from "@/lib/system-design/model";
 import {
   saveSystemProject,
@@ -72,16 +77,21 @@ function toFlowNodes(project: SystemProject): Node<SystemNodeData>[] {
 }
 
 function toFlowEdges(project: SystemProject): Edge[] {
-  return project.connections.map((c) => ({
-    id: c.id,
-    source: c.sourceId,
-    target: c.targetId,
-    label: c.label || undefined,
-    labelBgPadding: [6, 3] as [number, number],
-    labelBgBorderRadius: 6,
-    labelBgStyle: { fill: "#FFFFFF", fillOpacity: 0.92 },
-    labelStyle: { fontSize: 10, fontFamily: "monospace" },
-  }));
+  return project.connections.map((c) => {
+    const ready = connectionReadiness(c, project) === "ready";
+    return {
+      id: c.id,
+      source: c.sourceId,
+      target: c.targetId,
+      label: c.label || undefined,
+      animated: ready,
+      labelBgPadding: [6, 3] as [number, number],
+      labelBgBorderRadius: 6,
+      labelBgStyle: { fill: "#FFFFFF", fillOpacity: 0.92 },
+      labelStyle: { fontSize: 10, fontFamily: "monospace" },
+      style: ready ? { stroke: "#32815B", strokeWidth: 2 } : undefined,
+    };
+  });
 }
 
 function DesignerCanvas({
@@ -187,7 +197,14 @@ function DesignerCanvas({
           </div>
         </div>
       )}
-      <div className="absolute right-3 top-3 z-10">
+      <div className="absolute right-3 top-3 z-10 flex items-center gap-1.5">
+        <span
+          className="hidden sm:flex items-center gap-1 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2 py-1.5 text-[10px] text-ivory-600"
+          title="Draft edges are static; fully-bound edges flow. Bind operations in the inspector."
+        >
+          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" /> draft
+          <span className="ml-1 h-1.5 w-1.5 rounded-full bg-[#32815B]" aria-hidden="true" /> ready
+        </span>
         <button
           type="button"
           onClick={() => fitView({ padding: 0.18, maxZoom: 1 })}
@@ -713,7 +730,9 @@ export function SystemDesigner() {
                             {edgeName(c.sourceId)} → {edgeName(c.targetId)}
                             {c.label ? <span className="text-ivory-600"> · {c.label}</span> : null}
                           </span>
-                          <Badge variant="default">draft</Badge>
+                          <Badge variant={connectionReadiness(c, project) === "ready" ? "success" : connectionReadiness(c, project) === "partial" ? "warning" : "default"}>
+                            {connectionReadiness(c, project)}
+                          </Badge>
                           <Button size="sm" variant="ghost" onClick={() => { setSelEdgeId(c.id); setSelNodeId(null); }}>
                             Select
                           </Button>
@@ -753,10 +772,12 @@ export function SystemDesigner() {
             {selNode ? (
               <NodeInspector
                 node={selNode}
+                project={project}
                 onPatch={(patch) => mutate((p) => ({
                   ...p,
                   systems: p.systems.map((s) => (s.id === selNode.id ? { ...s, ...patch } : s)),
                 }))}
+                onMutateProject={(fn) => mutate(fn)}
                 onDuplicate={() => {
                   mutate((p) => ({
                     ...p,
@@ -778,6 +799,7 @@ export function SystemDesigner() {
             ) : selEdge ? (
               <EdgeInspector
                 edge={selEdge}
+                project={project}
                 sourceName={edgeName(selEdge.sourceId)}
                 targetName={edgeName(selEdge.targetId)}
                 onPatch={(patch) => mutate((p) => ({
@@ -797,7 +819,84 @@ export function SystemDesigner() {
                 </p>
                 <div className="mt-3 rounded-xl border border-[var(--color-line-soft)] bg-[var(--color-canvas)] p-2.5 font-mono text-[11px] text-ivory-700">
                   {project.systems.length} systems · {project.connections.length} connections ·{" "}
-                  {project.connections.filter((c) => c.label.trim()).length} labeled
+                  {project.connections.filter((c) => c.label.trim()).length} labeled ·{" "}
+                  {project.connections.filter((c) => connectionReadiness(c, project) === "ready").length} ready
+                </div>
+                <div className="mt-2.5">
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+                      Environment
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => mutate((p) => {
+                        const env = { id: newId("env"), name: `Env ${p.environments.length + 1}`, baseUrl: "" };
+                        return { ...p, environments: [...p.environments, env], activeEnvironmentId: p.activeEnvironmentId ?? env.id };
+                      })}
+                      className="text-[11px] font-semibold text-bronze-600 hover:text-bronze-700 cursor-pointer"
+                    >
+                      + Environment
+                    </button>
+                  </div>
+                  {project.environments.length === 0 ? (
+                    <p className="text-[11px] text-ivory-500">No environments - runs target named environments in Phase 3.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <select
+                        value={project.activeEnvironmentId ?? ""}
+                        onChange={(e) => mutate((p) => ({ ...p, activeEnvironmentId: e.target.value || null }))}
+                        aria-label="Active environment"
+                        title="Active environment - test runs target this in Phase 3"
+                        className="w-full cursor-pointer rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-2 py-1.5 text-xs font-semibold text-ivory-950"
+                      >
+                        <option value="">No active environment</option>
+                        {project.environments.map((e) => (
+                          <option key={e.id} value={e.id}>{e.name}</option>
+                        ))}
+                      </select>
+                      {project.environments.map((e) => (
+                        <div key={e.id} className="flex items-center gap-1">
+                          <input
+                            value={e.name}
+                            onChange={(ev) => mutate((p) => ({
+                              ...p,
+                              environments: p.environments.map((x) => (x.id === e.id ? { ...x, name: ev.target.value } : x)),
+                            }))}
+                            spellCheck={false}
+                            aria-label="Environment name"
+                            className="min-w-0 flex-1 rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-2 py-1 text-[11px] font-semibold text-ivory-950 focus:border-bronze-500 focus:outline-none"
+                          />
+                          <input
+                            value={e.baseUrl}
+                            onChange={(ev) => mutate((p) => ({
+                              ...p,
+                              environments: p.environments.map((x) => (x.id === e.id ? { ...x, baseUrl: ev.target.value } : x)),
+                            }))}
+                            placeholder="https://…"
+                            spellCheck={false}
+                            aria-label="Environment base URL"
+                            className="min-w-0 flex-1 rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-2 py-1 font-mono text-[10px] text-ivory-800 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => mutate((p) => ({
+                              ...p,
+                              environments: p.environments.filter((x) => x.id !== e.id),
+                              activeEnvironmentId: p.activeEnvironmentId === e.id ? null : p.activeEnvironmentId,
+                            }))}
+                            aria-label={`Delete environment ${e.name}`}
+                            title="Delete environment"
+                            className="rounded p-1 text-ivory-400 hover:text-red-700 hover:bg-red-500/10 transition-colors cursor-pointer"
+                          >
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                              <path d="M6 6l12 12M18 6 6 18" />
+                            </svg>
+                          </button>
+                        </div>
+                      ))}
+                      <p className="text-[10px] text-ivory-500">Base URLs only - secrets are referenced at runtime, never stored (Phase 3).</p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -810,15 +909,21 @@ export function SystemDesigner() {
 
 function NodeInspector({
   node,
+  project,
   onPatch,
+  onMutateProject,
   onDuplicate,
   onDelete,
 }: {
   node: SystemNode;
+  project: SystemProject;
   onPatch: (patch: Partial<SystemNode>) => void;
+  onMutateProject: (fn: (p: SystemProject) => SystemProject) => void;
   onDuplicate: () => void;
   onDelete: () => void;
 }) {
+  const groups = operationsForSystem(project, node.id);
+  const opCount = groups.reduce((n, g) => n + g.ops.length, 0);
   return (
     <div className="space-y-2.5">
       <div className="flex items-center gap-2 rounded-xl border border-[var(--color-line-soft)] bg-[var(--color-canvas)] p-2.5">
@@ -874,23 +979,203 @@ function NodeInspector({
           Delete
         </Button>
       </div>
+      <div>
+        <div className="mb-1.5 flex items-center justify-between">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+            Interfaces · {groups.length} · {opCount} ops
+          </p>
+          <button
+            type="button"
+            onClick={() => onMutateProject((p) => ({
+              ...p,
+              interfaces: [...p.interfaces, {
+                id: newId("iface"), systemId: node.id, name: "REST API",
+                protocol: "REST" as const, basePath: "",
+              }],
+            }))}
+            className="text-[11px] font-semibold text-bronze-600 hover:text-bronze-700 cursor-pointer"
+          >
+            + Interface
+          </button>
+        </div>
+        {groups.length === 0 && (
+          <p className="text-[11px] text-ivory-500">No interfaces yet - add one to expose operations for edge binding.</p>
+        )}
+        <div className="space-y-2">
+          {groups.map(({ iface, ops }) => (
+            <div key={iface.id} className="rounded-xl border border-[var(--color-line-soft)] bg-[var(--color-canvas)] p-2">
+              <div className="flex items-center gap-1.5">
+                <input
+                  value={iface.name}
+                  onChange={(e) => onMutateProject((p) => ({
+                    ...p,
+                    interfaces: p.interfaces.map((f) => (f.id === iface.id ? { ...f, name: e.target.value } : f)),
+                  }))}
+                  spellCheck={false}
+                  aria-label="Interface name"
+                  className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-xs font-bold text-ivory-950 hover:border-[var(--color-line)] focus:border-bronze-500 focus:outline-none"
+                />
+                <select
+                  value={iface.protocol}
+                  onChange={(e) => onMutateProject((p) => ({
+                    ...p,
+                    interfaces: p.interfaces.map((f) => (f.id === iface.id ? { ...f, protocol: e.target.value as SystemInterface["protocol"] } : f)),
+                  }))}
+                  aria-label="Interface protocol"
+                  className="cursor-pointer rounded-md border border-[var(--color-line)] bg-white px-1 py-1 font-mono text-[10px] text-ivory-800"
+                >
+                  {(["REST", "GraphQL", "SOAP", "Events", "Other"] as const).map((pr) => (
+                    <option key={pr} value={pr}>{pr}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => onMutateProject((p) => ({
+                    ...p,
+                    interfaces: p.interfaces.filter((f) => f.id !== iface.id),
+                    operations: p.operations.filter((o) => o.interfaceId !== iface.id),
+                  }))}
+                  aria-label={`Delete interface ${iface.name}`}
+                  title="Delete interface and its operations (edge bindings to them read as unbound)"
+                  className="rounded p-1 text-ivory-400 hover:text-red-700 hover:bg-red-500/10 transition-colors cursor-pointer"
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                    <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-9 0 1 13h10l1-13" />
+                  </svg>
+                </button>
+              </div>
+              <input
+                value={iface.basePath}
+                onChange={(e) => onMutateProject((p) => ({
+                  ...p,
+                  interfaces: p.interfaces.map((f) => (f.id === iface.id ? { ...f, basePath: e.target.value } : f)),
+                }))}
+                placeholder="Base path, e.g. /services/data/v66.0"
+                spellCheck={false}
+                aria-label="Interface base path"
+                className="mt-1 w-full rounded-md border border-[var(--color-line)] bg-white px-1.5 py-1 font-mono text-[10px] text-ivory-800 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+              />
+              <ul className="mt-1.5 space-y-1">
+                {ops.map((op) => (
+                  <li key={op.id} className="flex items-center gap-1">
+                    <select
+                      value={op.method}
+                      onChange={(e) => onMutateProject((p) => ({
+                        ...p,
+                        operations: p.operations.map((o) => (o.id === op.id ? { ...o, method: e.target.value as OperationMethod } : o)),
+                      }))}
+                      aria-label={`Method for ${op.name}`}
+                      className="cursor-pointer rounded-md border border-[var(--color-line)] bg-white px-1 py-1 font-mono text-[10px] font-bold text-ivory-800"
+                    >
+                      {(["GET", "POST", "PUT", "PATCH", "DELETE", "EVENT", "QUERY"] as const).map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                    <input
+                      value={op.name}
+                      onChange={(e) => onMutateProject((p) => ({
+                        ...p,
+                        operations: p.operations.map((o) => (o.id === op.id ? { ...o, name: e.target.value } : o)),
+                      }))}
+                      spellCheck={false}
+                      aria-label="Operation name"
+                      placeholder="Operation name"
+                      className="min-w-0 flex-1 rounded-md border border-[var(--color-line)] bg-white px-1.5 py-1 text-[11px] font-semibold text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+                    />
+                    <input
+                      value={op.path}
+                      onChange={(e) => onMutateProject((p) => ({
+                        ...p,
+                        operations: p.operations.map((o) => (o.id === op.id ? { ...o, path: e.target.value } : o)),
+                      }))}
+                      spellCheck={false}
+                      aria-label="Operation path"
+                      placeholder="/path"
+                      className="w-24 rounded-md border border-[var(--color-line)] bg-white px-1.5 py-1 font-mono text-[10px] text-ivory-800 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => onMutateProject((p) => ({
+                        ...p,
+                        operations: p.operations.filter((o) => o.id !== op.id),
+                      }))}
+                      aria-label={`Delete operation ${op.name}`}
+                      title="Delete operation (edge bindings to it read as unbound)"
+                      className="rounded p-1 text-ivory-400 hover:text-red-700 hover:bg-red-500/10 transition-colors cursor-pointer"
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                        <path d="M6 6l12 12M18 6 6 18" />
+                      </svg>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <button
+                type="button"
+                onClick={() => onMutateProject((p) => ({
+                  ...p,
+                  operations: [...p.operations, {
+                    id: newId("op"), interfaceId: iface.id, name: "New operation",
+                    method: "GET" as const, path: "/", version: "v1",
+                  }],
+                }))}
+                className="mt-1 text-[11px] font-semibold text-bronze-600 hover:text-bronze-700 cursor-pointer"
+              >
+                + Operation
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
 
 function EdgeInspector({
   edge,
+  project,
   sourceName,
   targetName,
   onPatch,
   onDelete,
 }: {
   edge: SystemConnection;
+  project: SystemProject;
   sourceName: string;
   targetName: string;
   onPatch: (patch: Partial<SystemConnection>) => void;
   onDelete: () => void;
 }) {
+  const readiness = connectionReadiness(edge, project);
+  const sourceGroups = operationsForSystem(project, edge.sourceId);
+  const targetGroups = operationsForSystem(project, edge.targetId);
+  const opLabel = (ifaceName: string, opName: string, method: string) => `${method} ${opName} (${ifaceName})`;
+  const bindSelect = (
+    side: "source" | "target",
+    value: string | undefined,
+    groups: { iface: SystemInterface; ops: SystemOperation[] }[],
+    ownerName: string
+  ) => (
+    <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+      {side === "source" ? `Source op · ${ownerName}` : `Target op · ${ownerName}`}
+      <select
+        value={value ?? ""}
+        onChange={(e) => onPatch(side === "source"
+          ? { sourceOperationId: e.target.value || undefined }
+          : { targetOperationId: e.target.value || undefined })}
+        className="mt-0.5 w-full cursor-pointer rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-1.5 py-1.5 text-xs font-medium normal-case tracking-normal text-ivory-950"
+      >
+        <option value="">Unbound</option>
+        {groups.map((g) => (
+          <optgroup key={g.iface.id} label={g.iface.name}>
+            {g.ops.map((o) => (
+              <option key={o.id} value={o.id}>{opLabel(g.iface.name, o.name, o.method)}</option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+    </label>
+  );
   return (
     <div className="space-y-2.5">
       <div className="rounded-xl border border-[var(--color-line-soft)] bg-[var(--color-canvas)] p-2.5 font-mono text-[11px] text-ivory-800">
@@ -907,11 +1192,19 @@ function EdgeInspector({
         />
       </label>
       <div className="flex items-center gap-1.5">
-        <Badge variant="default">draft</Badge>
+        <Badge variant={readiness === "ready" ? "success" : readiness === "partial" ? "warning" : "default"}>
+          {readiness}
+        </Badge>
         <p className="text-[11px] leading-relaxed text-ivory-600">
-          Not executable - bind operations to run this edge (Phase 2).
+          {readiness === "ready"
+            ? "Both ends bound - executable once a runner exists (Phase 3)."
+            : readiness === "partial"
+              ? "One end bound - bind the other to finish this edge."
+              : "Not executable - bind operations to run this edge (Phase 2)."}
         </p>
       </div>
+      {bindSelect("source", edge.sourceOperationId, sourceGroups, sourceName)}
+      {bindSelect("target", edge.targetOperationId, targetGroups, targetName)}
       <Button size="sm" variant="ghost" onClick={onDelete} className="w-full">
         Delete connection
       </Button>

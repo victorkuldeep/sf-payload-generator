@@ -22,7 +22,9 @@ export type SystemType =
   | "saas"
   | "custom";
 
-export type ConnectionStatus = "draft";
+export type ConnectionStatus = "draft" | "partial" | "ready";
+
+export type OperationMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "EVENT" | "QUERY";
 
 export interface SystemNode {
   id: string;
@@ -39,6 +41,35 @@ export interface SystemConnection {
   targetId: string;
   label: string;
   status: ConnectionStatus;
+  /** Exact operation bound at each end (ids into project.operations). */
+  sourceOperationId?: string;
+  targetOperationId?: string;
+}
+
+/** A named API surface on a system (REST base, GraphQL endpoint, events). */
+export interface SystemInterface {
+  id: string;
+  systemId: string;
+  name: string;
+  protocol: "REST" | "GraphQL" | "SOAP" | "Events" | "Other";
+  basePath: string;
+}
+
+/** One callable operation on an interface. Versioned by convention (v1, v2…). */
+export interface SystemOperation {
+  id: string;
+  interfaceId: string;
+  name: string;
+  method: OperationMethod;
+  path: string;
+  version: string;
+}
+
+/** Named deployment target. Holds base URLs only - never secrets. */
+export interface SystemEnvironment {
+  id: string;
+  name: string;
+  baseUrl: string;
 }
 
 export interface SystemProject {
@@ -48,6 +79,12 @@ export interface SystemProject {
   updatedAt: number;
   systems: SystemNode[];
   connections: SystemConnection[];
+  /** Flat registries (ids referenced from systems/connections). Absent on
+   * vintage records - always default to [] so v1 canvases keep loading. */
+  interfaces: SystemInterface[];
+  operations: SystemOperation[];
+  environments: SystemEnvironment[];
+  activeEnvironmentId: string | null;
 }
 
 export interface SystemTemplate {
@@ -80,7 +117,52 @@ export function newId(prefix: string): string {
 
 export function newProject(name = "Untitled architecture"): SystemProject {
   const now = Date.now();
-  return { id: newId("proj"), name, schemaVersion: SYSTEM_DESIGN_SCHEMA_VERSION, updatedAt: now, systems: [], connections: [] };
+  return {
+    id: newId("proj"),
+    name,
+    schemaVersion: SYSTEM_DESIGN_SCHEMA_VERSION,
+    updatedAt: now,
+    systems: [],
+    connections: [],
+    interfaces: [],
+    operations: [],
+    environments: [{ id: newId("env"), name: "Sandbox", baseUrl: "" }],
+    activeEnvironmentId: null,
+  };
+}
+
+/** Readiness is DERIVED, never stored: both ends bound to live operations
+ * on the correct endpoint systems = ready; one end = partial; else draft.
+ * A binding to a deleted/moved operation reads as unbound (fail-visible). */
+export function connectionReadiness(
+  conn: SystemConnection,
+  project: Pick<SystemProject, "systems" | "interfaces" | "operations">
+): ConnectionStatus {
+  const opBelongsTo = (opId: string | undefined, systemId: string): boolean => {
+    if (!opId) return false;
+    const op = project.operations.find((o) => o.id === opId);
+    if (!op) return false;
+    const iface = project.interfaces.find((i) => i.id === op.interfaceId);
+    return !!iface && iface.systemId === systemId;
+  };
+  const s = opBelongsTo(conn.sourceOperationId, conn.sourceId);
+  const t = opBelongsTo(conn.targetOperationId, conn.targetId);
+  if (s && t) return "ready";
+  if (s || t) return "partial";
+  return "draft";
+}
+
+/** Operations callable at one end of an edge, grouped for selects. */
+export function operationsForSystem(
+  project: Pick<SystemProject, "interfaces" | "operations">,
+  systemId: string
+): { iface: SystemInterface; ops: SystemOperation[] }[] {
+  return project.interfaces
+    .filter((i) => i.systemId === systemId)
+    .map((iface) => ({
+      iface,
+      ops: project.operations.filter((o) => o.interfaceId === iface.id),
+    }));
 }
 
 export function newSystemFromTemplate(t: SystemTemplate, position: { x: number; y: number }, n: number): SystemNode {
@@ -139,6 +221,64 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
     }
   }
   if (issues.length > 0) return { project: null, issues };
+  // Registries are optional (vintage slice-1 records) - default to empty.
+  const interfaces = (Array.isArray(p.interfaces) ? p.interfaces : []) as Record<string, unknown>[];
+  const operations = (Array.isArray(p.operations) ? p.operations : []) as Record<string, unknown>[];
+  const environments = (Array.isArray(p.environments) ? p.environments : []) as Record<string, unknown>[];
+  const ifaceIds = new Set<string>();
+  for (let i = 0; i < interfaces.length; i++) {
+    const f = interfaces[i];
+    const at = `$.interfaces[${i}]`;
+    if (typeof f.id !== "string" || !f.id) issues.push({ path: `${at}.id`, message: "Missing interface id." });
+    else if (ifaceIds.has(f.id)) issues.push({ path: `${at}.id`, message: `Duplicate interface id ${f.id}.` });
+    else ifaceIds.add(f.id);
+    if (typeof f.systemId !== "string" || !ids.has(f.systemId)) {
+      issues.push({ path: `${at}.systemId`, message: `Unknown system ${String(f.systemId)}.` });
+    }
+    if (typeof f.name !== "string" || !f.name.trim()) issues.push({ path: `${at}.name`, message: "Missing interface name." });
+  }
+  const opIds = new Set<string>();
+  const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "EVENT", "QUERY"];
+  for (let i = 0; i < operations.length; i++) {
+    const o = operations[i];
+    const at = `$.operations[${i}]`;
+    if (typeof o.id !== "string" || !o.id) issues.push({ path: `${at}.id`, message: "Missing operation id." });
+    else if (opIds.has(o.id)) issues.push({ path: `${at}.id`, message: `Duplicate operation id ${o.id}.` });
+    else opIds.add(o.id);
+    if (typeof o.interfaceId !== "string" || !ifaceIds.has(o.interfaceId)) {
+      issues.push({ path: `${at}.interfaceId`, message: `Unknown interface ${String(o.interfaceId)}.` });
+    }
+    if (typeof o.name !== "string" || !o.name.trim()) issues.push({ path: `${at}.name`, message: "Missing operation name." });
+    if (typeof o.method !== "string" || !METHODS.includes(o.method)) {
+      issues.push({ path: `${at}.method`, message: `Method must be one of ${METHODS.join("/")}.` });
+    }
+  }
+  for (let i = 0; i < environments.length; i++) {
+    const e = environments[i];
+    const at = `$.environments[${i}]`;
+    if (typeof e.id !== "string" || !e.id) issues.push({ path: `${at}.id`, message: "Missing environment id." });
+    if (typeof e.name !== "string" || !e.name.trim()) issues.push({ path: `${at}.name`, message: "Missing environment name." });
+  }
+  // Edge bindings must reference live operations on the correct endpoint.
+  for (let i = 0; i < connections.length; i++) {
+    const c = connections[i] as Record<string, unknown> & { sourceOperationId?: unknown; targetOperationId?: unknown };
+    const at = `$.connections[${i}]`;
+    for (const [key, sysKey] of [["sourceOperationId", "sourceId"], ["targetOperationId", "targetId"]] as const) {
+      const opId = c[key];
+      if (opId === undefined || opId === null || opId === "") continue;
+      if (typeof opId !== "string" || !opIds.has(opId)) {
+        issues.push({ path: `${at}.${key}`, message: `Unknown operation ${String(opId)}.` });
+        continue;
+      }
+      const op = (operations as Record<string, unknown>[]).find((o) => o.id === opId) as { interfaceId?: string };
+      const iface = (interfaces as Record<string, unknown>[]).find((f) => f.id === op?.interfaceId) as { systemId?: string } | undefined;
+      if (!iface || iface.systemId !== c[sysKey]) {
+        issues.push({ path: `${at}.${key}`, message: `Operation ${opId} does not belong to the ${sysKey === "sourceId" ? "source" : "target"} system.` });
+      }
+    }
+  }
+  if (issues.length > 0) return { project: null, issues };
+  const activeEnv = typeof p.activeEnvironmentId === "string" ? p.activeEnvironmentId : null;
   return {
     project: {
       id: p.id as string,
@@ -150,6 +290,10 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
         ...c,
         status: "draft" as const,
       })),
+      interfaces: interfaces as unknown as SystemInterface[],
+      operations: operations as unknown as SystemOperation[],
+      environments: environments as unknown as SystemEnvironment[],
+      activeEnvironmentId: activeEnv,
     },
     issues: [],
   };

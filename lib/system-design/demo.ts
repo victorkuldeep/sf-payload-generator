@@ -16,9 +16,21 @@ export function buildDemoProject(): SystemProject {
   const app = { ...newSystemFromTemplate(by("webapp"), { x: 840, y: 330 }, 1), name: "Triage Console", id: "sys_demo_app" };
   project.systems = [sf, mw, sn, app];
   project.connections = [
-    { id: "conn_demo_1", sourceId: sf.id, targetId: mw.id, label: "Lead created event", status: "draft" as const },
+    { id: "conn_demo_1", sourceId: sf.id, targetId: mw.id, label: "Lead created event", status: "draft" as const, sourceOperationId: "op_demo_lead" },
     { id: "conn_demo_2", sourceId: mw.id, targetId: sn.id, label: "Create incident", status: "draft" as const },
     { id: "conn_demo_3", sourceId: mw.id, targetId: app.id, label: "Push triage view", status: "draft" as const },
   ];
+  // One bound end on purpose: the demo opens showing a partial edge next to
+  // draft ones, so readiness states are visible immediately.
+  project.interfaces = [
+    { id: "iface_demo_sf", systemId: sf.id, name: "REST API", protocol: "REST", basePath: "/services/data/v66.0" },
+    { id: "iface_demo_mw", systemId: mw.id, name: "Inbound events", protocol: "Events", basePath: "/events/lead" },
+  ];
+  project.operations = [
+    { id: "op_demo_lead", interfaceId: "iface_demo_sf", name: "Lead Created", method: "EVENT", path: "/events/lead", version: "v1" },
+    { id: "op_demo_incident", interfaceId: "iface_demo_mw", name: "Create incident", method: "POST", path: "/incidents", version: "v1" },
+  ];
+  project.environments = [{ id: "env_demo", name: "Sandbox", baseUrl: "" }];
+  project.activeEnvironmentId = "env_demo";
   return project;
 }

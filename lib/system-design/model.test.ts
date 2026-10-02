@@ -7,6 +7,7 @@ import {
   exportProject,
   importProject,
   projectFileName,
+  connectionReadiness,
   SYSTEM_TEMPLATES,
   SYSTEM_DESIGN_SCHEMA_VERSION,
 } from "./model";
@@ -19,6 +20,9 @@ describe("system design model", () => {
     expect(p.schemaVersion).toBe(SYSTEM_DESIGN_SCHEMA_VERSION);
     expect(p.systems).toEqual([]);
     expect(p.connections).toEqual([]);
+    expect(p.interfaces).toEqual([]);
+    expect(p.operations).toEqual([]);
+    expect(p.environments).toHaveLength(1);
   });
 
   it("ships ten templates with icon keys", () => {
@@ -79,6 +83,60 @@ describe("system design model", () => {
     const { project, issues } = validateProject(JSON.parse(JSON.stringify(demo)));
     expect(issues).toEqual([]);
     expect(project?.systems.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("loads vintage slice-1 records by defaulting registries", () => {
+    const { project, issues } = validateProject({
+      id: "p1",
+      name: "Old",
+      schemaVersion: 1,
+      updatedAt: 1,
+      systems: [{ id: "s1", name: "A", systemType: "rest", description: "", position: { x: 0, y: 0 }, iconKey: "bolt" }],
+      connections: [{ id: "c1", sourceId: "s1", targetId: "s1", label: "", status: "draft" }],
+    });
+    expect(issues).toEqual([]);
+    expect(project?.interfaces).toEqual([]);
+    expect(project?.operations).toEqual([]);
+  });
+
+  it("derives readiness from live bindings, never stored status", () => {
+    const demo = buildDemoProject();
+    const byId = (id: string) => demo.connections.find((c) => c.id === id)!;
+    // conn_demo_1: source op bound (belongs to source) -> partial
+    expect(connectionReadiness(byId("conn_demo_1"), demo)).toBe("partial");
+    // conn_demo_2: nothing bound -> draft
+    expect(connectionReadiness(byId("conn_demo_2"), demo)).toBe("draft");
+    // both ends bound correctly -> ready
+    const ready = { ...byId("conn_demo_1"), targetOperationId: "op_demo_incident" };
+    expect(connectionReadiness(ready, demo)).toBe("ready");
+    // binding to an op on the WRONG end reads as unbound
+    const swapped = { ...byId("conn_demo_1"), sourceOperationId: "op_demo_incident", targetOperationId: undefined };
+    expect(connectionReadiness(swapped, demo)).toBe("draft");
+    // binding to a deleted operation reads as unbound
+    const gone = { ...byId("conn_demo_1"), sourceOperationId: "op_missing" };
+    expect(connectionReadiness(gone, demo)).toBe("draft");
+  });
+
+  it("rejects bindings to foreign operations on import", () => {
+    const demo = buildDemoProject();
+    const file = exportProject(demo);
+    const tampered = JSON.parse(JSON.stringify(file)) as typeof file;
+    (tampered.project.connections[0] as { targetOperationId: string }).targetOperationId = "op_demo_lead";
+    const { project, issues } = importProject(tampered);
+    expect(project).toBeNull();
+    expect(issues.some((i) => i.path.includes("targetOperationId"))).toBe(true);
+  });
+
+  it("rejects bad methods and dangling interface refs", () => {
+    const demo = buildDemoProject();
+    const file = exportProject(demo);
+    const tampered = JSON.parse(JSON.stringify(file)) as typeof file;
+    tampered.project.operations.push({
+      id: "op_bad", interfaceId: "nope", name: "X", method: "FROBNICATE", path: "/", version: "v1",
+    } as never);
+    const { issues } = importProject(tampered);
+    expect(issues.some((i) => i.path.includes("interfaceId"))).toBe(true);
+    expect(issues.some((i) => i.path.includes("method"))).toBe(true);
   });
 
   it("slugifies file names", () => {
