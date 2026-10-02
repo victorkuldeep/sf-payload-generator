@@ -340,10 +340,41 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
               {(r.isId || r.isName) && <KeyIcon />}
               {!(r.isId || r.isName) && r.refs.length > 0 && <LinkIcon />}
               {!(r.isId || r.isName) && r.refs.length === 0 && <span className="w-[11px] shrink-0" aria-hidden="true" />}
-              <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ivory-950" title={r.refs.length > 0 ? `→ ${r.refs.join(", ")}` : r.name}>
-                {r.name}
-                {r.required && <span className="text-red-600"> *</span>}
-              </span>
+              {r.refs.length > 0 && data.onLookupClick ? (
+                <button
+                  type="button"
+                  data-lookup-jump
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    data.onLookupClick?.(data.apiName, r.name, {
+                      x: rect.right + 8,
+                      y: rect.top,
+                      width: rect.width,
+                      height: rect.height,
+                    });
+                  }}
+                  title={`Fetch ${r.refs.join(" / ")} target${r.refs.length === 1 ? "" : "s"} for this record`}
+                  aria-label={`Fetch ${r.name} target record`}
+                  className="min-w-0 flex-1 cursor-pointer truncate text-left font-mono text-[11px] text-bronze-700 underline decoration-dotted underline-offset-2 hover:text-bronze-800"
+                >
+                  {r.name}
+                  {r.required && <span className="text-red-600"> *</span>}
+                </button>
+              ) : (
+                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ivory-950" title={r.refs.length > 0 ? `→ ${r.refs.join(", ")}` : r.name}>
+                  {r.name}
+                  {r.required && <span className="text-red-600"> *</span>}
+                </span>
+              )}
+              {(data.refLabels?.[r.name] ?? (r.refLabel != null && r.refLabel !== "" ? r.refLabel : null)) && (
+                <span
+                  className="min-w-0 max-w-[110px] truncate text-[10px] text-bronze-700"
+                  title={`Target: ${data.refLabels?.[r.name] ?? r.refLabel}`}
+                >
+                  → {data.refLabels?.[r.name] ?? r.refLabel}
+                </span>
+              )}
               {pickable ? (
                 <span
                   className="shrink-0 rounded-full border border-bronze-300 bg-bronze-100 px-1.5 py-px text-[9px] font-bold text-bronze-700"
@@ -362,10 +393,10 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
               key={r.name}
               type="button"
               onClick={(e) => {
-                // Icon clicks inside the row own their handlers (copy/peek);
+                // Icon clicks + lookup-label jumps own their handlers;
                 // the row itself opens picklist values.
                 const t = e.target as HTMLElement;
-                if (t.closest('[role="button"]')) return;
+                if (t.closest('[role="button"]') || t.closest('[data-lookup-jump]')) return;
                 e.stopPropagation();
                 const rect = e.currentTarget.getBoundingClientRect();
                 data.onPicklistClick?.(data.apiName, r.name, {

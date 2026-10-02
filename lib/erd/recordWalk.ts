@@ -69,6 +69,37 @@ export function displayFieldNames(fields: WalkField[]): { select: string[]; name
   return { select: [...new Set(select)], nameField };
 }
 
+/**
+ * Key-field cascade for lookup display labels: the describe nameField
+ * (covers Name, OrderNumber, CaseNumber…), then well-known key fields,
+ * else null (caller renders the raw Id). Resolves against the TARGET's
+ * describe so e.g. Order.OwnerId shows the User's Name.
+ */
+const KEY_FIELD_FALLBACKS = ["Name", "Subject", "OrderNumber", "Order_Name__c", "CaseNumber", "ContractNumber", "Title", "DeveloperName", "Label", "Email", "Username"];
+
+export function keyFieldFor(fields: WalkField[]): string | null {
+  const named = fields.find((f) => f.nameField)?.name;
+  if (named) return named;
+  for (const cand of KEY_FIELD_FALLBACKS) {
+    if (fields.some((f) => f.name === cand)) return cand;
+  }
+  return null;
+}
+
+/** Pull the single human label for one record id (one deliberate query).
+ * Returns null when the target has no text key field or the row is hidden -
+ * the caller then shows the raw Id. FLS failures return null (never throw). */
+export function buildLabelQuery(apiName: string, keyField: string, id: string): string {
+  return `SELECT Id, ${keyField} FROM ${apiName} WHERE Id = '${escapeSoqlString(id.trim())}' LIMIT 1`;
+}
+
+/** Read the label back out of a label-query row (type-checked, null-safe). */
+export function labelFromRow(row: Record<string, unknown> | undefined, keyField: string): string | null {
+  if (!row) return null;
+  const v = row[keyField];
+  return typeof v === "string" && v ? v : null;
+}
+
 export function buildRootQuery(apiName: string, select: string[], id: string): string {
   return `SELECT ${select.join(", ")} FROM ${apiName} WHERE Id = '${escapeSoqlString(id.trim())}' LIMIT 1`;
 }

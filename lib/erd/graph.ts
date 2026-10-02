@@ -19,6 +19,9 @@ export interface ErdFieldRow {
   required: boolean;
   /** Picklist options (picklist/multipicklist only, capped). */
   pickValues: ErdPickValue[];
+  /** Resolved display label of the loaded lookup target, e.g. "Acme".
+   * Key field cascade: Name, then OrderNumber-style fields, else null. */
+  refLabel?: string | null;
 }
 
 export interface ErdNodeData extends Record<string, unknown> {
@@ -54,6 +57,14 @@ export interface ErdNodeData extends Record<string, unknown> {
   onRefreshNode?: (id: string) => void;
   onPicklistClick?: (
     nodeId: string,
+    fieldName: string,
+    anchor: { x: number; y: number; width: number; height: number }
+  ) => void;
+  /** Resolved lookup display labels: field -> "label". */
+  refLabels?: Record<string, string>;
+  /** Lookup jump: click a reference field's label to fetch + view its target. */
+  onLookupClick?: (
+    sourceApi: string,
     fieldName: string,
     anchor: { x: number; y: number; width: number; height: number }
   ) => void;

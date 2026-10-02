@@ -13,6 +13,9 @@ import {
   nodeRecordState,
   selectedRecordId,
   formatWalkValue,
+  keyFieldFor,
+  buildLabelQuery,
+  labelFromRow,
   emptyLoadedState,
   type LoadedState,
   type ResolveContext,
@@ -173,5 +176,22 @@ describe("record walk engine", () => {
     expect(formatWalkValue(42)).toBe("42");
     expect(formatWalkValue({ a: 1 })).toBe('{"a":1}');
     expect(formatWalkValue("x".repeat(200))).toHaveLength(120);
+  });
+
+  it("resolves key fields via nameField then fallbacks", () => {
+    expect(keyFieldFor([{ name: "OrderNumber", type: "string", referenceTo: [], nameField: true }])).toBe("OrderNumber");
+    expect(keyFieldFor([
+      { name: "Id", type: "id", referenceTo: [] },
+      { name: "OrderNumber", type: "string", referenceTo: [] },
+    ])).toBe("OrderNumber");
+    expect(keyFieldFor([
+      { name: "Id", type: "id", referenceTo: [] },
+      { name: "Name", type: "string", referenceTo: [] },
+    ])).toBe("Name");
+    expect(keyFieldFor([{ name: "Id", type: "id", referenceTo: [] }])).toBeNull();
+    expect(buildLabelQuery("User", "Name", "005x")).toContain("SELECT Id, Name FROM User");
+    expect(labelFromRow({ Id: "005x", Name: "Ada" }, "Name")).toBe("Ada");
+    expect(labelFromRow({ Id: "005x" }, "Name")).toBeNull();
+    expect(labelFromRow(undefined, "Name")).toBeNull();
   });
 });

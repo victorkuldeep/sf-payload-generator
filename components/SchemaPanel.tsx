@@ -33,6 +33,9 @@ import {
   chunkSelect,
   buildRootQuery,
   buildChildrenQuery,
+  buildLabelQuery,
+  labelFromRow,
+  keyFieldFor,
   resolveTarget,
   nodeRecordState,
   selectedRecordId,
@@ -1227,11 +1230,22 @@ export default function SchemaPanel({
   const [recordModalOpen, setRecordModalOpen] = useState(false);
   const [recordInput, setRecordInput] = useState("");
   const [recordError, setRecordError] = useState<string | null>(null);
-  const [recordPop, setRecordPop] = useState<{ apiName: string; x: number; y: number; mode: "picker" | "record" } | null>(null);
+  const [recordPop, setRecordPop] = useState<{ apiName: string; x: number; y: number; mode: "picker" | "record" | "lookup" } | null>(null);
   const [recordPopError, setRecordPopError] = useState<string | null>(null);
   const [recordMoreBusy, setRecordMoreBusy] = useState<string | null>(null);
   /** Explicit per-node visualized record. Absent = first child row, else first single. */
   const [recordSel, setRecordSel] = useState<Record<string, string>>({});
+  /** Pending lookup-jump context for the popover's lookup mode. */
+  const [recordLookup, setRecordLookup] = useState<{
+    sourceApi: string;
+    fieldName: string;
+    targetApi: string;
+    targetId: string;
+    targetLabel: string;
+    keyField: string | null;
+  } | null>(null);
+  const recordSelRef = useRef(recordSel);
+  recordSelRef.current = recordSel;
 
   const recordCtx = useMemo((): ResolveContext => {
     const canvasApis = [...describes.keys()];
@@ -1391,6 +1405,93 @@ export default function SchemaPanel({
     return rows;
   }, [runRecordQuery, childSelectFor]);
 
+  /** Lookup jump: from one loaded row's reference field, fetch the target's
+   * key field (Name, else OrderNumber-style, else raw Id) with one deliberate
+   * query. Targets off-canvas resolve without touching the canvas; targets
+   * already aboard reuse the cached row. Never throws into the row UI -
+   * failures land as "raw Id" with a hint. */
+  const openLookupTarget = useCallback(async (
+    sourceApi: string,
+    fieldName: string,
+    anchor: { x: number; y: number; width: number; height: number }
+  ) => {
+    setRecordPopError(null);
+    const selId = selectedRecordId(sourceApi, recordStoreRef.current, recordSelRef.current[sourceApi] ?? null);
+    const singles = selId ? recordStoreRef.current.singles.get(sourceApi)?.get(selId)?.fields : undefined;
+    let targetId: string | null = null;
+    if (singles && typeof singles[fieldName] === "string" && singles[fieldName]) {
+      targetId = singles[fieldName] as string;
+    } else {
+      for (const page of recordStoreRef.current.children.values()) {
+        if (page.childApi !== sourceApi) continue;
+        const row = page.rows.find((r) => r.Id === selId);
+        const v = row?.[fieldName];
+        if (typeof v === "string" && v) {
+          targetId = v;
+          break;
+        }
+      }
+    }
+    if (!targetId) {
+      setRecordPopError(`No ${fieldName} value on the visualized ${sourceApi} record.`);
+      setRecordPop({ apiName: sourceApi, x: anchor.x, y: anchor.y, mode: "picker" });
+      return;
+    }
+    // Which object? First canvas describe claiming the field, else the edge's own refs.
+    const holderDesc = describes.get(sourceApi);
+    const declared = holderDesc?.fields.find((f) => f.name === fieldName)?.referenceTo ?? [];
+    // Prefer the target whose records (or Id prefix knowledge) match - in
+    // practice the first declared target; polymorphs (WhoId/WhatId) fall back
+    // to the first on-canvas target.
+    const candidates = declared.filter((t) => describes.has(t));
+    const targetApi = candidates[0] ?? declared[0] ?? null;
+    if (!targetApi) {
+      setRecordPopError(`${fieldName} has no described lookup target on ${sourceApi}.`);
+      setRecordPop({ apiName: sourceApi, x: anchor.x, y: anchor.y, mode: "picker" });
+      return;
+    }
+    // Target aboard? Reuse its row label without a query.
+    const aboard = recordStoreRef.current.singles.get(targetApi)?.get(targetId)?.fields;
+    const targetDesc = describes.get(targetApi);
+    const keyField = targetDesc
+      ? keyFieldFor(targetDesc.fields.map((f) => ({ name: f.name, type: f.type, referenceTo: f.referenceTo ?? [], nameField: f.nameField })))
+      : null;
+    if (aboard && keyField) {
+      const hit = labelFromRow(aboard as Record<string, unknown>, keyField);
+      if (hit) {
+        setRecordLookup({ sourceApi, fieldName, targetApi, targetId, targetLabel: hit, keyField });
+        setRecordPop({ apiName: targetApi, x: anchor.x, y: anchor.y, mode: "lookup" });
+        return;
+      }
+    }
+    if (!targetDesc || !keyField) {
+      // No text key on the target (or undescribed): show the raw Id honestly.
+      setRecordLookup({ sourceApi, fieldName, targetApi, targetId, targetLabel: targetId, keyField: null });
+      setRecordPop({ apiName: targetApi, x: anchor.x, y: anchor.y, mode: "lookup" });
+      return;
+    }
+    if (recordBusyRef.current) return;
+    setRecordBusy(targetApi);
+    recordBusyRef.current = targetApi;
+    try {
+      const rows = await runRecordQuery(buildLabelQuery(targetApi, keyField, targetId));
+      const hit = labelFromRow(rows[0], keyField);
+      setRecordLookup({
+        sourceApi, fieldName, targetApi, targetId,
+        targetLabel: hit ?? targetId, keyField: hit ? keyField : null,
+      });
+      if (!hit) setRecordPopError(`No text key on ${targetApi} - showing the raw Id.`);
+    } catch (err) {
+      // FLS/denied: raw Id + hint, never a dead click.
+      setRecordLookup({ sourceApi, fieldName, targetApi, targetId, targetLabel: targetId, keyField: null });
+      setRecordPopError(err instanceof Error ? err.message : "Lookup pull failed - showing the raw Id.");
+    } finally {
+      recordBusyRef.current = null;
+      setRecordBusy(null);
+    }
+    setRecordPop({ apiName: targetApi, x: anchor.x, y: anchor.y, mode: "lookup" });
+  }, [describes, runRecordQuery]);
+
   const openNodeRecord = useCallback(async (
     apiName: string,
     anchor: { x: number; y: number; width: number; height: number }
@@ -1412,9 +1513,10 @@ export default function SchemaPanel({
     setRecordBusy(apiName);
     recordBusyRef.current = apiName;
     try {
+      const pulled: { api: string; fields: Record<string, unknown> }[] = [];
       if (plan.kind === "single") {
         // One record: pull silently, entity box + field peeks carry it.
-        await pullSingle(apiName, plan.id);
+        pulled.push({ api: apiName, fields: await pullSingle(apiName, plan.id) });
       } else {
         const rows = await pullChildPage(plan.childApi, plan.lookupField, plan.parentApi, plan.parentId, 0, false);
         if (rows.length === 0) {
@@ -1424,13 +1526,14 @@ export default function SchemaPanel({
         // First row visualizes by default (full row, not the list subset).
         const firstId = rows[0].Id;
         if (typeof firstId === "string" && firstId) {
-          await pullSingle(apiName, firstId);
+          pulled.push({ api: apiName, fields: await pullSingle(apiName, firstId) });
         }
         // Many rows: open the picker table so one can be chosen.
         if (rows.length > 1) {
           setRecordPop({ apiName, x: anchor.x, y: anchor.y, mode: "picker" });
         }
       }
+      for (const p of pulled) void prefetchRefLabelsRef.current(p.api, p.fields);
     } catch (err) {
       setRecordPopError(err instanceof Error ? err.message : "Record pull failed.");
       setRecordPop({ apiName, x: anchor.x, y: anchor.y, mode: "picker" });
@@ -1572,17 +1675,105 @@ export default function SchemaPanel({
     }
   }, [pullSingle, pullChildPage]);
 
-  /** Pick which aboard record a node visualizes; pulls the full row when
-   * the pick only exists as a list subset (child pages carry Id + name). */
+  /** Resolved lookup display labels: `${sourceApi}::${targetId}` -> label.
+   * Cached across pulls (Id keys never change); cleared with record data. */
+  const [refLabels, setRefLabels] = useState<Record<string, string>>({});
+  const refLabelsRef = useRef(refLabels);
+  refLabelsRef.current = refLabels;
+
+  /** Prefetch every lookup label for the visualized record: one Id-only
+   * query per DISTINCT target object (not per row), labels attached to rows
+   * when they arrive. Quiet by design - failures stay as raw Ids. */
+  const prefetchRefLabels = useCallback(async (sourceApi: string, values: Record<string, unknown>) => {
+    const holderDesc = describes.get(sourceApi);
+    if (!holderDesc) return;
+    // Group target ids by resolved target object.
+    const byTarget = new Map<string, { keyField: string; ids: Set<string> }>();
+    for (const f of holderDesc.fields) {
+      if (f.type !== "reference") continue;
+      const v = values[f.name];
+      if (typeof v !== "string" || !v) continue;
+      const cacheKey = `${sourceApi}::${v}`;
+      if (refLabelsRef.current[cacheKey]) continue;
+      const targets = (f.referenceTo ?? []).filter((t) => describes.has(t));
+      const targetApi = targets[0];
+      if (!targetApi) continue;
+      const targetDesc = describes.get(targetApi);
+      if (!targetDesc) continue;
+      const keyField = keyFieldFor(targetDesc.fields.map((x) => ({ name: x.name, type: x.type, referenceTo: x.referenceTo ?? [], nameField: x.nameField })));
+      if (!keyField) continue;
+      let g = byTarget.get(targetApi);
+      if (!g) {
+        g = { keyField, ids: new Set() };
+        byTarget.set(targetApi, g);
+      }
+      g.ids.add(v);
+    }
+    if (byTarget.size === 0) return;
+    const settled = await Promise.all(
+      [...byTarget.entries()].map(async ([targetApi, g]) => {
+        // Skip ids already labeled (refLabels is state - read via updater below).
+        const fresh = [...g.ids];
+        if (fresh.length === 0) return null;
+        const ors = fresh.map((id) => `Id = '${id.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`).join(" OR ");
+        try {
+          const rows = await runRecordQuery(`SELECT Id, ${g.keyField} FROM ${targetApi} WHERE ${ors} LIMIT ${fresh.length}`);
+          const out: Record<string, string> = {};
+          for (const row of rows) {
+            const id = row.Id;
+            const hit = labelFromRow(row, g.keyField);
+            if (typeof id === "string" && hit) out[`${sourceApi}::${id}`] = hit;
+          }
+          return out;
+        } catch {
+          return null;
+        }
+      })
+    );
+    const merged: Record<string, string> = {};
+    for (const part of settled) {
+      if (part) Object.assign(merged, part);
+    }
+    if (Object.keys(merged).length > 0) {
+      setRefLabels((prev) => ({ ...prev, ...merged }));
+    }
+  }, [describes, runRecordQuery]);
+
+  /** Row ref labels for one visualized record: field -> "label". */
+  const refLabelsFor = useCallback((sourceApi: string, values: Record<string, unknown> | null): Record<string, string> => {
+    if (!values) return {};
+    const holderDesc = describes.get(sourceApi);
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(values)) {
+      if (typeof v !== "string" || !v) continue;
+      // Only label genuine reference fields - a coincidental 18-char string
+      // in a text field must never show a foreign label.
+      const isRef = holderDesc?.fields.some((f) => f.name === k && f.type === "reference");
+      if (!isRef) continue;
+      const hit = refLabelsRef.current[`${sourceApi}::${v}`];
+      if (hit) out[k] = hit;
+    }
+    return out;
+  }, [describes]);
+
+  // Late-bound ref so early callbacks (openNodeRecord/select) can prefetch
+  // without a declaration-order cycle.
+  const prefetchRefLabelsRef = useRef(prefetchRefLabels);
+  prefetchRefLabelsRef.current = prefetchRefLabels;
   const selectNodeRecord = useCallback(async (apiName: string, id: string) => {
     setRecordSel((prev) => ({ ...prev, [apiName]: id }));
     setRecordPopError(null);
-    if (recordStoreRef.current.singles.get(apiName)?.has(id)) return;
+    const aboard = recordStoreRef.current.singles.get(apiName)?.get(id)?.fields;
+    if (aboard) {
+      void prefetchRefLabelsRef.current(apiName, aboard);
+      return;
+    }
     if (recordBusyRef.current) return;
     setRecordBusy(apiName);
     recordBusyRef.current = apiName;
     try {
-      await pullSingle(apiName, id);
+      const fields = await pullSingle(apiName, id);
+      void prefetchRefLabelsRef.current(apiName, fields);
     } catch (err) {
       setRecordPopError(err instanceof Error ? err.message : "Record pull failed.");
     } finally {
@@ -1609,6 +1800,15 @@ export default function SchemaPanel({
       }
       return { singles, children };
     });
+    // Drop cached labels minted from this source + labels pointing AT it.
+    setRefLabels((prev) => {
+      const next: Record<string, string> = {};
+      for (const [k, v] of Object.entries(prev)) {
+        if (k.startsWith(`${apiName}::`)) continue;
+        next[k] = v;
+      }
+      return next;
+    });
     setRecordPop(null);
     setRecordPopError(null);
   }, []);
@@ -1618,6 +1818,8 @@ export default function SchemaPanel({
     setRecordRoot(null);
     setRecordStore(emptyLoadedState());
     setRecordSel({});
+    setRefLabels({});
+    setRecordLookup(null);
     setRecordPop(null);
     setRecordPopError(null);
     setRecordInput("");
@@ -1651,18 +1853,56 @@ export default function SchemaPanel({
       recordValues: values,
       recordId: selId,
       recordCount: knownIdsFor(recordStore, apiName).length,
+      refLabels: refLabelsFor(apiName, values),
       onRecordClick: (
         api: string,
         anchor: { x: number; y: number; width: number; height: number }
       ) => {
         void openNodeRecord(api, anchor);
       },
+      onLookupClick: (
+        sourceApi: string,
+        fieldName: string,
+        anchor: { x: number; y: number; width: number; height: number }
+      ) => {
+        void openLookupTarget(sourceApi, fieldName, anchor);
+      },
     };
-  }, [recordStore, recordSel, recordCtx, openNodeRecord]);
+  }, [recordStore, recordSel, recordCtx, openNodeRecord, openLookupTarget, refLabelsFor]);
 
   const buildRecordPop = useCallback((apiName: string, x: number, y: number): RecordPopData => {
     const label = labels.get(apiName) ?? apiName;
     const loading = recordBusy === apiName || recordBusy === "__all__";
+    const popMode: RecordPopData["mode"] = recordPop?.apiName === apiName ? recordPop.mode : "picker";
+    // Lookup mode is target-scoped, not node-scoped: show the jump context
+    // even when the target object has nothing aboard yet.
+    if (popMode === "lookup" && recordLookup) {
+      const targetLabel = labels.get(recordLookup.targetApi) ?? recordLookup.targetApi;
+      return {
+        apiName: recordLookup.targetApi,
+        nodeLabel: targetLabel,
+        single: null,
+        singleId: null,
+        sections: [],
+        loading,
+        error: recordPopError,
+        x,
+        y,
+        blockedHint: null,
+        blockedApi: null,
+        mode: "lookup",
+        candidates: [],
+        selectedId: null,
+        lookup: {
+          sourceApi: recordLookup.sourceApi,
+          sourceName: labels.get(recordLookup.sourceApi) ?? recordLookup.sourceApi,
+          fieldName: recordLookup.fieldName,
+          targetLabel: recordLookup.targetLabel,
+          targetId: recordLookup.targetId,
+          keyField: recordLookup.keyField,
+        },
+      };
+    }
     const singles = [...(recordStore.singles.get(apiName)?.values() ?? [])];
     const sections: RecordPopData["sections"] = [];
     for (const [key, page] of recordStore.children) {
@@ -1696,7 +1936,7 @@ export default function SchemaPanel({
     };
     const candidates = knownIdsFor(recordStore, apiName).map((id) => ({ id, name: nameOf(id) }));
     const selectedId = selectedRecordId(apiName, recordStore, recordSel[apiName] ?? null);
-    const mode = recordPop?.apiName === apiName ? recordPop.mode : "picker";
+    const resolvedMode = recordPop?.apiName === apiName ? recordPop.mode : "picker";
     if (singles.length === 0 && sections.length === 0 && !loading) {
       const plan = resolveTarget(apiName, recordStore, recordCtx);
       if (plan.kind === "blocked") {
@@ -1728,9 +1968,9 @@ export default function SchemaPanel({
       y,
       blockedHint: null,
       blockedApi: null,
-      mode, candidates, selectedId,
+      mode: resolvedMode, candidates, selectedId,
     };
-  }, [labels, recordStore, recordSel, recordBusy, recordPopError, recordCtx, recordPop]);
+  }, [labels, recordStore, recordSel, recordBusy, recordPopError, recordCtx, recordPop, recordLookup]);
 
   // ── Inbox lifecycle writers (Phase 2): meta merges onto the canonical
   // entity/snapshot records with history entries. Legacy todo/done flags
@@ -5211,6 +5451,15 @@ export default function SchemaPanel({
           onSave={(api, id, changes) => saveRecordEdit(api, id, changes)}
           onSelectRecord={(api, id) => void selectNodeRecord(api, id)}
           onModeChange={(mode) => setRecordPop((prev) => (prev ? { ...prev, mode } : prev))}
+          onCopyLookup={(value) => {
+            void (async () => {
+              try {
+                await navigator.clipboard.writeText(value);
+              } catch {
+                /* clipboard unavailable */
+              }
+            })();
+          }}
         />
       )}
 

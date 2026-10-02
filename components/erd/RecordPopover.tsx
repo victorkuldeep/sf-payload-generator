@@ -38,11 +38,21 @@ export interface RecordPopData {
   x: number;
   y: number;
   /** Picker = choose which aboard record the entity box visualizes.
-   * Record = full dump + edit for the selected record. */
-  mode: "picker" | "record";
+   * Record = full dump + edit for the selected record.
+   * Lookup = on-demand target of one reference field from one source row. */
+  mode: "picker" | "record" | "lookup";
   /** Every aboard id with a human name; the entity box shows selectedId. */
   candidates: { id: string; name: string }[];
   selectedId: string | null;
+  /** Lookup jump context: which source field's target this panel shows. */
+  lookup?: {
+    sourceApi: string;
+    sourceName: string;
+    fieldName: string;
+    targetLabel: string;
+    targetId: string;
+    keyField: string | null;
+  } | null;
 }
 
 const cell = (v: unknown): string => {
@@ -234,6 +244,7 @@ export function RecordPopover({
   onSave,
   onSelectRecord,
   onModeChange,
+  onCopyLookup,
 }: {
   pop: RecordPopData;
   /** Editable metadata for the single record's object (null = read-only). */
@@ -249,7 +260,9 @@ export function RecordPopover({
   onSave: (apiName: string, id: string, changes: Record<string, unknown>) => Promise<void>;
   /** Visualize an aboard record in the entity box (picker + section rows). */
   onSelectRecord: (apiName: string, id: string) => void;
-  onModeChange: (mode: "picker" | "record") => void;
+  onModeChange: (mode: "picker" | "record" | "lookup") => void;
+  /** Copy a lookup's target label + Id for the row it came from. */
+  onCopyLookup: (value: string) => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [editingSingle, setEditingSingle] = useState(false);
@@ -257,6 +270,7 @@ export function RecordPopover({
   const [draft, setDraft] = useState<Record<string, string | boolean>>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [copiedLookup, setCopiedLookup] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -275,12 +289,13 @@ export function RecordPopover({
     };
   }, [onClose]);
 
-  // Reset edit state whenever a different node opens.
+  // Reset edit state whenever a different node or panel opens.
   useEffect(() => {
     setEditingSingle(false);
     setEditingRow(null);
     setDraft({});
     setSaveError(null);
+    setCopiedLookup(false);
   }, [pop.apiName, pop.mode]);
 
   const W = 320;
@@ -451,6 +466,41 @@ export function RecordPopover({
             >
               ← {pop.candidates.length} records aboard
             </button>
+          </div>
+        )}
+        {pop.mode === "lookup" && pop.lookup && (
+          <div className="px-1 py-1">
+            <p className="font-mono text-[10px] uppercase tracking-wider text-ivory-500">
+              {pop.lookup.sourceApi} · {pop.lookup.fieldName}
+            </p>
+            <p className="mt-0.5 break-all font-mono text-[11px] font-bold leading-relaxed text-ivory-950" title={pop.lookup.targetId}>
+              {pop.lookup.targetLabel}
+            </p>
+            <p className="mt-0.5 break-all font-mono text-[10px] text-ivory-500" title={pop.lookup.targetId}>
+              {pop.lookup.targetId}
+              {pop.lookup.keyField && pop.lookup.targetLabel !== pop.lookup.targetId
+                ? ` · via ${pop.lookup.keyField}`
+                : ""}
+            </p>
+            <div className="mt-1.5 flex gap-1.5">
+              <Button
+                size="sm"
+                variant="secondary"
+                className="flex-1"
+                onClick={() => {
+                  onCopyLookup(pop.lookup!.targetLabel === pop.lookup!.targetId
+                    ? pop.lookup!.targetId
+                    : `${pop.lookup!.targetLabel} (${pop.lookup!.targetId})`);
+                  setCopiedLookup(true);
+                  window.setTimeout(() => setCopiedLookup(false), 1200);
+                }}
+              >
+                {copiedLookup ? "Copied ✓" : "Copy"}
+              </Button>
+              <Button size="sm" className="flex-1" onClick={() => onModeChange("record")}>
+                Inspect record
+              </Button>
+            </div>
           </div>
         )}
         {pop.mode === "record" && pop.single && (
