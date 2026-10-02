@@ -5,6 +5,7 @@ import Button from "../ui/Button";
 import Input from "../ui/Input";
 import { preflightRun, redactHeaders, type PreflightVerdict } from "@/lib/system-design/runner";
 import { findMissingVars, resolveEnvVars, scrubSecrets, type CredVault } from "@/lib/system-design/credentials";
+import { buildSendHeaders } from "@/lib/system-design/headers";
 import { saveSystemRun, listSystemRuns, deleteSystemRun, type SystemRunRecord } from "@/lib/system-design/runStore";
 import { newId, type SystemEnvironment, type SystemOperation, type SystemNode, type SystemInterface } from "@/lib/system-design/model";
 
@@ -38,7 +39,11 @@ export function TestRunner({
     ["GET", "POST", "PUT", "PATCH", "DELETE"].includes(operation.method) ? operation.method as "GET" | "POST" | "PUT" | "PATCH" | "DELETE" : "GET"
   );
   const [path, setPath] = useState(operation.path);
-  const [headers, setHeaders] = useState<HeaderRow[]>([{ key: "Content-Type", value: "application/json" }]);
+  const [headers, setHeaders] = useState<HeaderRow[]>(() =>
+    operation.headers?.length
+      ? operation.headers.map((h) => ({ key: h.key, value: h.value }))
+      : [{ key: "Content-Type", value: "application/json" }]
+  );
   const [body, setBody] = useState("{}");
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<null | {
@@ -91,10 +96,14 @@ export function TestRunner({
     setError(null);
     setResult(null);
     try {
-      const missing = findMissingVars(
-        [body, token, ...headers.map((h) => h.value)],
-        vault
-      );
+      // Stored op headers prefill the rows above - resolve $env at send.
+      const built = buildSendHeaders(undefined, headers, vault);
+      if (built.missing.length > 0) {
+        throw new Error(
+          `Missing session credentials: ${built.missing.map((m) => `$env.${m}`).join(", ")}. Add them under Credentials in the project bar.`
+        );
+      }
+      const missing = findMissingVars([body, token], vault);
       if (missing.length > 0) {
         throw new Error(
           `Missing session credentials: ${missing.map((m) => `$env.${m}`).join(", ")}. Add them under Credentials in the project bar.`
@@ -109,10 +118,7 @@ export function TestRunner({
           url: verdict.url,
           allowHost,
           method,
-          headers: headers.filter((h) => h.key.trim()).map((h) => ({
-            key: h.key.trim(),
-            value: resolveEnvVars(h.value, vault).text,
-          })),
+          headers: built.headers,
           body: resolvedBody,
           timeoutMs: 25000,
           authToken: resolvedToken || undefined,
@@ -291,7 +297,7 @@ export function TestRunner({
 
           {/* Headers */}
           <div>
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ivory-600">Headers</p>
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ivory-600">Headers (prefilled from the operation - edits apply to this send only)</p>
             <div className="space-y-1">
               {headers.map((h, i) => (
                 <div key={i} className="flex gap-1.5">

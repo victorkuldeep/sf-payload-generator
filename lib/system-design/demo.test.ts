@@ -14,8 +14,7 @@ describe("groq chat sample", () => {
     const edge = valid!.connections[0];
     expect(edge.sourceOperationId).toBeTruthy();
     expect(edge.targetOperationId).toBeTruthy();
-    expect(edge.mapping?.mode).toBe("template");
-    const compiled = compileMapping(
+    expect(edge.mapping?.mode).toBe("template");    const compiled = compileMapping(
       "template",
       edge.mapping!.template,
       '{ "prompt": "Say hi in five words." }',
@@ -27,5 +26,15 @@ describe("groq chat sample", () => {
       messages: [{ role: "user", content: "Say hi in five words." }],
       stream: false,
     });
+  });
+
+  it("ships vault-ref auth header and a prefilled seed", () => {
+    const project = buildGroqSampleProject();
+    const chat = project.operations.find((o) => o.id === "op_groq_chat");
+    expect(chat?.headers).toEqual([{ key: "Authorization", value: "Bearer $env.GROQ_API_KEY" }]);
+    const prompt = project.operations.find((o) => o.id === "op_groq_prompt");
+    expect(prompt?.sampleBody).toContain("order-to-cash");
+    const { issues } = validateProject(JSON.parse(JSON.stringify(project)));
+    expect(issues).toEqual([]);
   });
 });

@@ -7,6 +7,7 @@ import { preflightRun } from "@/lib/system-design/runner";
 import { compileMapping, type MappingMode } from "@/lib/system-design/mapping";
 import { saveSystemRun } from "@/lib/system-design/runStore";
 import { findMissingVars, resolveEnvVars, scrubSecrets, type CredVault } from "@/lib/system-design/credentials";
+import { buildSendHeaders } from "@/lib/system-design/headers";
 import {
   newId,
   type SystemConnection,
@@ -32,6 +33,7 @@ async function sendStep(args: {
   path: string;
   body: string;
   token: string;
+  headers: { key: string; value: string }[];
 }): Promise<StepResult> {
   const base = args.baseUrl.trim().replace(/\/+$/, "");
   const path = args.path.trim().startsWith("/") ? args.path.trim() : `/${args.path.trim()}`;
@@ -42,7 +44,7 @@ async function sendStep(args: {
       url,
       allowHost: args.allowHost,
       method: args.method,
-      headers: [{ key: "Content-Type", value: "application/json" }],
+      headers: args.headers,
       body: args.method === "GET" ? "" : args.body,
       timeoutMs: 25000,
       authToken: args.token || undefined,
@@ -180,7 +182,12 @@ export function RunEdgeDialog({
     setStep2(null);
     setRendered(null);
     try {
-      const missing = findMissingVars([body1, token], vault);
+      // Stored op headers ride along untouched - $env resolves at send.
+      const head1 = buildSendHeaders(sourceOp.headers, [], vault);
+      const head2 = buildSendHeaders(targetOp.headers, [], vault);
+      const missing = [...head1.missing, ...head2.missing].filter((m, i, a) => a.indexOf(m) === i);
+      const freeMissing = findMissingVars([body1, token], vault);
+      for (const m of freeMissing) if (!missing.includes(m)) missing.push(m);
       if (missing.length > 0) {
         throw new Error(
           `Missing session credentials: ${missing.map((m) => `$env.${m}`).join(", ")}. Add them under Credentials in the project bar.`
@@ -192,6 +199,7 @@ export function RunEdgeDialog({
       const r1 = await sendStep({
         baseUrl: base1, allowHost: hostOf(base1), method: sourceOp.method,
         path: sourceOp.path, body: resolvedBody1, token: resolvedToken,
+        headers: head1.headers,
       });
       setStep1(r1);
       if (r1.status < 200 || r1.status >= 300) {
@@ -210,6 +218,7 @@ export function RunEdgeDialog({
       const r2 = await sendStep({
         baseUrl: base2, allowHost: hostOf(base2), method: targetOp.method,
         path: targetOp.path, body: resolveEnvVars(compiled.body, vault).text, token: resolvedToken,
+        headers: head2.headers,
       });
       setStep2(r2);
       setPhase("done");

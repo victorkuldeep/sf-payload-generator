@@ -45,8 +45,7 @@ describe("system design model", () => {
     expect(issues.some((i) => i.path === "$.connections[0].targetId")).toBe(true);
   });
 
-  it("rejects duplicate system ids and bad positions", () => {
-    const p = newProject();
+  it("rejects duplicate system ids and bad positions", () => {    const p = newProject();
     const base = { name: "A", systemType: "rest" as const, description: "", iconKey: "bolt" };
     const { issues } = validateProject({
       ...p,
@@ -183,5 +182,23 @@ describe("system design model", () => {
   it("slugifies file names", () => {
     expect(projectFileName("Lead Triage Flow!")).toBe("lead-triage-flow.sobject-system.json");
     expect(projectFileName("  ")).toBe("architecture.sobject-system.json");
+  });
+
+  it("validates operation headers", () => {
+    const demo = buildDemoProject();
+    const file = exportProject(demo);
+    const tampered = JSON.parse(JSON.stringify(file)) as typeof file;
+    const op = tampered.project.operations[0] as unknown as Record<string, unknown>;
+    op.headers = [
+      { key: "Authorization", value: "Bearer $env.K" },
+      { key: "", value: "x" },
+    ];
+    const bad = importProject(tampered);
+    expect(bad.project).toBeNull();
+    expect(bad.issues.some((i) => i.path.includes("headers[1].key"))).toBe(true);
+    op.headers = [{ key: "Authorization", value: "Bearer $env.K" }];
+    const good = importProject(tampered);
+    expect(good.issues).toEqual([]);
+    expect(good.project?.operations[0].headers).toEqual([{ key: "Authorization", value: "Bearer $env.K" }]);
   });
 });

@@ -1021,8 +1021,11 @@ export function SystemDesigner() {
                 onDragStartNode={() => pushHistory(project)}
                 onConnectSystems={connectSystems}
                 onSelect={(n, e) => {
-                  setSelNodeId(n);
-                  setSelEdgeId(e);
+                  // Compare-before-set: React Flow echoes prop-applied
+                  // selection back through onSelectionChange - committing
+                  // identical values would ping-pong into an update loop.
+                  setSelNodeId((prev) => (prev === n ? prev : n));
+                  setSelEdgeId((prev) => (prev === e ? prev : e));
                 }}
                 selNodeId={selNodeId}
                 selEdgeId={selEdgeId}
@@ -1063,8 +1066,7 @@ export function SystemDesigner() {
             {selNode ? (
               <NodeInspector
                 node={selNode}
-                project={project}
-                onPatch={(patch) => mutate((p) => ({
+                project={project}                onPatch={(patch) => mutate((p) => ({
                   ...p,
                   systems: p.systems.map((s) => (s.id === selNode.id ? { ...s, ...patch } : s)),
                 }))}
@@ -1087,6 +1089,10 @@ export function SystemDesigner() {
                     connections: p.connections.filter((c) => c.sourceId !== selNode.id && c.targetId !== selNode.id),
                   }));
                   setSelNodeId(null);
+                }}
+                onSelectEdge={(edgeId) => {
+                  setSelNodeId((prev) => (prev === null ? prev : null));
+                  setSelEdgeId((prev) => (prev === edgeId ? prev : edgeId));
                 }}
               />
             ) : selEdge ? (
@@ -1136,8 +1142,10 @@ export function SystemDesigner() {
                             <button
                               type="button"
                               onClick={() => {
-                                setSelNodeId(null);
-                                setSelEdgeId(c.id);
+                                // Same guard as canvas selection: identical
+                                // commits ping-pong with React Flow's echo.
+                                setSelNodeId((prev) => (prev === null ? prev : null));
+                                setSelEdgeId((prev) => (prev === c.id ? prev : c.id));
                               }}
                               title={ready ? "Inspect and run this link" : "Inspect - bind both ends to run"}
                               className="flex w-full items-center gap-1.5 rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-canvas)] px-2 py-1.5 text-left hover:border-bronze-500 transition-colors cursor-pointer"
@@ -1361,6 +1369,7 @@ function NodeInspector({
   onConnectTo,
   onDuplicate,
   onDelete,
+  onSelectEdge,
 }: {
   node: SystemNode;
   project: SystemProject;
@@ -1370,6 +1379,7 @@ function NodeInspector({
   onConnectTo: (targetId: string) => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  onSelectEdge: (edgeId: string) => void;
 }) {
   const groups = operationsForSystem(project, node.id);
   const opCount = groups.reduce((n, g) => n + g.ops.length, 0);
@@ -1553,7 +1563,8 @@ function NodeInspector({
               />
               <ul className="mt-1.5 space-y-1">
                 {ops.map((op) => (
-                  <li key={op.id} className="flex items-center gap-1">
+                  <li key={op.id} className="rounded-md border border-transparent">
+                    <div className="flex items-center gap-1">
                     <select
                       value={op.method}
                       onChange={(e) => onMutateProject((p) => ({
@@ -1612,6 +1623,14 @@ function NodeInspector({
                     >
                       Test
                     </button>
+                    </div>
+                    <OperationHttpConfig
+                      op={op}
+                      nodeId={node.id}
+                      project={project}
+                      onMutateProject={onMutateProject}
+                      onSelectEdge={onSelectEdge}
+                    />
                   </li>
                 ))}
               </ul>
@@ -1632,6 +1651,149 @@ function NodeInspector({
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function OperationHttpConfig({
+  op,
+  nodeId,
+  project,
+  onMutateProject,
+  onSelectEdge,
+}: {
+  op: SystemOperation;
+  nodeId: string;
+  project: SystemProject;
+  onMutateProject: (fn: (p: SystemProject) => SystemProject) => void;
+  onSelectEdge: (edgeId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const headerCount = (op.headers ?? []).length;
+  const isEvent = op.method === "EVENT";
+  const incoming = project.connections.find(
+    (c) => c.targetId === nodeId && (c.targetOperationId === op.id || !c.targetOperationId)
+  );
+
+  const patchOp = (patch: Partial<SystemOperation>) =>
+    onMutateProject((p) => ({
+      ...p,
+      operations: p.operations.map((o) => (o.id === op.id ? { ...o, ...patch } : o)),
+    }));
+
+  const setHeader = (i: number, patch: Partial<{ key: string; value: string }>) =>
+    patchOp({ headers: (op.headers ?? []).map((h, j) => (j === i ? { ...h, ...patch } : h)) });
+
+  return (
+    <div className="mt-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        title={isEvent ? "Seed payload for chain runs starting here" : "Stored headers and sample body - sent by every runner"}
+        className="flex items-center gap-1 text-[10px] font-bold text-bronze-700 hover:text-bronze-800 cursor-pointer"
+      >
+        <span aria-hidden="true">{open ? "▾" : "▸"}</span>
+        {isEvent ? "Seed payload" : "Headers & body"}
+        {headerCount > 0 && (
+          <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-bronze-500 px-1 text-[9px] font-bold text-white">
+            {headerCount}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="mt-1 space-y-1.5 rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-surface)] p-2">
+          {!isEvent && (
+            <div>
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+                Headers - stored on the operation, sent by every runner
+              </p>
+              <div className="space-y-1">
+                {(op.headers ?? []).map((h, i) => (
+                  <div key={i} className="flex gap-1">
+                    <input
+                      value={h.key}
+                      onChange={(e) => setHeader(i, { key: e.target.value })}
+                      placeholder="Header"
+                      spellCheck={false}
+                      aria-label={`Stored header ${i + 1} name`}
+                      className="w-28 rounded-md border border-[var(--color-line)] bg-white px-1.5 py-1 font-mono text-[10px] text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+                    />
+                    <input
+                      value={h.value}
+                      onChange={(e) => setHeader(i, { value: e.target.value })}
+                      placeholder="Value or $env.NAME"
+                      spellCheck={false}
+                      aria-label={`Stored header ${i + 1} value`}
+                      className="min-w-0 flex-1 rounded-md border border-[var(--color-line)] bg-white px-1.5 py-1 font-mono text-[10px] text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => patchOp({ headers: (op.headers ?? []).filter((_, j) => j !== i) })}
+                      aria-label="Remove stored header"
+                      className="rounded p-1 text-ivory-400 hover:text-red-700 transition-colors cursor-pointer"
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                        <path d="M6 6l12 12M18 6 6 18" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+                {(op.headers ?? []).length < 20 && (
+                  <button
+                    type="button"
+                    onClick={() => patchOp({ headers: [...(op.headers ?? []), { key: "", value: "" }] })}
+                    className="text-[11px] font-semibold text-bronze-600 hover:text-bronze-700 cursor-pointer"
+                  >
+                    + Header
+                  </button>
+                )}
+              </div>
+              <p className="mt-1 text-[10px] text-ivory-500">
+                $env.NAME resolves at send time. Values export with the project - never paste secrets, use the vault.
+              </p>
+            </div>
+          )}
+          {op.method !== "GET" && (
+            <div>
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+                {isEvent ? "Seed payload - prefills chain runs starting here" : "Sample body - prefills test and edge runs"}
+              </p>
+              <textarea
+                value={op.sampleBody ?? ""}
+                onChange={(e) => patchOp({ sampleBody: e.target.value })}
+                spellCheck={false}
+                rows={3}
+                aria-label={isEvent ? "Seed payload" : "Sample body"}
+                placeholder={isEvent ? '{ "prompt": "Ask anything…" }' : '{ "key": "value" }'}
+                className="w-full resize-y rounded-md border border-[var(--color-line)] bg-white p-1.5 font-mono text-[10px] leading-relaxed text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+              />
+            </div>
+          )}
+          {!isEvent && (
+            <div className="rounded-md bg-[var(--color-canvas)] px-2 py-1.5">
+              {incoming ? (
+                <button
+                  type="button"
+                  onClick={() => onSelectEdge(incoming.id)}
+                  title="Open the link that feeds this operation - its mapping builds this step's body from previous outputs"
+                  className="text-left text-[11px] font-semibold text-bronze-700 hover:text-bronze-800 cursor-pointer"
+                >
+                  Body from previous step → edit incoming mapping
+                  <span className="block font-mono font-normal text-ivory-500">
+                    {incoming.label || "unlabeled link"} · {incoming.mapping ? incoming.mapping.mode : "no mapping yet (passthrough)"}
+                  </span>
+                </button>
+              ) : (
+                <p className="text-[10px] text-ivory-500">
+                  No incoming link feeds this operation yet - link another system to it and the edge mapping will
+                  build this step&apos;s body from previous outputs ({"{{response}}, {{seed}}, {{steps.*}}"}).
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

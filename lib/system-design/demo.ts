@@ -61,8 +61,18 @@ export function buildGroqSampleProject(): SystemProject {
     { id: "iface_groq_api", systemId: groq.id, name: "Chat API", protocol: "REST", basePath: "/openai/v1" },
   ];
   project.operations = [
-    { id: "op_groq_prompt", interfaceId: "iface_groq_ui", name: "Prompt submitted", method: "EVENT", path: "/prompt/submitted", version: "v1" },
-    { id: "op_groq_chat", interfaceId: "iface_groq_api", name: "Chat completions", method: "POST", path: "/openai/v1/chat/completions", version: "v1" },
+    {
+      id: "op_groq_prompt", interfaceId: "iface_groq_ui", name: "Prompt submitted",
+      method: "EVENT", path: "/prompt/submitted", version: "v1",
+      sampleBody: '{ "prompt": "Explain Revenue Cloud order-to-cash architecture in 5 bullet points." }',
+    },
+    {
+      id: "op_groq_chat", interfaceId: "iface_groq_api", name: "Chat completions",
+      method: "POST", path: "/openai/v1/chat/completions", version: "v1",
+      // A vault REFERENCE, not a secret - safe to store and export. Add the
+      // real key once under Credentials and every runner resolves it.
+      headers: [{ key: "Authorization", value: "Bearer $env.GROQ_API_KEY" }],
+    },
   ];
   project.connections = [
     {
@@ -88,14 +98,12 @@ export function buildGroqSampleProject(): SystemProject {
     "",
     "1. Project bar → Credentials → add `GROQ_API_KEY` = your key (tab session only).",
     "2. Select the edge → Run chain from here.",
-    "3. Token field: `$env.GROQ_API_KEY`. Seed payload:",
+    "3. Seed is prefilled from the User Input operation - just run.",
     "",
-    "```json",
-    '{ "prompt": "Explain Revenue Cloud order-to-cash architecture in 5 bullet points." }',
-    "```",
-    "",
-    "The edge template grabs `{{seed.prompt}}` and builds the GROQ body - the",
-    "same grab-and-map shape scales to Salesforce-vs-ZSP comparisons.",
+    "Auth rides on the Chat completions operation as a stored",
+    "`Authorization: Bearer $env.GROQ_API_KEY` header (a reference, not a",
+    "secret). The edge template grabs `{{seed.prompt}}` and builds the GROQ",
+    "body - the same grab-and-map shape scales to Salesforce-vs-ZSP comparisons.",
   ].join("\n");
   return project;
 }

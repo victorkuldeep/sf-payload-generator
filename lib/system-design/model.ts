@@ -89,6 +89,16 @@ export interface SystemOperation {
   version: string;
   /** Sample payload prefill for test runs and edge runs (optional). */
   sampleBody?: string;
+  /** Stored request headers (optional, max 20). Values may carry $env.NAME
+   * refs resolved at send time - never paste literal secrets here, they
+   * export with the project. Sent by every runner alongside Content-Type. */
+  headers?: OperationHeader[];
+}
+
+/** Stored header row on an operation. */
+export interface OperationHeader {
+  key: string;
+  value: string;
 }
 
 /** Named deployment target. Holds base URLs only - never secrets. */
@@ -299,6 +309,26 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
     if (o.sampleBody !== undefined && typeof o.sampleBody !== "string") {
       issues.push({ path: `${at}.sampleBody`, message: "Sample body must be a string." });
     }
+    if (o.headers !== undefined) {
+      if (!Array.isArray(o.headers) || o.headers.length > 20) {
+        issues.push({ path: `${at}.headers`, message: "Headers must be a list of at most 20 rows." });
+      } else {
+        for (let h = 0; h < o.headers.length; h++) {
+          const row = o.headers[h] as Record<string, unknown>;
+          const ht = `${at}.headers[${h}]`;
+          if (!row || typeof row !== "object") {
+            issues.push({ path: ht, message: "Header row must be an object." });
+            continue;
+          }
+          if (typeof row.key !== "string" || !row.key.trim() || row.key.length > 100) {
+            issues.push({ path: `${ht}.key`, message: "Header name must be 1-100 characters." });
+          }
+          if (typeof row.value !== "string" || row.value.length > 5000) {
+            issues.push({ path: `${ht}.value`, message: "Header value must be a string under 5 KB." });
+          }
+        }
+      }
+    }
   }
   for (let i = 0; i < environments.length; i++) {
     const e = environments[i];
@@ -401,7 +431,8 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
 
 /** Export envelope: manifest + project. Notes/TODOs travel with the project
  * (user-authored design text). Secrets must never reach here - environments
- * carry base URLs only, tokens are never stored anywhere in this module. */
+ * carry base URLs only, tokens are never stored anywhere in this module.
+ * Operation headers DO export: keep values as $env.NAME refs, never literals. */
 export function exportProject(project: SystemProject): { kind: string; version: number; exportedAt: number; project: SystemProject } {
   return {
     kind: "sobject-studio-system-design",

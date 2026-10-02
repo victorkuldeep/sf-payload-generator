@@ -7,6 +7,7 @@ import { preflightRun } from "@/lib/system-design/runner";
 import { compileMapping } from "@/lib/system-design/mapping";
 import { resolveChain, CHAIN_MAX_HOPS } from "@/lib/system-design/chain";
 import { saveSystemRun } from "@/lib/system-design/runStore";
+import { buildSendHeaders } from "@/lib/system-design/headers";
 import { findMissingVars, resolveEnvVars, type CredVault } from "@/lib/system-design/credentials";
 import {
   newId,
@@ -44,6 +45,7 @@ async function callApi(args: {
   path: string;
   body: string;
   token: string;
+  headers: { key: string; value: string }[];
 }): Promise<{ status: number; statusText: string; durationMs: number; endpoint: string; bodyPreview: string; truncated: boolean }> {
   const base = args.baseUrl.trim().replace(/\/+$/, "");
   const path = args.path.trim().startsWith("/") ? args.path.trim() : `/${args.path.trim()}`;
@@ -54,7 +56,7 @@ async function callApi(args: {
       url,
       allowHost: args.allowHost,
       method: args.method,
-      headers: [{ key: "Content-Type", value: "application/json" }],
+      headers: args.headers,
       body: args.method === "GET" ? "" : args.body,
       timeoutMs: 25000,
       authToken: args.token || undefined,
@@ -134,7 +136,13 @@ export function ChainRunDialog({
     return out;
   });
   const [token, setToken] = useState("");
-  const [seedBody, setSeedBody] = useState("{}");
+  // Seed defaults to the start operation's stored sample body (the User
+  // Input pattern) - the user edits per run, never configures twice.
+  const [seedBody, setSeedBody] = useState(() =>
+    startEdge
+      ? (project.operations.find((o) => o.id === startEdge.sourceOperationId)?.sampleBody ?? "{}")
+      : "{}"
+  );
   const [running, setRunning] = useState(false);
   const [trace, setTrace] = useState<HopTrace[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -184,8 +192,9 @@ export function ChainRunDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lanes, bases, seedCallable]);
 
-  // Session-credential refs ($env.NAME) across seed, token and stored
-  // edge templates - missing entries block the run before anything fires.
+  // Session-credential refs ($env.NAME) across seed, token, stored op
+  // headers and stored edge templates - missing entries block the run
+  // before anything fires.
   const credMissing: string[] = useMemo(() => {
     const texts = [seedBody, token];
     for (const lane of lanes) {
@@ -193,9 +202,20 @@ export function ChainRunDialog({
         if (e.mapping?.template) texts.push(e.mapping.template);
       }
     }
+    const checkedOps = new Set<string>();
+    const collectOp = (opId: string | undefined) => {
+      if (!opId || checkedOps.has(opId)) return;
+      checkedOps.add(opId);
+      const op = project.operations.find((o) => o.id === opId);
+      for (const h of op?.headers ?? []) texts.push(h.value);
+    };
+    collectOp(startEdge?.sourceOperationId);
+    for (const lane of lanes) {
+      for (const e of lane.edges) collectOp(e.targetOperationId);
+    }
     return findMissingVars(texts, vault);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lanes, seedBody, token, vault]);
+  }, [lanes, seedBody, token, vault, startEdge, project.operations]);
 
   const run = async () => {
     if (running || lanes.length === 0) return;
@@ -216,14 +236,16 @@ export function ChainRunDialog({
       onVisUpdate(edgeId, !ok ? "failed" : "ok");
     };
     try {
-      const missingNow = findMissingVars([seedBody, token], vault);
-      if (missingNow.length > 0) {
+      if (credMissing.length > 0) {
         throw new Error(
-          `Missing session credentials: ${missingNow.map((m) => `$env.${m}`).join(", ")}. Add them under Credentials in the project bar.`
+          `Missing session credentials: ${credMissing.map((m) => `$env.${m}`).join(", ")}. Add them under Credentials in the project bar.`
         );
       }
       const resolvedSeed = resolveEnvVars(seedBody, vault).text;
       const resolvedToken = resolveEnvVars(token, vault).text;
+      // Stored op headers ride along untouched - $env resolves at send.
+      const headersFor = (opId: string | undefined) =>
+        buildSendHeaders(project.operations.find((o) => o.id === opId)?.headers, [], vault).headers;
       // Every hop output stays addressable as {{steps.<systemId>}}; the seed
       // doubles as the source output when the first op is an event.
       const outputs: Record<string, string> = {};
@@ -256,6 +278,7 @@ export function ChainRunDialog({
                   allowHost: hostOf(bases[startEdge!.sourceId] ?? ""),
                   method: firstSourceOp.method, path: firstSourceOp.path,
                   body: resolvedSeed, token: resolvedToken,
+                  headers: headersFor(firstSourceOp.id),
                 });
                 inbound = r.bodyPreview;
                 outputs[startEdge!.sourceId] = r.bodyPreview;
@@ -316,6 +339,7 @@ export function ChainRunDialog({
               method: top.method, path: top.path,
               body: resolveEnvVars(compiled.body, vault).text,
               token: resolvedToken,
+              headers: headersFor(top.id),
             });
             const ok = r.status >= 200 && r.status < 300;
             push({
