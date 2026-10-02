@@ -94,6 +94,50 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
   }, [peek]);
 
   const liveValues = data.recordValues ?? null;
+  const rowIcons = (r: { name: string }) => (
+    <>
+      <span
+        role="button"
+        tabIndex={0}
+        title={`Copy ${r.name}`}
+        aria-label={`Copy API name ${r.name}`}
+        onClick={(e) => copyField(e, r.name)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") copyField(e, r.name);
+        }}
+        className="shrink-0 rounded p-0.5 text-ivory-400 hover:text-bronze-600 hover:bg-ivory-200 transition-colors cursor-pointer"
+      >
+        {copiedField === r.name ? <CheckIcon /> : <CopyIcon />}
+      </span>
+      {liveValues && (
+        <span
+          role="button"
+          tabIndex={0}
+          title={r.name in liveValues ? `Show ${r.name} value for this record` : `${r.name} is not in the loaded row`}
+          aria-label={`Show ${r.name} value`}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setPeek({ field: r.name, x: rect.right + 8, y: rect.top });
+            setCopiedValue(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.stopPropagation();
+              e.preventDefault();
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              setPeek({ field: r.name, x: rect.right + 8, y: rect.top });
+              setCopiedValue(false);
+            }
+          }}
+          className="shrink-0 rounded p-0.5 text-ivory-400 hover:text-bronze-600 hover:bg-ivory-200 transition-colors cursor-pointer"
+        >
+          <PeekIcon />
+        </span>
+      )}
+    </>
+  );
 
   const q = query.trim().toLowerCase();
   const searched = q
@@ -300,52 +344,16 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
                 {r.required && <span className="text-red-600"> *</span>}
               </span>
               {pickable ? (
-                <span className="shrink-0 rounded-full border border-bronze-300 bg-bronze-100 px-1.5 py-px text-[9px] font-bold text-bronze-700" title={`${r.pickValues.length} picklist values - click to view`}>
+                <span
+                  className="shrink-0 rounded-full border border-bronze-300 bg-bronze-100 px-1.5 py-px text-[9px] font-bold text-bronze-700"
+                  title={`${r.pickValues.length} picklist values - click the row to view`}
+                >
                   {r.pickValues.length}
                 </span>
               ) : (
                 <span className="shrink-0 text-[10px] text-ivory-500" title={r.type}>{shortType}</span>
               )}
-              <span
-                role="button"
-                tabIndex={0}
-                title={`Copy ${r.name}`}
-                aria-label={`Copy API name ${r.name}`}
-                onClick={(e) => copyField(e, r.name)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") copyField(e, r.name);
-                }}
-                className="shrink-0 rounded p-0.5 text-ivory-400 hover:text-bronze-600 hover:bg-ivory-200 transition-colors cursor-pointer"
-              >
-                {copiedField === r.name ? <CheckIcon /> : <CopyIcon />}
-              </span>
-              {liveValues && (
-                <span
-                  role="button"
-                  tabIndex={0}
-                  title={r.name in liveValues ? `Show ${r.name} value for this record` : `${r.name} is not in the loaded row`}
-                  aria-label={`Show ${r.name} value`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    setPeek({ field: r.name, x: rect.right + 8, y: rect.top });
-                    setCopiedValue(false);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.stopPropagation();
-                      e.preventDefault();
-                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                      setPeek({ field: r.name, x: rect.right + 8, y: rect.top });
-                      setCopiedValue(false);
-                    }
-                  }}
-                  className="shrink-0 rounded p-0.5 text-ivory-400 hover:text-bronze-600 hover:bg-ivory-200 transition-colors cursor-pointer"
-                >
-                  <PeekIcon />
-                </span>
-              )}
+              {rowIcons(r)}
             </>
           );
           return pickable ? (
@@ -353,6 +361,10 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
               key={r.name}
               type="button"
               onClick={(e) => {
+                // Icon clicks inside the row own their handlers (copy/peek);
+                // the row itself opens picklist values.
+                const t = e.target as HTMLElement;
+                if (t.closest('[role="button"]')) return;
                 e.stopPropagation();
                 const rect = e.currentTarget.getBoundingClientRect();
                 data.onPicklistClick?.(data.apiName, r.name, {
