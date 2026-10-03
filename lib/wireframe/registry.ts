@@ -142,6 +142,15 @@ export function removeSubtree(components: WireComponent[], id: string): WireComp
   return components.filter((c) => !doomed.has(c.id));
 }
 
+/** Shallow-merge a patch onto one component. */
+export function patchComponent(
+  components: WireComponent[],
+  id: string,
+  patch: Partial<WireComponent>,
+): WireComponent[] {
+  return components.map((c) => (c.id === id ? { ...c, ...patch, id: c.id, kind: c.kind } : c));
+}
+
 /** Move within siblings: -1 up, +1 down. No-op at the edges. */
 export function reorderSibling(components: WireComponent[], id: string, dir: -1 | 1): WireComponent[] {
   const idx = components.findIndex((c) => c.id === id);

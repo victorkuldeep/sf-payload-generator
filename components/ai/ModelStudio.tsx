@@ -182,7 +182,7 @@ export function ModelStudio({
                 className="min-w-0 flex-1 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2 py-1.5 font-mono text-[11px] text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
               />
               <Button size="sm" variant="secondary" onClick={() => void test()} disabled={modelsState === "loading"}>
-                {modelsState === "loading" ? "Testing…" : "Test & list"}
+                {modelsState === "loading" ? "Testing…" : "Test & List"}
               </Button>
             </div>
             {modelsError && (
@@ -217,10 +217,13 @@ export function ModelStudio({
                         onClick={() => setSelModel(m.id)}
                         aria-pressed={selected}
                         title={m.id}
-                        className={`w-full truncate rounded-lg border px-2 py-1.5 text-left transition-colors cursor-pointer ${
+                        className={`relative w-full truncate overflow-hidden rounded-lg border px-2 py-1.5 text-left transition-colors cursor-pointer ${
                           selected ? "border-[#9A7653] bg-[#FBF6EC]" : "border-transparent hover:border-[#E3D9C6] hover:bg-[#FBF8F1]"
                         }`}
                       >
+                        {selected && (
+                          <span aria-hidden="true" className="absolute right-0 top-0 h-5 w-5 bg-[#32815B] shadow-sm" style={{ clipPath: "polygon(100% 0, 0 0, 100% 100%)" }} />
+                        )}
                         <span className="block truncate font-mono text-[11px] font-semibold text-ivory-950">{m.label}</span>
                         {meta && <span className="block truncate font-mono text-[10px] text-ivory-500">{meta}</span>}
                       </button>

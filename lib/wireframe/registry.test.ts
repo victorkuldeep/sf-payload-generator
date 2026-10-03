@@ -5,6 +5,7 @@ import {
   defFor,
   newComponent,
   paletteByCategory,
+  patchComponent,
   removeSubtree,
   reorderSibling,
 } from "./registry";
@@ -37,6 +38,15 @@ describe("component registry", () => {
     const all = [root, child, grand, other];
     expect(childrenOf(all, root.id).map((c) => c.id)).toEqual(["child"]);
     expect(removeSubtree(all, root.id).map((c) => c.id)).toEqual(["other"]);
+  });
+
+  it("patches one component without touching identity", () => {
+    const a = { ...newComponent("input", "scr_1"), id: "a" };
+    const out = patchComponent([a], "a", { label: "Email", bindingState: "existing", id: "hax", kind: "text" });
+    expect(out[0].label).toBe("Email");
+    expect(out[0].id).toBe("a");
+    expect(out[0].kind).toBe("input");
+    expect(patchComponent([a], "missing", { label: "x" })[0].label).toBe(a.label);
   });
 
   it("reorders within siblings only", () => {

@@ -4,10 +4,11 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import Button from "../ui/Button";
 import { DEFAULT_WHEEL_COEFFICIENT, scaleForTouchRatio, scaleForWheelDelta } from "@/lib/canvas/pinchZoom";
 import { newScreen, type ComponentKind, type Experience } from "@/lib/wireframe/model";
-import { childrenOf, newComponent, paletteByCategory, removeSubtree } from "@/lib/wireframe/registry";
+import { childrenOf, newComponent, paletteByCategory, patchComponent, removeSubtree, reorderSibling } from "@/lib/wireframe/registry";
 import { saveExperience } from "@/lib/wireframe/store";
 import { loadViewport, panBy, storeViewport, zoomAt, type Viewport } from "@/lib/wireframe/viewport";
 import { ComponentView } from "./ComponentView";
+import { Inspector } from "./Inspector";
 
 /**
  * Wireframe canvas shell (EPIC 02): screens strip, infinite pan/zoom
@@ -175,6 +176,22 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selId, selComp, exp]);
+
+  const patchComponentById = useCallback(
+    (id: string, patch: Partial<(typeof exp.components)[number]>) => {
+      persist({ ...exp, components: patchComponent(exp.components, id, patch) });
+    },
+    [exp, persist],
+  );
+
+  const moveComponent = useCallback(
+    (id: string, dir: -1 | 1) => {
+      persist({ ...exp, components: reorderSibling(exp.components, id, dir) });
+    },
+    [exp, persist],
+  );
+
+  const inspected = exp.components.find((c) => c.id === selComp) ?? null;
 
   const addComponent = (kind: ComponentKind, screenId: string | null) => {
     const target = screenId ?? exp.screens[0]?.id;
@@ -392,6 +409,16 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
           <button type="button" onClick={() => setViewPersist({ x: 40, y: 40, k: 1 })} aria-label="Reset view" title="Reset view" className="rounded px-1.5 py-0.5 font-mono text-[10px] text-[#777168] cursor-pointer hover:bg-[#F5F1E8]">1:1</button>
         </div>
       </div>
+
+      {inspected && (
+        <Inspector
+          comp={inspected}
+          onPatch={(patch) => patchComponentById(inspected.id, patch)}
+          onMove={(dir) => moveComponent(inspected.id, dir)}
+          onDelete={() => deleteComponent(inspected.id)}
+          onClose={() => setSelComp(null)}
+        />
+      )}
     </div>
   );
 }
