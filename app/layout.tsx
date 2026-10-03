@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { AiDock } from "@/components/ai/AiDock";
 // Self-hosted fonts (bundled via @fontsource, zero external requests):
 // no Google Fonts CDN, no build-time Google API fetch — required for
 // regions where fonts.googleapis.com / fonts.gstatic.com are not approved.
@@ -45,6 +46,7 @@ export default function RootLayout({
           Skip to main content
         </a>
         {children}
+        <AiDock />
       </body>
     </html>
   );
