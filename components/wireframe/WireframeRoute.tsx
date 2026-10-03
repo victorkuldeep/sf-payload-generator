@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Button from "../ui/Button";
-import { canTransition, newExperience, type Experience, type SnapshotStatus } from "@/lib/wireframe/model";
+import { canTransition, newExperience, renameExperience, type Experience, type SnapshotStatus } from "@/lib/wireframe/model";
 import { deleteExperience, listExperiences, saveExperience } from "@/lib/wireframe/store";
 import { WireCanvas } from "./WireCanvas";
 
@@ -28,6 +28,8 @@ export function WireframeRoute() {
   const [name, setName] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
 
   const refresh = useCallback(async () => {
     setItems(await listExperiences().catch(() => []));
@@ -57,6 +59,15 @@ export function WireframeRoute() {
   const transition = async (exp: Experience, to: SnapshotStatus) => {
     if (!canTransition(exp.status, to)) return;
     if (await saveExperience({ ...exp, status: to }).catch(() => false)) {
+      await refresh();
+    }
+  };
+
+  const commitRename = async (exp: Experience) => {
+    const next = renameExperience(exp, renameDraft);
+    setRenaming(false);
+    if (!next) return;
+    if (await saveExperience(next).catch(() => false)) {
       await refresh();
     }
   };
@@ -105,7 +116,49 @@ export function WireframeRoute() {
             <Button size="sm" variant="ghost" onClick={() => setActiveId(null)} title="Back to the library">
               ← Library
             </Button>
-            <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold text-[#27241F]">{active.name}</h2>
+            {renaming ? (
+              <input
+                value={renameDraft}
+                onChange={(e) => setRenameDraft(e.target.value)}
+                onBlur={() => void commitRename(active)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void commitRename(active);
+                  if (e.key === "Escape") setRenaming(false);
+                }}
+                autoFocus
+                maxLength={160}
+                spellCheck={false}
+                aria-label="Experience name"
+                className="min-w-0 flex-1 rounded-lg border border-[#C9A86A] bg-white px-2 py-1 text-[15px] font-semibold text-[#27241F] focus:outline-none"
+              />
+            ) : (
+              <h2
+                className="min-w-0 flex-1 cursor-text truncate text-[15px] font-semibold text-[#27241F]"
+                title="Double-click to rename"
+                onDoubleClick={() => {
+                  setRenameDraft(active.name);
+                  setRenaming(true);
+                }}
+              >
+                {active.name}
+              </h2>
+            )}
+            {!renaming && (
+              <button
+                type="button"
+                onClick={() => {
+                  setRenameDraft(active.name);
+                  setRenaming(true);
+                }}
+                title="Rename experience"
+                aria-label="Rename experience"
+                className="shrink-0 rounded p-1 text-[#A39B8E] transition-colors cursor-pointer hover:bg-[#F5F1E8] hover:text-[#27241F]"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                </svg>
+              </button>
+            )}
             <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${STATUS_STYLE[active.status]}`}>
               {STATUS_LABEL[active.status]} · v{active.version}
             </span>

@@ -5,6 +5,7 @@ import {
   ExperienceSchema,
   newExperience,
   newScreen,
+  renameExperience,
   rollupProposedFields,
   type WireComponent,
 } from "./model";
@@ -33,6 +34,15 @@ describe("experience model", () => {
     expect(ExperienceSchema.safeParse(exp).success).toBe(false);
     const bad = { ...newExperience("x"), components: [{ id: "c", kind: "teleporter", label: "", props: {} }] };
     expect(ExperienceSchema.safeParse(bad).success).toBe(false);
+  });
+
+  it("renames only on real change", () => {
+    const exp = newExperience("Portal");
+    expect(renameExperience(exp, "   ")).toBeNull();
+    expect(renameExperience(exp, "Portal")).toBeNull();
+    const next = renameExperience(exp, "  Customer Hub  ");
+    expect(next?.name).toBe("Customer Hub");
+    expect(next?.id).toBe(exp.id);
   });
 
   it("gates approval through review", () => {

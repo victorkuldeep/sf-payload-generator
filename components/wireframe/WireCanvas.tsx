@@ -1,34 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Button from "../ui/Button";
 import { DEFAULT_WHEEL_COEFFICIENT, scaleForTouchRatio, scaleForWheelDelta } from "@/lib/canvas/pinchZoom";
-import { newScreen, type BindingState, type Experience, type WireComponent } from "@/lib/wireframe/model";
+import { newScreen, type ComponentKind, type Experience } from "@/lib/wireframe/model";
+import { childrenOf, newComponent, paletteByCategory, removeSubtree } from "@/lib/wireframe/registry";
 import { saveExperience } from "@/lib/wireframe/store";
 import { loadViewport, panBy, storeViewport, zoomAt, type Viewport } from "@/lib/wireframe/viewport";
-
-const DOT: Record<BindingState, string> = {
-  existing: "bg-[#32815B]",
-  proposed: "bg-[#C9A86A]",
-  external: "bg-[#5B7FA6]",
-};
-
-function ScreenBody({ components }: { components: WireComponent[] }) {
-  if (components.length === 0) {
-    return <p className="rounded-lg border border-dashed border-[#E3D9C6] px-2 py-3 text-center text-[11px] text-[#A39B8E]">Empty screen - components land in EPIC 03</p>;
-  }
-  return (
-    <ul className="space-y-1">
-      {components.map((c) => (
-        <li key={c.id} className="flex items-center gap-1.5 rounded-md border border-[#EFE9DC] bg-[#FBF8F1] px-2 py-1.5">
-          {c.bindingState && <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${DOT[c.bindingState]}`} title={c.bindingState} />}
-          <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-[#27241F]">{c.label || c.kind}</span>
-          <span className="shrink-0 font-mono text-[9px] uppercase text-[#A39B8E]">{c.kind}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
+import { ComponentView } from "./ComponentView";
 
 /**
  * Wireframe canvas shell (EPIC 02): screens strip, infinite pan/zoom
@@ -40,6 +19,8 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
   const [exp, setExp] = useState(experience);
   const [view, setView] = useState<Viewport>({ x: 40, y: 40, k: 1 });
   const [selId, setSelId] = useState<string | null>(null);
+  const [selComp, setSelComp] = useState<string | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const areaRef = useRef<HTMLDivElement | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -51,6 +32,7 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
   useEffect(() => {
     setExp(experience);
     setSelId(null);
+    setSelComp(null);
     setView(loadViewport(experience.id) ?? { x: 40, y: 40, k: 1 });
   }, [experience.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -155,21 +137,36 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
     if (!g.moved && !g.dragScreen) {
       const scr = (e.target as HTMLElement).closest("[data-screen-id]");
       setSelId(scr?.getAttribute("data-screen-id") ?? null);
+      if (!scr) setSelComp(null);
     } else if (!g.moved && g.dragScreen) {
       setSelId(g.dragScreen);
     }
-    if (!g.moved && !(e.target as HTMLElement).closest("[data-screen-id]") && g.pinch.size === 0) setSelId(null);
+    if (!g.moved && !(e.target as HTMLElement).closest("[data-screen-id]") && g.pinch.size === 0) {
+      setSelId(null);
+      setSelComp(null);
+    }
     g.dragScreen = null;
     g.moved = false;
   };
 
-  // Delete selected screen (not while typing).
+  const deleteComponent = useCallback(
+    (id: string) => {
+      persist({ ...exp, components: removeSubtree(exp.components, id) });
+      if (selComp === id) setSelComp(null);
+    },
+    [exp, persist, selComp],
+  );
+
+  // Delete selected component first, else the selected screen (not while typing).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Delete" && e.key !== "Backspace") return;
       const tag = (document.activeElement?.tagName ?? "").toLowerCase();
       if (tag === "input" || tag === "textarea") return;
-      if (selId) {
+      if (selComp) {
+        e.preventDefault();
+        deleteComponent(selComp);
+      } else if (selId) {
         e.preventDefault();
         void removeScreen(selId);
       }
@@ -177,7 +174,16 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selId, exp]);
+  }, [selId, selComp, exp]);
+
+  const addComponent = (kind: ComponentKind, screenId: string | null) => {
+    const target = screenId ?? exp.screens[0]?.id;
+    if (!target) return;
+    const comp = newComponent(kind, target);
+    persist({ ...exp, components: [...exp.components, comp] });
+    setSelId(target);
+    setSelComp(comp.id);
+  };
 
   const addScreen = () => {
     const s = newScreen(newName || `Screen ${exp.screens.length + 1}`, 120 + exp.screens.length * 60, 120);
@@ -252,10 +258,44 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
             +
           </Button>
         </div>
+        <Button size="sm" variant="secondary" onClick={() => setPaletteOpen((v) => !v)} title="Component palette" aria-expanded={paletteOpen} className="mt-2 w-full">
+          {paletteOpen ? "Close palette" : "+ Component"}
+        </Button>
         <p className="mt-2 px-1 text-[10px] leading-relaxed text-[#A39B8E]">
           Drag headers to move · scroll to pan · Ctrl+scroll or pinch to zoom · Del removes
         </p>
       </aside>
+
+      {paletteOpen && (
+        <aside className="w-52 shrink-0 overflow-y-auto rounded-xl border border-[#E8E2D8] bg-white p-2.5" style={{ maxHeight: 640 }} aria-label="Component palette">
+          {paletteByCategory().map(({ category, items }) => (
+            <div key={category} className="mb-2">
+              <p className="mb-1 px-1 font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">{category}</p>
+              <ul className="space-y-0.5">
+                {items.map((d) => (
+                  <li key={d.kind}>
+                    <button
+                      type="button"
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("application/x-wire-kind", d.kind);
+                        e.dataTransfer.effectAllowed = "copy";
+                      }}
+                      onClick={() => addComponent(d.kind, selId)}
+                      title={`Add ${d.label}${selId ? "" : " to the first screen"}`}
+                      className="w-full cursor-grab truncate rounded-lg px-2 py-1.5 text-left text-xs text-[#27241F] transition-colors hover:bg-[#F5F1E8] active:cursor-grabbing"
+                    >
+                      {d.label}
+                      <span className="ml-1 font-mono text-[9px] text-[#A39B8E]">{d.kind}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+          <p className="px-1 text-[10px] leading-relaxed text-[#A39B8E]">Click adds to the selected screen · or drag onto any screen</p>
+        </aside>
+      )}
 
       <div className="relative min-w-0 flex-1">
         <div
@@ -276,11 +316,39 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
             style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})`, transformOrigin: "0 0" }}
           >
             {exp.screens.map((s) => {
-              const comps = exp.components.filter((c) => c.parentId === s.id);
+              const comps = childrenOf(exp.components, s.id);
+              const renderTree = (parentId: string): ReactNode => (
+                <div className="space-y-1.5">
+                  {childrenOf(exp.components, parentId).map((c) => (
+                    <ComponentView
+                      key={c.id}
+                      comp={c}
+                      selected={selComp === c.id}
+                      onSelect={() => {
+                        setSelComp(c.id);
+                        setSelId(s.id);
+                      }}
+                      onDelete={() => deleteComponent(c.id)}
+                    >
+                      {renderTree(c.id)}
+                    </ComponentView>
+                  ))}
+                </div>
+              );
               return (
                 <div
                   key={s.id}
                   data-screen-id={s.id}
+                  onDragOver={(e) => {
+                    if ([...e.dataTransfer.types].includes("application/x-wire-kind")) e.preventDefault();
+                  }}
+                  onDrop={(e) => {
+                    const kind = e.dataTransfer.getData("application/x-wire-kind") as ComponentKind;
+                    if (kind) {
+                      e.preventDefault();
+                      addComponent(kind, s.id);
+                    }
+                  }}
                   className={`absolute w-[300px] rounded-xl border-2 bg-white shadow-[0_8px_28px_-12px_rgba(24,20,12,0.35)] ${
                     selId === s.id ? "border-[#9A7653]" : "border-[#E3D9C6]"
                   }`}
@@ -296,8 +364,14 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
                       {s.viewport.width}×{s.viewport.height} · {comps.length}
                     </p>
                   </div>
-                  <div className="space-y-2 p-2.5">
-                    <ScreenBody components={comps} />
+                  <div className="min-h-10 space-y-2 p-2.5">
+                    {comps.length === 0 ? (
+                      <p className="rounded-lg border border-dashed border-[#E3D9C6] px-2 py-3 text-center text-[11px] text-[#A39B8E]">
+                        Drop components here
+                      </p>
+                    ) : (
+                      renderTree(s.id)
+                    )}
                   </div>
                 </div>
               );

@@ -184,6 +184,13 @@ export function newScreen(name: string, x = 120, y = 120): WireScreen {
   };
 }
 
+/** Rename rule: trimmed, capped, null when unchanged/blank (no-op). */
+export function renameExperience(exp: Experience, draft: string): Experience | null {
+  const clean = draft.trim().slice(0, 160);
+  if (!clean || clean === exp.name) return null;
+  return { ...exp, name: clean };
+}
+
 /** Approval workflow: review first, build only from approved. */
 export function canTransition(from: SnapshotStatus, to: SnapshotStatus): boolean {
   if (from === to) return true;
