@@ -1,7 +1,7 @@
 "use client";
 
 import { describe, it, expect } from "vitest";
-import { resolveChain, unmappedEdges, CHAIN_MAX_HOPS } from "./chain";
+import { resolveChain, unmappedEdges, CHAIN_MAX_HOPS, CHAIN_MAX_LANES } from "./chain";
 import type { SystemConnection } from "./model";
 
 const edge = (id: string, sourceId: string, targetId: string, label = ""): SystemConnection => ({
@@ -55,6 +55,16 @@ describe("chain resolution", () => {
 
   it("returns empty for an unknown start edge", () => {
     expect(resolveChain(PROJ, "ghost")).toEqual([]);
+  });
+
+  it("caps lane breadth with a truncation note", () => {
+    const conns: SystemConnection[] = [edge("e0", "hub", "fan")];
+    for (let i = 0; i < CHAIN_MAX_LANES + 5; i++) {
+      conns.push(edge(`f${i}`, "fan", `leaf${i}`));
+    }
+    const lanes = resolveChain({ connections: conns }, "e0");
+    expect(lanes).toHaveLength(CHAIN_MAX_LANES);
+    expect(lanes[CHAIN_MAX_LANES - 1].stopped).toMatch(/breadth cap/);
   });
 
   it("names unmapped edges", () => {

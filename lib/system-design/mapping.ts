@@ -166,7 +166,11 @@ export interface MappingCompile {
   error: string | null;
 }
 
-/** Build the step-2 body. Validates the result parses as JSON. */
+/** Build the step-2 body. Validates the result parses as JSON.
+ * Contract: ok:true means "rendered valid JSON" - NOT "every ref resolved".
+ * Unresolvable refs become null and are listed in missing; every caller
+ * surfaces them (chain hop note, edge-run "nulled" count, transform preview,
+ * run-MD note) so a nulled body is always visible, never silent. */
 export function compileMapping(
   mode: MappingMode,
   template: string,

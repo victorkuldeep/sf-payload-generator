@@ -3,13 +3,21 @@
 import type { SystemConnection, SystemProject } from "./model";
 
 /**
- * Chain resolution (pure): from a start edge, follow ready edges downstream.
- * Fan-out runs every branch (shared prefix executes once per lane trace);
- * cycles stop with a note; dead ends stop silently. Hop cap bounds pathological
- * canvases. A lane is an ordered edge list - the executor walks it hop by hop.
+ * Chain resolution (pure topology): from a start edge, walk every downstream
+ * edge regardless of readiness. Readiness gates EXECUTION, not traversal -
+ * the executor stops lanes at unbound edges with a note, runs lanes whose
+ * target op is bound (even when the far end is unbound - non-first hops only
+ * need their target op), and honors per-edge operation overrides (which let
+ * a run simulate an otherwise unbound edge). Fan-out runs every branch
+ * (shared prefix executes once per lane trace); cycles stop with a note;
+ * dead ends stop silently. Hop and breadth caps bound pathological canvases.
+ * A lane is an ordered edge list - the executor walks it hop by hop.
  */
 
 export const CHAIN_MAX_HOPS = 25;
+
+/** Max lanes per resolution: breadth (fan-out product) is otherwise unbounded. */
+export const CHAIN_MAX_LANES = 50;
 
 export interface ChainLane {
   edges: SystemConnection[];
@@ -56,6 +64,14 @@ export function resolveChain(
     for (const o of outgoing) walk(o, next, visitedNext);
   };
   walk(start, [], new Set());
+  if (lanes.length > CHAIN_MAX_LANES) {
+    const kept = lanes.slice(0, CHAIN_MAX_LANES);
+    const last = kept[kept.length - 1];
+    last.stopped =
+      last.stopped ??
+      `Lane breadth cap (${CHAIN_MAX_LANES}) reached - ${lanes.length - CHAIN_MAX_LANES} further lane(s) truncated.`;
+    return kept;
+  }
   return lanes;
 }
 

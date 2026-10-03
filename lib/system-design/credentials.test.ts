@@ -56,4 +56,12 @@ describe("credential vault", () => {
     expect(looksLikeSecret("Bearer short")).toBe(false);
     expect(looksLikeSecret("")).toBe(false);
   });
+
+  it("resolves lowercase refs against uppercase vault entries", () => {
+    const vault = { ZSP_TOKEN: "abc" };
+    expect(resolveEnvVars("t=$env.zsp_token", vault).text).toBe("t=abc");
+    expect(findMissingVars(["$env.zsp_token"], vault)).toEqual([]);
+    // Exact keys still win for legacy mixed-case entries.
+    expect(resolveEnvVars("t=$env.Mixed", { Mixed: "m", MIXED: "u" }).text).toBe("t=m");
+  });
 });

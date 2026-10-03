@@ -57,7 +57,15 @@ export function preflightRun(input: PreflightInput): PreflightVerdict {
     reasons.push("Base URL + path do not form a valid URL.");
   }
   if (!["GET", "POST", "PUT", "PATCH", "DELETE"].includes(input.method)) {
-    reasons.push("Method must be GET, POST, PUT, PATCH or DELETE.");
+    // EVENT/QUERY are first-class operation types but have no HTTP wire form
+    // in this tool (no event-broker transport): they can seed a chain as the
+    // first op, but they can never be fired directly. Say so plainly instead
+    // of failing them as a generic "bad method".
+    reasons.push(
+      input.method === "EVENT" || input.method === "QUERY"
+        ? `Method ${input.method} is not HTTP-callable - it can seed a chain run but cannot be fired directly. Bind a GET/POST/PUT/PATCH/DELETE operation to run it.`
+        : "Method must be GET, POST, PUT, PATCH or DELETE."
+    );
   }
   if (clampTimeoutMs(input.timeoutMs) !== Math.floor(input.timeoutMs) && input.timeoutMs > RUNNER_MAX_TIMEOUT_MS) {
     reasons.push(`Timeout is capped at ${RUNNER_MAX_TIMEOUT_MS / 1000}s.`);

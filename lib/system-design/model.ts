@@ -287,11 +287,15 @@ export function coerceScenarios(raw: unknown): ScenarioDef[] {
       for (const [k, v] of Object.entries(r.mockOverrides as Record<string, unknown>)) {
         if (!v || typeof v !== "object") continue;
         const m = v as Record<string, unknown>;
-        if (typeof m.status !== "number" || typeof m.body !== "string" || typeof m.latencyMs !== "number") continue;
+        // Mirror import validation ranges: drop overrides a real import
+        // would reject instead of storing mocks that can never validate.
+        if (typeof m.status !== "number" || !Number.isInteger(m.status) || m.status < 100 || m.status > 599) continue;
+        if (typeof m.body !== "string") continue;
+        if (typeof m.latencyMs !== "number" || !Number.isInteger(m.latencyMs) || m.latencyMs < 0 || m.latencyMs > 30000) continue;
         mockOverrides[k] = {
-          status: Math.trunc(m.status),
+          status: m.status,
           body: m.body.slice(0, 20000),
-          latencyMs: Math.max(0, Math.trunc(m.latencyMs)),
+          latencyMs: m.latencyMs,
         };
       }
     }
@@ -351,15 +355,36 @@ export function coerceRunScope(raw: unknown): RunScope | undefined {
  * Effective scope for a chain run: the saved scope when it targets this
  * start edge, otherwise run-everything defaults.
  */
+/** Drop overrides pointing at deleted edges/operations: replays fall back to
+ * the live binding instead of consulting stale ids. */
+function pruneScopeOpByEdge(
+  opByEdge: Record<string, string>,
+  edgeIds: Set<string>,
+  opIds: Set<string>
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [e, o] of Object.entries(opByEdge)) {
+    if (edgeIds.has(e) && opIds.has(o)) out[e] = o;
+  }
+  return out;
+}
+
 export function resolveRunScope(
-  project: Pick<SystemProject, "runScope">,
+  project: Pick<SystemProject, "runScope" | "connections" | "operations">,
   startEdgeId: string,
   laneCount: number
 ): { lanes: number[]; opByEdge: Record<string, string> } {
+  const edgeIds = new Set(project.connections.map((c) => c.id));
+  const opIds = new Set(project.operations.map((o) => o.id));
   const saved = project.runScope;
   if (saved && saved.startEdgeId === startEdgeId && saved.lanes.length > 0) {
     const valid = saved.lanes.filter((n) => n >= 1 && n <= laneCount);
-    if (valid.length > 0) return { lanes: [...new Set(valid)].sort((a, b) => a - b), opByEdge: { ...saved.opByEdge } };
+    if (valid.length > 0) {
+      return {
+        lanes: [...new Set(valid)].sort((a, b) => a - b),
+        opByEdge: pruneScopeOpByEdge(saved.opByEdge, edgeIds, opIds),
+      };
+    }
   }
   return { lanes: Array.from({ length: laneCount }, (_, i) => i + 1), opByEdge: {} };
 }
@@ -414,6 +439,14 @@ export interface ProjectIssue {
   message: string;
 }
 
+/** Closed vocabularies mirrored from SystemType and SystemInterface. */
+const SYSTEM_TYPES: readonly string[] = [
+  "salesforce", "servicenow", "middleware", "webapp", "rest", "graphql",
+  "database", "queue", "saas", "custom", "cloud", "streaming", "edge",
+  "clm", "erp", "billing", "identity", "warehouse", "notify",
+];
+const PROTOCOLS: readonly string[] = ["REST", "GraphQL", "SOAP", "Events", "Other"];
+
 /** Structural validation: ids, references, schema version. Never mutates. */
 export function validateProject(raw: unknown): { project: SystemProject | null; issues: ProjectIssue[] } {
   const issues: ProjectIssue[] = [];
@@ -438,6 +471,9 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
     else if (ids.has(s.id)) issues.push({ path: `${at}.id`, message: `Duplicate system id ${s.id}.` });
     else ids.add(s.id);
     if (typeof s.name !== "string" || !s.name.trim()) issues.push({ path: `${at}.name`, message: "Missing system name." });
+    if (typeof s.systemType !== "string" || !SYSTEM_TYPES.includes(s.systemType)) {
+      issues.push({ path: `${at}.systemType`, message: `System type must be one of ${SYSTEM_TYPES.join("/")}.` });
+    }
     if (s.baseUrl !== undefined && typeof s.baseUrl !== "string") {
       issues.push({ path: `${at}.baseUrl`, message: "Base URL must be a string." });
     }
@@ -445,10 +481,13 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
       issues.push({ path: `${at}.position`, message: "Position must be {x, y} numbers." });
     }
   }
+  const connIds = new Set<string>();
   for (let i = 0; i < connections.length; i++) {
     const c = connections[i];
     const at = `$.connections[${i}]`;
     if (typeof c.id !== "string" || !c.id) issues.push({ path: `${at}.id`, message: "Missing connection id." });
+    else if (connIds.has(c.id)) issues.push({ path: `${at}.id`, message: `Duplicate connection id ${c.id}.` });
+    else connIds.add(c.id);
     if (typeof c.sourceId !== "string" || !ids.has(c.sourceId)) {
       issues.push({ path: `${at}.sourceId`, message: `Unknown source system ${String(c.sourceId)}.` });
     }
@@ -472,6 +511,12 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
       issues.push({ path: `${at}.systemId`, message: `Unknown system ${String(f.systemId)}.` });
     }
     if (typeof f.name !== "string" || !f.name.trim()) issues.push({ path: `${at}.name`, message: "Missing interface name." });
+    if (f.protocol !== undefined && (typeof f.protocol !== "string" || !PROTOCOLS.includes(f.protocol))) {
+      issues.push({ path: `${at}.protocol`, message: `Protocol must be one of ${PROTOCOLS.join("/")}.` });
+    }
+    if (f.basePath !== undefined && typeof f.basePath !== "string") {
+      issues.push({ path: `${at}.basePath`, message: "Base path must be a string." });
+    }
   }
   const opIds = new Set<string>();
   const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "EVENT", "QUERY"];
@@ -490,6 +535,12 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
     }
     if (o.sampleBody !== undefined && typeof o.sampleBody !== "string") {
       issues.push({ path: `${at}.sampleBody`, message: "Sample body must be a string." });
+    }
+    if (o.path !== undefined && typeof o.path !== "string") {
+      issues.push({ path: `${at}.path`, message: "Operation path must be a string." });
+    }
+    if (o.version !== undefined && typeof o.version !== "string") {
+      issues.push({ path: `${at}.version`, message: "Operation version must be a string." });
     }
     if (o.mock !== undefined) {
       const m = o.mock as Record<string, unknown>;
@@ -533,6 +584,9 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
     const at = `$.environments[${i}]`;
     if (typeof e.id !== "string" || !e.id) issues.push({ path: `${at}.id`, message: "Missing environment id." });
     if (typeof e.name !== "string" || !e.name.trim()) issues.push({ path: `${at}.name`, message: "Missing environment name." });
+    if (e.baseUrl !== undefined && typeof e.baseUrl !== "string") {
+      issues.push({ path: `${at}.baseUrl`, message: "Environment base URL must be a string." });
+    }
     if (e.isProduction !== undefined && typeof e.isProduction !== "boolean") {
       issues.push({ path: `${at}.isProduction`, message: "Production flag must be a boolean." });
     }
@@ -619,13 +673,29 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
         ...c,
         status: "draft" as const,
       })),
-      interfaces: interfaces as unknown as SystemInterface[],
-      operations: operations as unknown as SystemOperation[],
-      environments: environments as unknown as SystemEnvironment[],
+      interfaces: (interfaces as unknown as SystemInterface[]).map((f) => ({
+        ...f,
+        protocol: (typeof f.protocol === "string" && PROTOCOLS.includes(f.protocol) ? f.protocol : "REST") as SystemInterface["protocol"],
+        basePath: typeof f.basePath === "string" ? f.basePath : "",
+      })),
+      operations: (operations as unknown as SystemOperation[]).map((o) => ({
+        ...o,
+        path: typeof o.path === "string" ? o.path : "",
+        version: typeof o.version === "string" ? o.version : "v1",
+        sampleBody: typeof o.sampleBody === "string" ? o.sampleBody.slice(0, 20000) : o.sampleBody,
+      })),
+      environments: (environments as unknown as SystemEnvironment[]).map((e) => ({
+        ...e,
+        baseUrl: typeof e.baseUrl === "string" ? e.baseUrl : "",
+      })),
       activeEnvironmentId: activeEnv,
       notes,
       todos,
-      runScope: coerceRunScope((p as Record<string, unknown>).runScope),
+      runScope: (() => {
+        const scope = coerceRunScope((p as Record<string, unknown>).runScope);
+        if (!scope) return undefined;
+        return { ...scope, opByEdge: pruneScopeOpByEdge(scope.opByEdge, connIds, opIds) };
+      })(),
       flows: coerceFlows((p as Record<string, unknown>).flows),
       scenarios: coerceScenarios((p as Record<string, unknown>).scenarios),
       settings: coerceSettings((p as Record<string, unknown>).settings),

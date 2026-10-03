@@ -31,12 +31,23 @@ export function findEnvRefs(text: string): string[] {
   return out;
 }
 
+/** Vault keys are uppercase-normalized on entry (see CredentialsModal) while
+ * authors naturally write lowercase refs - resolve case-insensitively so a
+ * lowercase ref hits its normalized entry. Exact keys still win (legacy
+ * mixed-case entries keep working). */
+function lookupVault(name: string, vault: CredVault): string | undefined {
+  if (name in vault) return vault[name];
+  const folded = normalizeCredName(name);
+  if (folded in vault) return vault[folded];
+  return undefined;
+}
+
 /** Refs in texts that have no vault entry - senders must block on these. */
 export function findMissingVars(texts: string[], vault: CredVault): string[] {
   const missing: string[] = [];
   for (const t of texts) {
     for (const name of findEnvRefs(t)) {
-      if (!(name in vault) && !missing.includes(name)) missing.push(name);
+      if (lookupVault(name, vault) === undefined && !missing.includes(name)) missing.push(name);
     }
   }
   return missing;
@@ -77,7 +88,8 @@ export function looksLikeSecret(value: string): boolean {
 export function resolveEnvVars(text: string, vault: CredVault): ResolvedText {
   const missing: string[] = [];
   const out = text.replace(/\$env\.([A-Za-z0-9_]+)/g, (_m, name: string) => {
-    if (name in vault) return vault[name];
+    const hit = lookupVault(name, vault);
+    if (hit !== undefined) return hit;
     if (!missing.includes(name)) missing.push(name);
     return _m;
   });

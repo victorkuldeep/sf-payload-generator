@@ -73,4 +73,19 @@ describe("runner policy", () => {
     expect(normalizeAuthToken("")).toBe("");
     expect(normalizeAuthToken(undefined)).toBe("");
   });
+
+  it("explains EVENT/QUERY as non-callable instead of a generic method error", () => {
+    const base = {
+      baseUrl: "https://api.acme.test",
+      path: "/x",
+      allowHost: "api.acme.test",
+      timeoutMs: 5000,
+      bodyBytes: 0,
+    };
+    for (const method of ["EVENT", "QUERY"]) {
+      const v = preflightRun({ ...base, method });
+      expect(v.ok).toBe(false);
+      expect(v.reasons.join(" ")).toMatch(/not HTTP-callable/);
+    }
+  });
 });

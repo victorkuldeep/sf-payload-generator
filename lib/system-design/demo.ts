@@ -169,7 +169,7 @@ export function buildGroqSampleProject(): SystemProject {
       },
     },
   ];
-  project.environments = [{ id: "env_groq", name: "Production", baseUrl: "https://api.groq.com" }];
+  project.environments = [{ id: "env_groq", name: "Production", baseUrl: "https://api.groq.com", isProduction: true }];
   project.activeEnvironmentId = "env_groq";
   project.notes = [
     "## GROQ chat sample (1:1)",

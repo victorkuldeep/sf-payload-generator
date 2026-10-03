@@ -288,7 +288,11 @@ export function ApiCatalogTab({ project, mutate, onTest, onLocate, onBind }: Pro
                 <ul className="mt-1 space-y-1">
                   {ops.map((op) => {
                     const uses = usage.get(op.id) ?? [];
-                    const isTested = tested.has(`${system.name}␟${op.name}`);
+                    // Run history names single-test records "System · Op"
+                    // (plus " (mock)" for mocked sends) - match those shapes.
+                    const tag = `${system.name} · ${op.name}`;
+                    const isTested =
+                      tested.has(`${system.name}␟${tag}`) || tested.has(`${system.name}␟${tag} (mock)`);
                     const expanded = expandedId === op.id;
                     return (
                       <li key={op.id} className="rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-canvas)] px-2 py-1.5">

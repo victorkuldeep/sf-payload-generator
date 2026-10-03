@@ -11,6 +11,7 @@ import {
   getViewportForBounds,
   MarkerType,
   ConnectionMode,
+  PanOnScrollMode,
   type Node,
   type Edge,
   type Connection,
@@ -332,6 +333,10 @@ function DesignerCanvas({
         onEdgeClick={(_, edge) => onSelect(null, edge.id)}
         onPaneClick={() => onSelect(null, null)}
         minZoom={0.15}
+        zoomOnScroll={false}
+        panOnScroll
+        panOnScrollMode={PanOnScrollMode.Free}
+        zoomOnPinch
         fitView
       >
         <Background gap={22} size={1.2} color="#DDD3BC" bgColor="#FAF8F2" />

@@ -1,7 +1,7 @@
 "use client";
 
 import { withStore, STORES } from "@/lib/db";
-import type { SystemProject } from "./model";
+import { validateProject, type SystemProject } from "./model";
 
 /** Project repository: one record per project, keyed by project id. */
 export async function saveSystemProject(project: SystemProject): Promise<void> {
@@ -24,12 +24,20 @@ export async function listSystemProjects(): Promise<{ id: string; name: string; 
   }
 }
 
+/**
+ * Migrate-on-read: vintage records predate flows/settings/runScope defaults
+ * and newer validation, and the rest of the code assumes those shapes. A
+ * record that no longer validates reads as missing (callers fall back to a
+ * fresh project) instead of loading half-shaped.
+ */
 export async function loadSystemProject(id: string): Promise<SystemProject | null> {
   try {
     const rec = await withStore<SystemProject | undefined>(STORES.systemProjects, "readonly", (store) =>
       store.get(id)
     );
-    return rec ?? null;
+    if (!rec) return null;
+    const { project } = validateProject(rec);
+    return project;
   } catch {
     return null;
   }

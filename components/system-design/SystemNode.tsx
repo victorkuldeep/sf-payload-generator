@@ -105,7 +105,7 @@ export interface SystemNodeData extends Record<string, unknown> {
 function SystemNodeInner({ data, selected }: NodeProps<Node<SystemNodeData>>) {
   return (
     <div
-      className={`w-[190px] rounded-xl border-2 bg-[var(--color-surface)] shadow-[0_8px_28px_-10px_rgba(24,20,12,0.35)] transition-colors ${
+      className={`w-max max-w-[300px] rounded-xl border-2 bg-[var(--color-surface)] shadow-[0_8px_28px_-10px_rgba(24,20,12,0.35)] transition-colors ${
         selected ? "border-bronze-500" : "border-[var(--color-line)]"
       }`}
     >
@@ -126,7 +126,7 @@ function SystemNodeInner({ data, selected }: NodeProps<Node<SystemNodeData>>) {
           <SystemGlyph iconKey={data.iconKey} />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-bold text-ivory-950">{data.name}</span>
+          <span title={data.name} className="block break-words text-[13px] font-bold leading-snug text-ivory-950">{data.name}</span>
           <span className="block truncate font-mono text-[10px] uppercase tracking-wider text-ivory-500">
             {data.systemType}
           </span>
