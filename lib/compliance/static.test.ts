@@ -96,6 +96,23 @@ describe("privacy / GDPR surface", () => {
     expect(banner).toMatch(/href="\/security"/);
   });
 
+  it("author mode is create-only: no destructive calls in the design contract", () => {
+    const design = read("lib/salesforce/design.ts");
+    expect(design).not.toMatch(/\.delete\(|destroy\(|deleteObject|deleteField/i);
+    expect(design).toMatch(/tooling\/sobjects/);
+  });
+
+  it("author UI is wired on the ERD canvas with confirm guardrails", () => {
+    const panel = read("components/SchemaPanel.tsx");
+    expect(panel).toMatch(/authorMode/);
+    expect(panel).toMatch(/AuthorFieldDialog/);
+    expect(panel).toMatch(/AuthorObjectDialog/);
+    expect(panel).toMatch(/window\.confirm/);
+    expect(panel).toMatch(/connectable=\{authorMode\}/);
+    const node = read("components/erd/ErdTableNode.tsx");
+    expect(node).toMatch(/onAddField/);
+  });
+
   it("builder trail is a thin sharp rail in a sticky bordered bar above the footer", () => {
     const stepper = read("components/Stepper.tsx");
     expect(stepper).toMatch(/divide-x/);

@@ -318,7 +318,8 @@ export function ConnectModal({
         <div className="px-6 py-4 border-t border-[var(--color-line-soft)] bg-[var(--color-canvas)] flex flex-col sm:flex-row sm:items-center gap-3">
           <p className="flex-1 text-[11px] leading-relaxed text-ivory-600">
             Token stays in this browser tab (sessionStorage) and is proxied server-side to your org only —
-            never written to disk. By connecting you agree to the{" "}
+            never written to disk. Reads, record edits, and confirmed Author-mode schema changes all travel
+            the same proxied path. By connecting you agree to the{" "}
             <a href="/privacy" target="_blank" rel="noreferrer" className="font-medium underline hover:text-ivory-950">
               Privacy Policy
             </a>{" "}

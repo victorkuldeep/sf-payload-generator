@@ -88,9 +88,12 @@ export default function PrivacyPage() {
               When you connect, your browser sends the session to this app&apos;s server-side API routes, which
               proxy the request to your Salesforce org (e.g.{" "}
               <code className="font-mono text-[12px]">*.salesforce.com</code>,{" "}
-              <code className="font-mono text-[12px]">*.force.com</code>) and return the response. Tokens are
-              used only to fulfil your request and are not written to server disks or logs beyond transient
-              error handling. Rate limiting (200 requests/minute per IP) protects the proxy from abuse.
+              <code className="font-mono text-[12px]">*.force.com</code>) and return the response. This covers
+              reads, the record edits you make in Data Walkers, and — only in Author mode on the schema
+              canvas — the metadata changes you explicitly confirm (new custom fields, objects, and
+              relationships). Tokens are used only to fulfil your request and are not written to server disks
+              or logs beyond transient error handling. Rate limiting (200 requests/minute per IP) protects the
+              proxy from abuse.
             </p>
           </Section>
 

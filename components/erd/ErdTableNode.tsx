@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import type { ErdNodeData } from "@/lib/erd/graph";
@@ -65,6 +65,21 @@ function PeekIcon() {
       <circle cx="12" cy="12" r="3" />
     </svg>
   );
+}
+
+/** Connection docks: invisible + inert in Explore, bronze grips in Author mode. */
+function dockStyle(author: boolean | undefined, base: CSSProperties): CSSProperties {
+  if (!author) return { ...base, opacity: 0, width: 2, height: 2, pointerEvents: "none" };
+  return {
+    ...base,
+    opacity: 1,
+    width: 12,
+    height: 12,
+    pointerEvents: "auto",
+    background: "#9A7653",
+    border: "2px solid #FAF8F2",
+    borderRadius: 9999,
+  };
 }
 
 function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
@@ -231,10 +246,10 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
       } ${data.dimmed ? "opacity-40" : ""}`}
     >
       {/* Side-edge docks: exits at header height, entries at footer height */}
-      <Handle type="source" id={parentExitHandleId} position={Position.Right} style={{ top: ERD_HEADER_H / 2, opacity: 0, width: 2, height: 2, pointerEvents: "none" }} />
-      <Handle type="target" id={childEntryHandleId} position={Position.Left} style={{ top: `calc(100% - ${ERD_FOOTER_H / 2}px)`, opacity: 0, width: 2, height: 2, pointerEvents: "none" }} />
-      <Handle type="source" id={loopOutHandleId} position={Position.Left} style={{ top: ERD_HEADER_H / 2, opacity: 0, width: 2, height: 2, pointerEvents: "none" }} />
-      <Handle type="target" id={loopInHandleId} position={Position.Left} style={{ top: `calc(100% - ${ERD_FOOTER_H / 2}px)`, opacity: 0, width: 2, height: 2, pointerEvents: "none" }} />
+      <Handle type="source" id={parentExitHandleId} position={Position.Right} style={dockStyle(data.authorMode, { top: ERD_HEADER_H / 2 })} />
+      <Handle type="target" id={childEntryHandleId} position={Position.Left} style={dockStyle(data.authorMode, { top: `calc(100% - ${ERD_FOOTER_H / 2}px)` })} />
+      <Handle type="source" id={loopOutHandleId} position={Position.Left} style={dockStyle(data.authorMode, { top: ERD_HEADER_H / 2 })} />
+      <Handle type="target" id={loopInHandleId} position={Position.Left} style={dockStyle(data.authorMode, { top: `calc(100% - ${ERD_FOOTER_H / 2}px)` })} />
       {/* Header: label owns the full top row (centered), badges + actions
           sit on their own second row so long labels never trim under them */}
       <div className={`flex flex-col justify-center gap-0.5 px-3 border-b ${data.isRoot ? "bg-ivory-950 text-ivory-100" : "bg-[var(--color-surface-soft)]"}`} style={{ height: ERD_HEADER_H }}>
@@ -270,6 +285,25 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
               <span className={`absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full ${data.hasTodo ? "bg-red-500" : "bg-bronze-500"}`} aria-hidden="true" />
             )}
           </button>
+          {data.authorPending && (
+            <span className="shrink-0 rounded border border-amber-300 bg-amber-100 px-1 py-px text-[9px] font-bold text-amber-800" title="Deploying to the org - not live yet">
+              DEPLOYING
+            </span>
+          )}
+          {data.authorMode && data.onAddField && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                data.onAddField?.(data.apiName);
+              }}
+              title={`New custom field on ${data.apiName}`}
+              aria-label={`New custom field on ${data.apiName}`}
+              className="nodrag shrink-0 rounded border border-bronze-300 bg-bronze-100 px-1.5 py-px text-[10px] font-bold text-bronze-700 hover:bg-bronze-200 transition-colors cursor-pointer"
+            >
+              + Field
+            </button>
+          )}
           {!data.isRoot && data.onMakeRoot && (
             <button
               type="button"
@@ -425,6 +459,11 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
               ) : (
                 <span className="shrink-0 text-[10px] text-ivory-500" title={r.type}>{shortType}</span>
               )}
+              {r.pending && (
+                <span className="shrink-0 rounded border border-amber-300 bg-amber-100 px-1 py-px font-mono text-[9px] font-bold text-amber-800" title="Deploying to the org - not live yet">
+                  new
+                </span>
+              )}
               {rowIcons(r)}
             </>
           );
@@ -447,12 +486,12 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
                 });
               }}
               title={`${r.name} - click to view ${r.pickValues.length} picklist values`}
-              className="nodrag group flex w-full cursor-pointer items-center gap-1.5 px-3 py-[3px] text-left transition-colors hover:bg-bronze-100"
+              className={`nodrag group flex w-full cursor-pointer items-center gap-1.5 px-3 py-[3px] text-left transition-colors ${r.pending ? "bg-amber-50" : "hover:bg-bronze-100"}`}
             >
               {inner}
             </button>
           ) : (
-            <div key={r.name} className="group flex items-center gap-1.5 px-3 py-[3px] hover:bg-ivory-200">
+            <div key={r.name} className={`group flex items-center gap-1.5 px-3 py-[3px] ${r.pending ? "bg-amber-50" : "hover:bg-ivory-200"}`}>
               {inner}
             </div>
           );

@@ -56,6 +56,10 @@ interface ErdCanvasProps {
   onViewportChange?: (v: { x: number; y: number; zoom: number }) => void;
   /** Drag-only lock, owned by the parent toolbar button. Pan/zoom unaffected. */
   nodesLocked?: boolean;
+  /** Schema authoring: live connection grips + edge drawing for relationships. */
+  connectable?: boolean;
+  /** Fires on a completed drag-connect with node API names (source, target). */
+  onConnectNodes?: (sourceApi: string, targetApi: string) => void;
   /** Reports the built-in OOB lock state upward (for mutual exclusion). */
   onOobLockChange?: (locked: boolean) => void;
 }
@@ -81,7 +85,7 @@ function pngFileName(scale: 2 | 3): string {
 }
 
 const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
-  { nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick, onViewportMove, onNodeDragStop, layoutRev, enforcedPositions, storedViewport, onViewportChange, nodesLocked = false, onOobLockChange },
+  { nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick, onViewportMove, onNodeDragStop, layoutRev, enforcedPositions, storedViewport, onViewportChange, nodesLocked = false, onOobLockChange, connectable = false, onConnectNodes },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -211,6 +215,24 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
     }
     return undefined;
   }, [propNodes, propEdges, layoutRev, enforcedPositions, storedViewport, setNodes, setEdges, fitView]);
+
+  // First nodes arriving post-mount (fresh canvas or async autosave /
+  // snapshot restore): defaultViewport only applies at mount, so a restored
+  // viewport would otherwise never land and the canvas sits stranded
+  // top-left. Center once; later adds never steal the zoom back.
+  const hadNodes = useRef(false);
+  useEffect(() => {
+    if (propNodes.length === 0) {
+      hadNodes.current = false;
+      return undefined;
+    }
+    if (!hadNodes.current) {
+      hadNodes.current = true;
+      const t = window.setTimeout(() => fitView({ padding: 0.18, maxZoom: 1 }), 60);
+      return () => window.clearTimeout(t);
+    }
+    return undefined;
+  }, [propNodes.length, fitView]);
 
   useEffect(() => {
     if (!laser) return;
@@ -342,7 +364,10 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
         panOnScrollMode={PanOnScrollMode.Free}
         zoomOnPinch
         nodesDraggable={!laser && !nodesLocked}
-        nodesConnectable={false}
+        nodesConnectable={!laser && connectable}
+        onConnect={(c) => {
+          if (c.source && c.target && c.source !== c.target) onConnectNodes?.(c.source, c.target);
+        }}
         elementsSelectable={!laser}
         minZoom={0.15}
         fitView={storedViewport ? false : true}

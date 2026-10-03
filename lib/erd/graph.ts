@@ -23,6 +23,8 @@ export interface ErdFieldRow {
   /** Resolved display label of the loaded lookup target, e.g. "Acme".
    * Key field cascade: Name, then OrderNumber-style fields, else null. */
   refLabel?: string | null;
+  /** Authoring sketch: row not yet deployed on the org (amber styling). */
+  pending?: boolean;
 }
 
 export interface ErdNodeData extends Record<string, unknown> {
@@ -56,6 +58,12 @@ export interface ErdNodeData extends Record<string, unknown> {
   recordId?: string | null;
   recordCount?: number;
   onRefreshNode?: (id: string) => void;
+  /** Schema authoring: canvas is in Author mode (edge drawing + affordances). */
+  authorMode?: boolean;
+  /** Schema authoring: open the New Field dialog for this object. */
+  onAddField?: (apiName: string) => void;
+  /** Schema authoring: node is a not-yet-deployed sketch (amber badge). */
+  authorPending?: boolean;
   onPicklistClick?: (
     nodeId: string,
     fieldName: string,
@@ -306,6 +314,8 @@ export type ErdEdgeKind = "md" | "lookup";
 export interface ErdEdgeData extends Record<string, unknown> {
   kind: ErdEdgeKind;
   loopLane?: number;
+  /** Authoring sketch: relationship not yet deployed (amber styling). */
+  pending?: boolean;
 }
 
 /**

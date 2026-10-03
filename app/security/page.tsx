@@ -48,6 +48,7 @@ export default function SecurityPage() {
               <li>HTTPS-only transport; strict Content-Security-Policy (<code className="font-mono text-[12px]">font-src &apos;self&apos;</code>, no external fonts or scripts), framing denied, no-sniff, strict referrer.</li>
               <li>Self-hosted fonts (Inter + JetBrains Mono bundled locally) — zero calls to font CDNs or Google APIs at build or runtime.</li>
               <li>Server-side rate limiting on Salesforce proxy routes (200 requests/minute per IP, HTTP 429 beyond).</li>
+              <li>Schema writes are create-only and always confirmed: Author mode deploys one change at a time through the Tooling API, with an explicit confirm on production-like orgs and no delete path.</li>
               <li>No cookies, no analytics beacons, no third-party trackers — there is nothing to steal a session through on our side.</li>
             </ul>
           </Section>

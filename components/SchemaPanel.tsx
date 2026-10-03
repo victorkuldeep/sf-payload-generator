@@ -6,11 +6,14 @@ import type {
   SalesforceObject,
   SalesforceDescribeResult,
 } from "@/lib/salesforce/types";
-import { buildErdElements, buildGraphElements, rootNeighbors, systemReason, isEffectivelyHidden, isSystemObject, AUDIT_REFERENCE_FIELDS, type ErdNodeData, type GraphNeighbor } from "@/lib/erd/graph";
+import { buildErdElements, buildGraphElements, rootNeighbors, systemReason, isEffectivelyHidden, isSystemObject, AUDIT_REFERENCE_FIELDS, parentExitHandleId, childEntryHandleId, type ErdNodeData, type ErdFieldRow, type ErdEdgeData, type GraphNeighbor } from "@/lib/erd/graph";
 import { rankObjects } from "@/lib/search/rank";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import { apiFetch } from "@/lib/api";
 import { ErdCanvas, type ErdCanvasHandle } from "./erd/ErdCanvas";
+import { AuthorFieldDialog } from "./erd/AuthorFieldDialog";
+import { AuthorObjectDialog } from "./erd/AuthorObjectDialog";
+import { buildCustomFieldBody, buildCustomObjectBody, describeTypeFor, looksLikeSandbox, newAuthorId, parseToolingResult, syntheticDescribeForObject, toolingCreatePath, type AuthorChange, type DesignFieldType, type FieldDraft, type ObjectDraft } from "@/lib/salesforce/design";
 import { DiscoverPicker, type DiscoverCandidate } from "./erd/DiscoverPicker";
 import { HidePanel } from "./erd/HidePanel";
 import { PicklistPopover, type PicklistPopoverData } from "./erd/PicklistPopover";
@@ -1076,6 +1079,16 @@ export default function SchemaPanel({
   // selection stay alive. Mutually exclusive with the built-in OOB lock below:
   // custom applies only while OOB is unlocked (oobLocked reported upward).
   const [nodesLocked, setNodesLocked] = useState(false);
+  // Schema authoring (Author mode, ERD): deploy custom fields, custom
+  // objects, and canvas-drawn relationships via the Tooling API.
+  const [authorMode, setAuthorMode] = useState(false);
+  const [authorQueue, setAuthorQueue] = useState<AuthorChange[]>([]);
+  const [authorDialog, setAuthorDialog] = useState<
+    | { kind: "field"; objectApi: string }
+    | { kind: "object" }
+    | { kind: "relationship"; childApi: string; parentApi: string }
+    | null
+  >(null);
   const [oobLocked, setOobLocked] = useState(false);
   const [picker, setPicker] = useState<{
     mode: "children" | "parents";
@@ -2398,6 +2411,276 @@ export default function SchemaPanel({
   // as the live layer under manual snapshots. Restored as-is on the next
   // connect to the same org - zero API calls, no route-hop snapshots.
   // Saves queue on change; empty mounts stay silent; Clear canvas deletes.
+  // ── Schema authoring (Author mode): deploy queue, sketches, dialogs ──
+  // Writes go through the Tooling API via the existing REST proxy, one
+  // change at a time. Success re-describes from the org (canvas shows
+  // server truth); failure rolls sketches back and keeps the error.
+  const isProductionOrg = useMemo(
+    () => instanceUrl !== "" && !looksLikeSandbox(instanceUrl),
+    [instanceUrl]
+  );
+
+  const authorDeploying = useMemo(
+    () => authorQueue.filter((c) => c.status === "deploying"),
+    [authorQueue]
+  );
+
+  const authorPendingApis = useMemo(
+    () => new Set(authorDeploying.map((c) => c.targetApi)),
+    [authorDeploying]
+  );
+
+  /** Pending field rows per object API, read from deploying change bodies. */
+  const sketchRowsByApi = useMemo(() => {
+    const m = new Map<
+      string,
+      { fieldApi: string; designType: DesignFieldType; required: boolean; referenceTo?: string }[]
+    >();
+    for (const c of authorDeploying) {
+      if (c.kind === "object") continue;
+      const meta = (c.body.Metadata ?? {}) as {
+        fullName?: unknown;
+        type?: unknown;
+        required?: unknown;
+        referenceTo?: unknown;
+      };
+      const full = typeof meta.fullName === "string" ? meta.fullName : "";
+      const fieldApi = full.includes(".") ? full.split(".").slice(1).join(".") : full;
+      if (!fieldApi) continue;
+      const list = m.get(c.targetApi) ?? [];
+      list.push({
+        fieldApi,
+        designType: (typeof meta.type === "string" ? meta.type : "Text") as DesignFieldType,
+        required: meta.required === true,
+        referenceTo: typeof meta.referenceTo === "string" ? meta.referenceTo : undefined,
+      });
+      m.set(c.targetApi, list);
+    }
+    return m;
+  }, [authorDeploying]);
+
+  const withSketchRows = useCallback(
+    (apiName: string, rows: ErdFieldRow[]): ErdFieldRow[] => {
+      const extra = sketchRowsByApi.get(apiName);
+      if (!extra || extra.length === 0) return rows;
+      return [
+        ...rows,
+        ...extra.map((s) => ({
+          name: s.fieldApi,
+          type: describeTypeFor(s.designType),
+          isId: false,
+          isName: false,
+          refs: s.referenceTo ? [s.referenceTo] : [],
+          required: s.required,
+          pickValues: [],
+          pending: true,
+        })),
+      ];
+    },
+    [sketchRowsByApi]
+  );
+
+  /** Pending relationship edges (parent → child per canvas convention). */
+  const authorEdges = useMemo((): Edge[] => {
+    const sketches: Edge[] = [];
+    for (const c of authorDeploying) {
+      if (c.kind !== "relationship") continue;
+      const meta = (c.body.Metadata ?? {}) as { fullName?: unknown; referenceTo?: unknown; type?: unknown };
+      const parent = typeof meta.referenceTo === "string" ? meta.referenceTo : "";
+      const full = typeof meta.fullName === "string" ? meta.fullName : "";
+      const fieldApi = full.includes(".") ? full.split(".").slice(1).join(".") : full;
+      if (!parent || !fieldApi) continue;
+      sketches.push({
+        id: `author-${c.id}`,
+        source: parent,
+        target: c.targetApi,
+        sourceHandle: parentExitHandleId,
+        targetHandle: childEntryHandleId,
+        label: fieldApi,
+        type: "erdEdge",
+        data: {
+          kind: meta.type === "MasterDetail" ? "md" : "lookup",
+          pending: true,
+        } as ErdEdgeData,
+      });
+    }
+    return [...baseElements.edges, ...sketches];
+  }, [authorDeploying, baseElements.edges]);
+
+  const openAuthorField = useCallback((apiName: string) => {
+    setAuthorDialog({ kind: "field", objectApi: apiName });
+  }, []);
+
+  const handleAuthorConnect = useCallback(
+    (sourceApi: string, targetApi: string) => {
+      if (!authorMode) return;
+      // Drag source holds the new field (child); drop target is referenced (parent).
+      setAuthorDialog({ kind: "relationship", childApi: sourceApi, parentApi: targetApi });
+    },
+    [authorMode]
+  );
+
+  const deployAuthorChange = useCallback(
+    async (change: AuthorChange): Promise<boolean> => {
+      setAuthorQueue((prev) =>
+        prev.map((c) => (c.id === change.id ? { ...c, status: "deploying" as const, error: undefined } : c))
+      );
+      const token = getToken();
+      if (!token) {
+        setAuthorQueue((prev) =>
+          prev.map((c) =>
+            c.id === change.id
+              ? { ...c, status: "failed" as const, error: "Session token unavailable. Please reconnect." }
+              : c
+          )
+        );
+        return false;
+      }
+      try {
+        const response = await apiFetch("/api/salesforce/rest", {
+          instanceUrl,
+          token,
+          scope: "org",
+          method: "POST",
+          path: toolingCreatePath(apiVersion, change.toolingType),
+          body: JSON.stringify(change.body),
+          auth: { type: "bearer", token },
+        });
+        const data = (await response.json()) as {
+          success?: boolean;
+          status?: number;
+          body?: unknown;
+          error?: string;
+        };
+        if (!response.ok) {
+          const message =
+            typeof data.error === "string" && data.error
+              ? data.error
+              : parseToolingResult(data.body, false, data.status ?? response.status).message;
+          if (isSessionExpiredMessage(message)) onSessionExpired?.();
+          throw new Error(message);
+        }
+        const result = parseToolingResult(data.body, true, data.status);
+        if (!result.ok) {
+          if (isSessionExpiredMessage(result.message)) onSessionExpired?.();
+          throw new Error(result.message);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Deploy failed.";
+        setAuthorQueue((prev) =>
+          prev.map((c) => (c.id === change.id ? { ...c, status: "failed" as const, error: message } : c))
+        );
+        // Object sketches roll back; field/relationship sketches derive from
+        // the deploying queue so they vanish on their own.
+        if (change.kind === "object") {
+          setDescribes((prev) => {
+            const cur = prev.get(change.targetApi) as unknown as
+              | { __authorSketch?: boolean }
+              | undefined;
+            if (!cur?.__authorSketch) return prev;
+            const next = new Map(prev);
+            next.delete(change.targetApi);
+            return next;
+          });
+        }
+        setNotice(`Deploy failed: ${message}`);
+        return false;
+      }
+      setAuthorQueue((prev) => prev.filter((c) => c.id !== change.id));
+      try {
+        const fresh = await fetchDescribe(change.targetApi);
+        mergeDescribes([fresh]);
+      } catch {
+        /* describe refresh failed - canvas keeps prior data */
+      }
+      setNotice(`${change.label} deployed - canvas refreshed from the org.`);
+      return true;
+    },
+    [instanceUrl, apiVersion, getToken, onSessionExpired, fetchDescribe, mergeDescribes]
+  );
+
+  const submitAuthorField = useCallback(
+    async (draft: FieldDraft, childApi: string) => {
+      const isRel = draft.type === "Lookup" || draft.type === "MasterDetail";
+      const label = `${childApi}.${draft.apiName.trim()} (${draft.type})`;
+      if (
+        isProductionOrg &&
+        !window.confirm(`Deploy ${label} to PRODUCTION ${instanceUrl}? This goes live immediately.`)
+      ) {
+        return;
+      }
+      const change: AuthorChange = {
+        id: newAuthorId(),
+        kind: isRel ? "relationship" : "field",
+        status: "deploying",
+        label,
+        targetApi: childApi,
+        toolingType: "CustomField",
+        body: buildCustomFieldBody(draft, childApi),
+      };
+      setAuthorQueue((prev) => [...prev, change]);
+      setAuthorDialog(null);
+      await deployAuthorChange(change);
+    },
+    [isProductionOrg, instanceUrl, deployAuthorChange]
+  );
+
+  const submitAuthorObject = useCallback(
+    async (draft: ObjectDraft) => {
+      const api = draft.apiName.trim();
+      if (describes.has(api)) {
+        setNotice(`${api} is already on the canvas - find it in Discover.`);
+        setAuthorDialog(null);
+        return;
+      }
+      if (
+        isProductionOrg &&
+        !window.confirm(`Create object ${api} on PRODUCTION ${instanceUrl}? This goes live immediately.`)
+      ) {
+        return;
+      }
+      // Optimistic sketch through the normal pipeline; replaced by the live
+      // describe on success, rolled back on failure. Never autosaved.
+      setDescribes((prev) => {
+        const next = new Map(prev);
+        next.set(api, syntheticDescribeForObject(draft) as unknown as SalesforceDescribeResult);
+        return next;
+      });
+      if (filterMode === "standard") setFilterMode("all");
+      const change: AuthorChange = {
+        id: newAuthorId(),
+        kind: "object",
+        status: "deploying",
+        label: `${api} (custom object)`,
+        targetApi: api,
+        toolingType: "CustomObject",
+        body: buildCustomObjectBody(draft),
+      };
+      setAuthorQueue((prev) => [...prev, change]);
+      setAuthorDialog(null);
+      await deployAuthorChange(change);
+    },
+    [describes, isProductionOrg, instanceUrl, filterMode, deployAuthorChange]
+  );
+
+  const retryAuthorChange = useCallback(
+    (id: string) => {
+      const found = authorQueue.find((c) => c.id === id);
+      if (found) void deployAuthorChange({ ...found });
+    },
+    [authorQueue, deployAuthorChange]
+  );
+
+  const dismissAuthorChange = useCallback((id: string) => {
+    setAuthorQueue((prev) => prev.filter((c) => c.id !== id));
+  }, []);
+
+  /** Canvas objects for the relationship target picker. */
+  const authorObjectOptions = useMemo(
+    () => [...describes.keys()].map((name) => ({ name, label: labels.get(name) ?? name })),
+    [describes, labels]
+  );
+
   interface SchemaAutosaveData {
     rootName: string;
     describes: SalesforceDescribeResult[];
@@ -2425,7 +2708,10 @@ export default function SchemaPanel({
     if (!rootName && describes.size === 0) return;
     queueAutosave(orgKey, "schema", {
       rootName,
-      describes: [...describes.values()],
+      // Author sketches never persist: flagged synthetic describes are dropped.
+      describes: [...describes.values()].filter(
+        (d) => !(d as unknown as { __authorSketch?: boolean }).__authorSketch
+      ),
       hiddenIds: [...hiddenIds],
       removedIds: [...removedIds],
       dismissedIds: [...dismissedIds],
@@ -2650,19 +2936,24 @@ export default function SchemaPanel({
   // Attach live callbacks + refresh spinners on top of the base elements
   const elements: { nodes: Node<ErdNodeData>[]; edges: Edge[] } = useMemo(
     () => ({
-      edges: baseElements.edges,
+      edges: authorEdges,
       nodes: baseElements.nodes.map((n) => ({
         ...n,
         data: {
           ...n.data,
           refreshing: refreshingIds.has(n.id),
+          authorMode,
+          onAddField: openAuthorField,
+          authorPending: authorPendingApis.has(n.id),
           onRefreshNode: refreshNode,
           onPicklistClick: openPicklist,
           ...recordNodeData(n.id),
+          rows: withSketchRows(n.id, n.data.rows),
+          totalFields: n.data.totalFields + (sketchRowsByApi.get(n.id)?.length ?? 0),
         },
       })),
     }),
-    [baseElements, refreshingIds, refreshNode, openPicklist, recordNodeData]
+    [baseElements, refreshingIds, refreshNode, openPicklist, recordNodeData, authorMode, openAuthorField, authorPendingApis, withSketchRows, sketchRowsByApi, authorEdges]
   );
 
   // Retired with the recursive "Discover full": the chain explorer walks
@@ -4665,6 +4956,56 @@ export default function SchemaPanel({
         </div>
       )}
 
+      {/* ── Author queue: deploying / failed schema changes ── */}
+      {authorQueue.length > 0 && (
+        <div
+          role="status"
+          aria-label="Schema deploys"
+          className="shrink-0 rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-1.5"
+        >
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--color-accent-dark)]">
+              Author queue
+            </span>
+            {authorQueue.map((c) => (
+              <span
+                key={c.id}
+                className="flex items-center gap-1.5 font-mono text-[11px]"
+                title={c.status === "failed" && c.error ? `${c.label}: ${c.error}` : c.label}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`h-2 w-2 rounded-full ${
+                    c.status === "deploying" ? "bg-amber-500" : "bg-red-500"
+                  }`}
+                />
+                <span className="text-[var(--color-ink-soft)]">{c.label}</span>
+                <span className={c.status === "failed" ? "text-red-700 font-bold" : "text-[var(--color-muted)]"}>
+                  {c.status === "deploying" ? "deploying…" : "failed"}
+                </span>
+                {c.status === "failed" && (
+                  <button
+                    type="button"
+                    onClick={() => retryAuthorChange(c.id)}
+                    className="font-bold text-bronze-600 hover:text-bronze-700 underline cursor-pointer"
+                  >
+                    Retry
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => dismissAuthorChange(c.id)}
+                  aria-label={`Dismiss ${c.label}`}
+                  className="text-[var(--color-muted)] hover:text-[var(--color-ink)] cursor-pointer"
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── Full-height canvas ── */}
       <div className="min-w-0 flex-1 min-h-0 flex flex-col gap-2">
         {rootName && describes.size > 0 && (
@@ -4689,6 +5030,44 @@ export default function SchemaPanel({
               ))}
             </div>
             <span className="mx-1 h-4 w-px bg-[var(--color-line)]" aria-hidden="true" />
+            {view === "erd" && (
+              <button
+                type="button"
+                onClick={() => setAuthorMode((v) => !v)}
+                aria-pressed={authorMode}
+                title={authorMode ? "Exit Author mode" : "Author mode: create custom fields, objects, and relationships on this org"}
+                className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
+                  authorMode
+                    ? "bg-ivory-950 text-ivory-100 border-ivory-950"
+                    : "bg-[var(--color-surface)] border-[var(--color-line)] text-ivory-700 hover:border-[var(--color-accent)]"
+                }`}
+              >
+                {authorMode ? "Authoring" : "Author"}
+              </button>
+            )}
+            {view === "erd" && authorMode && (
+              <button
+                type="button"
+                onClick={() => setAuthorDialog({ kind: "object" })}
+                title="Create a new custom object on this org"
+                className="rounded-full border border-bronze-600 bg-bronze-600 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors cursor-pointer hover:bg-bronze-700"
+              >
+                + Object
+              </button>
+            )}
+            {view === "erd" && authorMode && (
+              <span
+                className="hidden xl:inline font-mono text-[10px] text-ivory-500"
+                title="Drag from one table's edge to another to draw a relationship"
+              >
+                drag table-to-table to relate
+                {isProductionOrg && (
+                  <span className="ml-2 rounded border border-amber-300 bg-amber-50 px-1.5 py-px font-bold text-amber-800">
+                    PRODUCTION ORG
+                  </span>
+                )}
+              </span>
+            )}
             {(["all", "standard", "custom", "manual"] as const).map((f) => (
               <button
                 key={f}
@@ -4950,6 +5329,8 @@ export default function SchemaPanel({
               onNodeClick={handleNodeClick}
               onPaneClick={handlePaneClick}
               onViewportMove={() => setPopover(null)}
+              connectable={authorMode}
+              onConnectNodes={handleAuthorConnect}
               onNodeDragStop={handleErdDragStop}
               layoutRev={layoutRev}
               enforcedPositions={enforced}
@@ -5398,6 +5779,46 @@ export default function SchemaPanel({
 
       {/* Picklist inspector */}
       {popover && <PicklistPopover pop={popover} onClose={() => setPopover(null)} />}
+
+      {/* Schema authoring dialogs */}
+      {authorDialog?.kind === "field" && describes.has(authorDialog.objectApi) && (
+        <AuthorFieldDialog
+          objectApi={authorDialog.objectApi}
+          objectLabel={labels.get(authorDialog.objectApi) ?? authorDialog.objectApi}
+          objectOptions={authorObjectOptions}
+          busy={false}
+          serverError={null}
+          isProduction={isProductionOrg}
+          onClose={() => setAuthorDialog(null)}
+          onDeploy={(draft, childApi) => void submitAuthorField(draft, childApi)}
+        />
+      )}
+      {authorDialog?.kind === "relationship" && (
+        <AuthorFieldDialog
+          objectApi={authorDialog.childApi}
+          objectLabel={labels.get(authorDialog.childApi) ?? authorDialog.childApi}
+          objectOptions={authorObjectOptions}
+          initial={{
+            type: "Lookup",
+            referenceTo: authorDialog.parentApi,
+            lockReferenceTo: true,
+          }}
+          busy={false}
+          serverError={null}
+          isProduction={isProductionOrg}
+          onClose={() => setAuthorDialog(null)}
+          onDeploy={(draft, childApi) => void submitAuthorField(draft, childApi)}
+        />
+      )}
+      {authorDialog?.kind === "object" && (
+        <AuthorObjectDialog
+          busy={false}
+          serverError={null}
+          isProduction={isProductionOrg}
+          onClose={() => setAuthorDialog(null)}
+          onDeploy={(draft) => void submitAuthorObject(draft)}
+        />
+      )}
 
       {/* Record Walk popover */}
       {recordPop && (

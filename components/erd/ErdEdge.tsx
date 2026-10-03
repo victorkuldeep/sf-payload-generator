@@ -97,12 +97,14 @@ function ErdEdgeInner({
   const f3 = foot(-FAN_HALF);
   const fan = `M ${cc.x},${cc.y} L ${f1.x},${f1.y} M ${cc.x},${cc.y} L ${f2.x},${f2.y} M ${cc.x},${cc.y} L ${f3.x},${f3.y}`;
 
-  const stroke = selected ? STROKE_ACTIVE : STROKE;
   // Solid = master-detail, dotted = lookup (kind travels in edge data).
-  const kind = (data as { kind?: string } | undefined)?.kind;
-  const isMd = kind === "md";
+  // Pending authoring sketches render amber + finely dashed.
+  const edgeData = (data as { kind?: string; pending?: boolean } | undefined) ?? {};
+  const isMd = edgeData.kind === "md";
+  const pending = edgeData.pending === true;
+  const stroke = pending ? "#B45309" : selected ? STROKE_ACTIVE : STROKE;
   const lineWidth = selected ? 2.2 : isMd ? 2 : 1.5;
-  const dash = isMd ? undefined : "7 5";
+  const dash = pending ? "4 3" : isMd ? undefined : "7 5";
 
   return (
     <>
