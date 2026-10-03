@@ -179,6 +179,18 @@ export function AppHeader({
           >
             Draw<sup className="ml-[1px] text-[var(--color-accent)]">+</sup>
           </Link>
+          <Link
+            href="/wireframe"
+            aria-current={pathname === "/wireframe" ? "page" : undefined}
+            className={
+              pathname === "/wireframe"
+                ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors"
+                : "hover:text-[var(--color-ink)] transition-colors"
+            }
+            title="Wireframe Studio - schema-aware experience modeling"
+          >
+            Wireframe
+          </Link>
         </nav>
 
         <div className="flex items-center gap-2">
@@ -344,6 +356,14 @@ export function AppHeader({
           title="Draw Studio - engineering whiteboard"
         >
           Draw<sup className="ml-[1px] text-[var(--color-accent)]">+</sup>
+        </Link>
+        <Link
+          href="/wireframe"
+          aria-current={pathname === "/wireframe" ? "page" : undefined}
+          className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
+          title="Wireframe Studio - schema-aware experience modeling"
+        >
+          Wireframe
         </Link>
       </nav>
     </header>
