@@ -8,15 +8,9 @@ type Tab = "editor" | "compare";
 
 /** JSON Studio: editor + A/B comparator for API payloads. */
 export function JsonStudio() {
-  // A pending Validate handoff means the user is bringing a payload to
-  // inspect - land on the Editor where it was delivered, not Compare.
-  const [tab, setTab] = useState<Tab>(() => {
-    try {
-      return sessionStorage.getItem("sf_json_handoff") ? "editor" : "compare";
-    } catch {
-      return "compare";
-    }
-  });
+  // Land on the Editor first; Compare A/B is one click away.
+  // (A Validate handoff, when present, is consumed by the Editor pane.)
+  const [tab, setTab] = useState<Tab>("editor");
 
   return (
     <div className="space-y-4">

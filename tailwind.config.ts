@@ -9,9 +9,9 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["-apple-system", "BlinkMacSystemFont", '"SF Pro Display"', '"SF Pro Text"', '"Helvetica Neue"', "Helvetica", "Arial", '"Segoe UI"', "Roboto", "sans-serif"],
-        display: ["-apple-system", "BlinkMacSystemFont", '"SF Pro Display"', '"Helvetica Neue"', "Helvetica", "Arial", "sans-serif"],
-        mono: ["ui-monospace", '"SF Mono"', "SFMono-Regular", "Menlo", "Consolas", '"Liberation Mono"', "monospace"],
+        sans: ["Inter", "-apple-system", "BlinkMacSystemFont", '"SF Pro Display"', '"SF Pro Text"', '"Helvetica Neue"', "Helvetica", "Arial", '"Segoe UI"', "Roboto", "sans-serif"],
+        display: ["Inter", "-apple-system", "BlinkMacSystemFont", '"SF Pro Display"', '"Helvetica Neue"', "Helvetica", "Arial", "sans-serif"],
+        mono: ['"JetBrains Mono"', "ui-monospace", '"SF Mono"', "SFMono-Regular", "Menlo", "Consolas", '"Liberation Mono"', "monospace"],
       },
       colors: {
         // Ivory - warm elephant-teeth creamy base, charcoal text/accents

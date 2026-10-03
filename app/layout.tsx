@@ -1,18 +1,14 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-  display: "swap",
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  variable: "--font-mono",
-  display: "swap",
-});
+// Self-hosted fonts (bundled via @fontsource, zero external requests):
+// no Google Fonts CDN, no build-time Google API fetch — required for
+// regions where fonts.googleapis.com / fonts.gstatic.com are not approved.
+import "@fontsource/inter/latin-400.css";
+import "@fontsource/inter/latin-500.css";
+import "@fontsource/inter/latin-600.css";
+import "@fontsource/inter/latin-700.css";
+import "@fontsource/jetbrains-mono/latin-400.css";
+import "@fontsource/jetbrains-mono/latin-700.css";
 
 export const viewport: Viewport = {
   themeColor: "#FAF8F2",
@@ -44,7 +40,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} ${jetbrainsMono.variable} min-h-screen bg-[var(--color-canvas)] text-[var(--color-ink)] antialiased flex flex-col`}>
+      <body className="min-h-screen bg-[var(--color-canvas)] text-[var(--color-ink)] antialiased flex flex-col">
         <a href="#main-content" className="skip-to-content">
           Skip to main content
         </a>

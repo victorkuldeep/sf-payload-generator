@@ -317,7 +317,16 @@ export function ConnectModal({
 
         <div className="px-6 py-4 border-t border-[var(--color-line-soft)] bg-[var(--color-canvas)] flex flex-col sm:flex-row sm:items-center gap-3">
           <p className="flex-1 text-[11px] leading-relaxed text-ivory-600">
-            Token is kept in session memory only - never written to disk. All Salesforce calls are proxied server-side.
+            Token stays in this browser tab (sessionStorage) and is proxied server-side to your org only —
+            never written to disk. By connecting you agree to the{" "}
+            <a href="/privacy" target="_blank" rel="noreferrer" className="font-medium underline hover:text-ivory-950">
+              Privacy Policy
+            </a>{" "}
+            and{" "}
+            <a href="/terms" target="_blank" rel="noreferrer" className="font-medium underline hover:text-ivory-950">
+              Terms
+            </a>
+            . Independent utility, not affiliated with Salesforce.
           </p>
           <div className="flex gap-2 shrink-0">
             <Button variant="secondary" onClick={onClose} disabled={loading}>

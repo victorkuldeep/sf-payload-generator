@@ -10,12 +10,15 @@ interface StepperProps {
   current: number;
 }
 
+/**
+ * Builder progress rail: single thin line, sharp edges, hairline dividers.
+ * Lives in a sticky top-and-bottom-bordered bar docked just above the footer.
+ */
 export function Stepper({ steps, current }: StepperProps) {
   return (
     <ol
-      className="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(var(--stc),minmax(0,1fr))]"
-      style={{ "--stc": steps.length } as React.CSSProperties}
       aria-label="Builder progress"
+      className="flex items-stretch divide-x divide-[var(--color-line-soft)] overflow-x-auto"
     >
       {steps.map((step, i) => {
         const done = i < current;
@@ -24,40 +27,44 @@ export function Stepper({ steps, current }: StepperProps) {
           <li
             key={step.label}
             aria-current={active ? "step" : undefined}
-            className={`rounded-xl border px-3 py-2.5 transition-colors ${
+            className={`flex min-w-0 flex-1 items-center gap-2 whitespace-nowrap px-3 py-1.5 transition-colors ${
               active
-                ? "bg-ivory-950 text-ivory-100 border-ivory-950"
-                : done
-                  ? "bg-[var(--color-surface)] border-[var(--color-accent-soft)]"
-                  : "bg-[var(--color-surface)] border-[var(--color-line)] opacity-70"
+                ? "bg-[var(--color-accent-bg)] shadow-[inset_0_-2px_0_var(--color-accent)]"
+                : ""
             }`}
           >
-            <div className="flex items-center gap-2">
+            <span
+              aria-hidden="true"
+              className={`font-mono text-[10px] font-bold tracking-wider ${
+                active
+                  ? "text-[var(--color-accent-dark)]"
+                  : done
+                    ? "text-[var(--color-success)]"
+                    : "text-[var(--color-muted)]"
+              }`}
+            >
+              {done ? "✓" : `0${i + 1}`}
+            </span>
+            <span
+              className={`truncate text-[11px] font-semibold ${
+                active
+                  ? "text-[var(--color-ink)]"
+                  : done
+                    ? "text-[var(--color-ink-soft)]"
+                    : "text-[var(--color-muted)]"
+              }`}
+            >
+              {step.label}
               <span
-                className={`font-display text-lg font-extrabold leading-none ${
-                  active ? "text-bronze-200" : done ? "text-bronze-600" : "text-ivory-500"
+                className={`ml-1.5 font-mono text-[10px] font-normal ${
+                  active || done
+                    ? "text-[var(--color-ink-soft)]"
+                    : "text-[var(--color-muted)]"
                 }`}
-                aria-hidden="true"
               >
-                {done ? "✓" : `0${i + 1}`}
+                {step.hint}
               </span>
-              <div className="min-w-0">
-                <p
-                  className={`text-xs font-semibold truncate ${
-                    active ? "text-ivory-100" : "text-ivory-900"
-                  }`}
-                >
-                  {step.label}
-                </p>
-                <p
-                  className={`text-[10px] truncate ${
-                    active ? "text-ivory-300" : "text-ivory-600"
-                  }`}
-                >
-                  {step.hint}
-                </p>
-              </div>
-            </div>
+            </span>
           </li>
         );
       })}

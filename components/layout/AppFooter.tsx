@@ -16,9 +16,9 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
       onClick={() => setSupportOpen(true)}
       title="Buy me a coffee"
       aria-label="Buy me a coffee"
-      className="inline-flex items-center justify-center h-8 w-8 rounded-lg bg-[var(--color-canvas)] border border-[var(--color-line)] text-[var(--color-ink)] hover:border-[var(--color-accent)] hover:bg-[var(--color-surface-strong)] transition-all cursor-pointer"
+      className="inline-flex items-center text-[var(--color-muted)] hover:text-[var(--color-accent)] transition-colors cursor-pointer"
     >
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" className="h-4 w-4 text-[var(--color-accent)]">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" className="h-4 w-4">
         <path d="M4 8h12v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8Z" />
         <path d="M16 9h2a2 2 0 0 1 0 4h-2M7 4c0 1-1 1.5-1 2.5M11 4c0 1-1 1.5-1 2.5" />
       </svg>
@@ -26,8 +26,8 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
   );
 
   const credit = (
-    <span>
-      Designed &amp; developed by{" "}
+    <span title="Designed & developed by Kuldeep Singh">
+      by{" "}
       <a
         href="https://www.linkedin.com/in/victorkuldeep/"
         target="_blank"
@@ -42,31 +42,45 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
   if (variant === "slim") {
     return (
       <>
-      <footer className="app-chrome-footer w-full border-t border-[var(--color-line)] bg-[#F5F1E8]/60 mt-auto relative overflow-hidden">
+      {trail && (
+        <div className="sticky bottom-0 z-30 border-y border-[var(--color-line)] bg-[var(--color-surface)]">
+          <div className="mx-auto w-full max-w-5xl px-5">{trail}</div>
+        </div>
+      )}
+      <footer className={`app-chrome-footer w-full bg-[#F5F1E8]/60 mt-auto relative overflow-hidden ${trail ? "" : "border-t border-[var(--color-line)]"}`}>
         <div
           aria-hidden="true"
           className="absolute inset-0 opacity-20 pointer-events-none bg-[radial-gradient(#AE9B7D_1px,transparent_1px)] [background-size:24px_24px]"
         />
-        {trail && (
-          <div className="relative border-b border-[var(--color-line-soft)] px-5 py-1 flex justify-center">
-            <div className="w-full max-w-3xl">{trail}</div>
-          </div>
-        )}
-        <div className="relative mx-auto w-full px-5 lg:px-8 py-1 grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-1 font-mono text-[11px] text-[var(--color-muted)]">
-          <div className="flex items-center gap-2 justify-self-center sm:justify-self-start">
+        <div className="relative mx-auto w-full px-5 lg:px-8 py-1 flex flex-col items-center gap-y-1 font-mono text-[10px] text-[var(--color-muted)] md:flex-row md:flex-nowrap md:justify-between md:gap-x-3 md:whitespace-nowrap">
+          <div className="flex items-center gap-2">
             <Link href="/" className="font-semibold text-[var(--color-ink)] hover:text-[var(--color-accent)] transition-colors">
               sObject Studio
             </Link>
             <span aria-hidden="true">•</span>
-            <span className="hidden lg:inline">For Architects · API-First Teams · Salesforce Practitioners</span>
+            <span className="hidden xl:inline">For Architects · API-First Teams · Salesforce Practitioners</span>
           </div>
-          <div className="flex items-center gap-4 justify-self-center">
+          <small className="text-[10px]">
+            © {year} · Independent utility. Not affiliated with Salesforce.
+          </small>
+          <div className="flex items-center gap-2">
+            <nav aria-label="Legal" className="flex items-center gap-2">
+              <Link href="/privacy" className="hover:text-[var(--color-ink)] hover:underline transition-colors">
+                Privacy
+              </Link>
+              <span aria-hidden="true">•</span>
+              <Link href="/terms" className="hover:text-[var(--color-ink)] hover:underline transition-colors">
+                Terms
+              </Link>
+              <span aria-hidden="true">•</span>
+              <Link href="/security" className="hover:text-[var(--color-ink)] hover:underline transition-colors">
+                Security
+              </Link>
+            </nav>
+            <span aria-hidden="true">•</span>
             {credit}
             {coffeeButton}
           </div>
-          <small className="text-[10px] justify-self-center sm:justify-self-end text-center sm:text-right">
-            © {year} · Independent utility. Not affiliated with Salesforce.
-          </small>
         </div>
       </footer>
       <SupportDialog open={supportOpen} onClose={() => setSupportOpen(false)} />
@@ -76,21 +90,20 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
 
   return (
     <>
+    {trail && (
+      <div className="sticky bottom-0 z-30 border-y border-[var(--color-line)] bg-[var(--color-surface)]">
+        <div className="mx-auto w-full max-w-5xl px-5">{trail}</div>
+      </div>
+    )}
     <footer
       aria-label="Site footer"
-      className="app-chrome-footer w-full border-t border-[var(--color-line)] bg-[#F5F1E8]/60 mt-auto relative overflow-hidden"
+      className={`app-chrome-footer w-full bg-[#F5F1E8]/60 mt-auto relative overflow-hidden ${trail ? "" : "border-t border-[var(--color-line)]"}`}
     >
       {/* Ambient dotted detail */}
       <div
         aria-hidden="true"
         className="absolute inset-0 opacity-20 pointer-events-none bg-[radial-gradient(#AE9B7D_1px,transparent_1px)] [background-size:24px_24px]"
       />
-
-      {trail && (
-        <div className="relative border-b border-[var(--color-line-soft)] px-5 py-3 flex justify-center">
-          <div className="w-full max-w-3xl">{trail}</div>
-        </div>
-      )}
 
       <div className="relative mx-auto w-full px-5 lg:px-8 pt-10 pb-6">
         {/* Brand + nav grid */}
@@ -195,7 +208,7 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
             </div>
           </div>
 
-          <div className="md:col-span-8 grid grid-cols-2 sm:grid-cols-3 gap-6">
+          <div className="md:col-span-8 grid grid-cols-2 sm:grid-cols-4 gap-6">
             <div className="space-y-2.5">
               <span className="block font-mono text-[11px] font-semibold uppercase tracking-wider text-[var(--color-ink)]">
                 Explore
@@ -316,6 +329,42 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
                 TMF API Intelligence Toolkit for architects &amp; API-first teams.
               </p>
             </div>
+            <div className="space-y-2.5 col-span-2 sm:col-span-1">
+              <span className="block font-mono text-[11px] font-semibold uppercase tracking-wider text-[var(--color-ink)]">
+                Legal &amp; Privacy
+              </span>
+              <nav aria-label="Legal and privacy">
+                <ul className="space-y-2 font-mono text-xs">
+                  <li>
+                    <Link
+                      href="/privacy"
+                      className="text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:underline transition-colors"
+                    >
+                      Privacy Policy
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/terms"
+                      className="text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:underline transition-colors"
+                    >
+                      Terms of Use
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/security"
+                      className="text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:underline transition-colors"
+                    >
+                      Security
+                    </Link>
+                  </li>
+                </ul>
+              </nav>
+              <p className="pt-1 text-[11px] font-mono leading-relaxed text-[var(--color-muted)]">
+                GDPR-ready: essential storage only, no tracking cookies.
+              </p>
+            </div>
           </div>
         </div>
 
@@ -339,22 +388,36 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
           </span>
         </div>
 
-        {/* Bottom bar - balanced 3-zone, credit dead-center */}
-        <div className="pt-4 grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-3 font-mono text-[11px] text-[var(--color-muted)]">
-          <div className="flex items-center gap-2 justify-self-center sm:justify-self-start">
+        {/* Bottom bar - one row: brand | © disclaimer | legal + credit + coffee */}
+        <div className="pt-4 flex flex-col items-center gap-y-1 font-mono text-[10px] text-[var(--color-muted)] md:flex-row md:flex-nowrap md:justify-between md:gap-x-3 md:whitespace-nowrap">
+          <div className="flex items-center gap-2">
             <Link href="/" className="font-semibold text-[var(--color-ink)] hover:text-[var(--color-accent)] transition-colors">
               sObject Studio
             </Link>
             <span aria-hidden="true">•</span>
-            <span className="hidden lg:inline">For Architects · API-First Teams · Salesforce Practitioners</span>
+            <span className="hidden xl:inline">For Architects · API-First Teams · Salesforce Practitioners</span>
           </div>
-          <div className="flex items-center gap-4 justify-self-center">
+          <small className="text-[10px]">
+            © {year} · Independent utility. Not affiliated with Salesforce.
+          </small>
+          <div className="flex items-center gap-2">
+            <nav aria-label="Legal" className="flex items-center gap-2">
+              <Link href="/privacy" className="hover:text-[var(--color-ink)] hover:underline transition-colors">
+                Privacy
+              </Link>
+              <span aria-hidden="true">•</span>
+              <Link href="/terms" className="hover:text-[var(--color-ink)] hover:underline transition-colors">
+                Terms
+              </Link>
+              <span aria-hidden="true">•</span>
+              <Link href="/security" className="hover:text-[var(--color-ink)] hover:underline transition-colors">
+                Security
+              </Link>
+            </nav>
+            <span aria-hidden="true">•</span>
             {credit}
             {coffeeButton}
           </div>
-          <small className="text-[10px] justify-self-center sm:justify-self-end text-center sm:text-right">
-            © {year} · Independent utility. Not affiliated with Salesforce.
-          </small>
         </div>
       </div>
     </footer>
