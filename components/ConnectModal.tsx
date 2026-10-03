@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { parseFrontdoorUrl, looksLikeFrontdoor } from "@/lib/salesforce/frontdoor";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
@@ -23,7 +24,7 @@ const VERSIONS = [
 ];
 
 /** Terms acceptance persists on this browser; the token itself never does. */
-const TERMS_KEY = "sobject-studio-terms-accepted-v1";
+const TERMS_KEY = "archestra-terms-accepted-v1";
 
 type Tab = "credentials" | "session" | "token-help";
 
@@ -159,7 +160,10 @@ export function ConnectModal({
       aria-labelledby="connect-title"
       onClick={() => { if (!loading) onClose(); }}
     >
-      <div className="modal-card max-w-lg" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal-card max-w-2xl max-h-[85dvh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-[var(--color-line-soft)]">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[2px] text-[var(--color-accent-dark)]">
@@ -169,17 +173,27 @@ export function ConnectModal({
               Connect to Salesforce
             </h2>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={loading}
-            aria-label="Close connect dialog"
-            className="rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors disabled:opacity-40 cursor-pointer"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
-              <path d="M6 6l12 12M18 6 6 18" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-2">
+            <Image
+              src="/SalesforceLogo.webp"
+              alt="Salesforce"
+              width={144}
+              height={48}
+              className="h-12 w-auto"
+              priority={false}
+            />
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={loading}
+              aria-label="Close connect dialog"
+              className="rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors disabled:opacity-40 cursor-pointer"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+                <path d="M6 6l12 12M18 6 6 18" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <div className="px-6 pt-4">
@@ -353,13 +367,14 @@ export function ConnectModal({
               , and I have authority to connect this org.
             </span>
           </label>
+          <p className="text-[11px] leading-relaxed text-ivory-600">
+            <span className="font-semibold text-ivory-950">Disclaimer:</span> Token stays in this
+            browser tab (sessionStorage) and is proxied server-side to your org only -
+            never written to disk. Reads, record edits, and confirmed Author-mode schema changes all travel
+            the same proxied path. Independent project.
+          </p>
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-            <p className="flex-1 text-[11px] leading-relaxed text-ivory-600">
-              Token stays in this browser tab (sessionStorage) and is proxied server-side to your org only —
-              never written to disk. Reads, record edits, and confirmed Author-mode schema changes all travel
-              the same proxied path. Independent project, not affiliated with Salesforce.
-            </p>
-            <div className="flex gap-2 shrink-0">
+            <div className="flex gap-2 shrink-0 sm:ml-auto">
               <Button variant="secondary" onClick={onClose} disabled={loading}>
                 Cancel
               </Button>

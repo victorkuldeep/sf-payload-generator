@@ -62,7 +62,7 @@ describe("system design model", () => {
   it("round-trips export/import and forces draft status", () => {
     const p = buildDemoProject();
     const file = exportProject(p);
-    expect(file.kind).toBe("sobject-studio-system-design");
+    expect(file.kind).toBe("archestra-system-design");
     const back = importProject(JSON.parse(JSON.stringify(file)));
     expect(back.issues).toEqual([]);
     expect(back.project?.systems).toHaveLength(5);

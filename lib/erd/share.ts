@@ -9,7 +9,7 @@
 
 import type { SalesforceDescribeResult } from "@/lib/salesforce/types";
 
-export const ERD_SHARE_KIND = "sobject-studio-erd";
+export const ERD_SHARE_KIND = "archestra-erd";
 export const ERD_SHARE_VERSION = 1;
 
 export interface ErdSharePayload {

@@ -1,11 +1,11 @@
 /**
- * Central IndexedDB access for sf-payload-studio.
+ * Central IndexedDB access for archestra-studio.
  * Single DB + version + upgrade path; every feature store lives here.
  * Feature modules (collection, erd snapshots, soql/rest history) import
  * `withStore` + `STORES` instead of rolling their own open/upgrade code.
  */
 
-export const DB_NAME = "sf-payload-studio";
+export const DB_NAME = "archestra-studio";
 export const DB_VERSION = 15;
 
 export const STORES = {

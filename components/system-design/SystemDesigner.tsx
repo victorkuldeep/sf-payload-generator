@@ -50,6 +50,7 @@ import {
   deleteSystemProject,
 } from "@/lib/system-design/store";
 import { buildDemoProject, buildGroqSampleProject, buildTmfSampleProject } from "@/lib/system-design/demo";
+import { SYSTEM_DRAFT_KEY } from "@/lib/draw/toSystemDraft";
 import { SystemNodeView, SystemGlyph, type SystemNodeData } from "./SystemNode";
 import { TestRunner } from "./TestRunner";
 import { RunEdgeDialog } from "./RunEdgeDialog";
@@ -524,6 +525,25 @@ export function SystemDesigner() {
   // Initial load: most recent project, else a fresh one (unsaved until Save).
   useEffect(() => {
     void (async () => {
+      try {
+        const raw = sessionStorage.getItem(SYSTEM_DRAFT_KEY);
+        if (raw) {
+          sessionStorage.removeItem(SYSTEM_DRAFT_KEY);
+          const { project: valid } = validateProject(JSON.parse(raw));
+          if (valid) {
+            setProject({ ...valid, updatedAt: Date.now() });
+            setPast([]);
+            setFuture([]);
+            setSelNodeId(null);
+            setSelEdgeId(null);
+            setSaveState("dirty");
+            setProjectList(await listSystemProjects());
+            return;
+          }
+        }
+      } catch {
+        /* corrupted handoff - fall through to the normal load */
+      }
       const list = await listSystemProjects();
       setProjectList(list);
       if (list.length > 0) {

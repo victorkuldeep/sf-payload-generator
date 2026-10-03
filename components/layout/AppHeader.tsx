@@ -113,12 +113,12 @@ export function AppHeader({
   return (
     <header className="app-chrome-header sticky top-0 z-40 w-full bg-[var(--color-canvas)]/95 backdrop-blur-sm border-b border-[var(--color-line)]">
       <div className="w-full px-5 flex items-center justify-between h-[54px] gap-3">
-        <Link href="/" className="sf-brand" aria-label="sObject Studio - Salesforce API Workbench">
-          <span className="sf-brand__title">
-            <span className="sf-brand__lead">sObject</span>
-            <span className="sf-brand__rest">Studio</span>
+        <Link href="/" className="arch-brand" aria-label="Archestra - The Architecture Engineering Studio">
+          <span className="arch-brand__title">
+            <span className="arch-brand__lead">Arch</span>
+            <span className="arch-brand__rest">estra</span>
           </span>
-          <span className="sf-brand__tagline">Salesforce API Workbench</span>
+          <span className="arch-brand__tagline">The Architecture Engineering Studio</span>
         </Link>
 
         <nav className="hidden md:flex items-center gap-5 text-xs font-medium text-[var(--color-ink-soft)]" aria-label="Product">
@@ -177,7 +177,7 @@ export function AppHeader({
             }
             title="Draw Studio - engineering whiteboard"
           >
-            Draw
+            Draw<sup className="ml-[1px] text-[var(--color-accent)]">+</sup>
           </Link>
         </nav>
 
@@ -343,7 +343,7 @@ export function AppHeader({
           className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
           title="Draw Studio - engineering whiteboard"
         >
-          Draw
+          Draw<sup className="ml-[1px] text-[var(--color-accent)]">+</sup>
         </Link>
       </nav>
     </header>

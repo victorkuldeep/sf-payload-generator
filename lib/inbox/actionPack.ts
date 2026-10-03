@@ -104,7 +104,7 @@ export function compileActionPack(
   const lines: string[] = [];
   lines.push("# Architecture Action Pack");
   lines.push("");
-  lines.push("> sObject Studio · Schema Explorer");
+  lines.push("> Archestra · Schema Explorer");
   lines.push("");
   lines.push("## Document Control");
   lines.push("");

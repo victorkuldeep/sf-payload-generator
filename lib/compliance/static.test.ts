@@ -152,7 +152,7 @@ describe("privacy / GDPR surface", () => {
     expect(modal).toMatch(/sessionStorage/);
     expect(modal).toMatch(/href="\/privacy"/);
     expect(modal).toMatch(/href="\/terms"/);
-    expect(modal).toMatch(/Independent project, not affiliated with Salesforce/);
+    expect(modal).toMatch(/Independent project./);
   });
 
   it("connect requires explicit Terms acceptance before Test & Connect", () => {

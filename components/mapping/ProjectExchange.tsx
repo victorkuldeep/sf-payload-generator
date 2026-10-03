@@ -165,7 +165,7 @@ export function ImportDialog({ onClose, onImported }: { onClose: () => void; onI
                 onChange={(e) => setText(e.target.value)}
                 rows={8}
                 spellCheck={false}
-                placeholder='{"format": "sobject-studio-mapping-project", …}'
+                placeholder='{"format": "archestra-mapping-project", …}'
                 className="mt-1 w-full rounded-lg border border-[#E8E2D8] bg-[#FCFBF8] p-2.5 font-mono text-[11px] focus:border-[#A98450] focus:outline-none"
               />
             </label>

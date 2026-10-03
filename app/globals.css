@@ -105,7 +105,7 @@ button, input, select, textarea, optgroup, option {
 ::-webkit-scrollbar-thumb:hover { background: var(--color-accent-soft); }
 
 /* ── Brand ── */
-.sf-brand {
+.arch-brand {
   display: inline-flex;
   flex: 0 0 auto;
   flex-direction: column;
@@ -114,27 +114,27 @@ button, input, select, textarea, optgroup, option {
   text-decoration: none;
   white-space: nowrap;
 }
-.sf-brand__title {
+.arch-brand__title {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 0;
   font-family: var(--font-sans);
   font-size: 16px;
   font-weight: 700;
   letter-spacing: -0.02em;
   white-space: nowrap;
 }
-.sf-brand__lead {
+.arch-brand__lead {
   color: var(--color-ink);
 }
-.sf-brand__rest {
+.arch-brand__rest {
   background: linear-gradient(100deg, #9A7653 0%, #C9A86A 55%, #7A5C3A 100%);
   background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
 }
-.sf-brand__tagline {
+.arch-brand__tagline {
   margin-left: 1px;
   color: var(--color-muted);
   font-size: 9px;

@@ -18,13 +18,13 @@ export function WelcomeModal({ open, onConnect, onExplore }: WelcomeModalProps) 
       <div className="modal-card max-w-xl">
         <div className="px-6 sm:px-8 pt-7 pb-6 text-center">
           <p className="text-[10px] font-semibold uppercase tracking-[2px] text-[var(--color-accent-dark)]">
-            Salesforce API Workbench
+            The Architecture Engineering Studio
           </p>
           <h2 id="welcome-title" className="hero-title mt-2 text-4xl sm:text-5xl">
             Payloads without <em>the grunt work.</em>
           </h2>
           <p className="mx-auto mt-3 text-sm leading-relaxed text-ivory-700 max-w-md">
-            Welcome to <strong className="text-ivory-950">sObject Studio</strong> - connect
+            Welcome to <strong className="text-ivory-950">Archestra</strong> - connect
             to any org and build accurate payloads from live metadata. No manual
             field copy-paste.
           </p>

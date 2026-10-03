@@ -12,7 +12,7 @@ interface Session {
 
 function readSession(): Session | null {
   try {
-    const raw = sessionStorage.getItem("sf_session");
+    const raw = sessionStorage.getItem("archestra_session");
     if (!raw) return null;
     const s = JSON.parse(raw) as Session;
     return s.token && s.instanceUrl ? s : null;

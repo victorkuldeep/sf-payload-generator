@@ -18,6 +18,9 @@ const FORBIDDEN_HOSTS = [
 const SCANNED = [
   "components/draw/DrawCanvas.tsx",
   "components/draw/DrawStudio.tsx",
+  "components/draw/DraftDialog.tsx",
+  "lib/draw/storage.ts",
+  "lib/draw/toSystemDraft.ts",
   "scripts/copy-excalidraw-assets.mjs",
   "app/draw/page.tsx",
 ];

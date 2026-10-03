@@ -55,13 +55,13 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
         <div className="relative mx-auto w-full px-5 lg:px-8 py-1 flex flex-col items-center gap-y-1 font-mono text-[10px] text-[var(--color-muted)] md:flex-row md:flex-nowrap md:justify-between md:gap-x-3 md:whitespace-nowrap">
           <div className="flex items-center gap-2">
             <Link href="/" className="font-semibold text-[var(--color-ink)] hover:text-[var(--color-accent)] transition-colors">
-              sObject Studio
+              Archestra
             </Link>
             <span aria-hidden="true">•</span>
             <span className="hidden xl:inline">For Architects · API-First Teams · Salesforce Practitioners</span>
           </div>
           <small className="text-[10px]">
-            © {year} · Independent project. Not affiliated with Salesforce.
+            © {year} Kuldeep Singh · Independent project.
           </small>
           <div className="flex items-center gap-2">
             <nav aria-label="Legal" className="flex items-center gap-2">
@@ -111,10 +111,10 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
           <div className="md:col-span-4 space-y-4">
             <div>
               <p className="text-sm font-bold text-[var(--color-ink)]">
-                sObject <span className="bg-gradient-to-r from-bronze-600 via-[#C9A86A] to-bronze-600 bg-clip-text text-transparent">Studio</span>
+                Arch<span className="bg-gradient-to-r from-bronze-600 via-[#C9A86A] to-bronze-600 bg-clip-text text-transparent">estra</span>
               </p>
               <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[2px] text-[var(--color-muted)]">
-                Salesforce API Workbench
+                The Architecture Engineering Studio
               </p>
             </div>
             <p className="max-w-sm text-xs leading-relaxed text-[var(--color-ink-soft)]">
@@ -392,13 +392,13 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
         <div className="pt-4 flex flex-col items-center gap-y-1 font-mono text-[10px] text-[var(--color-muted)] md:flex-row md:flex-nowrap md:justify-between md:gap-x-3 md:whitespace-nowrap">
           <div className="flex items-center gap-2">
             <Link href="/" className="font-semibold text-[var(--color-ink)] hover:text-[var(--color-accent)] transition-colors">
-              sObject Studio
+              Archestra
             </Link>
             <span aria-hidden="true">•</span>
             <span className="hidden xl:inline">For Architects · API-First Teams · Salesforce Practitioners</span>
           </div>
           <small className="text-[10px]">
-            © {year} · Independent project. Not affiliated with Salesforce.
+            © {year} Kuldeep Singh · Independent project.
           </small>
           <div className="flex items-center gap-2">
             <nav aria-label="Legal" className="flex items-center gap-2">

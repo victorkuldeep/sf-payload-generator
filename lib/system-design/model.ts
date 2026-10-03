@@ -752,7 +752,7 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
  * Operation headers DO export: keep values as $env.NAME refs, never literals. */
 export function exportProject(project: SystemProject): { kind: string; version: number; exportedAt: number; project: SystemProject } {
   return {
-    kind: "sobject-studio-system-design",
+    kind: "archestra-system-design",
     version: SYSTEM_DESIGN_SCHEMA_VERSION,
     exportedAt: Date.now(),
     project: { ...project, updatedAt: Date.now() },
@@ -762,7 +762,7 @@ export function exportProject(project: SystemProject): { kind: string; version: 
 export function importProject(raw: unknown): { project: SystemProject | null; issues: ProjectIssue[] } {
   if (!raw || typeof raw !== "object") return { project: null, issues: [{ path: "$", message: "Not an object." }] };
   const env = raw as Record<string, unknown>;
-  if (env.kind !== "sobject-studio-system-design") {
+  if (env.kind !== "archestra-system-design") {
     return { project: null, issues: [{ path: "$.kind", message: "Not a System Design export." }] };
   }
   return validateProject(env.project);

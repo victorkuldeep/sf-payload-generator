@@ -4,7 +4,7 @@ import { AppFooter } from "@/components/layout/AppFooter";
 
 export const metadata = {
   title: "Terms of Use",
-  description: "Terms for using sObject Studio, including the independent-utility disclaimer for Salesforce.",
+  description: "Terms for using Archestra, including the independent-project disclaimer for Salesforce.",
   robots: { index: false, follow: false },
 };
 
@@ -35,11 +35,9 @@ export default function TermsPage() {
         <div className="mt-8 space-y-8">
           <Section id="service" title="1. What this tool is">
             <p>
-              sObject Studio is a free, browser-first workbench for Salesforce architects and API-first teams:
+              Archestra is a free, browser-first architecture engineering studio:
               live metadata describe, ERD design, payload composition, and API exploration (including the System
-              tab for multi-system integration topology). It is an <strong>independent utility</strong> — not
-              affiliated with, endorsed by, or sponsored by Salesforce, Inc. Salesforce and related marks belong
-              to their owners.
+              tab for multi-system integration topology). It is an <strong>independent project</strong>.
             </p>
           </Section>
 

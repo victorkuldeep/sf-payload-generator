@@ -187,7 +187,7 @@ const DEFAULT_API_VERSION =
 
 function readSavedCreds() {
   try {
-    const saved = sessionStorage.getItem("sf_session");
+    const saved = sessionStorage.getItem("archestra_session");
     if (saved) {
       const parsed = JSON.parse(saved) as {
         instanceUrl?: string;
@@ -663,7 +663,7 @@ export default function Home() {
       }));
       return;
     }
-    const saved = sessionStorage.getItem("sf_session");
+    const saved = sessionStorage.getItem("archestra_session");
     if (!saved) {
       if (!sessionStorage.getItem("sf_welcomed")) setShowWelcome(true);
       return;
@@ -686,7 +686,7 @@ export default function Home() {
         setShowWelcome(true);
       }
     } catch {
-      sessionStorage.removeItem("sf_session");
+      sessionStorage.removeItem("archestra_session");
       if (!sessionStorage.getItem("sf_welcomed")) setShowWelcome(true);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -855,7 +855,7 @@ export default function Home() {
         tokenRef.current = token;
 
         // Persist session for refresh survival (sessionStorage: tab-scoped, clears on tab close)
-        sessionStorage.setItem("sf_session", JSON.stringify({ instanceUrl, token, apiVersion }));
+        sessionStorage.setItem("archestra_session", JSON.stringify({ instanceUrl, token, apiVersion }));
         setSavedCreds({ instanceUrl, token, apiVersion });
 
         setState((prev) => ({
@@ -1300,7 +1300,7 @@ export default function Home() {
     builderRestoredRef.current = null;
     modeRestoredRef.current = false;
     setOrgKey(null);
-    sessionStorage.removeItem("sf_session");
+    sessionStorage.removeItem("archestra_session");
     setShowSearch(false);
     setShowConnect(false);
     setSessionExpired(false);

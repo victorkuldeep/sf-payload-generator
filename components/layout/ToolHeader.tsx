@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
@@ -19,7 +19,7 @@ const MODE_LINKS: { label: string; href: string }[] = [
   { label: "Rest", href: "/?mode=rest" },
 ];
 
-const ROUTE_LINKS: { label: string; href: string }[] = [
+const ROUTE_LINKS: { label: ReactNode; href: string }[] = [
   { label: "Schema", href: "/?mode=schema" },
   { label: "JSON", href: "/json" },
   { label: "Validate", href: "/validate" },
@@ -27,7 +27,14 @@ const ROUTE_LINKS: { label: string; href: string }[] = [
   { label: "Contracts", href: "/contracts" },
   { label: "Architect", href: "/architect" },
   { label: "System", href: "/system" },
-  { label: "Draw", href: "/draw" },
+  {
+    label: (
+      <>
+        Draw<sup className="ml-[1px] text-[var(--color-accent)]">+</sup>
+      </>
+    ),
+    href: "/draw",
+  },
 ];
 
 interface SessionView {
@@ -49,7 +56,7 @@ export function ToolHeader() {
   useEffect(() => {
     const read = () => {
       try {
-        const saved = JSON.parse(sessionStorage.getItem("sf_session") ?? "null") as {
+        const saved = JSON.parse(sessionStorage.getItem("archestra_session") ?? "null") as {
           instanceUrl?: string;
           token?: string;
           apiVersion?: string;
@@ -92,7 +99,7 @@ export function ToolHeader() {
 
   const disconnect = () => {
     try {
-      sessionStorage.removeItem("sf_session");
+      sessionStorage.removeItem("archestra_session");
     } catch {
       /* storage unavailable */
     }
@@ -118,12 +125,12 @@ export function ToolHeader() {
   return (
     <header className="app-chrome-header sticky top-0 z-40 w-full bg-[var(--color-canvas)]/95 backdrop-blur-sm border-b border-[var(--color-line)]">
       <div className="w-full px-5 flex items-center justify-between h-[64px] gap-3">
-        <Link href="/" className="sf-brand" aria-label="sObject Studio - home">
-          <span className="sf-brand__title">
-            <span className="sf-brand__lead">sObject</span>
-            <span className="sf-brand__rest">Studio</span>
+        <Link href="/" className="arch-brand" aria-label="Archestra - home">
+          <span className="arch-brand__title">
+            <span className="arch-brand__lead">Arch</span>
+            <span className="arch-brand__rest">estra</span>
           </span>
-          <span className="sf-brand__tagline">Salesforce API Workbench</span>
+          <span className="arch-brand__tagline">The Architecture Engineering Studio</span>
         </Link>
 
         <nav className="hidden md:flex items-center gap-5 text-xs font-medium text-[var(--color-ink-soft)]" aria-label="Product">

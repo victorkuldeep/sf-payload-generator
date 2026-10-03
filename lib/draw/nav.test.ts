@@ -27,4 +27,10 @@ describe("draw navigation", () => {
     const mobile = src.slice(src.indexOf("md:hidden"));
     expect(mobile).toContain('href="/draw"');
   });
+
+  it("tab reads Draw+ with a raised plus", () => {
+    for (const rel of ["components/layout/AppHeader.tsx", "components/layout/ToolHeader.tsx"]) {
+      expect(read(rel)).toContain("Draw<sup");
+    }
+  });
 });

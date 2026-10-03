@@ -1,6 +1,6 @@
 /**
- * Reload-safety for the Draw canvas, the excalidraw.com way: the current
- * scene is saved locally on every change and restored on load. No snapshots,
+ * Reload-safety for the Draw canvas: the current scene is saved locally
+ * on every change and restored on load. No snapshots,
  * no UI - just no lost work.
  *
  * Backed by the shared IndexedDB (`draw-scenes` store) so image-heavy
@@ -11,7 +11,7 @@
 import { STORES, withStore } from "@/lib/db";
 
 const STORE = STORES.drawScenes;
-/** Single slot - the canvas holds one current drawing, like excalidraw.com. */
+/** Single slot - the canvas holds one current drawing. */
 const CURRENT_ID = "current";
 
 export interface StoredScene {

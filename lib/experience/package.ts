@@ -11,7 +11,7 @@ import JSZip from "jszip";
 import type { MappingProject } from "../mapping/types";
 import type { StudioProject } from "../studio/types";
 
-export const WORKSPACE_PACKAGE_FORMAT = "sobject-studio-workspace";
+export const WORKSPACE_PACKAGE_FORMAT = "archestra-workspace";
 export const WORKSPACE_PACKAGE_VERSION = 1;
 
 const MAX_ENTRIES = 3000;
@@ -56,7 +56,7 @@ export async function exportWorkspaceZip(
   loadBlob: (storageKey: string) => Promise<Blob | null>
 ): Promise<{ blob: Blob; summary: WorkspaceSummary }> {
   const zip = new JSZip();
-  const base = zip.folder("sobject-studio-workspace")!;
+  const base = zip.folder("archestra-workspace")!;
   const now = new Date().toISOString();
   const exp = root.experience;
 
@@ -83,7 +83,7 @@ export async function exportWorkspaceZip(
   const manifest: WorkspaceManifest = {
     format: WORKSPACE_PACKAGE_FORMAT,
     formatVersion: WORKSPACE_PACKAGE_VERSION,
-    application: "sObject Studio",
+    application: "Archestra",
     exportedAt: now,
     workspace: { id: root.id, name: root.name, customer: root.customer },
     mappings: children.map((c) => ({ id: c.id, name: c.name, sourceApi: c.sourceApi })),
@@ -104,7 +104,7 @@ export async function exportWorkspaceZip(
     [
       `# ${root.name}`,
       ``,
-      `Exported from sObject Studio on ${now}.`,
+      `Exported from Archestra on ${now}.`,
       ``,
       `## Restore`,
       ``,
@@ -179,7 +179,7 @@ export async function inspectWorkspace(file: Blob): Promise<WorkspaceInspect> {
     }
   };
 
-  const manifestRes = await readJson("sobject-studio-workspace/manifest.json");
+  const manifestRes = await readJson("archestra-workspace/manifest.json");
   if (!manifestRes.ok) return bad(["Not a studio workspace package (manifest missing or broken)."]);
   const manifest = manifestRes.value as WorkspaceManifest;
   if (manifest.format !== WORKSPACE_PACKAGE_FORMAT) return bad([`Unknown package format "${(manifest as { format?: string }).format}".`]);
@@ -187,7 +187,7 @@ export async function inspectWorkspace(file: Blob): Promise<WorkspaceInspect> {
     return bad([`Unsupported package version ${manifest.formatVersion} (this app reads v${WORKSPACE_PACKAGE_VERSION}).`]);
   }
 
-  const rootRes = await readJson("sobject-studio-workspace/workspace.json");
+  const rootRes = await readJson("archestra-workspace/workspace.json");
   if (!rootRes.ok) return bad([rootRes.error!]);
   const root = rootRes.value as StudioProject;
   if (typeof root.id !== "string" || !root.id) return bad(["Workspace id missing."]);
@@ -196,7 +196,7 @@ export async function inspectWorkspace(file: Blob): Promise<WorkspaceInspect> {
 
   const mappings: MappingProject[] = [];
   for (const m of manifest.mappings ?? []) {
-    const res = await readJson(`sobject-studio-workspace/mappings/${m.id}.json`);
+    const res = await readJson(`archestra-workspace/mappings/${m.id}.json`);
     if (!res.ok) {
       warnings.push(`Mapping "${m.name}" unreadable - skipped, the rest imports.`);
       continue;
@@ -213,7 +213,7 @@ export async function inspectWorkspace(file: Blob): Promise<WorkspaceInspect> {
   const missingAssets: string[] = [];
   let decompressed = 0;
   for (const a of manifest.assets ?? []) {
-    const entry = zip.file(`sobject-studio-workspace/${a.path}`);
+    const entry = zip.file(`archestra-workspace/${a.path}`);
     if (!entry) {
       missingAssets.push(a.path);
       warnings.push(`Declared image missing: ${a.path}. Screens keep metadata without the image.`);
@@ -247,12 +247,12 @@ export async function extractWorkspaceAssets(file: Blob, manifest: WorkspaceMani
   const zip = await JSZip.loadAsync(file);
   const out: { storageKey: string; blob: Blob; thumbnail: Blob | null }[] = [];
   for (const a of manifest.assets ?? []) {
-    const entry = zip.file(`sobject-studio-workspace/${a.path}`);
+    const entry = zip.file(`archestra-workspace/${a.path}`);
     if (!entry) continue;
     const blob = await entry.async("blob");
     if (blob.type && blob.type !== a.mimeType && blob.size > 0) continue;
     const storageKey = a.path.split("/").pop()!.replace(/\.(png|webp)$/, "");
-    const thumbEntry = zip.file(`sobject-studio-workspace/assets/thumbnails/${storageKey}.${a.mimeType === "image/webp" ? "webp" : "png"}`);
+    const thumbEntry = zip.file(`archestra-workspace/assets/thumbnails/${storageKey}.${a.mimeType === "image/webp" ? "webp" : "png"}`);
     out.push({ storageKey, blob, thumbnail: thumbEntry ? await thumbEntry.async("blob") : null });
   }
   return out;
