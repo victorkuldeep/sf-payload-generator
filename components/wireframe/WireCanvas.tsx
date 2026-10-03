@@ -9,6 +9,10 @@ import { saveExperience } from "@/lib/wireframe/store";
 import { loadViewport, panBy, storeViewport, zoomAt, type Viewport } from "@/lib/wireframe/viewport";
 import { ComponentView } from "./ComponentView";
 import { Inspector } from "./Inspector";
+import { SchemaPanel } from "./SchemaPanel";
+import { useWireSchema } from "./useWireSchema";
+import { buildBoundComponent } from "@/lib/wireframe/schema";
+import type { SalesforceField } from "@/lib/salesforce/types";
 
 /**
  * Wireframe canvas shell (EPIC 02): screens strip, infinite pan/zoom
@@ -22,6 +26,8 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
   const [selId, setSelId] = useState<string | null>(null);
   const [selComp, setSelComp] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [schemaOpen, setSchemaOpen] = useState(false);
+  const schema = useWireSchema();
   const [newName, setNewName] = useState("");
   const areaRef = useRef<HTMLDivElement | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -193,6 +199,27 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
 
   const inspected = exp.components.find((c) => c.id === selComp) ?? null;
 
+  const addBoundField = (field: SalesforceField, objectName: string) => {
+    const target = selId ?? exp.screens[0]?.id;
+    if (!target) return;
+    const comp = buildBoundComponent(field, objectName, target);
+    persist({ ...exp, components: [...exp.components, comp] });
+    setSelId(target);
+    setSelComp(comp.id);
+  };
+
+  const bindField = (componentId: string, field: SalesforceField, objectName: string) => {
+    const current = exp.components.find((c) => c.id === componentId);
+    persist({
+      ...exp,
+      components: patchComponent(exp.components, componentId, {
+        bindingState: "existing",
+        binding: { source: "salesforce", object: objectName, field: field.name },
+        validation: { ...(current?.validation ?? {}), required: !field.nillable },
+      }),
+    });
+  };
+
   const addComponent = (kind: ComponentKind, screenId: string | null) => {
     const target = screenId ?? exp.screens[0]?.id;
     if (!target) return;
@@ -278,6 +305,11 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
         <Button size="sm" variant="secondary" onClick={() => setPaletteOpen((v) => !v)} title="Component palette" aria-expanded={paletteOpen} className="mt-2 w-full">
           {paletteOpen ? "Close palette" : "+ Component"}
         </Button>
+        {schema.connected && (
+          <Button size="sm" variant="secondary" onClick={() => setSchemaOpen((v) => !v)} title="Salesforce schema" aria-expanded={schemaOpen} className="mt-1.5 w-full">
+            {schemaOpen ? "Close schema" : "⇄ Schema"}
+          </Button>
+        )}
         <p className="mt-2 px-1 text-[10px] leading-relaxed text-[#A39B8E]">
           Drag headers to move · scroll to pan · Ctrl+scroll or pinch to zoom · Del removes
         </p>
@@ -312,6 +344,16 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
           ))}
           <p className="px-1 text-[10px] leading-relaxed text-[#A39B8E]">Click adds to the selected screen · or drag onto any screen</p>
         </aside>
+      )}
+
+      {schemaOpen && schema.connected && (
+        <SchemaPanel
+          schema={schema}
+          selectedScreenId={selId ?? exp.screens[0]?.id ?? null}
+          inspectedId={selComp}
+          onAddField={addBoundField}
+          onBindField={bindField}
+        />
       )}
 
       <div className="relative min-w-0 flex-1">
@@ -413,6 +455,7 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
       {inspected && (
         <Inspector
           comp={inspected}
+          schema={schema}
           onPatch={(patch) => patchComponentById(inspected.id, patch)}
           onMove={(dir) => moveComponent(inspected.id, dir)}
           onDelete={() => deleteComponent(inspected.id)}

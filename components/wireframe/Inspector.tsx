@@ -3,6 +3,7 @@
 import Button from "../ui/Button";
 import { defFor } from "@/lib/wireframe/registry";
 import type { BindingState, WireComponent } from "@/lib/wireframe/model";
+import type { WireSchema } from "./useWireSchema";
 
 const inputCls =
   "w-full rounded-lg border border-[#E8E2D8] bg-white px-2 py-1.5 text-xs text-[#27241F] placeholder-[#A39B8E] focus:border-[#C9A86A] focus:outline-none";
@@ -40,12 +41,14 @@ function Lines({ label, values, onChange }: { label: string; values: string[]; o
  */
 export function Inspector({
   comp,
+  schema,
   onPatch,
   onMove,
   onDelete,
   onClose,
 }: {
   comp: WireComponent;
+  schema?: WireSchema;
   onPatch: (patch: Partial<WireComponent>) => void;
   onMove: (dir: -1 | 1) => void;
   onDelete: () => void;
@@ -53,6 +56,7 @@ export function Inspector({
 }) {
   const def = defFor(comp.kind);
   const binding = comp.binding;
+  const describeFields = binding?.object ? (schema?.describes.get(binding.object)?.fields ?? []) : [];
   const state: BindingState | "" = comp.bindingState ?? "";
   const props = comp.props as Record<string, unknown>;
   const interaction = comp.interaction;
@@ -144,10 +148,22 @@ export function Inspector({
                       id="insp-obj"
                       value={binding?.object ?? ""}
                       onChange={(e) => setBinding({ ...(binding ?? { source: "salesforce" as const }), object: e.target.value.slice(0, 120) || undefined })}
+                      onBlur={(e) => {
+                        const v = e.target.value.trim();
+                        if (v) void schema?.loadDescribe(v);
+                      }}
                       placeholder="Account"
                       spellCheck={false}
+                      list={schema && schema.objects.length > 0 ? "insp-objects" : undefined}
                       className={`${inputCls} font-mono text-[11px]`}
                     />
+                    {schema && schema.objects.length > 0 && (
+                      <datalist id="insp-objects">
+                        {schema.objects.slice(0, 500).map((o) => (
+                          <option key={o.name} value={o.name}>{o.label}</option>
+                        ))}
+                      </datalist>
+                    )}
                   </div>
                   <div>
                     <label className={labelCls} htmlFor="insp-field">Field</label>
@@ -157,8 +173,16 @@ export function Inspector({
                       onChange={(e) => setBinding({ ...(binding ?? { source: "salesforce" as const }), field: e.target.value.slice(0, 120) || undefined })}
                       placeholder="Name"
                       spellCheck={false}
+                      list={describeFields.length > 0 ? "insp-fields" : undefined}
                       className={`${inputCls} font-mono text-[11px]`}
                     />
+                    {describeFields.length > 0 && (
+                      <datalist id="insp-fields">
+                        {describeFields.slice(0, 500).map((f) => (
+                          <option key={f.name} value={f.name}>{f.label} · {f.type}</option>
+                        ))}
+                      </datalist>
+                    )}
                   </div>
                 </div>
               )}
