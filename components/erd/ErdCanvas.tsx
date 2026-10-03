@@ -23,6 +23,7 @@ import {
   PanOnScrollMode,
   type Node,
   type Edge,
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { toPng } from "html-to-image";
@@ -30,6 +31,7 @@ import type { ErdNodeData, GraphBubbleData } from "@/lib/erd/graph";
 import { ErdTableNode } from "./ErdTableNode";
 import { ErdEdge } from "./ErdEdge";
 import { GraphBubbleNode } from "./GraphBubbleNode";
+import { useAmplifiedPinch } from "../canvas/useAmplifiedPinch";
 
 const nodeTypes = { erdTable: ErdTableNode, graphBubble: GraphBubbleNode } as const;
 const edgeTypes = { erdEdge: ErdEdge } as const;
@@ -89,6 +91,13 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const rfInstance = useReactFlow();
+  const rfRef = useRef<ReactFlowInstance | null>(null);
+  useEffect(() => {
+    rfRef.current = rfInstance;
+  }, [rfInstance]);
+  // 4x-feel pinch zoom (trackpad + touch); the native 1x handler stays off.
+  useAmplifiedPinch(containerRef, { instanceRef: rfRef, minZoom: 0.15, maxZoom: 4 });
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<ErdNodeData | GraphBubbleData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const { fitView, setCenter, getZoom, setViewport, getViewport } = useReactFlow();
@@ -362,7 +371,7 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
         zoomOnScroll={false}
         panOnScroll
         panOnScrollMode={PanOnScrollMode.Free}
-        zoomOnPinch
+        zoomOnPinch={false}
         nodesDraggable={!laser && !nodesLocked}
         nodesConnectable={!laser && connectable}
         onConnect={(c) => {

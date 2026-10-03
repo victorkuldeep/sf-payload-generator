@@ -6,7 +6,7 @@
  */
 
 export const DB_NAME = "sf-payload-studio";
-export const DB_VERSION = 14;
+export const DB_VERSION = 15;
 
 export const STORES = {
   items: "request-collection",
@@ -23,6 +23,7 @@ export const STORES = {
   workspaces: "workspace-autosave",
   systemProjects: "system-projects",
   systemRuns: "system-runs",
+  drawScenes: "draw-scenes",
 } as const;
 
 export type StoreName = (typeof STORES)[keyof typeof STORES];

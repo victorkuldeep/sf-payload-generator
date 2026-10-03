@@ -167,6 +167,18 @@ export function AppHeader({
           >
             System
           </Link>
+          <Link
+            href="/draw"
+            aria-current={pathname === "/draw" ? "page" : undefined}
+            className={
+              pathname === "/draw"
+                ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors"
+                : "hover:text-[var(--color-ink)] transition-colors"
+            }
+            title="Draw Studio - engineering whiteboard"
+          >
+            Draw
+          </Link>
         </nav>
 
         <div className="flex items-center gap-2">
@@ -324,6 +336,14 @@ export function AppHeader({
           title="System Design Studio - visual architecture and integration workbench"
         >
           System
+        </Link>
+        <Link
+          href="/draw"
+          aria-current={pathname === "/draw" ? "page" : undefined}
+          className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
+          title="Draw Studio - engineering whiteboard"
+        >
+          Draw
         </Link>
       </nav>
     </header>

@@ -61,7 +61,7 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
             <span className="hidden xl:inline">For Architects · API-First Teams · Salesforce Practitioners</span>
           </div>
           <small className="text-[10px]">
-            © {year} · Independent utility. Not affiliated with Salesforce.
+            © {year} · Independent project. Not affiliated with Salesforce.
           </small>
           <div className="flex items-center gap-2">
             <nav aria-label="Legal" className="flex items-center gap-2">
@@ -398,7 +398,7 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
             <span className="hidden xl:inline">For Architects · API-First Teams · Salesforce Practitioners</span>
           </div>
           <small className="text-[10px]">
-            © {year} · Independent utility. Not affiliated with Salesforce.
+            © {year} · Independent project. Not affiliated with Salesforce.
           </small>
           <div className="flex items-center gap-2">
             <nav aria-label="Legal" className="flex items-center gap-2">

@@ -27,6 +27,7 @@ const ROUTE_LINKS: { label: string; href: string }[] = [
   { label: "Contracts", href: "/contracts" },
   { label: "Architect", href: "/architect" },
   { label: "System", href: "/system" },
+  { label: "Draw", href: "/draw" },
 ];
 
 interface SessionView {

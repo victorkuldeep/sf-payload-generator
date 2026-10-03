@@ -12,6 +12,7 @@ import {
   MarkerType,
   ConnectionMode,
   PanOnScrollMode,
+  type ReactFlowInstance,
   type Node,
   type Edge,
   type Connection,
@@ -53,6 +54,7 @@ import { SystemNodeView, SystemGlyph, type SystemNodeData } from "./SystemNode";
 import { TestRunner } from "./TestRunner";
 import { RunEdgeDialog } from "./RunEdgeDialog";
 import { ChainRunDialog } from "./ChainRunDialog";
+import { useAmplifiedPinch } from "../canvas/useAmplifiedPinch";
 import { ApiCatalogTab } from "./tabs/ApiCatalogTab";
 import { TransformsTab } from "./tabs/TransformsTab";
 import { FlowsTab } from "./tabs/FlowsTab";
@@ -199,6 +201,13 @@ function DesignerCanvas({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition, fitView, getNodes, getNodesBounds } = useReactFlow();
+  const rfInstance = useReactFlow();
+  const rfRef = useRef<ReactFlowInstance | null>(null);
+  useEffect(() => {
+    rfRef.current = rfInstance;
+  }, [rfInstance]);
+  // 4x-feel pinch zoom (trackpad + touch); the native 1x handler stays off.
+  useAmplifiedPinch(containerRef, { instanceRef: rfRef, minZoom: 0.15, maxZoom: 4 });
   const nodes = useMemo(() => toFlowNodes(project), [project]);
   // Selection is derived from parent state so inspector and canvas agree.
   const selNodes = useMemo(
@@ -336,7 +345,7 @@ function DesignerCanvas({
         zoomOnScroll={false}
         panOnScroll
         panOnScrollMode={PanOnScrollMode.Free}
-        zoomOnPinch
+        zoomOnPinch={false}
         fitView
       >
         <Background gap={22} size={1.2} color="#DDD3BC" bgColor="#FAF8F2" />

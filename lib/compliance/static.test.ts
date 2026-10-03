@@ -152,7 +152,14 @@ describe("privacy / GDPR surface", () => {
     expect(modal).toMatch(/sessionStorage/);
     expect(modal).toMatch(/href="\/privacy"/);
     expect(modal).toMatch(/href="\/terms"/);
-    expect(modal).toMatch(/Not affiliated with Salesforce|Independent utility/);
+    expect(modal).toMatch(/Independent project, not affiliated with Salesforce/);
+  });
+
+  it("connect requires explicit Terms acceptance before Test & Connect", () => {
+    const modal = read("components/ConnectModal.tsx");
+    expect(modal).toMatch(/type="checkbox"/);
+    expect(modal).toMatch(/I accept the/);
+    expect(modal).toMatch(/disabled=\{loading \|\| !accepted\}/);
   });
 
   it("collection tray lives in builder tabs, never in headers", () => {

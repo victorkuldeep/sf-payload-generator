@@ -22,6 +22,9 @@ const VERSIONS = [
   "v68.0", "v67.0", "v66.0", "v65.0",
 ];
 
+/** Terms acceptance persists on this browser; the token itself never does. */
+const TERMS_KEY = "sobject-studio-terms-accepted-v1";
+
 type Tab = "credentials" | "session" | "token-help";
 
 const TAB_LABELS: Record<Tab, string> = {
@@ -49,6 +52,7 @@ export function ConnectModal({
   const [tokenError, setTokenError] = useState("");
   const [frontdoorUrl, setFrontdoorUrl] = useState("");
   const [sessionError, setSessionError] = useState("");
+  const [accepted, setAccepted] = useState(false);
   const urlRef = useRef<HTMLInputElement>(null);
 
   // Re-seed fields every time the modal opens (e.g. session restore / switch org)
@@ -62,6 +66,11 @@ export function ConnectModal({
       setSessionError("");
       setFrontdoorUrl("");
       setTab("credentials");
+      try {
+        setAccepted(window.localStorage.getItem(TERMS_KEY) === "1");
+      } catch {
+        setAccepted(false);
+      }
       const t = setTimeout(() => urlRef.current?.focus(), 60);
       return () => clearTimeout(t);
     }
@@ -315,31 +324,54 @@ export function ConnectModal({
           </div>
         )}
 
-        <div className="px-6 py-4 border-t border-[var(--color-line-soft)] bg-[var(--color-canvas)] flex flex-col sm:flex-row sm:items-center gap-3">
-          <p className="flex-1 text-[11px] leading-relaxed text-ivory-600">
-            Token stays in this browser tab (sessionStorage) and is proxied server-side to your org only —
-            never written to disk. Reads, record edits, and confirmed Author-mode schema changes all travel
-            the same proxied path. By connecting you agree to the{" "}
-            <a href="/privacy" target="_blank" rel="noreferrer" className="font-medium underline hover:text-ivory-950">
-              Privacy Policy
-            </a>{" "}
-            and{" "}
-            <a href="/terms" target="_blank" rel="noreferrer" className="font-medium underline hover:text-ivory-950">
-              Terms
-            </a>
-            . Independent utility, not affiliated with Salesforce.
-          </p>
-          <div className="flex gap-2 shrink-0">
-            <Button variant="secondary" onClick={onClose} disabled={loading}>
-              Cancel
-            </Button>
-            <Button
-              onClick={tab === "session" ? submitSession : submit}
-              loading={loading}
+        <div className="px-6 py-4 border-t border-[var(--color-line-soft)] bg-[var(--color-canvas)] space-y-3">
+          <label className="flex cursor-pointer items-start gap-2 text-[12px] leading-relaxed text-ivory-700">
+            <input
+              type="checkbox"
+              checked={accepted}
               disabled={loading}
-            >
-              {tab === "session" ? "Connect" : <>Test &amp; Connect</>}
-            </Button>
+              onChange={(e) => {
+                setAccepted(e.target.checked);
+                try {
+                  if (e.target.checked) window.localStorage.setItem(TERMS_KEY, "1");
+                  else window.localStorage.removeItem(TERMS_KEY);
+                } catch {
+                  /* private mode: acceptance lasts for this dialog only */
+                }
+              }}
+              className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-amber-800"
+            />
+            <span>
+              I accept the{" "}
+              <a href="/terms" target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="font-medium underline hover:text-ivory-950">
+                Terms &amp; Conditions
+              </a>{" "}
+              and{" "}
+              <a href="/privacy" target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="font-medium underline hover:text-ivory-950">
+                Privacy Policy
+              </a>
+              , and I have authority to connect this org.
+            </span>
+          </label>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <p className="flex-1 text-[11px] leading-relaxed text-ivory-600">
+              Token stays in this browser tab (sessionStorage) and is proxied server-side to your org only —
+              never written to disk. Reads, record edits, and confirmed Author-mode schema changes all travel
+              the same proxied path. Independent project, not affiliated with Salesforce.
+            </p>
+            <div className="flex gap-2 shrink-0">
+              <Button variant="secondary" onClick={onClose} disabled={loading}>
+                Cancel
+              </Button>
+              <Button
+                onClick={tab === "session" ? submitSession : submit}
+                loading={loading}
+                disabled={loading || !accepted}
+                title={!accepted && !loading ? "Accept the Terms & Conditions first" : undefined}
+              >
+                {tab === "session" ? "Connect" : <>Test &amp; Connect</>}
+              </Button>
+            </div>
           </div>
         </div>
       </div>
