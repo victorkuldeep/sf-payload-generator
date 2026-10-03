@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Button from "../ui/Button";
 import { canTransition, newExperience, type Experience, type SnapshotStatus } from "@/lib/wireframe/model";
 import { deleteExperience, listExperiences, saveExperience } from "@/lib/wireframe/store";
+import { WireCanvas } from "./WireCanvas";
 
 const STATUS_STYLE: Record<SnapshotStatus, string> = {
   draft: "bg-[#F5F1E8] text-[#777168] border-[#E3D9C6]",
@@ -188,14 +189,11 @@ export function WireframeRoute() {
       )}
 
       {active && (
-        <div className="rounded-xl border border-dashed border-[#E3D9C6] bg-white px-4 py-10 text-center">
-          <p className="text-[13px] font-semibold text-[#27241F]">Design canvas lands in EPIC 02</p>
-          <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-[#777168]">
-            {active.name} holds {active.screens.length} screen{active.screens.length === 1 ? "" : "s"} and{" "}
-            {active.proposedFields.length} proposed field{active.proposedFields.length === 1 ? "" : "s"}.
-            Only <span className="font-semibold text-[#2F7D4F]">approved</span> snapshots feed the Author-mode prefill queue.
-          </p>
-        </div>
+        <WireCanvas
+          key={active.id}
+          experience={active}
+          onSaved={(next) => setItems((prev) => prev.map((i) => (i.id === next.id ? next : i)))}
+        />
       )}
     </div>
   );
