@@ -65,6 +65,7 @@ import { SettingsTab } from "./tabs/SettingsTab";
 import { ProjectNotesModal } from "./ProjectNotesModal";
 import { CredentialsModal } from "./CredentialsModal";
 import { RenameProjectModal } from "./RenameProjectModal";
+import { registerSystemBridge, snapshotOf } from "@/lib/ai/systemBridge";
 import { TemplatesModal } from "./TemplatesModal";
 import {
   findMissingVars,
@@ -828,6 +829,18 @@ export function SystemDesigner() {
     });
     setSaveState("dirty");
   }, []);
+
+  /** AI agent bridge: headless tools read/apply through the canvas mutate path. */
+  useEffect(() => {
+    registerSystemBridge({
+      getSnapshot: () => snapshotOf(project, saveState === "dirty"),
+      apply: (fn) => {
+        mutate(fn);
+        return { ok: true };
+      },
+    });
+    return () => registerSystemBridge(null);
+  }, [project, mutate, saveState]);
 
   const save = useCallback(async () => {
     if (!project) return;

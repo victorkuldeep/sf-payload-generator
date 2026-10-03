@@ -14,6 +14,8 @@ import {
 } from "@/lib/ai/providers";
 import { getProviderKey, setProviderKey, clearProviderKeys } from "@/lib/ai/keyVault";
 import { skillForPath } from "@/lib/ai/skills";
+import { runAgentLoop } from "@/lib/ai/tools";
+import { toolsForSkill } from "@/lib/ai/toolsSystem";
 
 interface Turn extends ChatMessage {
   usage?: ChatUsage;
@@ -46,6 +48,8 @@ export function AiDock() {
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [lastUsage, setLastUsage] = useState<ChatUsage | null>(null);
+  const [trace, setTrace] = useState<string[]>([]);
+  const [approval, setApproval] = useState<{ label: string; tool: string; resolve: (d: "apply" | "discard") => void } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const shownRef = useRef(0);
   const flushRef = useRef<{ acc: string; timer: ReturnType<typeof setInterval> | null }>({ acc: "", timer: null });
@@ -90,7 +94,7 @@ export function AiDock() {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [turns, busy]);
+  }, [turns, busy, trace, approval]);
 
   const stopFlush = () => {
     if (flushRef.current.timer) clearInterval(flushRef.current.timer);
@@ -131,51 +135,78 @@ export function AiDock() {
         return next;
       });
     }, 120);
-    const r = await streamChatCompletion({
-      baseURL,
-      apiKey: key,
-      model,
-      messages: [{ role: "system", content: skill.system }, ...history],
-      signal: ctrl.signal,
-      onToken: (d) => {
-        flushRef.current.acc += d;
-      },
-    });
-    stopFlush();
-    // Flush any remainder not yet painted by the interval.
-    const rest = flushRef.current.acc + r.text.slice(shownRef.current);
-    flushRef.current.acc = "";
-    setTurns((prev) => {
-      const next = [...prev];
-      const last = next[next.length - 1];
-      if (last && last.role === "assistant") {
-        next[next.length - 1] = {
-          ...last,
-          content: last.content + rest,
-          usage: r.usage,
-          error: r.ok ? undefined : r.error,
-        };
-      }
-      return next;
-    });
-    if (r.ok && r.text.trim() === "" && rest === "") {
+    const onToken = (d: string) => {
+      flushRef.current.acc += d;
+    };
+    const finishTurn = (text: string, usage: ChatUsage | undefined, error: string | undefined) => {
+      stopFlush();
+      const rest = flushRef.current.acc + text.slice(shownRef.current);
+      flushRef.current.acc = "";
       setTurns((prev) => {
         const next = [...prev];
         const last = next[next.length - 1];
-        if (last && last.role === "assistant" && last.content === "") {
-          next[next.length - 1] = { ...last, content: "", error: "Empty reply - retry or switch model." };
+        if (last && last.role === "assistant") {
+          next[next.length - 1] = { ...last, content: last.content + rest, usage, error };
         }
         return next;
       });
-    }
-    if (r.ok && r.usage) setLastUsage(r.usage);
-    if (!r.ok && r.text === "") {
-      // Stream-level failure already marked on the turn above when possible.
-      if (r.error && r.error !== "Stopped.") setSendError(r.error);
+      if (rest === "" && !error) {
+        setTurns((prev) => {
+          const next = [...prev];
+          const last = next[next.length - 1];
+          if (last && last.role === "assistant" && last.content === "") {
+            next[next.length - 1] = { ...last, content: "", error: "Empty reply - retry or switch model." };
+          }
+          return next;
+        });
+      }
+    };
+    const tools = toolsForSkill(skill.name);
+    if (tools.length === 0) {
+      const r = await streamChatCompletion({
+        baseURL,
+        apiKey: key,
+        model,
+        messages: [{ role: "system", content: skill.system }, ...history],
+        signal: ctrl.signal,
+        onToken,
+      });
+      finishTurn(r.text, r.usage, r.ok ? undefined : r.error);
+      if (r.ok && r.usage) setLastUsage(r.usage);
+      if (!r.ok && r.text === "" && r.error && r.error !== "Stopped.") setSendError(r.error);
+    } else {
+      const r = await runAgentLoop({
+        baseURL,
+        apiKey: key,
+        model,
+        system: `${skill.system}\nYou have tools for this tab - prefer acting through them over describing steps. Mutations ask the user first; read tools run freely.`,
+        history,
+        tools,
+        signal: ctrl.signal,
+        events: {
+          onToken,
+          onUsage: (u) => setLastUsage(u),
+          onToolAuto: (name, label, outcome) =>
+            setTrace((prev) => [...prev, `${label} — ${outcome.ok ? "ok" : `failed: ${outcome.error ?? "error"}`}`]),
+          onApproval: (req) =>
+            new Promise<"apply" | "discard">((resolve) => {
+              setApproval({
+                label: req.label,
+                tool: req.tool.name,
+                resolve: (d) => {
+                  setApproval(null);
+                  setTrace((prev) => [...prev, `${req.label} — ${d === "apply" ? "applied" : "discarded"}`]);
+                  resolve(d);
+                },
+              });
+            }),
+        },
+      });
+      finishTurn(r.text, undefined, r.stopped && r.text.trim() === "" ? r.stopped : undefined);
     }
     setBusy(false);
     abortRef.current = null;
-  }, [draft, busy, providerId, modelId, customModel, turns, baseURL, skill.system]);
+  }, [draft, busy, providerId, modelId, customModel, turns, baseURL, skill.name, skill.system]);
 
   const stop = () => abortRef.current?.abort();
 
@@ -368,9 +399,34 @@ export function AiDock() {
                 {sendError}
               </p>
             )}
+            {trace.length > 0 && (
+              <div className="rounded-xl border border-[var(--color-line-soft)] bg-[var(--color-canvas)] px-3 py-2">
+                <p className="font-mono text-[10px] uppercase tracking-[1.5px] text-ivory-500">Agent activity</p>
+                <ul className="mt-1 space-y-0.5">
+                  {trace.map((line, i) => (
+                    <li key={i} className="font-mono text-[10px] leading-relaxed text-ivory-600">· {line}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
 
           <div className="border-t border-[var(--color-line-soft)] px-4 py-3">
+            {approval && (
+              <div className="mb-2 rounded-xl border border-[#C9A86A] bg-[#FBF6EC] px-3 py-2.5" role="alertdialog" aria-label="Approve agent change">
+                <p className="text-[10px] font-semibold uppercase tracking-[1.5px] text-[#8A6A2F]">Needs your approval</p>
+                <p className="mt-0.5 text-xs font-semibold text-ivory-950">{approval.label}</p>
+                <p className="mt-0.5 font-mono text-[10px] text-ivory-600">{approval.tool} · applies to the live canvas, undoable</p>
+                <div className="mt-2 flex gap-1.5">
+                  <Button size="sm" onClick={() => approval.resolve("apply")}>
+                    Apply
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => approval.resolve("discard")}>
+                    Discard
+                  </Button>
+                </div>
+              </div>
+            )}
             {lastUsage?.totalTokens !== undefined && (
               <p className="mb-1.5 font-mono text-[10px] text-ivory-500">
                 last reply: {lastUsage.promptTokens ?? "?"} in · {lastUsage.completionTokens ?? "?"} out
