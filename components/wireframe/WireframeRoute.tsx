@@ -8,6 +8,7 @@ import { SYSTEM_DRAFT_KEY, buildSystemProject, type TopologyDraft } from "@/lib/
 import { canTransition, newExperience, renameExperience, type Experience, type SnapshotStatus } from "@/lib/wireframe/model";
 import { deleteExperience, listExperiences, saveExperience } from "@/lib/wireframe/store";
 import { experienceToDraft } from "@/lib/wireframe/systemBridge";
+import { SpecDialog } from "./SpecDialog";
 import { WireCanvas } from "./WireCanvas";
 
 const STATUS_STYLE: Record<SnapshotStatus, string> = {
@@ -36,6 +37,7 @@ export function WireframeRoute() {
   const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
   const [draft, setDraft] = useState<TopologyDraft | null>(null);
+  const [specOpen, setSpecOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     setItems(await listExperiences().catch(() => []));
@@ -198,6 +200,9 @@ export function WireframeRoute() {
             <Button size="sm" variant="secondary" onClick={() => setDraft(experienceToDraft(active))} title="Send this experience to System Design">
               Send to System
             </Button>
+            <Button size="sm" variant="secondary" onClick={() => setSpecOpen(true)} title="Generate AI build instructions">
+              Build spec
+            </Button>
           </div>
         )}
       </div>
@@ -275,6 +280,9 @@ export function WireframeRoute() {
           onCancel={() => setDraft(null)}
           onConfirm={handleConfirm}
         />
+      )}
+      {specOpen && active && (
+        <SpecDialog exp={active} onClose={() => setSpecOpen(false)} />
       )}
     </div>
   );
