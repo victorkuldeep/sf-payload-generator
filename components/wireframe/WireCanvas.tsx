@@ -7,6 +7,7 @@ import { newScreen, type ComponentKind, type Experience } from "@/lib/wireframe/
 import { childrenOf, newComponent, paletteByCategory, patchComponent, removeSubtree, reorderSibling } from "@/lib/wireframe/registry";
 import { saveExperience } from "@/lib/wireframe/store";
 import { loadViewport, panBy, storeViewport, zoomAt, type Viewport } from "@/lib/wireframe/viewport";
+import { BehaviorPanel } from "./BehaviorPanel";
 import { ComponentView } from "./ComponentView";
 import { DeltaPanel } from "./DeltaPanel";
 import { Inspector } from "./Inspector";
@@ -30,6 +31,7 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [schemaOpen, setSchemaOpen] = useState(false);
   const [deltaOpen, setDeltaOpen] = useState(false);
+  const [behaviorOpen, setBehaviorOpen] = useState(false);
   const schema = useWireSchema();
   const [newName, setNewName] = useState("");
   const areaRef = useRef<HTMLDivElement | null>(null);
@@ -204,6 +206,12 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
 
   const inspected = exp.components.find((c) => c.id === selComp) ?? null;
 
+  const jumpToComponent = (id: string) => {
+    setSelComp(id);
+    const c = exp.components.find((x) => x.id === id);
+    if (c?.parentId) setSelId(c.parentId);
+  };
+
   const addBoundField = (field: SalesforceField, objectName: string) => {
     const target = selId ?? exp.screens[0]?.id;
     if (!target) return;
@@ -318,6 +326,9 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
         <Button size="sm" variant="secondary" onClick={() => setDeltaOpen((v) => !v)} title="Schema delta" aria-expanded={deltaOpen} className="mt-1.5 w-full">
           {deltaOpen ? "Close delta" : `Δ Delta${exp.proposedFields.length > 0 ? ` · ${exp.proposedFields.length}` : ""}`}
         </Button>
+        <Button size="sm" variant="secondary" onClick={() => setBehaviorOpen((v) => !v)} title="Behavior overview" aria-expanded={behaviorOpen} className="mt-1.5 w-full">
+          {behaviorOpen ? "Close behavior" : "⚡ Behavior"}
+        </Button>
         <p className="mt-2 px-1 text-[10px] leading-relaxed text-[#A39B8E]">
           Drag headers to move · scroll to pan · Ctrl+scroll or pinch to zoom · Del removes
         </p>
@@ -366,11 +377,13 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
       {deltaOpen && (
         <DeltaPanel
           exp={exp}
-          onSelectComponent={(id) => {
-            setSelComp(id);
-            const c = exp.components.find((x) => x.id === id);
-            if (c?.parentId) setSelId(c.parentId);
-          }}
+          onSelectComponent={jumpToComponent}
+        />
+      )}
+      {behaviorOpen && (
+        <BehaviorPanel
+          exp={exp}
+          onSelectComponent={jumpToComponent}
         />
       )}
 
