@@ -14,9 +14,20 @@ import { getProviderKey } from "@/lib/ai/keyVault";
 import { skillForPath } from "@/lib/ai/skills";
 import { runAgentLoop } from "@/lib/ai/tools";
 import { toolsForSkill } from "@/lib/ai/toolsSystem";
-import { isSalesforceConnected } from "@/lib/ai/gate";
+import { aiHistoryKey, isSalesforceConnected } from "@/lib/ai/gate";
+import { deleteAiSession, listAiSessions, loadAiSession, newSessionId, saveAiSession, type AiSession } from "@/lib/ai/historyDb";
 import { AiMarkdown } from "./Markdown";
 import { ModelStudio } from "./ModelStudio";
+
+function relativeTime(ts: number): string {
+  const s = Math.max(1, Math.round((Date.now() - ts) / 1000));
+  if (s < 60) return "just now";
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
 
 interface Turn extends ChatMessage {
   usage?: ChatUsage;
@@ -45,6 +56,9 @@ export function AiDock() {
   const [totals, setTotals] = useState({ in: 0, out: 0 });
   const [trace, setTrace] = useState<string[]>([]);
   const [approval, setApproval] = useState<{ label: string; tool: string; resolve: (d: "apply" | "discard") => void } | null>(null);
+  const [sessionId, setSessionId] = useState(() => newSessionId());
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [sessions, setSessions] = useState<AiSession[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const shownRef = useRef(0);
   const flushRef = useRef<{ acc: string; timer: ReturnType<typeof setInterval> | null }>({ acc: "", timer: null });
@@ -78,6 +92,53 @@ export function AiDock() {
     setLastUsage(u);
     setTotals((t) => ({ in: t.in + (u.promptTokens ?? 0), out: t.out + (u.completionTokens ?? 0) }));
   };
+
+  const persistRef = useRef({ turns, totals, providerId, modelId, skillName: skill.name, sessionId });
+  persistRef.current = { turns, totals, providerId, modelId, skillName: skill.name, sessionId };
+
+  /** Persist the live chat per org (fire-and-forget, IDB may be absent). */
+  const persist = useCallback(async () => {
+    const s = persistRef.current;
+    if (s.turns.length === 0) return;
+    await saveAiSession(aiHistoryKey(), s.sessionId, {
+      providerId: s.providerId,
+      modelId: s.modelId,
+      skillName: s.skillName,
+      turns: s.turns.map((t) => ({ role: t.role, content: t.content })),
+      totalIn: s.totals.in,
+      totalOut: s.totals.out,
+    }).catch(() => {});
+  }, []);
+
+  const refreshSessions = useCallback(async () => {
+    setSessions(await listAiSessions(aiHistoryKey()).catch(() => []));
+  }, []);
+
+  const newChat = useCallback(() => {
+    setTurns([]);
+    setTrace([]);
+    setApproval(null);
+    setSendError(null);
+    setLastUsage(null);
+    setTotals({ in: 0, out: 0 });
+    setSessionId(newSessionId());
+    setHistoryOpen(false);
+  }, []);
+
+  const restoreSession = useCallback(async (id: string) => {
+    const rec = await loadAiSession(id).catch(() => null);
+    if (!rec) return;
+    setProviderId(rec.providerId);
+    setModelId(rec.modelId);
+    setTurns(rec.turns.map((t) => ({ role: t.role, content: t.content })));
+    setTotals({ in: rec.totalIn, out: rec.totalOut });
+    setTrace([]);
+    setApproval(null);
+    setSendError(null);
+    setLastUsage(null);
+    setSessionId(rec.id);
+    setHistoryOpen(false);
+  }, []);
 
   const send = useCallback(async () => {
     const text = draft.trim();
@@ -188,6 +249,11 @@ export function AiDock() {
     abortRef.current = null;
   }, [draft, busy, providerId, modelId, turns, baseURL, skill.name, skill.system]);
 
+  // Flush completed chats to per-org history once the turn settles.
+  useEffect(() => {
+    if (!busy && turns.length > 0) void persist();
+  }, [busy, turns, persist]);
+
   const stop = () => abortRef.current?.abort();
 
   const tools = toolsForSkill(skill.name);
@@ -217,23 +283,95 @@ export function AiDock() {
           <div className="flex items-start justify-between gap-2 border-b border-[var(--color-line-soft)] px-4 py-3">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[2px] text-[var(--color-accent-dark)]">
-                Agent · advising: {skill.label}
+                GravenX - AI Agent advising: {skill.label}
               </p>
               <p className="mt-0.5 text-[11px] leading-relaxed text-ivory-600">
-                Key stays in this tab - forwarded per request, never stored or logged.
+                Disclaimer: key stays in this tab - forwarded per request, never stored or logged.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              aria-label="Close AI panel"
-              className="rounded-md p-1.5 text-ivory-500 transition-colors cursor-pointer hover:bg-ivory-300 hover:text-ivory-950"
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
-                <path d="M6 6l12 12M18 6 6 18" />
-              </svg>
-            </button>
+            <span className="flex shrink-0 items-center">
+              {sfOk && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!historyOpen) void refreshSessions();
+                    setHistoryOpen(!historyOpen);
+                  }}
+                  title="Chat history for this org"
+                  aria-label="Open chat history"
+                  aria-expanded={historyOpen}
+                  className={`rounded-md p-1.5 transition-colors cursor-pointer ${historyOpen ? "bg-ivory-300 text-ivory-950" : "text-ivory-500 hover:bg-ivory-300 hover:text-ivory-950"}`}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+                    <path d="M3 12a9 9 0 1 0 3-6.7" />
+                    <path d="M3 4v5h5" />
+                    <path d="M12 7v5l3.5 2" />
+                  </svg>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label="Close AI panel"
+                className="rounded-md p-1.5 text-ivory-500 transition-colors cursor-pointer hover:bg-ivory-300 hover:text-ivory-950"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6 6 18" />
+                </svg>
+              </button>
+            </span>
           </div>
+          {historyOpen && sfOk && (
+            <div className="absolute right-3 top-14 z-10 w-[min(320px,calc(100%-1.5rem))] overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] shadow-[0_16px_48px_-16px_rgba(24,20,12,0.45)]" role="dialog" aria-label="Chat history">
+              <div className="flex items-center justify-between gap-2 border-b border-[var(--color-line-soft)] px-3 py-2">
+                <p className="text-[11px] font-semibold text-ivory-950">History · this org</p>
+                <button
+                  type="button"
+                  onClick={newChat}
+                  className="rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-2 py-1 text-[11px] font-semibold text-ivory-800 transition-colors cursor-pointer hover:border-[#C9A86A] hover:text-ivory-950"
+                >
+                  + New chat
+                </button>
+              </div>
+              <ul className="max-h-64 overflow-y-auto py-1">
+                {sessions.length === 0 && (
+                  <li className="px-3 py-4 text-center text-[11px] text-ivory-500">
+                    No saved chats yet - they appear here after your first reply.
+                  </li>
+                )}
+                {sessions.map((s) => (
+                  <li key={s.id} className="group flex items-center gap-1 px-1.5">
+                    <button
+                      type="button"
+                      onClick={() => void restoreSession(s.id)}
+                      title={`Restore "${s.title}"`}
+                      className={`min-w-0 flex-1 rounded-lg px-2 py-1.5 text-left transition-colors cursor-pointer hover:bg-[#F5F1E8] ${s.id === sessionId ? "bg-[#F5F1E8]" : ""}`}
+                    >
+                      <span className="block truncate text-xs font-semibold text-ivory-950">{s.title}</span>
+                      <span className="mt-0.5 block truncate font-mono text-[10px] text-ivory-500">
+                        {relativeTime(s.updatedAt)} · {s.modelId || s.providerId}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await deleteAiSession(s.id);
+                        if (s.id === sessionId) newChat();
+                        else void refreshSessions();
+                      }}
+                      title={`Delete "${s.title}"`}
+                      aria-label={`Delete ${s.title}`}
+                      className="rounded p-1 text-ivory-400 opacity-0 transition-colors cursor-pointer hover:bg-red-500/10 hover:text-red-700 group-hover:opacity-100 focus-visible:opacity-100"
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                        <path d="M6 6l12 12M18 6 6 18" />
+                      </svg>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div className="border-b border-[var(--color-line-soft)] px-4 py-2.5">
             {!sfOk ? (

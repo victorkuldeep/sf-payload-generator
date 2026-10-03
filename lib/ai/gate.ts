@@ -11,6 +11,38 @@ import { getCachedConnection } from "@/lib/session/cache";
 
 const SESSION_KEY = "gravenx_session";
 
+/**
+ * Org key scoping AI memory. Prefers the live connection's resolved org
+ * key, falls back to the session record's hostname, then "local".
+ */
+export function aiHistoryKey(): string {
+  try {
+    const cached = getCachedConnection();
+    if (cached?.orgKey) return cached.orgKey;
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (typeof sessionStorage !== "undefined") {
+      const raw = sessionStorage.getItem(SESSION_KEY);
+      if (raw) {
+        const s = JSON.parse(raw) as { instanceUrl?: unknown };
+        if (s && typeof s.instanceUrl === "string" && s.instanceUrl) {
+          try {
+            const host = new URL(s.instanceUrl).hostname;
+            if (host) return host;
+          } catch {
+            return s.instanceUrl;
+          }
+        }
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return "local";
+}
+
 export function isSalesforceConnected(): boolean {
   try {
     if (getCachedConnection()) return true;
