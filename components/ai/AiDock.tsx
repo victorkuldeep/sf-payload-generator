@@ -81,13 +81,14 @@ export function AiDock() {
     if (r.ok) {
       setModels(r.models);
       setModelsState("ok");
-      setModelId((cur) => (cur && r.models.some((m) => m.id === cur) ? cur : (r.models[0]?.id ?? "")));
+      const preferred = preset.defaultModel && r.models.some((m) => m.id === preset.defaultModel) ? preset.defaultModel : (r.models[0]?.id ?? "");
+      setModelId((cur) => (cur && r.models.some((m) => m.id === cur) ? cur : preferred));
     } else {
       setModels([]);
       setModelsState("error");
       setModelsError(r.error ?? "List failed.");
     }
-  }, [providerId, baseURL]);
+  }, [providerId, baseURL, preset]);
 
   useEffect(() => {
     if (open && keySaved && modelsState === "idle" && baseURL) void loadModels();
@@ -266,7 +267,7 @@ export function AiDock() {
                 Agent · advising: {skill.label}
               </p>
               <p className="mt-0.5 text-[11px] leading-relaxed text-ivory-600">
-                Key stays in this tab - calls go straight from your browser to the provider.
+                Key stays in this tab - forwarded per request, never stored or logged.
               </p>
             </div>
             <button

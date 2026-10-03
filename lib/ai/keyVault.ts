@@ -9,8 +9,9 @@
  * - NEVER written to IDB, projects, exports, history or logs;
  * - cleared on demand (disconnect / explicit clear).
  *
- * The agent calls providers directly from the browser, so keys never
- * reach our server at all.
+ * The agent reaches providers through our same-origin proxy routes,
+ * which forward the session key per request - keys are never stored
+ * server-side and never logged.
  */
 
 const STORE_KEY = "gravenx_ai_keys_v1";

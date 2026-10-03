@@ -5,9 +5,11 @@ import { z } from "zod";
  *
  * One adapter speaks to every v1 provider (OpenAI, OpenRouter, Groq,
  * DeepSeek, any custom baseURL) through the shared `/chat/completions`
- * and `/models` shapes - no per-vendor SDKs, no Node-only imports, so it
- * runs in the browser and on Cloudflare. Keys are BYOK session-only and
- * NEVER pass through our server: the browser calls providers directly.
+ * and `/models` shapes - no per-vendor SDKs. Browser providers block
+ * direct calls (CORS/egress), so the client talks to our same-origin
+ * proxy routes (/api/ai/*), which forward the session key per request -
+ * exactly like the Salesforce token proxy. Keys are BYOK session-only:
+ * forwarded, never stored, never logged.
  *
  * Endpoint shapes below are search-grounded and repo-corroborated (the
  * GROQ sample in lib/system-design/demo.ts already uses
@@ -27,6 +29,8 @@ export interface ProviderPreset {
   keyPlaceholder: string;
   editableBaseURL: boolean;
   hint: string;
+  /** Working default, pre-selected when the live list contains it. */
+  defaultModel?: string;
 }
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
@@ -40,6 +44,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     keyPlaceholder: "sk-…",
     editableBaseURL: false,
     hint: "Get a key at platform.openai.com",
+    defaultModel: "gpt-4o-mini",
   },
   {
     id: "openrouter",
@@ -51,6 +56,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     keyPlaceholder: "sk-or-…",
     editableBaseURL: false,
     hint: "One key routes to 300+ models - openrouter.ai/keys",
+    defaultModel: "deepseek/deepseek-chat",
   },
   {
     id: "groq",
@@ -62,6 +68,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     keyPlaceholder: "gsk_…",
     editableBaseURL: false,
     hint: "Fast inference - console.groq.com/keys",
+    defaultModel: "openai/gpt-oss-120b",
   },
   {
     id: "deepseek",
@@ -73,6 +80,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     keyPlaceholder: "sk-…",
     editableBaseURL: false,
     hint: "Get a key at platform.deepseek.com",
+    defaultModel: "deepseek-chat",
   },
   {
     id: "custom",
@@ -106,8 +114,9 @@ const modelEntry = z.union([
   z.string(),
   z
     .object({
-      id: z.string(),
+      id: z.string().optional(),
       name: z.string().optional(),
+      model: z.string().optional(),
       created: z.number().optional(),
       context_length: z.number().optional(),
       contextLength: z.number().optional(),
@@ -115,23 +124,29 @@ const modelEntry = z.union([
     })
     .passthrough(),
 ]);
-const modelsPayload = z.object({ data: z.array(z.unknown()) });
+// OpenAI-style { data: [...] } plus Ollama-style { models: [...] }.
+const modelsPayload = z.union([
+  z.object({ data: z.array(z.unknown()) }),
+  z.object({ models: z.array(z.unknown()) }),
+]);
 
 /** Normalize every known list shape to one picker-ready option list. */
 export function normalizeModels(payload: unknown): AiModelOption[] {
   const parsed = modelsPayload.safeParse(payload);
   if (!parsed.success) return [];
-  return parsed.data.data.flatMap((raw): AiModelOption[] => {
+  const list = "data" in parsed.data ? parsed.data.data : parsed.data.models;
+  return list.flatMap((raw): AiModelOption[] => {
     // One malformed entry must never poison the whole list.
     if (typeof raw === "string") return [{ id: raw, label: raw }];
     const entry = modelEntry.safeParse(raw);
     if (!entry.success || typeof entry.data !== "object") return [];
     const m = entry.data;
-    if (!m.id) return [];
+    const id = m.id ?? m.name ?? m.model;
+    if (!id) return [];
     return [
       {
-        id: m.id,
-        label: m.name ?? m.id,
+        id,
+        label: m.name ?? id,
         contextLength: m.context_length ?? m.contextLength,
         promptPrice: m.pricing?.prompt,
         completionPrice: m.pricing?.completion,
@@ -146,41 +161,49 @@ export interface ModelsResult {
   error?: string;
 }
 
-function joinUrl(baseURL: string, path: string): string {
-  return `${baseURL.replace(/\/+$/, "")}${path}`;
-}
-
 function errText(e: unknown): string {
   if (e instanceof DOMException && e.name === "AbortError") return "Request timed out.";
   return e instanceof Error ? e.message : "Request failed.";
 }
 
-/** Live model discovery for the picker. Never throws - degrades to []. */
+const proxyModelsResponse = z.object({
+  ok: z.boolean(),
+  models: z.array(
+    z.object({
+      id: z.string(),
+      label: z.string(),
+      contextLength: z.number().optional(),
+      promptPrice: z.string().optional(),
+      completionPrice: z.string().optional(),
+    }),
+  ),
+  error: z.string().optional(),
+});
+
+/**
+ * Live model discovery for the picker via our proxy (CORS-proof).
+ * Never throws - degrades to [] with a manual-entry hint.
+ */
 export async function fetchModels(
   baseURL: string,
   apiKey: string,
   timeoutMs = 15000,
   fetchImpl: typeof fetch = fetch,
 ): Promise<ModelsResult> {
-  const base = baseURL.trim().replace(/\/+$/, "");
-  if (!base) return { ok: false, models: [], error: "Set the endpoint URL first." };
-  if (!/^https?:\/\//i.test(base)) return { ok: false, models: [], error: "Endpoint must be an http(s) URL." };
+  if (!baseURL.trim()) return { ok: false, models: [], error: "Set the endpoint URL first." };
   try {
-    const res = await fetchImpl(joinUrl(base, "/models"), {
-      headers: { Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(timeoutMs),
+    const res = await fetchImpl("/api/ai/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ baseURL: baseURL.trim(), apiKey, timeoutMs }),
+      signal: AbortSignal.timeout(Math.min(timeoutMs + 5000, 40000)),
     });
-    if (!res.ok) {
-      if (res.status === 401 || res.status === 403) {
-        return { ok: false, models: [], error: "Key rejected (401/403) - check the key, then type a model ID manually." };
-      }
-      return { ok: false, models: [], error: `List failed (${res.status}) - type a model ID manually.` };
+    const parsed = proxyModelsResponse.safeParse(await res.json().catch(() => null));
+    if (!parsed.success || !parsed.data.ok) {
+      const detail = parsed.success ? (parsed.data.error ?? "List failed.") : "List failed.";
+      return { ok: false, models: [], error: `${detail} Type a model ID manually.` };
     }
-    const models = normalizeModels(await res.json());
-    if (models.length === 0) {
-      return { ok: false, models: [], error: "No models parsed - type a model ID manually." };
-    }
-    return { ok: true, models };
+    return { ok: true, models: parsed.data.models };
   } catch (e) {
     return { ok: false, models: [], error: `${errText(e)} Type a model ID manually.` };
   }
@@ -206,7 +229,14 @@ export interface StreamResult {
 
 const chatErrorPayload = z.object({ error: z.union([z.string(), z.object({ message: z.string() }).passthrough()]) }).partial();
 const streamChoice = z.object({
-  choices: z.array(z.object({ delta: z.object({ content: z.string().optional() }).partial() }).partial()).optional(),
+  choices: z
+    .array(
+      z.object({
+        delta: z.object({ content: z.string().optional(), reasoning_content: z.string().optional(), reasoning: z.string().optional() }).partial(),
+        message: z.object({ content: z.string().optional() }).partial().optional(),
+      }).partial(),
+    )
+    .optional(),
   usage: z
     .object({ prompt_tokens: z.number().optional(), completion_tokens: z.number().optional(), total_tokens: z.number().optional() })
     .partial()
@@ -228,16 +258,15 @@ export async function streamChatCompletion(args: {
   fetchImpl?: typeof fetch;
 }): Promise<StreamResult> {
   const { baseURL, apiKey, model, messages, signal, timeoutMs = 120000, onToken, fetchImpl = fetch } = args;
-  const base = baseURL.trim().replace(/\/+$/, "");
-  if (!base) return { ok: false, text: "", error: "Set the endpoint URL first." };
+  if (!baseURL.trim()) return { ok: false, text: "", error: "Set the endpoint URL first." };
   if (!model.trim()) return { ok: false, text: "", error: "Pick or type a model first." };
   let res: Response;
   try {
-    res = await fetchImpl(joinUrl(base, "/chat/completions"), {
+    res = await fetchImpl("/api/ai/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model: model.trim(), messages, stream: true }),
-      signal: signal ?? AbortSignal.timeout(timeoutMs),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ baseURL: baseURL.trim(), apiKey, model: model.trim(), messages, timeoutMs }),
+      signal: signal ?? AbortSignal.timeout(timeoutMs + 10000),
     });
   } catch (e) {
     if (e instanceof DOMException && e.name === "AbortError") {
@@ -276,7 +305,10 @@ export async function streamChatCompletion(args: {
         if (data === "[DONE]") continue;
         try {
           const chunk = streamChoice.parse(JSON.parse(data));
-          const delta = chunk.choices?.[0]?.delta?.content;
+          const choice = chunk.choices?.[0];
+          // Reasoning models (DeepSeek-R1, Qwen, some OpenRouter free tiers)
+          // stream thinking separately - surface it, never swallow it.
+          const delta = choice?.delta?.content ?? choice?.delta?.reasoning_content ?? choice?.delta?.reasoning ?? choice?.message?.content;
           if (delta) {
             text += delta;
             onToken(delta);

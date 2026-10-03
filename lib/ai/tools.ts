@@ -78,14 +78,13 @@ async function streamWithTools(args: {
   fetchImpl?: typeof fetch;
 }): Promise<{ text: string; calls: { id: string; name: string; argsText: string }[]; usage?: ChatUsage; error?: string }> {
   const { baseURL, apiKey, model, messages, tools, signal, onToken, fetchImpl = fetch } = args;
-  const base = baseURL.trim().replace(/\/+$/, "");
   let res: Response;
   try {
-    res = await fetchImpl(`${base}/chat/completions`, {
+    res = await fetchImpl("/api/ai/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, messages, stream: true, tools, tool_choice: "auto" }),
-      signal: signal ?? AbortSignal.timeout(120000),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ baseURL: baseURL.trim(), apiKey, model, messages, tools, timeoutMs: 120000 }),
+      signal: signal ?? AbortSignal.timeout(130000),
     });
   } catch (e) {
     return { text: "", calls: [], usage: undefined, error: e instanceof DOMException && e.name === "AbortError" ? "Stopped." : e instanceof Error ? e.message : "Request failed." };
@@ -121,13 +120,14 @@ async function streamWithTools(args: {
         if (data === "[DONE]") continue;
         try {
           const ch = JSON.parse(data) as {
-            choices?: { delta?: { content?: string; tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string } }[] } }[];
+            choices?: { delta?: { content?: string; reasoning_content?: string; reasoning?: string; tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string } }[] } }[];
             usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
           };
           const delta = ch.choices?.[0]?.delta;
-          if (delta?.content) {
-            text += delta.content;
-            onToken(delta.content);
+          const token = delta?.content ?? delta?.reasoning_content ?? delta?.reasoning;
+          if (token) {
+            text += token;
+            onToken(token);
           }
           for (const tc of delta?.tool_calls ?? []) {
             const idx = tc.index ?? 0;
