@@ -191,7 +191,7 @@ export function JsonEditorPane() {
               <text x="52" y="39" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="13" fontWeight="700" fill="#7A5C3A">[ ]</text>
               <text x="308" y="39" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="13" fontWeight="700" fill="#7A5C3A">{"{ }"}</text>
               <text x="52" y="139" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="13" fontWeight="700" fill="#7A5C3A">01</text>
-              <text x="308" y="139" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="13" fontWeight="700" fill="#7A5C3A">" "</text>
+              <text x="308" y="139" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="13" fontWeight="700" fill="#7A5C3A">{"\" \""}</text>
               <rect x="148" y="52" width="64" height="64" rx="16" fill="#FFFFFF" stroke="#9A7653" strokeWidth="2" />
               <circle cx="180" cy="60" r="3" fill="#C9A86A" />
               <text x="180" y="99" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="22" fontWeight="700" fill="#27241F">{"{;}"}</text>
