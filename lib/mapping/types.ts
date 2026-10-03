@@ -15,7 +15,7 @@ import type {
   ExperienceModule,
 } from "../experience/types";
 
-export const MAPPING_FORMAT = "archestra-mapping-project";
+export const MAPPING_FORMAT = "gravenx-mapping-project";
 export const MAPPING_FORMAT_VERSION = 1;
 
 /** Project schema version: 1 = integration-only, 2 = + experience/api/decisions. */

@@ -9,7 +9,7 @@
 import { newId, newProject, type SystemProject, type SystemType } from "@/lib/system-design/model";
 
 /** sessionStorage handoff read once by the System canvas on mount. */
-export const SYSTEM_DRAFT_KEY = "archestra/system-draft";
+export const SYSTEM_DRAFT_KEY = "gravenx/system-draft";
 
 export interface DraftSystem {
   key: string;

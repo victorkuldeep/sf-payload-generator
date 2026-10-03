@@ -1,11 +1,11 @@
 /**
- * Central IndexedDB access for archestra-studio.
+ * Central IndexedDB access for gravenx-studio.
  * Single DB + version + upgrade path; every feature store lives here.
  * Feature modules (collection, erd snapshots, soql/rest history) import
  * `withStore` + `STORES` instead of rolling their own open/upgrade code.
  */
 
-export const DB_NAME = "archestra-studio";
+export const DB_NAME = "gravenx-studio";
 export const DB_VERSION = 15;
 
 export const STORES = {

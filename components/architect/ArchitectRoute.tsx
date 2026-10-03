@@ -18,7 +18,7 @@ import { Orchestrator } from "./Orchestrator";
 
 function readSession(): { instanceUrl: string; token: string; apiVersion: string } | null {
   try {
-    const raw = sessionStorage.getItem("archestra_session");
+    const raw = sessionStorage.getItem("gravenx_session");
     if (!raw) return null;
     const s = JSON.parse(raw) as { instanceUrl?: string; token?: string; apiVersion?: string };
     if (s.instanceUrl && s.token && s.apiVersion) {
@@ -99,7 +99,7 @@ export function ArchitectRoute() {
         else if (typeof data.error === "string" && isSessionExpiredMessage(data.error)) {
           setSession(null);
           try {
-            sessionStorage.removeItem("archestra_session");
+            sessionStorage.removeItem("gravenx_session");
           } catch {
             /* ignore */
           }
@@ -120,7 +120,7 @@ export function ArchitectRoute() {
           return false;
         }
         try {
-          sessionStorage.setItem("archestra_session", JSON.stringify({ instanceUrl, token, apiVersion }));
+          sessionStorage.setItem("gravenx_session", JSON.stringify({ instanceUrl, token, apiVersion }));
         } catch {
           /* ignore */
         }

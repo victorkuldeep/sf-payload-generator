@@ -62,7 +62,7 @@ export async function buildWordPack(
 
   // Cover + overview.
   children.push(new Paragraph({ text: scope.name, heading: HeadingLevel.TITLE }));
-  p(`Architecture pack · exported ${new Date().toISOString().slice(0, 10)} · Archestra Experience Mapping`);
+  p(`Architecture pack · exported ${new Date().toISOString().slice(0, 10)} · GRAVENX Experience Mapping`);
   h("Project overview", HeadingLevel.HEADING_1);
   children.push(kvTable([
     ["Description", scope.description ?? "—"],
@@ -225,7 +225,7 @@ export async function buildWordPack(
       {
         properties: {},
         children: [
-          new Paragraph({ text: "Archestra · Experience Mapping", alignment: AlignmentType.RIGHT }),
+          new Paragraph({ text: "GRAVENX · Experience Mapping", alignment: AlignmentType.RIGHT }),
           ...children,
           new Paragraph({ text: LIMIT }),
         ],

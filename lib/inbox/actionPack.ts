@@ -104,7 +104,7 @@ export function compileActionPack(
   const lines: string[] = [];
   lines.push("# Architecture Action Pack");
   lines.push("");
-  lines.push("> Archestra · Schema Explorer");
+  lines.push("> GRAVENX · Schema Explorer");
   lines.push("");
   lines.push("## Document Control");
   lines.push("");

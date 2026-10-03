@@ -24,7 +24,7 @@ const VERSIONS = [
 ];
 
 /** Terms acceptance persists on this browser; the token itself never does. */
-const TERMS_KEY = "archestra-terms-accepted-v1";
+const TERMS_KEY = "gravenx-terms-accepted-v1";
 
 type Tab = "credentials" | "session" | "token-help";
 

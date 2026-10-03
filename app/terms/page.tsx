@@ -4,7 +4,7 @@ import { AppFooter } from "@/components/layout/AppFooter";
 
 export const metadata = {
   title: "Terms of Use",
-  description: "Terms for using Archestra, including the independent-project disclaimer for Salesforce.",
+  description: "Terms for using GRAVENX, including the independent-project disclaimer.",
   robots: { index: false, follow: false },
 };
 
@@ -35,7 +35,7 @@ export default function TermsPage() {
         <div className="mt-8 space-y-8">
           <Section id="service" title="1. What this tool is">
             <p>
-              Archestra is a free, browser-first architecture engineering studio:
+              GRAVENX is a free, browser-first architecture engineering studio:
               live metadata describe, ERD design, payload composition, and API exploration (including the System
               tab for multi-system integration topology). It is an <strong>independent project</strong>.
             </p>

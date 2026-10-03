@@ -1,4 +1,4 @@
-# Archestra - The Architecture Engineering Studio
+# GRAVENX - The Architecture Engineering Studio
 
 Metadata-driven REST payload builder for Salesforce. Discover objects and fields, select what you need, and generate accurate POST/PATCH payloads for Postman, cURL, JavaScript, or Apex - without manual copy/paste of field definitions.
 

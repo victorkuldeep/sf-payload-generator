@@ -1,6 +1,6 @@
 /**
  * Mapping Studio - IndexedDB project library.
- * Reuses the central archestra-studio DB via withStore + STORES.
+ * Reuses the central gravenx-studio DB via withStore + STORES.
  */
 
 import { STORES, withStore } from "../db";

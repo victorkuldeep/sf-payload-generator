@@ -5,7 +5,7 @@ import { AppFooter } from "@/components/layout/AppFooter";
 export const metadata = {
   title: "Security",
   description:
-    "Security model of Archestra: credential handling, server-side proxying, headers, and shared responsibilities.",
+    "Security model of GRAVENX: credential handling, server-side proxying, headers, and shared responsibilities.",
   robots: { index: false, follow: false },
 };
 

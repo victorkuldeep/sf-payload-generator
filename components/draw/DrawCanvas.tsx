@@ -9,7 +9,7 @@ import type { Action } from "@excalidraw/excalidraw/actions/types";
 import { readStoredScene, writeStoredScene, type StoredScene } from "@/lib/draw/storage";
 
 /**
- * DrawCanvas - the single boundary between Archestra and Excalidraw.
+ * DrawCanvas - the single boundary between GRAVENX and Excalidraw.
  *
  * No other module imports `@excalidraw/excalidraw` at runtime; the rest of
  * the app talks to this wrapper, so the engine can be replaced without

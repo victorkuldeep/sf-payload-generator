@@ -52,7 +52,7 @@ export default function ConnectionPanel({
   // Pre-fill from sessionStorage so fields are populated if session exists
   useEffect(() => {
     try {
-      const saved = sessionStorage.getItem("archestra_session");
+      const saved = sessionStorage.getItem("gravenx_session");
       if (saved) {
         const parsed = JSON.parse(saved) as { instanceUrl?: string; token?: string; apiVersion?: string };
         if (parsed.instanceUrl) setInstanceUrl(parsed.instanceUrl);

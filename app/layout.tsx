@@ -21,8 +21,8 @@ export const metadata: Metadata = {
     process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
   ),
   title: {
-    default: "Archestra - The Architecture Engineering Studio",
-    template: "%s - Archestra",
+    default: "GRAVENX - The Architecture Engineering Studio",
+    template: "%s - GRAVENX",
   },
   description:
     "Metadata-driven Salesforce REST payload builder. Connect live, describe any sObject, generate Table API + Composite payloads and export to JSON, cURL, JS or Apex.",

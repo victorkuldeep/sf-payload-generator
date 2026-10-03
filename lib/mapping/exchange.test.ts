@@ -36,7 +36,7 @@ describe("exchange round trip", () => {
   it("rejects garbage, wrong format and newer versions", () => {
     expect(validateImport("nope").ok).toBe(false);
     expect(validateImport('{"format":"other","formatVersion":1}').ok).toBe(false);
-    expect(validateImport('{"format":"archestra-mapping-project","formatVersion":99,"project":{}}').ok).toBe(false);
+    expect(validateImport('{"format":"gravenx-mapping-project","formatVersion":99,"project":{}}').ok).toBe(false);
   });
   it("rejects broken references and duplicate ids", () => {
     const p = proj();

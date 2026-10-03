@@ -3348,7 +3348,7 @@ export default function SchemaPanel({
     try {
       const raw = JSON.parse(await file.text());
       const p = validateSharePayload(raw);
-      if (!p) throw new Error("Not a valid Archestra canvas file.");
+      if (!p) throw new Error("Not a valid GRAVENX canvas file.");
       const s = p.snapshot;
       setDescribes(new Map(s.describes.map((d) => [d.name, d] as const)));
       const alive = new Set(s.describes.map((d) => d.name));

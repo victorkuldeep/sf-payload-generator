@@ -56,7 +56,7 @@ export function ToolHeader() {
   useEffect(() => {
     const read = () => {
       try {
-        const saved = JSON.parse(sessionStorage.getItem("archestra_session") ?? "null") as {
+        const saved = JSON.parse(sessionStorage.getItem("gravenx_session") ?? "null") as {
           instanceUrl?: string;
           token?: string;
           apiVersion?: string;
@@ -99,7 +99,7 @@ export function ToolHeader() {
 
   const disconnect = () => {
     try {
-      sessionStorage.removeItem("archestra_session");
+      sessionStorage.removeItem("gravenx_session");
     } catch {
       /* storage unavailable */
     }
@@ -125,12 +125,12 @@ export function ToolHeader() {
   return (
     <header className="app-chrome-header sticky top-0 z-40 w-full bg-[var(--color-canvas)]/95 backdrop-blur-sm border-b border-[var(--color-line)]">
       <div className="w-full px-5 flex items-center justify-between h-[64px] gap-3">
-        <Link href="/" className="arch-brand" aria-label="Archestra - home">
-          <span className="arch-brand__title">
-            <span className="arch-brand__lead">Arch</span>
-            <span className="arch-brand__rest">estra</span>
+        <Link href="/" className="gravenx-brand" aria-label="GRAVENX - home">
+          <span className="gravenx-brand__title">
+            <span className="gravenx-brand__lead">GRAVEN</span>
+            <span className="gravenx-brand__rest">X</span>
           </span>
-          <span className="arch-brand__tagline">The Architecture Engineering Studio</span>
+          <span className="gravenx-brand__tagline">The Architecture Engineering Studio</span>
         </Link>
 
         <nav className="hidden md:flex items-center gap-5 text-xs font-medium text-[var(--color-ink-soft)]" aria-label="Product">

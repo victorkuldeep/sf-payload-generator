@@ -24,7 +24,7 @@ export function WelcomeModal({ open, onConnect, onExplore }: WelcomeModalProps) 
             Payloads without <em>the grunt work.</em>
           </h2>
           <p className="mx-auto mt-3 text-sm leading-relaxed text-ivory-700 max-w-md">
-            Welcome to <strong className="text-ivory-950">Archestra</strong> - connect
+            Welcome to <strong className="text-ivory-950">GRAVENX</strong> - connect
             to any org and build accurate payloads from live metadata. No manual
             field copy-paste.
           </p>

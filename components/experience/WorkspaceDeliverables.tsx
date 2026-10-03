@@ -59,7 +59,7 @@ export function WorkspaceDeliverables({
     try {
       const { blob } = await exportWorkspaceZip(root, childMaps, loadBlob);
       const safe = root.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "workspace";
-      downloadBlob(blob, `${safe}.archestra.zip`);
+      downloadBlob(blob, `${safe}.gravenx.zip`);
     } finally {
       setExportBusy(false);
     }

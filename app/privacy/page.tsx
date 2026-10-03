@@ -5,7 +5,7 @@ import { AppFooter } from "@/components/layout/AppFooter";
 export const metadata = {
   title: "Privacy Policy",
   description:
-    "How Archestra handles your Salesforce session, browser storage, and personal data under GDPR and global privacy laws.",
+    "How GRAVENX handles your Salesforce session, browser storage, and personal data under GDPR and global privacy laws.",
   robots: { index: false, follow: false },
 };
 
@@ -34,7 +34,7 @@ export default function PrivacyPage() {
         <h1 className="mt-2 text-3xl font-bold tracking-tight text-[var(--color-ink)]">Privacy Policy</h1>
         <p className="mt-2 font-mono text-xs text-[var(--color-muted)]">Effective {EFFECTIVE_DATE}</p>
         <p className="mt-4 text-sm leading-relaxed text-[var(--color-ink-soft)]">
-          Archestra is a browser-first Salesforce workbench for architects. It is designed so that your
+          GRAVENX is a browser-first Salesforce workbench for architects. It is designed so that your
           Salesforce credentials and org data stay with you: session secrets live in your browser tab, your
           work is stored in your browser&apos;s local databases, and this site sets{" "}
           <strong>no tracking cookies and runs no analytics or advertising</strong>. This page explains what
