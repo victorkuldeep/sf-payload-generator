@@ -8,6 +8,7 @@ import { SYSTEM_DRAFT_KEY, buildSystemProject, type TopologyDraft } from "@/lib/
 import { canTransition, newExperience, renameExperience, type Experience, type SnapshotStatus } from "@/lib/wireframe/model";
 import { deleteExperience, listExperiences, saveExperience } from "@/lib/wireframe/store";
 import { experienceToDraft } from "@/lib/wireframe/systemBridge";
+import { HistoryDialog } from "./HistoryDialog";
 import { SpecDialog } from "./SpecDialog";
 import { WireCanvas } from "./WireCanvas";
 
@@ -38,6 +39,8 @@ export function WireframeRoute() {
   const [renameDraft, setRenameDraft] = useState("");
   const [draft, setDraft] = useState<TopologyDraft | null>(null);
   const [specOpen, setSpecOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [rev, setRev] = useState(0);
 
   const refresh = useCallback(async () => {
     setItems(await listExperiences().catch(() => []));
@@ -203,6 +206,9 @@ export function WireframeRoute() {
             <Button size="sm" variant="secondary" onClick={() => setSpecOpen(true)} title="Generate AI build instructions">
               Build spec
             </Button>
+            <Button size="sm" variant="secondary" onClick={() => setHistoryOpen(true)} title="Snapshots and export">
+              History
+            </Button>
           </div>
         )}
       </div>
@@ -269,7 +275,7 @@ export function WireframeRoute() {
 
       {active && (
         <WireCanvas
-          key={active.id}
+          key={`${active.id}:${rev}`}
           experience={active}
           onSaved={(next) => setItems((prev) => prev.map((i) => (i.id === next.id ? next : i)))}
         />
@@ -283,6 +289,17 @@ export function WireframeRoute() {
       )}
       {specOpen && active && (
         <SpecDialog exp={active} onClose={() => setSpecOpen(false)} />
+      )}
+      {historyOpen && active && (
+        <HistoryDialog
+          exp={active}
+          onClose={() => setHistoryOpen(false)}
+          onRestored={() => {
+            setHistoryOpen(false);
+            setRev((r) => r + 1);
+            void refresh();
+          }}
+        />
       )}
     </div>
   );
