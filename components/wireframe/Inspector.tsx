@@ -2,7 +2,8 @@
 
 import Button from "../ui/Button";
 import { defFor } from "@/lib/wireframe/registry";
-import type { BindingState, WireComponent } from "@/lib/wireframe/model";
+import type { BindingState, ProposedField, WireComponent } from "@/lib/wireframe/model";
+import { PROPOSED_FIELD_TYPES, suggestApiName, validateProposed } from "@/lib/wireframe/proposed";
 import type { WireSchema } from "./useWireSchema";
 
 const inputCls =
@@ -34,10 +35,144 @@ function Lines({ label, values, onChange }: { label: string; values: string[]; o
   );
 }
 
+/** Proposed-field authoring (EPIC 06): the design's ask of the org. */
+function ProposedEditor({ comp, onPatch }: { comp: WireComponent; onPatch: (patch: Partial<WireComponent>) => void }) {
+  const p = comp.proposedField;
+  if (!p) {
+    return (
+      <Button
+        size="sm"
+        variant="secondary"
+        className="w-full"
+        onClick={() =>
+          onPatch({
+            proposedField: {
+              object: comp.binding?.object ?? "",
+              apiName: suggestApiName(comp.label),
+              label: comp.label || "",
+              type: "Text",
+            },
+          })
+        }
+      >
+        + Define proposed field
+      </Button>
+    );
+  }
+  const set = (next: ProposedField) => onPatch({ proposedField: next });
+  const problems = validateProposed(p);
+  const needsValues = p.type === "Picklist" || p.type === "Multiselect Picklist" || p.type === "Lookup";
+  const needsScale = p.type === "Number" || p.type === "Currency" || p.type === "Percent";
+  return (
+    <div className="space-y-1.5 rounded-lg bg-[#F5EEDF] p-2">
+      <div>
+        <label className={labelCls} htmlFor="insp-api">API name</label>
+        <div className="flex gap-1">
+          <input
+            id="insp-api"
+            value={p.apiName}
+            onChange={(e) => set({ ...p, apiName: e.target.value.slice(0, 120) })}
+            placeholder="Tier__c"
+            spellCheck={false}
+            className={`${inputCls} font-mono text-[11px]`}
+          />
+          <Button
+            size="sm"
+            variant="secondary"
+            title="Suggest from label"
+            onClick={() => {
+              const s = suggestApiName(p.label || comp.label);
+              if (s) set({ ...p, apiName: s });
+            }}
+          >
+            ✎
+          </Button>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-1.5">
+        <div>
+          <label className={labelCls} htmlFor="insp-ptype">Type</label>
+          <select
+            id="insp-ptype"
+            value={p.type}
+            onChange={(e) => set({ ...p, type: e.target.value.slice(0, 60) })}
+            className={`${inputCls} cursor-pointer`}
+          >
+            {PROPOSED_FIELD_TYPES.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="insp-plabel">Label</label>
+          <input
+            id="insp-plabel"
+            value={p.label}
+            onChange={(e) => set({ ...p, label: e.target.value.slice(0, 120) })}
+            spellCheck={false}
+            className={inputCls}
+          />
+        </div>
+      </div>
+      {needsValues && (
+        <Lines
+          label={p.type === "Lookup" ? "Target object" : "Values"}
+          values={p.values ?? []}
+          onChange={(v) => set({ ...p, values: v })}
+        />
+      )}
+      {needsScale && (
+        <div className="grid grid-cols-2 gap-1.5">
+          <div>
+            <label className={labelCls} htmlFor="insp-prec">Precision</label>
+            <input
+              id="insp-prec"
+              type="number"
+              min={1}
+              max={18}
+              value={p.precision ?? ""}
+              onChange={(e) => set({ ...p, precision: e.target.value === "" ? undefined : Math.min(18, Math.max(1, parseInt(e.target.value, 10) || 0)) })}
+              className={`${inputCls} font-mono text-[11px]`}
+            />
+          </div>
+          <div>
+            <label className={labelCls} htmlFor="insp-scale">Scale</label>
+            <input
+              id="insp-scale"
+              type="number"
+              min={0}
+              max={18}
+              value={p.scale ?? ""}
+              onChange={(e) => set({ ...p, scale: e.target.value === "" ? undefined : Math.min(18, Math.max(0, parseInt(e.target.value, 10) || 0)) })}
+              className={`${inputCls} font-mono text-[11px]`}
+            />
+          </div>
+        </div>
+      )}
+      <label className="flex cursor-pointer items-center gap-1.5 text-xs text-[#27241F]">
+        <input
+          type="checkbox"
+          checked={p.required ?? false}
+          onChange={(e) => set({ ...p, required: e.target.checked })}
+          className="h-3.5 w-3.5 cursor-pointer accent-[#9A7653]"
+        />
+        Required
+      </label>
+      {problems.length > 0 && (
+        <ul className="space-y-0.5">
+          {problems.map((m) => (
+            <li key={m} className="text-[11px] leading-snug text-red-700">⚠ {m}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /**
  * Component inspector (EPIC 04): label, data binding + state, validation,
  * API refs, interaction intent, known list-props. Proposed-field authoring
- * and Salesforce pickers arrive in EPIC 05-06; ODA shows read-only.
+ * (EPIC 06) and ODA read-only included.
  */
 export function Inspector({
   comp,
@@ -191,10 +326,11 @@ export function Inspector({
                   + {comp.proposedField.object}.{comp.proposedField.apiName} · {comp.proposedField.type}
                 </p>
               )}
-              {state === "proposed" && !comp.proposedField && (
-                <p className="text-[11px] leading-relaxed text-[#A39B8E]">
-                  Field definition dialog lands in EPIC 06 - set object + field above for now.
-                </p>
+              {state === "proposed" && (
+                <ProposedEditor
+                  comp={comp}
+                  onPatch={onPatch}
+                />
               )}
             </>
           )}

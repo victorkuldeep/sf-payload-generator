@@ -8,10 +8,12 @@ import { childrenOf, newComponent, paletteByCategory, patchComponent, removeSubt
 import { saveExperience } from "@/lib/wireframe/store";
 import { loadViewport, panBy, storeViewport, zoomAt, type Viewport } from "@/lib/wireframe/viewport";
 import { ComponentView } from "./ComponentView";
+import { DeltaPanel } from "./DeltaPanel";
 import { Inspector } from "./Inspector";
 import { SchemaPanel } from "./SchemaPanel";
 import { useWireSchema } from "./useWireSchema";
 import { buildBoundComponent } from "@/lib/wireframe/schema";
+import { rollupProposedFields } from "@/lib/wireframe/model";
 import type { SalesforceField } from "@/lib/salesforce/types";
 
 /**
@@ -27,6 +29,7 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
   const [selComp, setSelComp] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [schemaOpen, setSchemaOpen] = useState(false);
+  const [deltaOpen, setDeltaOpen] = useState(false);
   const schema = useWireSchema();
   const [newName, setNewName] = useState("");
   const areaRef = useRef<HTMLDivElement | null>(null);
@@ -45,6 +48,8 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
 
   const persist = useCallback(
     (next: Experience) => {
+      // The rollup is derived, never hand-edited: recompute at the single choke point.
+      next = { ...next, proposedFields: rollupProposedFields(next.components) };
       setExp(next);
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
@@ -310,6 +315,9 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
             {schemaOpen ? "Close schema" : "⇄ Schema"}
           </Button>
         )}
+        <Button size="sm" variant="secondary" onClick={() => setDeltaOpen((v) => !v)} title="Schema delta" aria-expanded={deltaOpen} className="mt-1.5 w-full">
+          {deltaOpen ? "Close delta" : `Δ Delta${exp.proposedFields.length > 0 ? ` · ${exp.proposedFields.length}` : ""}`}
+        </Button>
         <p className="mt-2 px-1 text-[10px] leading-relaxed text-[#A39B8E]">
           Drag headers to move · scroll to pan · Ctrl+scroll or pinch to zoom · Del removes
         </p>
@@ -353,6 +361,16 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
           inspectedId={selComp}
           onAddField={addBoundField}
           onBindField={bindField}
+        />
+      )}
+      {deltaOpen && (
+        <DeltaPanel
+          exp={exp}
+          onSelectComponent={(id) => {
+            setSelComp(id);
+            const c = exp.components.find((x) => x.id === id);
+            if (c?.parentId) setSelId(c.parentId);
+          }}
         />
       )}
 
