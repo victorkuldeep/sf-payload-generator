@@ -11,6 +11,8 @@ import { BehaviorPanel } from "./BehaviorPanel";
 import { ComponentView } from "./ComponentView";
 import { DeltaPanel } from "./DeltaPanel";
 import { Inspector } from "./Inspector";
+import { JourneyPanel } from "./JourneyPanel";
+import { pruneJourney } from "@/lib/wireframe/journey";
 import { SchemaPanel } from "./SchemaPanel";
 import { useWireSchema } from "./useWireSchema";
 import { buildBoundComponent } from "@/lib/wireframe/schema";
@@ -32,6 +34,7 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
   const [schemaOpen, setSchemaOpen] = useState(false);
   const [deltaOpen, setDeltaOpen] = useState(false);
   const [behaviorOpen, setBehaviorOpen] = useState(false);
+  const [journeyOpen, setJourneyOpen] = useState(false);
   const schema = useWireSchema();
   const [newName, setNewName] = useState("");
   const areaRef = useRef<HTMLDivElement | null>(null);
@@ -251,10 +254,12 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
 
   const removeScreen = async (id: string) => {
     if (!window.confirm("Delete this screen and its components?")) return;
+    const valid = new Set(exp.screens.map((s) => s.id).filter((sid) => sid !== id));
     persist({
       ...exp,
       screens: exp.screens.filter((s) => s.id !== id),
       components: exp.components.filter((c) => c.parentId !== id),
+      journeys: exp.journeys.map((j) => pruneJourney(j, valid)),
     });
     if (selId === id) setSelId(null);
   };
@@ -329,6 +334,9 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
         <Button size="sm" variant="secondary" onClick={() => setBehaviorOpen((v) => !v)} title="Behavior overview" aria-expanded={behaviorOpen} className="mt-1.5 w-full">
           {behaviorOpen ? "Close behavior" : "⚡ Behavior"}
         </Button>
+        <Button size="sm" variant="secondary" onClick={() => setJourneyOpen((v) => !v)} title="Journeys" aria-expanded={journeyOpen} className="mt-1.5 w-full">
+          {journeyOpen ? "Close journeys" : `⤳ Journeys${exp.journeys.length > 0 ? ` · ${exp.journeys.length}` : ""}`}
+        </Button>
         <p className="mt-2 px-1 text-[10px] leading-relaxed text-[#A39B8E]">
           Drag headers to move · scroll to pan · Ctrl+scroll or pinch to zoom · Del removes
         </p>
@@ -384,6 +392,13 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
         <BehaviorPanel
           exp={exp}
           onSelectComponent={jumpToComponent}
+        />
+      )}
+      {journeyOpen && (
+        <JourneyPanel
+          exp={exp}
+          onPatchJourneys={(journeys) => persist({ ...exp, journeys })}
+          onGotoScreen={(screenId) => setSelId(screenId)}
         />
       )}
 
