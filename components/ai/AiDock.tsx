@@ -48,6 +48,7 @@ export function AiDock() {
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [lastUsage, setLastUsage] = useState<ChatUsage | null>(null);
+  const [totals, setTotals] = useState({ in: 0, out: 0 });
   const [trace, setTrace] = useState<string[]>([]);
   const [approval, setApproval] = useState<{ label: string; tool: string; resolve: (d: "apply" | "discard") => void } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -99,6 +100,11 @@ export function AiDock() {
   const stopFlush = () => {
     if (flushRef.current.timer) clearInterval(flushRef.current.timer);
     flushRef.current.timer = null;
+  };
+
+  const noteUsage = (u: ChatUsage) => {
+    setLastUsage(u);
+    setTotals((t) => ({ in: t.in + (u.promptTokens ?? 0), out: t.out + (u.completionTokens ?? 0) }));
   };
 
   const send = useCallback(async () => {
@@ -172,7 +178,7 @@ export function AiDock() {
         onToken,
       });
       finishTurn(r.text, r.usage, r.ok ? undefined : r.error);
-      if (r.ok && r.usage) setLastUsage(r.usage);
+      if (r.ok && r.usage) noteUsage(r.usage);
       if (!r.ok && r.text === "" && r.error && r.error !== "Stopped.") setSendError(r.error);
     } else {
       const r = await runAgentLoop({
@@ -185,7 +191,7 @@ export function AiDock() {
         signal: ctrl.signal,
         events: {
           onToken,
-          onUsage: (u) => setLastUsage(u),
+          onUsage: noteUsage,
           onToolAuto: (name, label, outcome) =>
             setTrace((prev) => [...prev, `${label} — ${outcome.ok ? "ok" : `failed: ${outcome.error ?? "error"}`}`]),
           onApproval: (req) =>
@@ -427,9 +433,12 @@ export function AiDock() {
                 </div>
               </div>
             )}
-            {lastUsage?.totalTokens !== undefined && (
+            {(lastUsage?.totalTokens !== undefined || totals.in > 0 || totals.out > 0) && (
               <p className="mb-1.5 font-mono text-[10px] text-ivory-500">
-                last reply: {lastUsage.promptTokens ?? "?"} in · {lastUsage.completionTokens ?? "?"} out
+                {lastUsage?.totalTokens !== undefined
+                  ? `last reply: ${lastUsage.promptTokens ?? "?"} in · ${lastUsage.completionTokens ?? "?"} out · `
+                  : ""}
+                session: {totals.in} in · {totals.out} out
               </p>
             )}
             <div className="flex gap-1.5">
