@@ -9,6 +9,9 @@ export interface SystemRunStep {
   statusText: string;
   durationMs: number;
   endpoint: string;
+  /** Scrubbed slices for chain evidence (absent on vintage records). */
+  requestBodyPreview?: string;
+  responseBodyPreview?: string;
 }
 
 /** Persisted test-run evidence. Bodies are truncated previews; request

@@ -7,9 +7,14 @@
  *
  * Namespaces (first path segment):
  *   {{response}} / {{response.a.0.b}} - immediate previous output (whole / path)
+ *   {{request}} / {{request.a.0.b}}   - body just sent to the previous hop
+ *     (what middleware received - forwarding this replays the payload even
+ *     when the hop answered with a bare ack)
  *   {{seed}} / {{seed.path}}           - flow seed payload (chain entry input)
  *   {{steps.<systemId>}} / {{steps.<systemId>.path}} - output of the hop that
  *     targeted that system (stable node id - survives renames)
+ *   {{requests.<systemId>}} / {{requests.<systemId>.path}} - body that was
+ *     sent to that system (pairs with {{steps.*}} responses)
  *   {{anything.else}}                  - path into the immediate previous
  *     output (back-compat with early templates)
  * A reference that resolves to nothing becomes null and is reported.
@@ -48,6 +53,10 @@ export interface TemplateResult {
 export interface StepContext {
   seed?: string;
   steps?: Record<string, string>;
+  /** Body just sent to the previous hop ({{request}}). */
+  request?: string;
+  /** Bodies sent per target system ({{requests.<systemId>}}). */
+  requests?: Record<string, string>;
 }
 
 const tryParse = (raw: string | undefined): unknown => {
@@ -92,6 +101,33 @@ export function renderTemplate(template: string, data: unknown, ctx?: StepContex
     } else if (head === "steps") {
       const [id, ...tail] = rest;
       base = tryParse(id ? ctx?.steps?.[id] : undefined);
+      path = tail.join(".");
+      if (base === null || base === undefined) {
+        missing.push(ref);
+        return "null";
+      }
+      if (!path) {
+        const rendered = JSON.stringify(base);
+        if (rendered === undefined) {
+          missing.push(ref);
+          return "null";
+        }
+        return rendered;
+      }
+    } else if (head === "request") {
+      base = tryParse(ctx?.request);
+      path = rest.join(".");
+      if (!path) {
+        const rendered = JSON.stringify(base);
+        if (rendered === undefined || base === null) {
+          missing.push(ref);
+          return "null";
+        }
+        return rendered;
+      }
+    } else if (head === "requests") {
+      const [id, ...tail] = rest;
+      base = tryParse(id ? ctx?.requests?.[id] : undefined);
       path = tail.join(".");
       if (base === null || base === undefined) {
         missing.push(ref);

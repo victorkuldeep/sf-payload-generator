@@ -8,10 +8,16 @@ import { compileMapping } from "@/lib/system-design/mapping";
 import { resolveChain, CHAIN_MAX_HOPS } from "@/lib/system-design/chain";
 import { saveSystemRun } from "@/lib/system-design/runStore";
 import { buildSendHeaders, authTokenPrefill } from "@/lib/system-design/headers";
-import { findMissingVars, resolveEnvVars, type CredVault } from "@/lib/system-design/credentials";
+import { buildMockResult, sleep } from "@/lib/system-design/mock";
+import type { OperationMock } from "@/lib/system-design/model";
+import { findMissingVars, resolveEnvVars, scrubSecrets, type CredVault } from "@/lib/system-design/credentials";
+import { downloadRunMarkdown, renderRunMarkdown } from "@/lib/system-design/runMarkdown";
 import {
   newId,
+  resolveRunScope,
+  type RunScope,
   type SystemConnection,
+  type SystemOperation,
   type SystemProject,
   type SystemEnvironment,
 } from "@/lib/system-design/model";
@@ -24,7 +30,10 @@ interface HopTrace {
   status: "ok" | "failed" | "skipped";
   durationMs: number;
   endpoint: string;
+  /** Response (or compiled mapping) body. */
   bodyPreview: string;
+  /** Request body sent for this hop ("" when none). */
+  requestBody: string;
   note: string;
 }
 
@@ -46,10 +55,24 @@ async function callApi(args: {
   body: string;
   token: string;
   headers: { key: string; value: string }[];
+  /** Present = serve the canned response with zero network. */
+  mock?: OperationMock | null;
 }): Promise<{ status: number; statusText: string; durationMs: number; endpoint: string; bodyPreview: string; truncated: boolean }> {
   const base = args.baseUrl.trim().replace(/\/+$/, "");
   const path = args.path.trim().startsWith("/") ? args.path.trim() : `/${args.path.trim()}`;
   const url = `${base}${path}`;
+  if (args.mock) {
+    const canned = buildMockResult(args.mock);
+    await sleep(canned.durationMs);
+    return {
+      status: canned.status,
+      statusText: canned.statusText,
+      durationMs: canned.durationMs,
+      endpoint: url,
+      bodyPreview: canned.bodyPreview,
+      truncated: false,
+    };
+  }
   const response = await apiFetch(
     "/api/system/run",
     {
@@ -96,6 +119,84 @@ async function callApi(args: {
   };
 }
 
+/** Position of a hop's system in its lane path (for the upstream breadcrumb). */
+function hopFocusIndex(
+  lane: { edges: { id: string }[] },
+  edgeId: string
+): number {
+  if (!edgeId) return -1;
+  const idx = lane.edges.findIndex((e) => e.id === edgeId);
+  return idx < 0 ? -1 : idx + 1;
+}
+
+function TraceHop({
+  hop,
+  systems,
+  focusIdx,
+}: {
+  hop: HopTrace;
+  systems: string[];
+  focusIdx: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const dot =
+    hop.status === "ok"
+      ? "bg-green-600"
+      : hop.status === "skipped"
+        ? "bg-ivory-400"
+        : "bg-red-600";
+  return (
+    <li className="rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-canvas)] px-2.5 py-1.5">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full cursor-pointer items-center gap-1.5 text-left text-[11px]"
+      >
+        <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
+        <span className="min-w-0 flex-1 truncate font-semibold text-ivory-950">{hop.label}</span>
+        {hop.durationMs > 0 && (
+          <span className="shrink-0 font-mono text-[10px] text-ivory-500">{hop.durationMs}ms</span>
+        )}
+        <span aria-hidden="true" className="shrink-0 text-[10px] text-ivory-500">
+          {open ? "▾" : "▸"}
+        </span>
+      </button>
+      {focusIdx >= 0 && (
+        <p className="mt-0.5 font-mono text-[10px] text-ivory-500">
+          ↑ upstream:{" "}
+          {systems.map((s, i) => (
+            <span key={i} className={i === focusIdx ? "font-bold text-ivory-950" : undefined}>
+              {i > 0 ? " → " : ""}
+              {s}
+            </span>
+          ))}
+        </p>
+      )}
+      {hop.endpoint && <p className="mt-0.5 break-all font-mono text-[10px] text-ivory-500">{hop.endpoint}</p>}
+      {hop.note && <p className="mt-0.5 text-[11px] text-amber-800">{hop.note}</p>}
+      {open && hop.requestBody && (
+        <div className="mt-1">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-ivory-600">Request sent</p>
+          <pre className="mt-0.5 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-ivory-950 p-2 font-mono text-[10px] leading-relaxed text-ivory-100">
+            {hop.requestBody}
+          </pre>
+        </div>
+      )}
+      {open && hop.bodyPreview && (
+        <div className="mt-1">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-ivory-600">
+            {hop.kind === "mapping" ? "Compiled body" : "Response"}
+          </p>
+          <pre className="mt-0.5 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-ivory-950 p-2 font-mono text-[10px] leading-relaxed text-ivory-100">
+            {hop.bodyPreview}
+          </pre>
+        </div>
+      )}
+    </li>
+  );
+}
+
 export function ChainRunDialog({
   startEdgeId,
   project,
@@ -104,6 +205,7 @@ export function ChainRunDialog({
   vault = {},
   onClose,
   onVisUpdate,
+  onSaveScope,
 }: {
   startEdgeId: string;
   project: SystemProject;
@@ -112,8 +214,28 @@ export function ChainRunDialog({
   vault?: CredVault;
   onClose: () => void;
   onVisUpdate: (edgeId: string, status: "running" | "ok" | "failed" | null) => void;
+  /** Persist the picked lanes + overrides (travels with the project). */
+  onSaveScope: (scope: RunScope) => void;
 }) {
   const lanes = useMemo(() => resolveChain(project, startEdgeId), [project, startEdgeId]);
+  // Run scope: picked lanes + per-edge operation overrides. Saved scope
+  // replays when it targets this start edge, otherwise run everything.
+  const [lanesOn, setLanesOn] = useState<number[]>(
+    () => resolveRunScope(project, startEdgeId, lanes.length).lanes
+  );
+  const [opByEdge, setOpByEdge] = useState<Record<string, string>>(
+    () => resolveRunScope(project, startEdgeId, lanes.length).opByEdge
+  );
+  const persistScope = (nextLanes: number[], nextOps: Record<string, string>) => {
+    onSaveScope({ startEdgeId, lanes: nextLanes, opByEdge: nextOps });
+  };
+  const toggleLane = (n: number) => {
+    const next = lanesOn.includes(n)
+      ? lanesOn.filter((x) => x !== n)
+      : [...lanesOn, n].sort((a, b) => a - b);
+    setLanesOn(next);
+    persistScope(next, opByEdge);
+  };
   const startEdge = project.connections.find((c) => c.id === startEdgeId) ?? null;
   const activeEnv = environments.find((e) => e.id === activeEnvironmentId) ?? environments[0] ?? null;
 
@@ -154,6 +276,39 @@ export function ChainRunDialog({
   const [trace, setTrace] = useState<HopTrace[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [runAt, setRunAt] = useState<number>(() => Date.now());
+
+  const downloadMarkdown = () => {
+    const byLane = lanes.map((lane, li) => ({
+      path: [
+        sysOf(lane.edges[0]?.sourceId ?? "")?.name ?? "?",
+        ...lane.edges.map((e) => sysOf(e.targetId)?.name ?? "?"),
+      ],
+      hops: trace
+        .filter((t) => t.lane === li + 1)
+        .map((t) => ({
+          label: t.label,
+          status: t.status,
+          durationMs: t.durationMs,
+          endpoint: t.endpoint,
+          requestBody: scrubSecrets(t.requestBody, vault),
+          responseBody: scrubSecrets(t.bodyPreview, vault),
+          note: t.note,
+        })),
+      stopped: lane.stopped,
+    }));
+    downloadRunMarkdown(
+      renderRunMarkdown({
+        title: `Chain run from ${sysOf(startEdge?.sourceId ?? "")?.name ?? "?"}`,
+        projectName: project.name,
+        environmentName: activeEnv?.name ?? "(no environment)",
+        startedAt: runAt,
+        seedBody: scrubSecrets(seedBody, vault),
+        lanes: byLane,
+      }),
+      `system-run-${project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${runAt}.md`
+    );
+  };
 
   const firstSourceOp = startEdge
     ? (project.operations.find((o) => o.id === startEdge.sourceOperationId) ?? null)
@@ -162,13 +317,51 @@ export function ChainRunDialog({
 
   const opOf = (id: string | undefined) => project.operations.find((o) => o.id === id) ?? null;
   const sysOf = (id: string) => project.systems.find((s) => s.id === id) ?? null;
+  /** Effective target operation for an edge: run-scope override wins, else the bound op. */
+  const effOpOf = (edge: SystemConnection): SystemOperation | null => {
+    const override = opByEdge[edge.id];
+    if (override) {
+      const op = opOf(override);
+      if (op) return op;
+    }
+    return opOf(edge.targetOperationId);
+  };
+  /** Unique edges in the enabled lanes, for per-hop operation picks. */
+  const scopedEdges = useMemo(() => {
+    const seen = new Set<string>();
+    const out: SystemConnection[] = [];
+    lanes.forEach((lane, idx) => {
+      if (!lanesOn.includes(idx + 1)) return;
+      for (const e of lane.edges) {
+        if (seen.has(e.id)) continue;
+        seen.add(e.id);
+        out.push(e);
+      }
+    });
+    return out;
+  }, [lanes, lanesOn]);
+  const opsForEdge = (edge: SystemConnection): SystemOperation[] => {
+    const ifaces = new Set(
+      project.interfaces.filter((i) => i.systemId === edge.targetId).map((i) => i.id)
+    );
+    return project.operations.filter((o) => ifaces.has(o.interfaceId));
+  };
+  const setEdgeOp = (edgeId: string, opId: string) => {
+    const next = { ...opByEdge };
+    if (opId) next[edgeId] = opId;
+    else delete next[edgeId];
+    setOpByEdge(next);
+    persistScope(lanesOn, next);
+  };
 
   // Preflight every callable hop URL upfront (bodies resolve at runtime).
   // Any block stops the run before anything fires - fix bases first.
   const blocks: string[] = useMemo(() => {
     const out: string[] = [];
     const checked = new Set<string>();
-    const check = (label: string, baseUrl: string, path: string, method: string) => {
+    const check = (label: string, baseUrl: string, path: string, method: string, mocked: boolean) => {
+      // Mocked hops serve canned responses with zero network - no base needed.
+      if (mocked) return;
       const v = preflightRun({
         baseUrl, path, method,
         allowHost: hostOf(baseUrl),
@@ -180,18 +373,20 @@ export function ChainRunDialog({
     if (seedCallable && firstSourceOp && startEdge) {
       check(
         `Seed · ${firstSourceOp.name}`,
-        bases[startEdge.sourceId] ?? "", firstSourceOp.path, firstSourceOp.method
+        bases[startEdge.sourceId] ?? "", firstSourceOp.path, firstSourceOp.method,
+        !!firstSourceOp.mock
       );
     }
     for (const lane of lanes) {
       for (const e of lane.edges) {
         if (checked.has(e.id)) continue;
         checked.add(e.id);
-        const top = opOf(e.targetOperationId);
+        const top = effOpOf(e);
         if (!top) continue;
         check(
           `${sysOf(e.targetId)?.name ?? e.targetId} · ${top.name}`,
-          bases[e.targetId] ?? "", top.path, top.method
+          bases[e.targetId] ?? "", top.path, top.method,
+          !!top.mock
         );
       }
     }
@@ -218,7 +413,7 @@ export function ChainRunDialog({
     };
     collectOp(startEdge?.sourceOperationId);
     for (const lane of lanes) {
-      for (const e of lane.edges) collectOp(e.targetOperationId);
+      for (const e of lane.edges) collectOp(effOpOf(e)?.id);
     }
     return findMissingVars(texts, vault);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -227,6 +422,7 @@ export function ChainRunDialog({
   const run = async () => {
     if (running || lanes.length === 0) return;
     setRunning(true);
+    setRunAt(Date.now());
     setError(null);
     setTrace([]);
     setDone(false);
@@ -256,18 +452,33 @@ export function ChainRunDialog({
       // Every hop output stays addressable as {{steps.<systemId>}}; the seed
       // doubles as the source output when the first op is an event.
       const outputs: Record<string, string> = {};
-      let laneNo = 0;
-      for (const lane of lanes) {
-        laneNo++;
+      // Bodies actually sent, keyed by target system - {{request}} /
+      // {{requests.*}} let downstream hops replay what middleware received,
+      // even when the hop answered with a bare ack.
+      const requests: Record<string, string> = {};
+      let lastRequest = "";
+      persistScope(lanesOn, opByEdge);
+      for (const [laneIdx, lane] of lanes.entries()) {
+        const laneNo = laneIdx + 1;
+        if (!lanesOn.includes(laneNo)) {
+          push({
+            lane: laneNo, edgeId: "",
+            label: "Lane skipped by run scope",
+            kind: "mapping", status: "skipped",
+            durationMs: 0, endpoint: "", bodyPreview: "", requestBody: "", note: "unchecked in run scope",
+          });
+          continue;
+        }
         let inbound = "";
+        lastRequest = "";
         let first = true;
         for (const e of lane.edges) {
-          const top = opOf(e.targetOperationId);
+          const top = effOpOf(e);
           if (!top) {
             push({
               lane: laneNo, edgeId: e.id,
               label: `Hop: ${sysOf(e.targetId)?.name ?? e.targetId} - no bound target operation, lane stops`,
-              kind: "call", status: "failed", durationMs: 0, endpoint: "", bodyPreview: "", note: "stopped",
+              kind: "call", status: "failed", durationMs: 0, endpoint: "", bodyPreview: "", requestBody: "", note: "stopped",
             });
             markEdge(e.id, false);
             break;
@@ -286,15 +497,19 @@ export function ChainRunDialog({
                   method: firstSourceOp.method, path: firstSourceOp.path,
                   body: resolvedSeed, token: resolvedToken,
                   headers: headersFor(firstSourceOp.id),
+                  mock: firstSourceOp.mock ?? null,
                 });
                 inbound = r.bodyPreview;
                 outputs[startEdge!.sourceId] = r.bodyPreview;
+                requests[startEdge!.sourceId] = resolvedSeed;
+                lastRequest = resolvedSeed;
                 push({
                   lane: laneNo, edgeId: e.id,
-                  label: `Seed · ${firstSourceOp.method} ${firstSourceOp.name} (${sys?.name ?? "?"})`,
+                  label: `Seed · ${firstSourceOp.method} ${firstSourceOp.name} (${sys?.name ?? "?"})${firstSourceOp.mock ? " (mock)" : ""}`,
                   kind: "call", status: r.status >= 200 && r.status < 300 ? "ok" : "failed",
                   durationMs: r.durationMs, endpoint: r.endpoint, bodyPreview: r.bodyPreview,
-                  note: r.status >= 200 && r.status < 300 ? "" : "stopped",
+                  requestBody: firstSourceOp.method === "GET" ? "" : resolvedSeed,
+                  note: r.status >= 200 && r.status < 300 ? (firstSourceOp.mock ? "mocked - no network" : "") : "stopped",
                 });
                 if (r.status < 200 || r.status >= 300) {
                   markEdge(e.id, false);
@@ -304,7 +519,8 @@ export function ChainRunDialog({
                 push({
                   lane: laneNo, edgeId: e.id, label: `Seed · ${firstSourceOp.name}`,
                   kind: "call", status: "failed", durationMs: 0, endpoint: "",
-                  bodyPreview: "", note: err instanceof Error ? err.message : "failed",
+                  bodyPreview: "", requestBody: firstSourceOp.method === "GET" ? "" : resolvedSeed,
+                  note: err instanceof Error ? err.message : "failed",
                 });
                 markEdge(e.id, false);
                 break;
@@ -321,6 +537,8 @@ export function ChainRunDialog({
           const compiled = compileMapping(mapping.mode, mapping.template, inbound, {
             seed: resolvedSeed,
             steps: outputs,
+            request: lastRequest,
+            requests,
           });
           push({
             lane: laneNo, edgeId: e.id,
@@ -329,6 +547,7 @@ export function ChainRunDialog({
             status: compiled.ok ? "ok" : "failed",
             durationMs: 0, endpoint: "",
             bodyPreview: compiled.body.slice(0, 2000),
+            requestBody: inbound.slice(0, 2000),
             note: compiled.ok
               ? (compiled.missing.length > 0 ? `nulled: ${compiled.missing.join(", ")}` : "")
               : (compiled.error ?? "mapping failed"),
@@ -339,22 +558,28 @@ export function ChainRunDialog({
           }
           // Target call ($env refs in stored templates resolve at send time).
           onVisUpdate(e.id, "running");
+          let sentBody = "";
           try {
+            sentBody = resolveEnvVars(compiled.body, vault).text;
+            requests[e.targetId] = sentBody;
+            lastRequest = sentBody;
             const r = await callApi({
               baseUrl: bases[e.targetId] ?? "",
               allowHost: hostOf(bases[e.targetId] ?? ""),
               method: top.method, path: top.path,
-              body: resolveEnvVars(compiled.body, vault).text,
+              body: sentBody,
               token: resolvedToken,
               headers: headersFor(top.id),
+              mock: top.mock ?? null,
             });
             const ok = r.status >= 200 && r.status < 300;
             push({
               lane: laneNo, edgeId: e.id,
-              label: `Call · ${top.method} ${top.name} (${sysOf(e.targetId)?.name ?? "?"})`,
+              label: `Call · ${top.method} ${top.name} (${sysOf(e.targetId)?.name ?? "?"})${top.mock ? " (mock)" : ""}`,
               kind: "call", status: ok ? "ok" : "failed",
               durationMs: r.durationMs, endpoint: r.endpoint, bodyPreview: r.bodyPreview,
-              note: ok ? "" : "stopped",
+              requestBody: sentBody.slice(0, 2000),
+              note: ok ? (top.mock ? "mocked - no network" : "") : "stopped",
             });
             markEdge(e.id, ok);
             if (!ok) break;
@@ -365,7 +590,8 @@ export function ChainRunDialog({
               lane: laneNo, edgeId: e.id,
               label: `Call · ${top.method} ${top.name}`,
               kind: "call", status: "failed", durationMs: 0, endpoint: "",
-              bodyPreview: "", note: err instanceof Error ? err.message : "failed",
+              bodyPreview: "", requestBody: sentBody.slice(0, 2000),
+              note: err instanceof Error ? err.message : "failed",
             });
             markEdge(e.id, false);
             break;
@@ -375,7 +601,7 @@ export function ChainRunDialog({
           push({
             lane: laneNo, edgeId: lane.edges[lane.edges.length - 1]?.id ?? "",
             label: lane.stopped, kind: "mapping", status: "failed",
-            durationMs: 0, endpoint: "", bodyPreview: "", note: "stopped",
+            durationMs: 0, endpoint: "", bodyPreview: "", requestBody: "", note: "stopped",
           });
         }
       }
@@ -404,6 +630,8 @@ export function ChainRunDialog({
             statusText: t.status,
             durationMs: t.durationMs,
             endpoint: t.endpoint,
+            requestBodyPreview: scrubSecrets(t.requestBody, vault).slice(0, 2000),
+            responseBodyPreview: scrubSecrets(t.bodyPreview, vault).slice(0, 2000),
           })),
         });
       } catch {
@@ -455,16 +683,66 @@ export function ChainRunDialog({
             ) : (
               <ol className="mt-1.5 space-y-1">
                 {lanes.map((lane, i) => (
-                  <li key={i} className="font-mono text-[11px] text-ivory-800">
-                    <span className="font-bold text-ivory-950">L{i + 1}</span>{" "}
-                    {lane.edges.map((e) => sysOf(e.sourceId)?.name ?? "?").join(" → ")} →{" "}
-                    {sysOf(lane.edges[lane.edges.length - 1]?.targetId ?? "")?.name ?? "?"}
-                    {lane.stopped && <span className="text-amber-700"> · stops: {lane.stopped}</span>}
+                  <li key={i} className="flex items-start gap-1.5 font-mono text-[11px] text-ivory-800">
+                    <input
+                      type="checkbox"
+                      checked={lanesOn.includes(i + 1)}
+                      onChange={() => toggleLane(i + 1)}
+                      aria-label={`Run lane ${i + 1}`}
+                      className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-[#7A5C3A] cursor-pointer"
+                    />
+                    <span>
+                      <span className="font-bold text-ivory-950">L{i + 1}</span>{" "}
+                      {lane.edges.map((e) => sysOf(e.sourceId)?.name ?? "?").join(" → ")} →{" "}
+                      {sysOf(lane.edges[lane.edges.length - 1]?.targetId ?? "")?.name ?? "?"}
+                      {lane.stopped && <span className="text-amber-700"> · stops: {lane.stopped}</span>}
+                    </span>
                   </li>
                 ))}
               </ol>
             )}
           </div>
+
+          {/* Hop operations - pick which API fires per link (edge binding is the default) */}
+          {scopedEdges.length > 0 && (
+            <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-ivory-600">
+                Hop operations · checked lanes only
+              </p>
+              <div className="mt-1.5 space-y-1.5">
+                {scopedEdges.map((e) => {
+                  const bound = e.targetOperationId ?? "";
+                  const value = opByEdge[e.id] ?? bound;
+                  const ops = opsForEdge(e);
+                  return (
+                    <label key={e.id} className="flex items-center gap-2 text-[11px]">
+                      <span className="min-w-0 flex-1 truncate font-mono text-ivory-700">
+                        {sysOf(e.sourceId)?.name ?? "?"} → {sysOf(e.targetId)?.name ?? "?"}
+                        {e.label ? ` · ${e.label}` : ""}
+                      </span>
+                      <select
+                        value={value}
+                        onChange={(ev) => setEdgeOp(e.id, ev.target.value)}
+                        aria-label={`Operation for ${sysOf(e.sourceId)?.name ?? "?"} to ${sysOf(e.targetId)?.name ?? "?"}`}
+                        className="max-w-[220px] cursor-pointer rounded-md border border-[var(--color-line)] bg-white px-1.5 py-1 font-mono text-[10px] text-ivory-950"
+                      >
+                        <option value="">(edge binding)</option>
+                        {ops.map((o) => (
+                          <option key={o.id} value={o.id}>
+                            {o.method} {o.path} · {o.name}
+                            {o.mock ? " (mock)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="mt-1.5 text-[10px] text-ivory-500">
+                Overrides persist with the project, so a shared simulation replays the same path.
+              </p>
+            </div>
+          )}
 
           {/* Per-system bases + token */}
           <div className="grid sm:grid-cols-2 gap-1.5">
@@ -544,32 +822,51 @@ export function ChainRunDialog({
           {/* Trace */}
           {trace.length > 0 && (
             <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-3">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-ivory-600">
-                Trace · {trace.filter((t) => t.status === "ok").length}/{trace.length} steps ok
-                {failed ? " · failures stop their lane" : ""}
-              </p>
-              <ol className="mt-1.5 space-y-1.5">
-                {trace.map((t, i) => (
-                  <li key={`${t.lane}-${i}`} className="rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-canvas)] px-2.5 py-1.5">
-                    <p className="flex items-center gap-1.5 text-[11px]">
-                      <span
-                        aria-hidden="true"
-                        className={`h-2 w-2 shrink-0 rounded-full ${t.status === "ok" ? "bg-green-600" : "bg-red-600"}`}
-                      />
-                      <span className="font-mono text-[10px] text-ivory-500">L{t.lane}</span>
-                      <span className="min-w-0 flex-1 truncate font-semibold text-ivory-950">{t.label}</span>
-                      {t.durationMs > 0 && <span className="shrink-0 font-mono text-[10px] text-ivory-500">{t.durationMs}ms</span>}
-                    </p>
-                    {t.endpoint && <p className="mt-0.5 break-all font-mono text-[10px] text-ivory-500">{t.endpoint}</p>}
-                    {t.note && <p className="mt-0.5 text-[11px] text-amber-800">{t.note}</p>}
-                    {t.bodyPreview && (
-                      <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-ivory-950 p-2 font-mono text-[10px] leading-relaxed text-ivory-100">
-                        {t.bodyPreview.slice(0, 2000)}
-                      </pre>
-                    )}
-                  </li>
-                ))}
-              </ol>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-ivory-600">
+                  Trace · {trace.filter((t) => t.status === "ok").length}/{trace.length} steps ok
+                  {failed ? " · failures stop their lane" : ""}
+                </p>
+                <button
+                  type="button"
+                  onClick={downloadMarkdown}
+                  title="Download this run as Markdown (vault secrets scrubbed)"
+                  className="shrink-0 rounded-md border border-[var(--color-line)] bg-white px-2 py-1 font-mono text-[10px] font-bold text-bronze-700 hover:border-bronze-500 transition-colors cursor-pointer"
+                >
+                  ↓ .md
+                </button>
+              </div>
+              <div className="mt-1.5 space-y-3">
+                {lanes.map((lane, li) => {
+                  const laneNo = li + 1;
+                  const hops = trace
+                    .map((t, idx) => ({ ...t, key: `${t.lane}-${idx}` }))
+                    .filter((t) => t.lane === laneNo);
+                  if (hops.length === 0) return null;
+                  const systems = [
+                    sysOf(lane.edges[0]?.sourceId ?? "")?.name ?? "?",
+                    ...lane.edges.map((e) => sysOf(e.targetId)?.name ?? "?"),
+                  ];
+                  return (
+                    <div key={laneNo}>
+                      <p className="font-mono text-[11px] text-ivory-600">
+                        <span className="font-bold text-ivory-950">L{laneNo}</span>{" "}
+                        {systems.join(" → ")}
+                      </p>
+                      <ol className="mt-1 space-y-1.5">
+                        {hops.map((h) => (
+                          <TraceHop
+                            key={h.key}
+                            hop={h}
+                            systems={systems}
+                            focusIdx={hopFocusIndex(lane, h.edgeId)}
+                          />
+                        ))}
+                      </ol>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>

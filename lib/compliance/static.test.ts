@@ -102,6 +102,29 @@ describe("privacy / GDPR surface", () => {
     expect(design).toMatch(/tooling\/sobjects/);
   });
 
+  it("system runs support mocks, scoped lanes, and markdown evidence", () => {
+    const dialog = read("components/system-design/ChainRunDialog.tsx");
+    expect(dialog).toMatch(/top\.mock \?\? null/);
+    expect(dialog).toMatch(/lanesOn/);
+    expect(dialog).toMatch(/downloadMarkdown/);
+    expect(dialog).toMatch(/requests,/);
+    const designer = read("components/system-design/SystemDesigner.tsx");
+    expect(designer).toMatch(/onLoadTmf/);
+    expect(designer).toMatch(/op\.mock/);
+  });
+
+  it("all six workbench tabs are live (no disabled planned tabs)", () => {
+    const designer = read("components/system-design/SystemDesigner.tsx");
+    expect(designer).not.toMatch(/PLANNED_TABS/);
+    expect(designer).not.toMatch(/cursor-not-allowed/);
+    for (const tab of ["ApiCatalogTab", "TransformsTab", "FlowsTab", "ScenariosTab", "RunsTab", "SettingsTab"]) {
+      expect(designer).toMatch(new RegExp(`\\b${tab}\\b`));
+    }
+    expect(designer).toMatch(/setSubTab/);
+    expect(designer).toMatch(/pendingBindOpId/);
+    expect(designer).toMatch(/isProduction/);
+  });
+
   it("author UI is wired on the ERD canvas with confirm guardrails", () => {
     const panel = read("components/SchemaPanel.tsx");
     expect(panel).toMatch(/authorMode/);

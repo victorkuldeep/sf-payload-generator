@@ -79,6 +79,14 @@ export interface SystemInterface {
   basePath: string;
 }
 
+/** Canned response for mock mode: simulate the operation with zero network.
+ * Body travels with the project (no secrets - the secret warning applies). */
+export interface OperationMock {
+  status: number;
+  body: string;
+  latencyMs: number;
+}
+
 /** One callable operation on an interface. Versioned by convention (v1, v2…). */
 export interface SystemOperation {
   id: string;
@@ -87,6 +95,9 @@ export interface SystemOperation {
   method: OperationMethod;
   path: string;
   version: string;
+  /** Absent = live. Present = Test and chain runners serve the canned
+   * response instead of calling the network. */
+  mock?: OperationMock;
   /** Sample payload prefill for test runs and edge runs (optional). */
   sampleBody?: string;
   /** Stored request headers (optional, max 20). Values may carry $env.NAME
@@ -101,11 +112,53 @@ export interface OperationHeader {
   value: string;
 }
 
+/** Run scope: which lanes and per-edge operation overrides to simulate.
+ * UI intent that travels with the project so a shared simulation replays
+ * the same path. Lanes are 1-based lane numbers from resolveChain. */
+export interface RunScope {
+  startEdgeId: string | null;
+  lanes: number[];
+  opByEdge: Record<string, string>;
+}
+
 /** Named deployment target. Holds base URLs only - never secrets. */
 export interface SystemEnvironment {
   id: string;
   name: string;
   baseUrl: string;
+  /** Production targets trigger an explicit confirm before any run. */
+  isProduction?: boolean;
+}
+
+/** Named run sequence: a saved start edge + lane picks + per-edge operation
+ * overrides. Running a flow applies it as the chain scope and opens the
+ * chain runner, so shared simulations replay the same path. */
+export interface FlowDef {
+  id: string;
+  name: string;
+  startEdgeId: string;
+  lanes: number[];
+  opByEdge: Record<string, string>;
+}
+
+/** Named test scenario: a flow plus its seed input, mock overrides, target
+ * environment, and expected status. Running a scenario applies the mocks to
+ * the operations, seeds the start operation payload, applies the flow scope,
+ * and opens the chain runner. */
+export interface ScenarioDef {
+  id: string;
+  name: string;
+  flowId: string | null;
+  environmentId: string | null;
+  inputPayload: string;
+  mockOverrides: Record<string, OperationMock>;
+  expectStatus: number | null;
+}
+
+/** Project-level settings. Travels with export/import. */
+export interface SystemProjectSettings {
+  /** Run-evidence retention in days (Runs tab prunes older records). */
+  retentionDays: number;
 }
 
 export interface SystemProject {
@@ -125,6 +178,14 @@ export interface SystemProject {
    * records - default to empty. Exported/imported with the project. */
   notes: string;
   todos: CanvasTodo[];
+  /** Last run scope for chain simulations. Absent on vintage records -
+   * defaults to undefined (run everything). Travels with export/import. */
+  runScope?: RunScope;
+  /** Named flows, scenarios, and settings (Flow Lab / Scenarios / Settings
+   * tabs). Absent on vintage records - default to empty. */
+  flows: FlowDef[];
+  scenarios: ScenarioDef[];
+  settings: SystemProjectSettings;
 }
 
 export interface SystemTemplate {
@@ -179,7 +240,128 @@ export function newProject(name = "Untitled architecture"): SystemProject {
     activeEnvironmentId: null,
     notes: "",
     todos: [],
+    flows: [],
+    scenarios: [],
+    settings: { retentionDays: 30 },
   };
+}
+
+/**
+ * Coerce named flows (drop, never fail: UI intent must not invalidate an
+ * imported project).
+ */
+export function coerceFlows(raw: unknown): FlowDef[] {
+  if (!Array.isArray(raw)) return [];
+  const out: FlowDef[] = [];
+  for (const f of raw) {
+    if (!f || typeof f !== "object") continue;
+    const r = f as Record<string, unknown>;
+    if (typeof r.id !== "string" || !r.id) continue;
+    if (typeof r.name !== "string" || !r.name.trim()) continue;
+    if (typeof r.startEdgeId !== "string" || !r.startEdgeId) continue;
+    const lanes = Array.isArray(r.lanes)
+      ? [...new Set(r.lanes.filter((n): n is number => typeof n === "number" && Number.isInteger(n) && n > 0))].sort((a, b) => a - b)
+      : [];
+    const opByEdge: Record<string, string> = {};
+    if (r.opByEdge && typeof r.opByEdge === "object") {
+      for (const [k, v] of Object.entries(r.opByEdge as Record<string, unknown>)) {
+        if (typeof v === "string" && v) opByEdge[k] = v;
+      }
+    }
+    out.push({ id: r.id, name: r.name, startEdgeId: r.startEdgeId, lanes, opByEdge });
+  }
+  return out;
+}
+
+/** Coerce scenarios (drop, never fail). */
+export function coerceScenarios(raw: unknown): ScenarioDef[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ScenarioDef[] = [];
+  for (const s of raw) {
+    if (!s || typeof s !== "object") continue;
+    const r = s as Record<string, unknown>;
+    if (typeof r.id !== "string" || !r.id) continue;
+    if (typeof r.name !== "string" || !r.name.trim()) continue;
+    const mockOverrides: Record<string, OperationMock> = {};
+    if (r.mockOverrides && typeof r.mockOverrides === "object") {
+      for (const [k, v] of Object.entries(r.mockOverrides as Record<string, unknown>)) {
+        if (!v || typeof v !== "object") continue;
+        const m = v as Record<string, unknown>;
+        if (typeof m.status !== "number" || typeof m.body !== "string" || typeof m.latencyMs !== "number") continue;
+        mockOverrides[k] = {
+          status: Math.trunc(m.status),
+          body: m.body.slice(0, 20000),
+          latencyMs: Math.max(0, Math.trunc(m.latencyMs)),
+        };
+      }
+    }
+    const expectStatus =
+      typeof r.expectStatus === "number" && Number.isInteger(r.expectStatus) && r.expectStatus >= 100 && r.expectStatus <= 599
+        ? r.expectStatus
+        : null;
+    out.push({
+      id: r.id,
+      name: r.name,
+      flowId: typeof r.flowId === "string" && r.flowId ? r.flowId : null,
+      environmentId: typeof r.environmentId === "string" && r.environmentId ? r.environmentId : null,
+      inputPayload: typeof r.inputPayload === "string" ? r.inputPayload.slice(0, 20000) : "{}",
+      mockOverrides,
+      expectStatus,
+    });
+  }
+  return out;
+}
+
+/** Coerce project settings (defaults, never fail). */
+export function coerceSettings(raw: unknown): SystemProjectSettings {
+  const fallback = { retentionDays: 30 };
+  if (!raw || typeof raw !== "object") return fallback;
+  const r = raw as Record<string, unknown>;
+  const retentionDays =
+    typeof r.retentionDays === "number" && Number.isFinite(r.retentionDays)
+      ? Math.min(365, Math.max(1, Math.trunc(r.retentionDays)))
+      : 30;
+  return { retentionDays };
+}
+
+/**
+ * Coerce a stored run scope (drop, never fail: scope is UI intent, and a
+ * malformed scope must not invalidate an imported project).
+ */
+export function coerceRunScope(raw: unknown): RunScope | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as Record<string, unknown>;
+  const lanes = Array.isArray(r.lanes)
+    ? r.lanes.filter((n): n is number => typeof n === "number" && Number.isInteger(n) && n > 0)
+    : [];
+  const opByEdge: Record<string, string> = {};
+  if (r.opByEdge && typeof r.opByEdge === "object") {
+    for (const [k, v] of Object.entries(r.opByEdge as Record<string, unknown>)) {
+      if (typeof v === "string" && v) opByEdge[k] = v;
+    }
+  }
+  return {
+    startEdgeId: typeof r.startEdgeId === "string" ? r.startEdgeId : null,
+    lanes,
+    opByEdge,
+  };
+}
+
+/**
+ * Effective scope for a chain run: the saved scope when it targets this
+ * start edge, otherwise run-everything defaults.
+ */
+export function resolveRunScope(
+  project: Pick<SystemProject, "runScope">,
+  startEdgeId: string,
+  laneCount: number
+): { lanes: number[]; opByEdge: Record<string, string> } {
+  const saved = project.runScope;
+  if (saved && saved.startEdgeId === startEdgeId && saved.lanes.length > 0) {
+    const valid = saved.lanes.filter((n) => n >= 1 && n <= laneCount);
+    if (valid.length > 0) return { lanes: [...new Set(valid)].sort((a, b) => a - b), opByEdge: { ...saved.opByEdge } };
+  }
+  return { lanes: Array.from({ length: laneCount }, (_, i) => i + 1), opByEdge: {} };
 }
 
 /** Readiness is DERIVED, never stored: both ends bound to live operations
@@ -309,6 +491,22 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
     if (o.sampleBody !== undefined && typeof o.sampleBody !== "string") {
       issues.push({ path: `${at}.sampleBody`, message: "Sample body must be a string." });
     }
+    if (o.mock !== undefined) {
+      const m = o.mock as Record<string, unknown>;
+      if (!m || typeof m !== "object") {
+        issues.push({ path: `${at}.mock`, message: "Mock must be an object." });
+      } else {
+        if (typeof m.status !== "number" || !Number.isInteger(m.status) || m.status < 100 || m.status > 599) {
+          issues.push({ path: `${at}.mock.status`, message: "Mock status must be an integer 100-599." });
+        }
+        if (typeof m.body !== "string" || m.body.length > 20000) {
+          issues.push({ path: `${at}.mock.body`, message: "Mock body must be a string under 20 KB." });
+        }
+        if (typeof m.latencyMs !== "number" || !Number.isInteger(m.latencyMs) || m.latencyMs < 0 || m.latencyMs > 30000) {
+          issues.push({ path: `${at}.mock.latencyMs`, message: "Mock latency must be 0-30000 ms." });
+        }
+      }
+    }
     if (o.headers !== undefined) {
       if (!Array.isArray(o.headers) || o.headers.length > 20) {
         issues.push({ path: `${at}.headers`, message: "Headers must be a list of at most 20 rows." });
@@ -335,6 +533,9 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
     const at = `$.environments[${i}]`;
     if (typeof e.id !== "string" || !e.id) issues.push({ path: `${at}.id`, message: "Missing environment id." });
     if (typeof e.name !== "string" || !e.name.trim()) issues.push({ path: `${at}.name`, message: "Missing environment name." });
+    if (e.isProduction !== undefined && typeof e.isProduction !== "boolean") {
+      issues.push({ path: `${at}.isProduction`, message: "Production flag must be a boolean." });
+    }
   }
   // Edge bindings must reference live operations on the correct endpoint.
   for (let i = 0; i < connections.length; i++) {
@@ -424,6 +625,10 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
       activeEnvironmentId: activeEnv,
       notes,
       todos,
+      runScope: coerceRunScope((p as Record<string, unknown>).runScope),
+      flows: coerceFlows((p as Record<string, unknown>).flows),
+      scenarios: coerceScenarios((p as Record<string, unknown>).scenarios),
+      settings: coerceSettings((p as Record<string, unknown>).settings),
     },
     issues: [],
   };

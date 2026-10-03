@@ -6,6 +6,7 @@ import Input from "../ui/Input";
 import { preflightRun, redactHeaders, type PreflightVerdict } from "@/lib/system-design/runner";
 import { findEnvRefs, findMissingVars, resolveEnvVars, scrubSecrets, type CredVault } from "@/lib/system-design/credentials";
 import { buildSendHeaders, authTokenPrefill } from "@/lib/system-design/headers";
+import { buildMockResult, sleep } from "@/lib/system-design/mock";
 import { saveSystemRun, listSystemRuns, deleteSystemRun, type SystemRunRecord } from "@/lib/system-design/runStore";
 import { newId, type SystemEnvironment, type SystemOperation, type SystemNode, type SystemInterface } from "@/lib/system-design/model";
 
@@ -90,12 +91,53 @@ export function TestRunner({
     [baseUrl, path, method, allowHost, body]
   );
 
+  const mocked = !!operation.mock;
   const send = async () => {
-    if (!verdict.ok || sending) return;
+    if ((!mocked && !verdict.ok) || sending) return;
     setSending(true);
     setError(null);
     setResult(null);
     try {
+      // Mock mode: canned response, zero network, saved to history like live.
+      if (operation.mock) {
+        const canned = buildMockResult(operation.mock);
+        await sleep(canned.durationMs);
+        const statusText = canned.statusText ? `${canned.statusText} (mock)` : "(mock)";
+        setResult({
+          status: canned.status,
+          statusText,
+          durationMs: canned.durationMs,
+          endpoint: `${baseUrl.replace(/\/+$/, "")}${path.startsWith("/") ? path : `/${path}`}`,
+          redirects: 0,
+          responseHeaders: {},
+          responseBodyPreview: canned.bodyPreview,
+          truncated: false,
+        });
+        try {
+          const record: SystemRunRecord = {
+            id: newId("run"),
+            createdAt: Date.now(),
+            operationName: `${system.name} · ${operation.name} (mock)`,
+            systemName: system.name,
+            environmentName: env?.name ?? "(no environment)",
+            method,
+            endpoint: `${baseUrl.replace(/\/+$/, "")}${path.startsWith("/") ? path : `/${path}`}`,
+            status: canned.status,
+            statusText,
+            durationMs: canned.durationMs,
+            truncated: false,
+            requestHeaders: {},
+            requestBodyPreview: method === "GET" ? "" : body.slice(0, 10000),
+            responseHeaders: {},
+            responseBodyPreview: canned.bodyPreview.slice(0, 10000),
+          };
+          await saveSystemRun(record);
+          setHistory(await listSystemRuns(20));
+        } catch {
+          /* run display matters more than history persistence */
+        }
+        return;
+      }
       // Stored op headers prefill the rows above - resolve $env at send.
       const built = buildSendHeaders(undefined, headers, vault);
       if (built.missing.length > 0) {
@@ -321,6 +363,18 @@ export function TestRunner({
             />
           </div>
 
+          {/* Mock mode */}
+          {operation.mock && (
+            <div className="rounded-xl border border-bronze-300 bg-bronze-100 px-3 py-2.5">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-bronze-700">
+                Mocked · serves HTTP {operation.mock.status} after {operation.mock.latencyMs}ms
+              </p>
+              <p className="mt-0.5 text-[11px] text-ivory-700">
+                Nothing leaves the browser. Clear the mock on the operation to go live.
+              </p>
+            </div>
+          )}
+
           {/* Preflight */}
           <div className={`rounded-xl border px-3 py-2.5 ${verdict.ok ? "border-green-300 bg-green-50" : "border-amber-300 bg-amber-50"}`}>
             <p className={`text-[10px] font-bold uppercase tracking-wider ${verdict.ok ? "text-green-800" : "text-amber-800"}`}>
@@ -445,7 +499,7 @@ export function TestRunner({
               </ul>
             </div>
           )}
-          <Button size="sm" onClick={() => void send()} disabled={!verdict.ok || sending} className="w-full">
+          <Button size="sm" onClick={() => void send()} disabled={(!mocked && !verdict.ok) || sending} className="w-full">
             {sending ? "Sending…" : "Send (Test mode)"}
           </Button>
 

@@ -3,6 +3,44 @@
 import { describe, it, expect } from "vitest";
 import { resolvePath, renderTemplate, compileMapping } from "./mapping";
 
+describe("request namespaces", () => {
+  const ctx = {
+    seed: '{"order":{"id":"00000238"}}',
+    steps: { sys_mw: '{"ack":true}' },
+    request: '{"event":{"productOrder":{"id":"00000238"}}}',
+    requests: { sys_mw: '{"event":{"productOrder":{"id":"00000238"}}}' },
+  };
+  it("resolves {{request}} whole and by path", () => {
+    expect(renderTemplate("X={{request}}", {}, ctx).text).toBe(
+      'X={"event":{"productOrder":{"id":"00000238"}}}'
+    );
+    expect(renderTemplate("X={{request.event.productOrder.id}}", {}, ctx).text).toBe('X="00000238"');
+  });
+  it("resolves {{requests.<id>}} whole and by path", () => {
+    expect(renderTemplate("X={{requests.sys_mw}}", {}, ctx).text).toBe(
+      'X={"event":{"productOrder":{"id":"00000238"}}}'
+    );
+    expect(renderTemplate("X={{requests.sys_mw.event.productOrder.id}}", {}, ctx).text).toBe(
+      'X="00000238"'
+    );
+  });
+  it("nulls missing request refs and reports them", () => {
+    const r = renderTemplate("X={{requests.sys_missing}} Y={{request}}", {}, {});
+    expect(r.text).toBe("X=null Y=null");
+    expect(r.missing).toEqual(["requests.sys_missing", "request"]);
+  });
+  it("wraps a prior payload via template (TMF688 shape)", () => {
+    const c = compileMapping(
+      "template",
+      '{"event":{"productOrder":{{response}}}}',
+      '{"id":"00000238","total":42}',
+      ctx
+    );
+    expect(c.ok).toBe(true);
+    expect(JSON.parse(c.body)).toEqual({ event: { productOrder: { id: "00000238", total: 42 } } });
+  });
+});
+
 describe("step mapping", () => {
   it("resolves dotted paths with array indices", () => {
     const data = { order: { id: "1", lines: [{ sku: "a" }, { sku: "b" }] } };

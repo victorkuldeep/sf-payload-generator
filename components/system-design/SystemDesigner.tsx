@@ -38,6 +38,8 @@ import {
   type SystemInterface,
   type SystemOperation,
   type OperationMethod,
+  type FlowDef,
+  type ScenarioDef,
 } from "@/lib/system-design/model";
 import {
   saveSystemProject,
@@ -45,11 +47,17 @@ import {
   loadSystemProject,
   deleteSystemProject,
 } from "@/lib/system-design/store";
-import { buildDemoProject, buildGroqSampleProject } from "@/lib/system-design/demo";
+import { buildDemoProject, buildGroqSampleProject, buildTmfSampleProject } from "@/lib/system-design/demo";
 import { SystemNodeView, SystemGlyph, type SystemNodeData } from "./SystemNode";
 import { TestRunner } from "./TestRunner";
 import { RunEdgeDialog } from "./RunEdgeDialog";
 import { ChainRunDialog } from "./ChainRunDialog";
+import { ApiCatalogTab } from "./tabs/ApiCatalogTab";
+import { TransformsTab } from "./tabs/TransformsTab";
+import { FlowsTab } from "./tabs/FlowsTab";
+import { ScenariosTab } from "./tabs/ScenariosTab";
+import { RunsTab } from "./tabs/RunsTab";
+import { SettingsTab } from "./tabs/SettingsTab";
 import { ProjectNotesModal } from "./ProjectNotesModal";
 import { CredentialsModal } from "./CredentialsModal";
 import { TemplatesModal } from "./TemplatesModal";
@@ -100,13 +108,14 @@ const nodeTypes = { system: SystemNodeView } as const;
 
 type SubTab = "canvas" | "flow" | "api" | "transform" | "scenarios" | "runs" | "settings";
 
-const PLANNED_TABS: { id: Exclude<SubTab, "canvas">; label: string; why: string }[] = [
-  { id: "flow", label: "Flow Lab", why: "Planned - workflow orchestration arrives after the API layer." },
-  { id: "api", label: "API Catalog", why: "Planned - interfaces and operations attach to systems next." },
-  { id: "transform", label: "Transformations", why: "Planned - declarative mappings arrive with workflows." },
-  { id: "scenarios", label: "Scenarios", why: "Planned - environments and test inputs arrive with execution." },
-  { id: "runs", label: "Runs & Observability", why: "Planned - nothing executes in the design slice." },
-  { id: "settings", label: "Settings", why: "Planned - environments, policies and retention arrive with execution." },
+const SUB_TABS: { id: SubTab; label: string }[] = [
+  { id: "canvas", label: "Canvas" },
+  { id: "flow", label: "Flow Lab" },
+  { id: "api", label: "API Catalog" },
+  { id: "transform", label: "Transformations" },
+  { id: "scenarios", label: "Scenarios" },
+  { id: "runs", label: "Runs & Observability" },
+  { id: "settings", label: "Settings" },
 ];
 
 interface Snapshot {
@@ -438,6 +447,9 @@ export function SystemDesigner() {
   const [future, setFuture] = useState<Snapshot[]>([]);
   const [selNodeId, setSelNodeId] = useState<string | null>(null);
   const [selEdgeId, setSelEdgeId] = useState<string | null>(null);
+  const [subTab, setSubTab] = useState<SubTab>("canvas");
+  /** Catalog "Bind" flow: operation picked in API Catalog, awaiting an edge click. */
+  const [pendingBindOpId, setPendingBindOpId] = useState<string | null>(null);
   const [testOpId, setTestOpId] = useState<string | null>(null);
   const [runChainEdgeId, setRunChainEdgeId] = useState<string | null>(null);
   /** Ephemeral execution paint: edgeId -> run status. Cleared on close/rerun. */
@@ -568,6 +580,85 @@ export function SystemDesigner() {
     });
     setSaveState("dirty");
   }, [pushHistory]);
+
+  /** Active environment + production guard: PROD targets confirm every run. */
+  const activeEnv = project?.environments.find((e) => e.id === project.activeEnvironmentId) ?? null;
+  const guardProd = (action: () => void): void => {
+    if (activeEnv?.isProduction && !window.confirm(`"${activeEnv.name}" is marked PRODUCTION. Run anyway?`)) return;
+    action();
+  };
+  const openTestOp = (opId: string): void => guardProd(() => setTestOpId(opId));
+  const openEdgeRun = (edgeId: string): void => guardProd(() => setRunEdgeId(edgeId));
+  const openChainRun = (edgeId: string): void => guardProd(() => {
+    setRunChainEdgeId(edgeId);
+    setRunVis({});
+  });
+  const locateSystem = (systemId: string): void => {
+    setSubTab("canvas");
+    setSelNodeId(systemId);
+    setSelEdgeId(null);
+  };
+  const bindOperation = (opId: string): void => {
+    setPendingBindOpId(opId);
+    setSubTab("canvas");
+  };
+  const pendingBindOp = project?.operations.find((o) => o.id === pendingBindOpId) ?? null;
+  // Catalog Bind: the next clicked edge auto-binds on the operation's end.
+  useEffect(() => {
+    if (!selEdgeId || !pendingBindOpId) return;
+    const p = projectRef.current;
+    const op = p?.operations.find((o) => o.id === pendingBindOpId);
+    const conn = p?.connections.find((c) => c.id === selEdgeId);
+    const iface = p?.interfaces.find((f) => f.id === op?.interfaceId);
+    if (op && conn && iface && (iface.systemId === conn.sourceId || iface.systemId === conn.targetId)) {
+      const patch = iface.systemId === conn.sourceId ? { sourceOperationId: op.id } : { targetOperationId: op.id };
+      mutate((prev) => ({
+        ...prev,
+        connections: prev.connections.map((c) => (c.id === selEdgeId ? { ...c, ...patch } : c)),
+      }));
+    }
+    setPendingBindOpId(null);
+  }, [selEdgeId, pendingBindOpId, mutate]);
+  /** Flow Lab: apply the named sequence as chain scope and open the runner. */
+  const runFlow = (flow: FlowDef): void => {
+    guardProd(() => {
+      mutate((p) => ({ ...p, runScope: { startEdgeId: flow.startEdgeId, lanes: [...flow.lanes], opByEdge: { ...flow.opByEdge } } }));
+      setSubTab("canvas");
+      setRunChainEdgeId(flow.startEdgeId);
+      setRunVis({});
+    });
+  };
+  /** Scenarios: apply mocks, seed the start payload, set env + scope, run. */
+  const runScenario = (s: ScenarioDef): void => {
+    const flow = project?.flows.find((f) => f.id === s.flowId);
+    if (!project || !flow) return;
+    const mockCount = Object.keys(s.mockOverrides).length;
+    if (mockCount > 0 && !window.confirm(`Apply ${mockCount} mock override${mockCount === 1 ? "" : "s"} to operations, seed the start payload, and open the chain runner? Existing mocks on those operations are replaced.`)) return;
+    guardProd(() => {
+      mutate((p) => {
+        const startEdge = p.connections.find((c) => c.id === flow.startEdgeId);
+        const operations = p.operations.map((o) => {
+          let next = o;
+          const ov = s.mockOverrides[o.id];
+          if (ov) next = { ...next, mock: { ...ov } };
+          if (startEdge && o.id === startEdge.sourceOperationId && s.inputPayload.trim()) {
+            next = { ...next, sampleBody: s.inputPayload };
+          }
+          return next;
+        });
+        return {
+          ...p,
+          operations,
+          runScope: { startEdgeId: flow.startEdgeId, lanes: [...flow.lanes], opByEdge: { ...flow.opByEdge } },
+          activeEnvironmentId:
+            s.environmentId && p.environments.some((e) => e.id === s.environmentId) ? s.environmentId : p.activeEnvironmentId,
+        };
+      });
+      setSubTab("canvas");
+      setRunChainEdgeId(flow.startEdgeId);
+      setRunVis({});
+    });
+  };
 
   const undo = useCallback(() => {
     setPast((prevPast) => {
@@ -700,6 +791,18 @@ export function SystemDesigner() {
     }
     const demo = buildDemoProject();
     setProject(demo);
+    setPast([]);
+    setFuture([]);
+    setSelNodeId(null);
+    setSelEdgeId(null);
+    setSaveState("dirty");
+  }, [project, saveState]);
+
+  const loadTmfSample = useCallback(() => {
+    if (project && (project.systems.length > 0 || saveState === "dirty")) {
+      if (!window.confirm("Replace the current canvas with the TMF order-flow sample? Unsaved work will be lost.")) return;
+    }
+    setProject(buildTmfSampleProject());
     setPast([]);
     setFuture([]);
     setSelNodeId(null);
@@ -990,28 +1093,48 @@ export function SystemDesigner() {
         )}
       </div>
 
-      {/* Secondary navigation */}
+            {/* Secondary navigation */}
       <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="System Design sections">
-        <span role="tab" aria-selected className="rounded-lg border border-ivory-950 bg-ivory-950 px-3 py-1.5 text-[12px] font-semibold text-ivory-100">
-          Canvas
-        </span>
-        {PLANNED_TABS.map((t) => (
-          <span
-            key={t.id}
-            role="tab"
-            aria-selected={false}
-            aria-disabled
-            title={t.why}
-            className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] font-medium text-ivory-400 cursor-not-allowed"
-          >
-            {t.label}
+        {SUB_TABS.map((t) => {
+          const active = subTab === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setSubTab(t.id)}
+              className={
+                active
+                  ? "rounded-lg border border-ivory-950 bg-ivory-950 px-3 py-1.5 text-[12px] font-semibold text-ivory-100"
+                  : "rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] font-medium text-ivory-600 hover:border-bronze-500 hover:text-ivory-950 cursor-pointer"
+              }
+            >
+              {t.label}
+            </button>
+          );
+        })}
+        {activeEnv?.isProduction && (
+          <span title="Runs against this environment confirm first" className="rounded-lg border border-red-700 bg-red-700/10 px-2 py-1 font-mono text-[10px] font-bold text-red-700">
+            PROD · {activeEnv.name}
           </span>
-        ))}
+        )}
       </div>
+      {pendingBindOp && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-bronze-500/50 bg-bronze-500/5 px-3 py-1.5 text-[11px] text-ivory-800" role="status">
+          <span>
+            Binding <strong className="font-mono">{pendingBindOp.method} {pendingBindOp.name}</strong> - click a connection on the canvas and it attaches to the matching end automatically.
+          </span>
+          <button type="button" onClick={() => setPendingBindOpId(null)} className="ml-auto font-semibold text-ivory-600 underline hover:text-ivory-950 cursor-pointer">
+            Cancel
+          </button>
+        </div>
+      )}
       </>
       )}
 
       {/* Workbench */}
+      {subTab === "canvas" ? (
       <div className="flex gap-3" style={present ? { height: "calc(100vh - 12px)" } : { height: "calc(100vh - 240px)", minHeight: 480 }}>
         {inventoryOpen ? (
           <aside className="flex w-72 shrink-0 flex-col overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)]" aria-label="Systems inventory">
@@ -1195,7 +1318,7 @@ export function SystemDesigner() {
                   systems: p.systems.map((s) => (s.id === selNode.id ? { ...s, ...patch } : s)),
                 }))}
                 onMutateProject={(fn) => mutate(fn)}
-                onTestOperation={(opId) => setTestOpId(opId)}
+                onTestOperation={(opId) => openTestOp(opId)}
                 onConnectTo={(targetId) => connectSystems(selNode.id, targetId)}
                 onDuplicate={() => {
                   mutate((p) => ({
@@ -1229,11 +1352,8 @@ export function SystemDesigner() {
                 ...p,
                 connections: p.connections.map((c) => (c.id === selEdge.id ? { ...c, ...patch } : c)),
               }))}
-              onRun={() => setRunEdgeId(selEdge.id)}
-              onRunChain={() => {
-                setRunChainEdgeId(selEdge.id);
-                setRunVis({});
-              }}
+              onRun={() => openEdgeRun(selEdge.id)}
+              onRunChain={() => openChainRun(selEdge.id)}
               runReady={connectionReadiness(selEdge, project) === "ready"}
               onDelete={() => {
                 mutate((p) => ({ ...p, connections: p.connections.filter((c) => c.id !== selEdge.id) }));
@@ -1383,6 +1503,30 @@ export function SystemDesigner() {
           </div>
         )}
       </div>
+      ) : (
+        project && (
+        <div className="flex gap-3" style={present ? { height: "calc(100vh - 12px)" } : { height: "calc(100vh - 240px)", minHeight: 480 }}>
+          {subTab === "flow" && (
+            <FlowsTab project={project} mutate={mutate} onRunFlow={runFlow} />
+          )}
+          {subTab === "api" && (
+            <ApiCatalogTab project={project} mutate={mutate} onTest={openTestOp} onLocate={locateSystem} onBind={bindOperation} />
+          )}
+          {subTab === "transform" && (
+            <TransformsTab project={project} mutate={mutate} />
+          )}
+          {subTab === "scenarios" && (
+            <ScenariosTab project={project} mutate={mutate} onRunScenario={runScenario} />
+          )}
+          {subTab === "runs" && (
+            <RunsTab project={project} mutate={mutate} />
+          )}
+          {subTab === "settings" && (
+            <SettingsTab project={project} mutate={mutate} />
+          )}
+        </div>
+        )
+      )}
 
       {testOp && testIface && testSystem && project && (
         <TestRunner
@@ -1413,6 +1557,7 @@ export function SystemDesigner() {
 
       {runChainEdgeId && project && (
         <ChainRunDialog
+          onSaveScope={(scope) => mutate((p) => ({ ...p, runScope: scope }))}
           startEdgeId={runChainEdgeId}
           project={project}
           environments={project.environments}
@@ -1442,6 +1587,7 @@ export function SystemDesigner() {
           onClose={() => setTplOpen(false)}
           onLoadDemo={loadDemo}
           onLoadGroq={loadGroqSample}
+          onLoadTmf={loadTmfSample}
         />
       )}
 
@@ -1740,7 +1886,7 @@ function NodeInspector({
                       title="Run this operation in Test mode (preflight + redacted history)"
                       className="shrink-0 rounded-md border border-[var(--color-line)] bg-white px-1.5 py-1 font-mono text-[10px] font-bold text-bronze-700 hover:border-bronze-500 transition-colors cursor-pointer"
                     >
-                      Test
+                      {op.mock ? "Test (mock)" : "Test"}
                     </button>
                     </div>
                     <OperationHttpConfig
@@ -1888,6 +2034,76 @@ function OperationHttpConfig({
               </p>
             </div>
           )}
+          {!isEvent && (
+            <div>
+              <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-semibold text-ivory-800 select-none">
+                <input
+                  type="checkbox"
+                  checked={!!op.mock}
+                  onChange={(e) =>
+                    patchOp(
+                      e.target.checked
+                        ? { mock: { status: 200, body: '{\n  "mock": true\n}', latencyMs: 300 } }
+                        : { mock: undefined }
+                    )
+                  }
+                  className="h-3.5 w-3.5 accent-[#7A5C3A] cursor-pointer"
+                />
+                Mock - canned response, zero network
+              </label>
+              {op.mock && (
+                <div className="mt-1.5 space-y-1.5 rounded-lg border border-bronze-200 bg-bronze-100/40 p-2">
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+                      Status
+                      <input
+                        type="number"
+                        value={op.mock.status}
+                        onChange={(e) =>
+                          patchOp({ mock: { ...op.mock!, status: Number(e.target.value) || 0, body: op.mock!.body, latencyMs: op.mock!.latencyMs } })
+                        }
+                        aria-label="Mock status code"
+                        className="mt-0.5 w-full rounded-md border border-[var(--color-line)] bg-white px-1.5 py-1 font-mono text-[10px] text-ivory-950 focus:border-bronze-500 focus:outline-none"
+                      />
+                    </label>
+                    <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+                      Latency ms
+                      <input
+                        type="number"
+                        value={op.mock.latencyMs}
+                        onChange={(e) =>
+                          patchOp({ mock: { ...op.mock!, status: op.mock!.status, body: op.mock!.body, latencyMs: Number(e.target.value) || 0 } })
+                        }
+                        aria-label="Mock latency milliseconds"
+                        className="mt-0.5 w-full rounded-md border border-[var(--color-line)] bg-white px-1.5 py-1 font-mono text-[10px] text-ivory-950 focus:border-bronze-500 focus:outline-none"
+                      />
+                    </label>
+                  </div>
+                  <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+                    Canned body
+                    <textarea
+                      value={op.mock.body}
+                      onChange={(e) =>
+                        patchOp({ mock: { ...op.mock!, status: op.mock!.status, body: e.target.value, latencyMs: op.mock!.latencyMs } })
+                      }
+                      spellCheck={false}
+                      rows={4}
+                      aria-label="Mock response body"
+                      className="mt-0.5 w-full rounded-md border border-[var(--color-line)] bg-white px-1.5 py-1 font-mono text-[10px] text-ivory-950 focus:border-bronze-500 focus:outline-none"
+                    />
+                  </label>
+                  {looksLikeSecret(op.mock.body) && (
+                    <p className="rounded-md border border-red-300 bg-red-50 px-1.5 py-1 text-[10px] leading-snug text-red-700" role="alert">
+                      Looks like a literal secret - mocks save and export with the project. Use the vault ($env.NAME) or fake data.
+                    </p>
+                  )}
+                  <p className="text-[10px] text-ivory-500">
+                    Served by Test and chain runners instead of the network. Canned bodies export with the project.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
           {op.method !== "GET" && (
             <div>
               <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
@@ -1979,6 +2195,7 @@ function VariableChips({
         {chip("response", "{{response}}", "Previous hop output")}
         {chip("seed", "{{seed}}", "Flow seed payload")}
         {upstream.map((u) => chip(u.name, `{{steps.${u.id}}}`, `Output of the hop targeting ${u.name}`))}
+        {chip("request", "{{request}}", "Body just sent to the previous hop - replay it past a bare ack ({{requests.<id>}} for any hop)")}
         {chip("$env", "$env.", "Session credential prefix")}
       </div>
     </div>
