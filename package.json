@@ -35,6 +35,8 @@
     "next": "15.5.26",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "vanilla-jsoneditor": "^3.13.0",
     "virtual-react-json-diff": "^1.0.20",
     "xlsx": "^0.18.5",

@@ -43,8 +43,20 @@ describe("studio packs", () => {
     expect(typeof r.ok).toBe("boolean");
   });
 
+  it("validates SOQL and builds the query URL", async () => {
+    const bad = await run("query_soql_build", { soql: "FIND {x} RETURNING Account(Id)" });
+    expect(bad.ok).toBe(false);
+    const full = await run("query_soql_build", {
+      soql: "SELECT Id FROM Account LIMIT 10",
+      instanceUrl: "https://myorg.my.salesforce.com",
+      apiVersion: "v60.0",
+    });
+    expect(full.ok).toBe(true);
+    expect(JSON.stringify(full)).toContain("/services/data/v60.0/query?q=");
+  });
+
   it("routes the new packs by skill", () => {
-    expect(toolsForSkill("studio").map((t) => t.name)).toEqual(["query_sosl_build", "erd_snapshots"]);
+    expect(toolsForSkill("studio").map((t) => t.name)).toEqual(["query_sosl_build", "query_soql_build", "erd_snapshots"]);
     expect(toolsForSkill("json").map((t) => t.name)).toEqual(["json_inspect"]);
     expect(toolsForSkill("mapping")).toEqual([]);
   });

@@ -155,5 +155,50 @@ const jsonInspect: AgentTool = {
   },
 };
 
-export const STUDIO_TOOLS: AgentTool[] = [soslBuild, erdSnapshots];
+const soqlArgs = z.object({
+  soql: z.string().min(1).max(10000).describe("Full SOQL statement, e.g. SELECT Id FROM Account LIMIT 10"),
+  instanceUrl: z.string().optional().describe("Org instance URL - only needed to build the runnable /query URL"),
+  apiVersion: z.string().optional().describe("API version like v60.0 - only needed with instanceUrl"),
+});
+
+function looksLikeSoql(statement: string): boolean {
+  const s = statement.trim();
+  return /^\s*select\b/i.test(s) && /\bfrom\s+[a-z0-9_]+/i.test(s);
+}
+
+const soqlBuild: AgentTool = {
+  name: "query_soql_build",
+  description: "Validate a SOQL statement shape (SELECT ... FROM <Object>) and, when an org instance URL is given, build the runnable /query REST URL. Read-only - never executes.",
+  parameters: {
+    type: "object",
+    properties: {
+      soql: { type: "string" },
+      instanceUrl: { type: "string" },
+      apiVersion: { type: "string" },
+    },
+    required: ["soql"],
+    additionalProperties: false,
+  },
+  needsApproval: false,
+  label: () => "Validate SOQL",
+  schema: soqlArgs,
+  execute: async (raw) => {
+    const args = raw as z.infer<typeof soqlArgs>;
+    const statement = args.soql.trim();
+    if (!looksLikeSoql(statement)) {
+      return { ok: false, error: "That does not look like SOQL - it should read SELECT <fields> FROM <Object>." };
+    }
+    if (args.instanceUrl?.trim()) {
+      const host = args.instanceUrl.trim().replace(/\/+$/, "");
+      if (!/^https:\/\/[a-z0-9.-]+$/i.test(host)) {
+        return { ok: false, error: "instanceUrl must be a plain https origin (no paths, no tokens)." };
+      }
+      const version = (args.apiVersion?.trim() || "v60.0").replace(/^v?/, "v");
+      return { ok: true, result: { valid: true, queryUrl: `${host}/services/data/${version}/query?q=${encodeURIComponent(statement)}` } };
+    }
+    return { ok: true, result: { valid: true, hint: "Pass instanceUrl + apiVersion and I will build the runnable /query URL." } };
+  },
+};
+
+export const STUDIO_TOOLS: AgentTool[] = [soslBuild, soqlBuild, erdSnapshots];
 export const JSON_TOOLS: AgentTool[] = [jsonInspect];
