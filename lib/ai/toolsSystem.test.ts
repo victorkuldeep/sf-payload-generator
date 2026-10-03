@@ -98,7 +98,7 @@ describe("agent loop", () => {
 
   it("routes packs by skill", () => {
     expect(toolsForSkill("system").map((t: AgentTool) => t.name)).toEqual(["system_describe", "system_add", "system_connect"]);
-    expect(toolsForSkill("json")).toEqual([]);
+    expect(toolsForSkill("validate")).toEqual([]);
   });
 
   it("validates tool args with zod", () => {
