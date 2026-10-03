@@ -35,7 +35,7 @@ export function buildDemoProject(): SystemProject {
     { id: "op_demo_forward", interfaceId: "iface_demo_mw", name: "Forward event", method: "POST", path: "/forward", version: "v1", sampleBody: '{"x":"hello"}' },
     { id: "op_demo_echo", interfaceId: "iface_demo_echo", name: "Echo POST", method: "POST", path: "/post", version: "v1" },
   ];
-  project.environments = [{ id: "env_demo", name: "Sandbox", baseUrl: "" }];
+  project.environments = [{ id: "env_demo", name: "Sandbox", baseUrl: "", baseUrlOverrides: {} }];
   project.activeEnvironmentId = "env_demo";
   return project;
 }
@@ -107,7 +107,7 @@ export function buildTmfSampleProject(): SystemProject {
       mapping: { mode: "template" as const, template: "{{request}}" },
     },
   ];
-  project.environments = [{ id: "env_tmf", name: "Sandbox", baseUrl: "" }];
+  project.environments = [{ id: "env_tmf", name: "Sandbox", baseUrl: "", baseUrlOverrides: {} }];
   project.activeEnvironmentId = "env_tmf";
   project.notes = [
     "## TMF622 order → middleware → events (2 lanes)",
@@ -169,7 +169,7 @@ export function buildGroqSampleProject(): SystemProject {
       },
     },
   ];
-  project.environments = [{ id: "env_groq", name: "Production", baseUrl: "https://api.groq.com", isProduction: true }];
+  project.environments = [{ id: "env_groq", name: "Production", baseUrl: "https://api.groq.com", baseUrlOverrides: {}, isProduction: true }];
   project.activeEnvironmentId = "env_groq";
   project.notes = [
     "## GROQ chat sample (1:1)",

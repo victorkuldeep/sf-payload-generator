@@ -26,6 +26,7 @@ import Button from "./ui/Button";
 import Input from "./ui/Input";
 import CodeBlock from "./ui/CodeBlock";
 import { PicklistValuesButton } from "./PicklistValuesButton";
+import { CollectionTrayButton } from "./CollectionTrayButton";
 
 interface GraphQLPanelProps {
   objects: SalesforceObject[];
@@ -33,6 +34,8 @@ interface GraphQLPanelProps {
   apiVersion: string;
   getToken: () => string;
   onAddToCollection: (item: NewCollectionItem) => void;
+  collectionCount: number;
+  onOpenCollection: () => void;
   onSessionExpired?: () => void;
 }
 
@@ -83,6 +86,8 @@ export default function GraphQLPanel({
   apiVersion,
   getToken,
   onAddToCollection,
+  collectionCount,
+  onOpenCollection,
   onSessionExpired,
 }: GraphQLPanelProps) {
   const [blocks, setBlocks] = useState<BlockState[]>([]);
@@ -778,6 +783,7 @@ export default function GraphQLPanel({
             >
               + Collection
             </Button>
+            <CollectionTrayButton count={collectionCount} onOpen={onOpenCollection} />
           </div>
 
           {runError && (

@@ -8,7 +8,7 @@ import { findEnvRefs, findMissingVars, resolveEnvVars, scrubSecrets, type CredVa
 import { buildSendHeaders, authTokenPrefill } from "@/lib/system-design/headers";
 import { buildMockResult, sleep } from "@/lib/system-design/mock";
 import { saveSystemRun, listSystemRuns, deleteSystemRun, type SystemRunRecord } from "@/lib/system-design/runStore";
-import { newId, type SystemEnvironment, type SystemOperation, type SystemNode, type SystemInterface } from "@/lib/system-design/model";
+import { newId, resolveSystemBaseUrl, type SystemEnvironment, type SystemOperation, type SystemNode, type SystemInterface } from "@/lib/system-design/model";
 
 interface HeaderRow {
   key: string;
@@ -34,7 +34,7 @@ export function TestRunner({
 }) {
   const activeEnv = environments.find((e) => e.id === activeEnvironmentId) ?? environments[0] ?? null;
   const [envId, setEnvId] = useState<string>(activeEnv?.id ?? "");
-  const [baseUrl, setBaseUrl] = useState(activeEnv?.baseUrl ?? "");
+  const [baseUrl, setBaseUrl] = useState(() => resolveSystemBaseUrl([system], activeEnv, system.id));
   const [token, setToken] = useState(() => authTokenPrefill(operation.headers));
   const [method, setMethod] = useState<"GET" | "POST" | "PUT" | "PATCH" | "DELETE">(
     ["GET", "POST", "PUT", "PATCH", "DELETE"].includes(operation.method) ? operation.method as "GET" | "POST" | "PUT" | "PATCH" | "DELETE" : "GET"
@@ -66,9 +66,9 @@ export function TestRunner({
 
   const env = environments.find((e) => e.id === envId) ?? null;
   useEffect(() => {
-    if (env) setBaseUrl(env.baseUrl);
+    if (env) setBaseUrl(resolveSystemBaseUrl([system], env, system.id));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [envId]);
+  }, [envId, system.id]);
 
   const allowHost = useMemo(() => {
     try {

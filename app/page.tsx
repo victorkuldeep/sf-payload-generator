@@ -1463,8 +1463,8 @@ export default function Home() {
       onNavigate={handleNavigate}
       activeMode={state.mode === "single" ? "builder" : state.mode}
       footerVariant={state.mode === "home" ? "full" : "slim"}
-      collectionCount={collection.length}
-      onCollectionClick={() => setShowCollection(true)}
+
+
       trail={
         state.connected && state.mode !== "home" && state.mode !== "schema" ? (
           <Stepper
@@ -1528,6 +1528,8 @@ export default function Home() {
                   orgKey={orgKey}
                   getToken={() => tokenRef.current}
                   onAddToCollection={requestAddToCollection}
+                  collectionCount={collection.length}
+                  onOpenCollection={() => setShowCollection(true)}
                   onSessionExpired={handleSessionExpired}
                 />
               </section>
@@ -1542,6 +1544,8 @@ export default function Home() {
                   apiVersion={state.apiVersion}
                   getToken={() => tokenRef.current}
                   onAddToCollection={requestAddToCollection}
+                  collectionCount={collection.length}
+                  onOpenCollection={() => setShowCollection(true)}
                   onSessionExpired={handleSessionExpired}
                 />
               </section>
@@ -1652,6 +1656,8 @@ export default function Home() {
                   apiVersion={state.apiVersion}
                   getToken={() => tokenRef.current}
                   onAddToCollection={requestAddToCollection}
+                  collectionCount={collection.length}
+                  onOpenCollection={() => setShowCollection(true)}
                   onSessionExpired={handleSessionExpired}
                 />
               </section>
@@ -1814,7 +1820,7 @@ export default function Home() {
               {/* Step 4: Export */}
               {draft.generatedPayload && (
               <section aria-label="Export">
-                <ExportPanel generatedPayload={draft.generatedPayload} onAddToCollection={requestAddToCollection} />
+                <ExportPanel generatedPayload={draft.generatedPayload} onAddToCollection={requestAddToCollection} collectionCount={collection.length} onOpenCollection={() => setShowCollection(true)} />
               </section>
               )}
 

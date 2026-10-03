@@ -121,13 +121,33 @@ export interface RunScope {
   opByEdge: Record<string, string>;
 }
 
-/** Named deployment target. Holds base URLs only - never secrets. */
+/** Named deployment target. Holds base URLs only - never secrets.
+ * One environment retargets the whole canvas: per-system overrides win,
+ * then each system's own URL, then the legacy fallback baseUrl. Switching
+ * environments switches every system at once (Sandbox set -> Prod set). */
 export interface SystemEnvironment {
   id: string;
   name: string;
   baseUrl: string;
+  /** Per-system URL for this environment, keyed by system id. Absent on
+   * vintage records - defaults to {} (no overrides). */
+  baseUrlOverrides: Record<string, string>;
   /** Production targets trigger an explicit confirm before any run. */
   isProduction?: boolean;
+}
+
+/** Effective base URL for one system under an environment: this env's
+ * override, else the system's own URL, else the legacy env fallback. */
+export function resolveSystemBaseUrl(
+  systems: Pick<SystemNode, "id" | "baseUrl">[],
+  env: Pick<SystemEnvironment, "baseUrl" | "baseUrlOverrides"> | null | undefined,
+  systemId: string
+): string {
+  const over = env?.baseUrlOverrides?.[systemId]?.trim();
+  if (over) return over;
+  const own = systems.find((s) => s.id === systemId)?.baseUrl?.trim();
+  if (own) return own;
+  return env?.baseUrl?.trim() ?? "";
 }
 
 /** Named run sequence: a saved start edge + lane picks + per-edge operation
@@ -236,7 +256,7 @@ export function newProject(name = "Untitled architecture"): SystemProject {
     connections: [],
     interfaces: [],
     operations: [],
-    environments: [{ id: newId("env"), name: "Sandbox", baseUrl: "" }],
+    environments: [{ id: newId("env"), name: "Sandbox", baseUrl: "", baseUrlOverrides: {} }],
     activeEnvironmentId: null,
     notes: "",
     todos: [],
@@ -587,6 +607,18 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
     if (e.baseUrl !== undefined && typeof e.baseUrl !== "string") {
       issues.push({ path: `${at}.baseUrl`, message: "Environment base URL must be a string." });
     }
+    if (e.baseUrlOverrides !== undefined) {
+      const ov = e.baseUrlOverrides as Record<string, unknown>;
+      if (!ov || typeof ov !== "object" || Array.isArray(ov)) {
+        issues.push({ path: `${at}.baseUrlOverrides`, message: "URL overrides must be an object." });
+      } else {
+        for (const [sysId, url] of Object.entries(ov)) {
+          if (typeof url !== "string" || url.length > 2000) {
+            issues.push({ path: `${at}.baseUrlOverrides.${sysId}`, message: "Override URL must be a string under 2000 chars." });
+          }
+        }
+      }
+    }
     if (e.isProduction !== undefined && typeof e.isProduction !== "boolean") {
       issues.push({ path: `${at}.isProduction`, message: "Production flag must be a boolean." });
     }
@@ -684,10 +716,20 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
         version: typeof o.version === "string" ? o.version : "v1",
         sampleBody: typeof o.sampleBody === "string" ? o.sampleBody.slice(0, 20000) : o.sampleBody,
       })),
-      environments: (environments as unknown as SystemEnvironment[]).map((e) => ({
-        ...e,
-        baseUrl: typeof e.baseUrl === "string" ? e.baseUrl : "",
-      })),
+      environments: (environments as unknown as SystemEnvironment[]).map((e) => {
+        // Prune overrides for deleted systems so stale keys never retarget ghosts.
+        const sysIds = new Set((systems as unknown as SystemNode[]).map((s) => s.id));
+        const rawOv = (e.baseUrlOverrides ?? {}) as Record<string, unknown>;
+        const baseUrlOverrides: Record<string, string> = {};
+        for (const [sysId, url] of Object.entries(rawOv)) {
+          if (sysIds.has(sysId) && typeof url === "string" && url.trim()) baseUrlOverrides[sysId] = url;
+        }
+        return {
+          ...e,
+          baseUrl: typeof e.baseUrl === "string" ? e.baseUrl : "",
+          baseUrlOverrides,
+        };
+      }),
       activeEnvironmentId: activeEnv,
       notes,
       todos,

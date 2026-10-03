@@ -154,4 +154,23 @@ describe("privacy / GDPR surface", () => {
     expect(modal).toMatch(/href="\/terms"/);
     expect(modal).toMatch(/Not affiliated with Salesforce|Independent utility/);
   });
+
+  it("collection tray lives in builder tabs, never in headers", () => {
+    for (const h of [
+      "components/layout/ToolHeader.tsx",
+      "components/layout/AppHeader.tsx",
+      "components/layout/AppShell.tsx",
+    ]) {
+      const src = read(h);
+      expect(src).not.toMatch(/collectionCount|onCollectionClick|listCollectionItems/);
+    }
+    for (const p of [
+      "components/RestExplorerPanel.tsx",
+      "components/ExportPanel.tsx",
+      "components/GraphQLPanel.tsx",
+      "components/composite-studio/StudioPayload.tsx",
+    ]) {
+      expect(read(p)).toMatch(/CollectionTrayButton/);
+    }
+  });
 });

@@ -4,7 +4,10 @@ import {
   coerceFlows,
   coerceScenarios,
   coerceSettings,
+  exportProject,
+  importProject,
   newProject,
+  resolveSystemBaseUrl,
   validateProject,
 } from "./model";
 
@@ -138,6 +141,102 @@ describe("flows / scenarios / settings coercion", () => {
     expect(project?.operations[0].version).toBe("v1");
     expect(project?.operations[0].sampleBody?.length).toBe(20000);
     expect(project?.environments[0].baseUrl).toBe("");
+  });
+
+  it("resolves system URLs: env override, then node URL, then fallback", () => {
+    const systems = [
+      { id: "s1", baseUrl: "https://node.test" },
+      { id: "s2", baseUrl: "" },
+    ];
+    const env = { baseUrl: "https://fallback.test", baseUrlOverrides: { s1: "https://override.test" } };
+    expect(resolveSystemBaseUrl(systems, env, "s1")).toBe("https://override.test");
+    expect(resolveSystemBaseUrl(systems, { baseUrl: "", baseUrlOverrides: {} }, "s1")).toBe("https://node.test");
+    expect(resolveSystemBaseUrl(systems, env, "s2")).toBe("https://fallback.test");
+    expect(resolveSystemBaseUrl(systems, null, "s1")).toBe("https://node.test");
+    expect(resolveSystemBaseUrl(systems, null, "ghost")).toBe("");
+    // Blank overrides fall through instead of blanking the URL.
+    expect(resolveSystemBaseUrl(systems, { baseUrl: "", baseUrlOverrides: { s1: "  " } }, "s1")).toBe("https://node.test");
+  });
+
+  it("defaults, validates, and prunes environment URL overrides", () => {
+    const raw = {
+      id: "proj_1",
+      name: "p",
+      schemaVersion: 1,
+      updatedAt: 1,
+      systems: [{ id: "s1", name: "S", systemType: "rest", position: { x: 0, y: 0 } }],
+      connections: [],
+      environments: [{ id: "e1", name: "E", baseUrlOverrides: { s1: "https://a.test", ghost: "https://b.test" } }],
+    };
+    const { project, issues } = validateProject(raw);
+    expect(issues).toEqual([]);
+    expect(project?.environments[0].baseUrlOverrides).toEqual({ s1: "https://a.test" });
+    const vintage = validateProject({
+      id: "p",
+      name: "p",
+      schemaVersion: 1,
+      updatedAt: 1,
+      systems: [],
+      connections: [],
+      environments: [{ id: "e1", name: "E", baseUrl: "" }],
+    });
+    expect(vintage.project?.environments[0].baseUrlOverrides).toEqual({});
+    const bad = validateProject({
+      id: "p",
+      name: "p",
+      schemaVersion: 1,
+      updatedAt: 1,
+      systems: [],
+      connections: [],
+      environments: [{ id: "e1", name: "E", baseUrl: "", baseUrlOverrides: { s1: 7 } }],
+    });
+    expect(bad.project).toBeNull();
+    expect(bad.issues.some((i) => i.path.includes("baseUrlOverrides"))).toBe(true);
+  });
+
+  it("survives a save/load cycle with flows, mappings, scenarios, settings, and env URLs intact", () => {
+    const p = newProject("roundtrip");
+    p.systems.push(
+      { id: "s1", name: "A", systemType: "rest", description: "", baseUrl: "https://a.test", position: { x: 0, y: 0 }, iconKey: "bolt" },
+      { id: "s2", name: "B", systemType: "rest", description: "", position: { x: 0, y: 0 }, iconKey: "bolt" }
+    );
+    p.interfaces.push(
+      { id: "f1", systemId: "s1", name: "API", protocol: "REST", basePath: "" },
+      { id: "f2", systemId: "s2", name: "API", protocol: "REST", basePath: "" }
+    );
+    p.operations.push(
+      { id: "o1", interfaceId: "f1", name: "Get", method: "GET", path: "/x", version: "v1", sampleBody: "{}", headers: [{ key: "X", value: "$env.T" }] },
+      { id: "o2", interfaceId: "f2", name: "Post", method: "POST", path: "/y", version: "v1", mock: { status: 200, body: "{}", latencyMs: 0 } }
+    );
+    p.connections.push({
+      id: "c1", sourceId: "s1", targetId: "s2", label: "L", status: "draft",
+      sourceOperationId: "o1", targetOperationId: "o2",
+      mapping: { mode: "template", template: '{"a":{{response.x}}}' },
+    });
+    p.environments = [
+      { id: "e1", name: "E", baseUrl: "https://fb.test", baseUrlOverrides: { s1: "https://s1.test" }, isProduction: true },
+    ];
+    p.activeEnvironmentId = "e1";
+    p.runScope = { startEdgeId: "c1", lanes: [1], opByEdge: { c1: "o1" } };
+    p.flows = [{ id: "fl1", name: "F", startEdgeId: "c1", lanes: [1], opByEdge: {} }];
+    p.scenarios = [{
+      id: "sc1", name: "S", flowId: "fl1", environmentId: "e1", inputPayload: '{"a":1}',
+      mockOverrides: { o2: { status: 200, body: "{}", latencyMs: 5 } }, expectStatus: 200,
+    }];
+    p.settings = { retentionDays: 7 };
+    // Same fidelity as the IndexedDB structured-clone cycle: whole project
+    // object out, validated project back.
+    const reloaded = importProject(JSON.parse(JSON.stringify(exportProject(p))));
+    expect(reloaded.issues).toEqual([]);
+    const q = reloaded.project;
+    expect(q?.flows).toEqual(p.flows);
+    expect(q?.scenarios).toEqual(p.scenarios);
+    expect(q?.settings).toEqual(p.settings);
+    expect(q?.runScope).toEqual(p.runScope);
+    expect(q?.connections[0].mapping).toEqual(p.connections[0].mapping);
+    expect(q?.operations).toEqual(p.operations);
+    expect(q?.environments).toEqual(p.environments);
+    expect(q?.activeEnvironmentId).toBe("e1");
   });
 
   it("drops scenario mock overrides outside import ranges", () => {

@@ -15,6 +15,7 @@ import { downloadRunMarkdown, renderRunMarkdown } from "@/lib/system-design/runM
 import {
   newId,
   resolveRunScope,
+  resolveSystemBaseUrl,
   type RunScope,
   type SystemConnection,
   type SystemOperation,
@@ -254,7 +255,7 @@ export function ChainRunDialog({
 
   const [bases, setBases] = useState<Record<string, string>>(() => {
     const out: Record<string, string> = {};
-    for (const s of involvedSystems) out[s.id] = s.baseUrl || activeEnv?.baseUrl || "";
+    for (const s of involvedSystems) out[s.id] = resolveSystemBaseUrl(project.systems, activeEnv, s.id);
     return out;
   });
   const [token, setToken] = useState(() => {

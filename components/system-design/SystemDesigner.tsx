@@ -1417,7 +1417,7 @@ export function SystemDesigner() {
                     <button
                       type="button"
                       onClick={() => mutate((p) => {
-                        const env = { id: newId("env"), name: `Env ${p.environments.length + 1}`, baseUrl: "" };
+                        const env = { id: newId("env"), name: `Env ${p.environments.length + 1}`, baseUrl: "", baseUrlOverrides: {} };
                         return { ...p, environments: [...p.environments, env], activeEnvironmentId: p.activeEnvironmentId ?? env.id };
                       })}
                       className="text-[11px] font-semibold text-bronze-600 hover:text-bronze-700 cursor-pointer"

@@ -17,12 +17,15 @@ import { newItemId } from "@/lib/collection/types";
 import Badge from "./ui/Badge";
 import Button from "./ui/Button";
 import CodeBlock from "./ui/CodeBlock";
+import { CollectionTrayButton } from "./CollectionTrayButton";
 
 interface RestExplorerPanelProps {
   instanceUrl: string;
   apiVersion: string;
   getToken: () => string;
   onAddToCollection: (item: NewCollectionItem) => void;
+  collectionCount: number;
+  onOpenCollection: () => void;
   onSessionExpired?: () => void;
 }
 
@@ -98,6 +101,8 @@ export default function RestExplorerPanel({
   apiVersion,
   getToken,
   onAddToCollection,
+  collectionCount,
+  onOpenCollection,
   onSessionExpired,
 }: RestExplorerPanelProps) {
   const ver = apiVersion.startsWith("v") ? apiVersion : `v${apiVersion}`;
@@ -913,6 +918,7 @@ export default function RestExplorerPanel({
               >
                 + Collection
               </Button>
+              <CollectionTrayButton count={collectionCount} onOpen={onOpenCollection} />
               <Button
                 variant="ghost"
                 size="sm"

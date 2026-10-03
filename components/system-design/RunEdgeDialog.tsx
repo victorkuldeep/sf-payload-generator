@@ -10,6 +10,7 @@ import { findMissingVars, resolveEnvVars, scrubSecrets, type CredVault } from "@
 import { buildSendHeaders, authTokenPrefill } from "@/lib/system-design/headers";
 import {
   newId,
+  resolveSystemBaseUrl,
   type SystemConnection,
   type SystemProject,
   type SystemEnvironment,
@@ -115,8 +116,8 @@ export function RunEdgeDialog({
   const targetSys = project.systems.find((s) => s.id === edge.targetId) ?? null;
   const activeEnv = environments.find((e) => e.id === activeEnvironmentId) ?? environments[0] ?? null;
 
-  const [base1, setBase1] = useState(activeEnv?.baseUrl ?? "");
-  const [base2, setBase2] = useState(activeEnv?.baseUrl ?? "");
+  const [base1, setBase1] = useState(() => resolveSystemBaseUrl(project.systems, activeEnv, edge.sourceId));
+  const [base2, setBase2] = useState(() => resolveSystemBaseUrl(project.systems, activeEnv, edge.targetId));
   const [token, setToken] = useState(() =>
     authTokenPrefill(targetOp?.headers) || authTokenPrefill(sourceOp?.headers)
   );

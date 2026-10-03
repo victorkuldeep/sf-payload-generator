@@ -4,14 +4,21 @@
  * Flow Lab tab: named run sequences. A flow pins a start edge, the lanes to
  * simulate, and per-edge operation overrides. Running a flow applies it as
  * the chain scope and opens the chain runner - shared simulations replay
- * the same path, e.g. TMF622 GET → hub POST as-is vs TMF688-wrapped.
+ * the same path, e.g. GET → POST as-is vs event-wrapped.
  */
 
 import { useMemo, useState } from "react";
 import Button from "../../ui/Button";
-import { resolveChain } from "@/lib/system-design/chain";
+import { resolveChain, type ChainLane } from "@/lib/system-design/chain";
 import { newId, operationsForSystem, type FlowDef, type SystemProject } from "@/lib/system-design/model";
-import { edgeLabel, fieldLabel, panelShell, textInput, type Mutate } from "./shared";
+import { edgeLabel, fieldLabel, panelShell, type Mutate } from "./shared";
+
+/** Readable branch path: Salesforce → Middleware → Kafka. */
+function lanePath(project: SystemProject, lane: ChainLane): string {
+  if (lane.edges.length === 0) return "—";
+  const name = (id: string) => project.systems.find((s) => s.id === id)?.name ?? "?";
+  return [name(lane.edges[0].sourceId), ...lane.edges.map((e) => name(e.targetId))].join(" → ");
+}
 
 interface Props {
   project: SystemProject;
@@ -36,7 +43,7 @@ function FlowEditor({ project, flow, mutate }: { project: SystemProject; flow: F
     <div className="mt-2 space-y-2 border-t border-[var(--color-line-soft)] pt-2">
       <div className="flex flex-wrap gap-1.5">
         <label className="block min-w-52 flex-1">
-          <span className={fieldLabel}>Start edge</span>
+          <span className={fieldLabel}>Starts at (first hop)</span>
           <select
             value={flow.startEdgeId}
             onChange={(e) => patch({ startEdgeId: e.target.value, lanes: [], opByEdge: {} })}
@@ -53,28 +60,34 @@ function FlowEditor({ project, flow, mutate }: { project: SystemProject; flow: F
       ) : (
         <>
           <div>
-            <span className={fieldLabel}>Lanes to simulate ({flow.lanes.length}/{lanes.length})</span>
-            <div className="flex flex-wrap gap-1.5">
+            <span className={fieldLabel}>Which branches run ({flow.lanes.length}/{lanes.length})</span>
+            <ul className="space-y-1">
               {lanes.map((lane, i) => {
                 const on = flow.lanes.includes(i + 1);
                 return (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => patch({ lanes: on ? flow.lanes.filter((n) => n !== i + 1) : [...flow.lanes, i + 1].sort((a, b) => a - b) })}
-                    aria-pressed={on}
-                    title={lane.edges.map((e) => edgeLabel(project, e.id)).join(" → ")}
-                    className={`rounded-lg border px-2 py-1 font-mono text-[11px] cursor-pointer ${on ? "border-ivory-950 bg-ivory-950 text-ivory-100" : "border-[var(--color-line)] text-ivory-600 hover:border-bronze-500"}`}
-                  >
-                    L{i + 1} · {lane.edges.length} hop{lane.edges.length === 1 ? "" : "s"}
-                  </button>
+                  <li key={i}>
+                    <button
+                      type="button"
+                      onClick={() => patch({ lanes: on ? flow.lanes.filter((n) => n !== i + 1) : [...flow.lanes, i + 1].sort((a, b) => a - b) })}
+                      aria-pressed={on}
+                      className={`flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left cursor-pointer ${on ? "border-ivory-950 bg-ivory-950 text-ivory-100" : "border-[var(--color-line)] bg-white text-ivory-800 hover:border-bronze-500"}`}
+                    >
+                      <span aria-hidden="true" className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] font-bold ${on ? "border-ivory-100 bg-bronze-500 text-white" : "border-[var(--color-line)] text-transparent"}`}>✓</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[11px] font-bold">Path {i + 1}: {lanePath(project, lane)}</span>
+                        <span className={`block font-mono text-[10px] ${on ? "text-ivory-300" : "text-ivory-500"}`}>
+                          {lane.edges.length} hop{lane.edges.length === 1 ? "" : "s"}{lane.stopped ? ` · ${lane.stopped}` : ""}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
           </div>
           {laneEdges.length > 0 && (
             <div>
-              <span className={fieldLabel}>Per-edge operation overrides (blank = edge binding)</span>
+              <span className={fieldLabel}>Which API each hop calls (blank = the edge&apos;s own binding)</span>
               <ul className="space-y-1">
                 {laneEdges.map((e) => {
                   const groups = operationsForSystem(project, e.sourceId);
@@ -117,7 +130,7 @@ export function FlowsTab({ project, mutate, onRunFlow }: Props) {
     <div className={panelShell}>
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-sm font-bold text-ivory-950">Flow Lab · {project.flows.length}</h2>
-        <span className="text-[11px] text-ivory-500">named run sequences · travel with the project</span>
+        <span className="text-[11px] text-ivory-500">saved end-to-end paths · travel with the project</span>
         <div className="ml-auto flex gap-1.5">
           {project.runScope && (
             <Button
@@ -157,7 +170,7 @@ export function FlowsTab({ project, mutate, onRunFlow }: Props) {
 
       {project.flows.length === 0 ? (
         <p className="mt-3 text-xs text-ivory-500">
-          No flows yet. A flow is a replayable path: start edge + lanes + operation picks. Create one, or run a chain and save it via “From last run”.
+          No flows yet. The easiest start: run a chain on the canvas, then save its picks with “From last run”. Or build one by hand: pick where it starts, tick the branches to simulate, choose the API per hop.
         </p>
       ) : (
         <ul className="mt-3 space-y-1.5">
@@ -175,7 +188,7 @@ export function FlowsTab({ project, mutate, onRunFlow }: Props) {
                     className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-xs font-bold text-ivory-950 hover:border-[var(--color-line)] focus:border-bronze-500 focus:outline-none"
                   />
                   <span className="shrink-0 font-mono text-[10px] text-ivory-500">
-                    {f.lanes.length} lane{f.lanes.length === 1 ? "" : "s"} · {Object.keys(f.opByEdge).length} override{Object.keys(f.opByEdge).length === 1 ? "" : "s"}
+                    {f.lanes.length} path{f.lanes.length === 1 ? "" : "s"} · {Object.keys(f.opByEdge).length} API pick{Object.keys(f.opByEdge).length === 1 ? "" : "s"}
                   </span>
                   {startMissing && <span className="shrink-0 rounded-md bg-red-700/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-red-700">start edge gone</span>}
                   <button type="button" onClick={() => setExpandedId(expanded ? null : f.id)} aria-expanded={expanded} className="rounded px-1.5 py-0.5 text-[11px] font-semibold text-ivory-600 hover:bg-ivory-300 cursor-pointer">{expanded ? "▾" : "▸"}</button>

@@ -3,12 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { listCollectionItems } from "@/lib/collection/db";
 
 /**
  * Shared route chrome (HARD RULE: identical right cluster to AppHeader).
- * Brand + nav + Collection + Connected pill, bridged to the
- * tab-scoped session. Search lives in Builder + global ⌘K on home.
+ * Brand + nav + Connected pill, bridged to the tab-scoped session.
+ * Collections live inside the tabs that use them (REST/Builder/Composite),
+ * never here. Search lives in Builder + global ⌘K on home.
  */
 
 const MODE_LINKS: { label: string; href: string }[] = [
@@ -41,7 +41,6 @@ export function ToolHeader() {
   const pathname = usePathname();
   const router = useRouter();
   const [session, setSession] = useState<SessionView>(OFFLINE);
-  const [collectionCount, setCollectionCount] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [copiedOrg, setCopiedOrg] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -62,9 +61,6 @@ export function ToolHeader() {
       } catch {
         setSession(OFFLINE);
       }
-      listCollectionItems()
-        .then((items) => setCollectionCount(items.length))
-        .catch(() => setCollectionCount(0));
     };
     read();
     window.addEventListener("storage", read);
@@ -144,24 +140,6 @@ export function ToolHeader() {
         </nav>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => router.push("/")}
-            className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--color-surface)] border border-[var(--color-line)] text-xs text-[var(--color-muted)] hover:text-[var(--color-ink)] hover:border-[var(--color-accent)] transition-all cursor-pointer"
-            title={collectionCount === 0 ? "Staged request collection (empty, opens on home)" : `Open collection (${collectionCount} staged) on home`}
-            aria-label={`Request collection, ${collectionCount} staged requests`}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-              <path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Z" />
-            </svg>
-            <span className="hidden sm:inline">Collection</span>
-            {collectionCount > 0 && (
-              <span className="min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center rounded-full bg-ivory-950 text-ivory-100 text-[10px] font-bold">
-                {collectionCount > 99 ? "99+" : collectionCount}
-              </span>
-            )}
-          </button>
-
           <div className="relative" ref={menuRef}>
             <div
               className="flex items-center gap-2 pl-2.5 pr-1 py-1 rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] text-xs"

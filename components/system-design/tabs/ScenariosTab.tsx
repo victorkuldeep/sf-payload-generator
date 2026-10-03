@@ -215,7 +215,7 @@ export function ScenariosTab({ project, mutate, onRunScenario }: Props) {
 
       {project.scenarios.length === 0 ? (
         <p className="mt-3 text-xs text-ivory-500">
-          No scenarios yet. Define the TMF happy path once - GET order → hub POST as-is with the hub mocked - then replay it before every middleware deploy.
+          No scenarios yet. Define a happy path once - seed input, mocked remotes, expected status - then replay it before every deploy.
         </p>
       ) : (
         <ul className="mt-3 space-y-1.5">

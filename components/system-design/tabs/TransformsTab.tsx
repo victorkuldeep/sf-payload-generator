@@ -18,7 +18,7 @@ interface Props {
 }
 
 const COOKBOOK = `Namespaces: {{response}} previous output · {{request}} body just sent · {{seed}} flow input · {{steps.<systemId>}} hop output · {{requests.<systemId>}} hop request
-TMF688 wrap: {"event": {"productOrder": {{response}}}}`;
+Event wrap: {"event": {"order": {{response}}}}`;
 
 export function TransformsTab({ project, mutate }: Props) {
   const [selId, setSelId] = useState<string | null>(null);

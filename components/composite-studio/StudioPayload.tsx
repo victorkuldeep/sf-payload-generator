@@ -8,6 +8,7 @@ import type {
 } from "@/lib/composite/studio";
 import CodeBlock from "../ui/CodeBlock";
 import Button from "../ui/Button";
+import { CollectionTrayButton } from "../CollectionTrayButton";
 
 export interface StudioTestBundle {
   loading: boolean;
@@ -30,6 +31,8 @@ interface StudioPayloadProps {
   onGotoRequest: (id: string) => void;
   onDownload: () => void;
   onAddToCollection: () => void;
+  collectionCount: number;
+  onOpenCollection: () => void;
 }
 
 type ExportTab = "json" | "curl";
@@ -49,6 +52,8 @@ export default function StudioPayload({
   onGotoRequest,
   onDownload,
   onAddToCollection,
+  collectionCount,
+  onOpenCollection,
 }: StudioPayloadProps) {
   const [tab, setTab] = useState<ExportTab>("json");
   const [copied, setCopied] = useState(false);
@@ -169,6 +174,7 @@ export default function StudioPayload({
                 <Button variant="ghost" size="sm" onClick={copy}>{copied ? "Copied" : "Copy"}</Button>
                 <Button variant="ghost" size="sm" onClick={onDownload}>Download</Button>
                 <Button variant="secondary" size="sm" onClick={onAddToCollection}>+ Collection</Button>
+                <CollectionTrayButton count={collectionCount} onOpen={onOpenCollection} />
               </div>
             </div>
             <div className="p-4">

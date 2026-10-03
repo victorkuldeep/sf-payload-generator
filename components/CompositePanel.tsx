@@ -33,6 +33,8 @@ interface CompositePanelProps {
   orgKey: string | null;
   getToken: () => string;
   onAddToCollection: (item: NewCollectionItem) => void;
+  collectionCount: number;
+  onOpenCollection: () => void;
   onSessionExpired?: () => void;
 }
 
@@ -52,6 +54,8 @@ export default function CompositePanel({
   orgKey,
   getToken,
   onAddToCollection,
+  collectionCount,
+  onOpenCollection,
   onSessionExpired,
 }: CompositePanelProps) {
   const freshBundleDoc = (name = "Untitled transaction"): StudioDocument => ({
@@ -839,6 +843,8 @@ export default function CompositePanel({
           onGotoRequest={gotoRequest}
           onDownload={handleDownload}
           onAddToCollection={handleAddToCollection}
+          collectionCount={collectionCount}
+          onOpenCollection={onOpenCollection}
         />
       )}
     </div>

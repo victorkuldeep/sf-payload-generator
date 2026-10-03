@@ -17,8 +17,6 @@ interface AppHeaderProps {
   onNavigate: (mode: NavMode) => void;
   /** Current mode - the matching tab renders underlined. Omit on routes. */
   activeMode?: NavMode;
-  collectionCount: number;
-  onCollectionClick: () => void;
 }
 
 export function AppHeader({
@@ -31,8 +29,6 @@ export function AppHeader({
   onDisconnect,
   onNavigate,
   activeMode,
-  collectionCount,
-  onCollectionClick,
 }: AppHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [copiedOrg, setCopiedOrg] = useState(false);
@@ -174,25 +170,6 @@ export function AppHeader({
         </nav>
 
         <div className="flex items-center gap-2">
-          {/* Collection tray */}
-          <button
-            type="button"
-            onClick={onCollectionClick}
-            className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--color-surface)] border border-[var(--color-line)] text-xs text-[var(--color-muted)] hover:text-[var(--color-ink)] hover:border-[var(--color-accent)] transition-all cursor-pointer"
-            title={collectionCount === 0 ? "Staged request collection (empty)" : `Open collection (${collectionCount} staged)`}
-            aria-label={`Open request collection, ${collectionCount} staged requests`}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-              <path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Z" />
-            </svg>
-            <span className="hidden sm:inline">Collection</span>
-            {collectionCount > 0 && (
-              <span className="min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center rounded-full bg-ivory-950 text-ivory-100 text-[10px] font-bold">
-                {collectionCount > 99 ? "99+" : collectionCount}
-              </span>
-            )}
-          </button>
-
           {/* Connectivity pill - status badge trigger, details live in the dropdown */}
           <div className="relative" ref={menuRef}>
             <div

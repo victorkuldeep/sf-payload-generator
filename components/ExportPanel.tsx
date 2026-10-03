@@ -6,10 +6,13 @@ import type { NewCollectionItem } from "@/lib/collection/types";
 import { originOf } from "@/lib/collection/postman";
 import CodeBlock from "./ui/CodeBlock";
 import Button from "./ui/Button";
+import { CollectionTrayButton } from "./CollectionTrayButton";
 
 interface ExportPanelProps {
   generatedPayload: GeneratedPayload;
   onAddToCollection: (item: NewCollectionItem) => void;
+  collectionCount: number;
+  onOpenCollection: () => void;
 }
 
 type ExportTab = "json" | "curl" | "javascript" | "apex";
@@ -100,7 +103,7 @@ function generatePostmanJson(payload: GeneratedPayload): string {
   );
 }
 
-export default function ExportPanel({ generatedPayload, onAddToCollection }: ExportPanelProps) {
+export default function ExportPanel({ generatedPayload, onAddToCollection, collectionCount, onOpenCollection }: ExportPanelProps) {
   const [activeTab, setActiveTab] = useState<ExportTab>("json");
   const [minified, setMinified] = useState(false);
 
@@ -190,6 +193,7 @@ export default function ExportPanel({ generatedPayload, onAddToCollection }: Exp
             >
               + Collection
             </Button>
+            <CollectionTrayButton count={collectionCount} onOpen={onOpenCollection} />
           </div>
         </div>
 

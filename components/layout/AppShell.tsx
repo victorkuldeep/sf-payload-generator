@@ -15,8 +15,6 @@ interface AppShellProps {
   onDisconnect: () => void;
   onNavigate: (mode: NavMode) => void;
   activeMode?: NavMode;
-  collectionCount: number;
-  onCollectionClick: () => void;
   /** Builder progress trail — docked above the footer, null on home/schema. */
   trail?: ReactNode;
   /** Full website footer on home, slim one-row bar inside work tools. */
@@ -35,8 +33,6 @@ export function AppShell({
   onNavigate,
   activeMode,
   footerVariant,
-  collectionCount,
-  onCollectionClick,
   trail,
 }: AppShellProps) {
   return (
@@ -51,8 +47,6 @@ export function AppShell({
         onDisconnect={onDisconnect}
         onNavigate={onNavigate}
         activeMode={activeMode}
-        collectionCount={collectionCount}
-        onCollectionClick={onCollectionClick}
       />
       <div className="flex-1 flex flex-col" id="main-content">
         {children}
