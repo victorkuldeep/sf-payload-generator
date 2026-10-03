@@ -16,6 +16,13 @@ import {
   deleteSoqlQuery,
   type SoqlQuery,
 } from "@/lib/soql/historyDb";
+import {
+  SOSL_STARTER,
+  SOSL_TEMPLATES,
+  countByObject,
+  looksLikeSosl,
+  toObjectTable,
+} from "@/lib/salesforce/sosl";
 import type { QueryPlan } from "@/app/api/salesforce/query-plan/route";
 import Badge from "./ui/Badge";
 import Button from "./ui/Button";
@@ -128,6 +135,8 @@ export default function SoqlPanel({
   const [soql, setSoql] = useState("SELECT Id, Name FROM Account LIMIT 20");
   const [tooling, setTooling] = useState(false);
   const [allRows, setAllRows] = useState(false);
+  const [mode, setMode] = useState<"soql" | "sosl">("soql");
+  const [soslCounts, setSoslCounts] = useState<{ type: string; count: number }[] | null>(null);
   const [caretKey, setCaretKey] = useState(0);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -306,19 +315,102 @@ export default function SoqlPanel({
     [ensureDescribe, bumpCaret]
   );
 
+  const runSosl = useCallback(
+    async (q: string, token: string) => {
+      stoppedRef.current = false;
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      setRunning(true);
+      setRunError(null);
+      setResult(null);
+      setSoslCounts(null);
+      const started = Date.now();
+      try {
+        const response = await apiFetch(
+          "/api/salesforce/sosl",
+          { instanceUrl, token, apiVersion, sosl: q },
+          SOQL_TIMEOUT_MS,
+          ctrl.signal
+        );
+        const data = (await response.json()) as {
+          searchRecords?: unknown[];
+          success?: boolean;
+          error?: string;
+        };
+        if (!response.ok || !data.success) {
+          const message = typeof data.error === "string" ? data.error : "Search failed";
+          setRunError(message);
+          if (isSessionExpiredMessage(message)) onSessionExpired?.();
+          return;
+        }
+        const table = toObjectTable(data.searchRecords ?? []);
+        setResult({
+          columns: table.columns,
+          rows: table.rows,
+          totalSize: table.rows.length,
+          truncated: false,
+          timeMs: Date.now() - started,
+        });
+        setSoslCounts(countByObject(data.searchRecords ?? []));
+        const now = Date.now();
+        setHistory((prev) => {
+          const dup = prev.find((h) => !h.saved && h.soql === q && h.mode === "sosl");
+          const entry: SoqlQuery = dup
+            ? { ...dup, lastRun: now, rowCount: table.rows.length }
+            : {
+                id: newItemId(),
+                soql: q,
+                label: "",
+                saved: false,
+                tooling: false,
+                mode: "sosl",
+                rowCount: table.rows.length,
+                createdAt: now,
+                lastRun: now,
+              };
+          void saveSoqlQuery(entry).catch(() => {});
+          const rest = prev.filter((h) => h.id !== entry.id);
+          return [entry, ...rest].slice(0, 60);
+        });
+      } catch (err) {
+        if (stoppedRef.current) {
+          setRunError("Stopped - partial results (if any) were discarded.");
+        } else if (err instanceof ApiTimeoutError) {
+          setRunError(err.message);
+        } else {
+          const message = err instanceof Error ? err.message : "Network error";
+          setRunError(message);
+          if (isSessionExpiredMessage(message)) onSessionExpired?.();
+        }
+      } finally {
+        setRunning(false);
+        abortRef.current = null;
+      }
+    },
+    [instanceUrl, apiVersion, getToken, onSessionExpired]
+  );
+
   const handleRun = useCallback(async () => {
     const q = soql.trim();
     if (!q) {
       setRunError("Write a query first - or pick a template above.");
       return;
     }
-    if (!/\bselect\b/i.test(q) || !/\bfrom\b/i.test(q)) {
-      setRunError("That doesn't look like SOQL - it needs SELECT … FROM ….");
-      return;
-    }
     const token = getToken();
     if (!token) {
       setRunError("Session token is no longer available. Please reconnect.");
+      return;
+    }
+    if (mode === "sosl") {
+      if (!looksLikeSosl(q)) {
+        setRunError("That doesn't look like SOSL - it needs FIND {term} … RETURNING ….");
+        return;
+      }
+      await runSosl(q, token);
+      return;
+    }
+    if (!/\bselect\b/i.test(q) || !/\bfrom\b/i.test(q)) {
+      setRunError("That doesn't look like SOQL - it needs SELECT … FROM ….");
       return;
     }
     stoppedRef.current = false;
@@ -327,6 +419,7 @@ export default function SoqlPanel({
     setRunning(true);
     setRunError(null);
     setResult(null);
+    setSoslCounts(null);
     const started = Date.now();
     try {
       const response = await apiFetch(
@@ -359,7 +452,7 @@ export default function SoqlPanel({
       // Auto-history (dedupe identical query+mode)
       const now = Date.now();
       setHistory((prev) => {
-        const dup = prev.find((h) => !h.saved && h.soql === q && h.tooling === tooling);
+        const dup = prev.find((h) => !h.saved && h.soql === q && h.tooling === tooling && (h.mode ?? "soql") === "soql");
         const entry: SoqlQuery = dup
           ? { ...dup, lastRun: now, rowCount: data.records?.length ?? 0 }
           : {
@@ -368,6 +461,7 @@ export default function SoqlPanel({
               label: "",
               saved: false,
               tooling,
+              mode: "soql",
               rowCount: data.records?.length ?? 0,
               createdAt: now,
               lastRun: now,
@@ -390,7 +484,7 @@ export default function SoqlPanel({
       setRunning(false);
       abortRef.current = null;
     }
-  }, [soql, tooling, allRows, instanceUrl, apiVersion, getToken, onSessionExpired]);
+  }, [soql, tooling, allRows, mode, runSosl, instanceUrl, apiVersion, getToken, onSessionExpired]);
 
   const handleStop = useCallback(() => {
     stoppedRef.current = true;
@@ -488,15 +582,35 @@ export default function SoqlPanel({
 
   const [notice, setNotice] = useState<string | null>(null);
 
-  const historyItems = useMemo(() => history.filter((h) => !h.saved), [history]);
-  const savedItems = useMemo(() => history.filter((h) => h.saved), [history]);
+  const historyItems = useMemo(
+    () => history.filter((h) => !h.saved && (h.mode ?? "soql") === mode),
+    [history, mode]
+  );
+  const savedItems = useMemo(
+    () => history.filter((h) => h.saved && (h.mode ?? "soql") === mode),
+    [history, mode]
+  );
+
+  const switchMode = useCallback((next: "soql" | "sosl") => {
+    setMode(next);
+    setResult(null);
+    setRunError(null);
+    setSoslCounts(null);
+    setPlanOpen(false);
+    setSoql((prev) => {
+      if (prev.trim() !== "") return prev;
+      return next === "sosl" ? SOSL_STARTER : "SELECT Id, Name FROM Account LIMIT 20";
+    });
+  }, []);
 
   const loadQuery = useCallback(
-    (q: string, useTooling: boolean) => {
+    (q: string, useTooling: boolean, useMode?: "soql" | "sosl") => {
+      if (useMode) setMode(useMode);
       setSoql(q);
       setTooling(useTooling);
       setResult(null);
       setRunError(null);
+      setSoslCounts(null);
       setPlanOpen(false);
     },
     []
@@ -510,6 +624,7 @@ export default function SoqlPanel({
       label,
       saved: true,
       tooling,
+      mode,
       rowCount: null,
       createdAt: Date.now(),
       lastRun: Date.now(),
@@ -522,7 +637,7 @@ export default function SoqlPanel({
     } catch {
       setNotice("Couldn't save (IndexedDB unavailable).");
     }
-  }, [saveLabel, soql, tooling]);
+  }, [saveLabel, soql, tooling, mode]);
 
   const handleDeleteSaved = useCallback(async (id: string) => {
     try {
@@ -541,38 +656,60 @@ export default function SoqlPanel({
   return (
     <div className="arch-card overflow-hidden">
       <div className="arch-card__head px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <h2 className="text-sm font-semibold text-ivory-950">SOQL Query Builder</h2>
-        <label className="flex items-center gap-1.5 text-xs text-ivory-700 cursor-pointer select-none" title="Include deleted and archived records (queryAll)">
-          <input
-            type="checkbox"
-            checked={allRows}
-            disabled={tooling}
-            onChange={(e) => setAllRows(e.target.checked)}
-            className="h-4 w-4 rounded border-ivory-400 text-bronze-600 focus:ring-bronze-500 disabled:opacity-40"
-          />
-          Deleted/Archived
-        </label>
-        <label className="flex items-center gap-1.5 text-xs text-ivory-700 cursor-pointer select-none" title="Run against the Tooling API (ApexClass, CustomObject, …)">
-          <input
-            type="checkbox"
-            checked={tooling}
-            onChange={(e) => {
-              setTooling(e.target.checked);
-              if (e.target.checked) setAllRows(false);
-            }}
-            className="h-4 w-4 rounded border-ivory-400 text-bronze-600 focus:ring-bronze-500"
-          />
-          Tooling API
-        </label>
+        <h2 className="text-sm font-semibold text-ivory-950">
+          {mode === "sosl" ? "SOSL Search Builder" : "SOQL Query Builder"}
+        </h2>
+        <div className="flex rounded-lg border border-[var(--color-line)] overflow-hidden w-fit text-xs font-medium" role="tablist" aria-label="Query language">
+          {(["soql", "sosl"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              role="tab"
+              aria-selected={mode === m}
+              onClick={() => switchMode(m)}
+              className={`px-3 py-1.5 transition-colors cursor-pointer ${
+                mode === m ? "bg-ivory-950 text-ivory-100" : "bg-[var(--color-surface)] text-ivory-700 hover:text-ivory-950"
+              }`}
+            >
+              {m === "soql" ? "SOQL" : "SOSL"}
+            </button>
+          ))}
+        </div>
+        {mode === "soql" && (
+          <label className="flex items-center gap-1.5 text-xs text-ivory-700 cursor-pointer select-none" title="Include deleted and archived records (queryAll)">
+            <input
+              type="checkbox"
+              checked={allRows}
+              disabled={tooling}
+              onChange={(e) => setAllRows(e.target.checked)}
+              className="h-4 w-4 rounded border-ivory-400 text-bronze-600 focus:ring-bronze-500 disabled:opacity-40"
+            />
+            Deleted/Archived
+          </label>
+        )}
+        {mode === "soql" && (
+          <label className="flex items-center gap-1.5 text-xs text-ivory-700 cursor-pointer select-none" title="Run against the Tooling API (ApexClass, CustomObject, …)">
+            <input
+              type="checkbox"
+              checked={tooling}
+              onChange={(e) => {
+                setTooling(e.target.checked);
+                if (e.target.checked) setAllRows(false);
+              }}
+              className="h-4 w-4 rounded border-ivory-400 text-bronze-600 focus:ring-bronze-500"
+            />
+            Tooling API
+          </label>
+        )}
         <span className="flex-1" />
         <Button
           variant="ghost"
           size="sm"
           onClick={() => setFieldInfoOpen(true)}
-          disabled={!fromObject}
-          title={fromObject ? `Field reference for ${fromObject}` : "Write a FROM clause first"}
+          disabled={!fromObject || mode !== "soql"}
+          title={mode !== "soql" ? "Field reference is SOQL-only" : fromObject ? `Field reference for ${fromObject}` : "Write a FROM clause first"}
         >
-          {fromObject ? `${fromObject} Field Info` : "Field Info"}
+          {fromObject && mode === "soql" ? `${fromObject} Field Info` : "Field Info"}
         </Button>
       </div>
 
@@ -583,14 +720,19 @@ export default function SoqlPanel({
             aria-label="Load a template"
             defaultValue=""
             onChange={(e) => {
-              const t = TEMPLATES.find((x) => x.name === e.target.value);
-              if (t) loadQuery(t.soql, !!t.tooling);
+              if (mode === "sosl") {
+                const t = SOSL_TEMPLATES.find((x) => x.name === e.target.value);
+                if (t) loadQuery(t.sosl, false, "sosl");
+              } else {
+                const t = TEMPLATES.find((x) => x.name === e.target.value);
+                if (t) loadQuery(t.soql, !!t.tooling, "soql");
+              }
               e.target.value = "";
             }}
             className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-xs text-ivory-900 focus:outline-none focus:border-bronze-500 cursor-pointer"
           >
             <option value="" disabled>Templates…</option>
-            {TEMPLATES.map((t) => (
+            {(mode === "sosl" ? SOSL_TEMPLATES : TEMPLATES).map((t) => (
               <option key={t.name} value={t.name}>{t.name}</option>
             ))}
           </select>
@@ -599,7 +741,7 @@ export default function SoqlPanel({
             defaultValue=""
             onChange={(e) => {
               const h = historyItems.find((x) => x.id === e.target.value);
-              if (h) loadQuery(h.soql, h.tooling);
+              if (h) loadQuery(h.soql, h.tooling, (h.mode ?? "soql") as "soql" | "sosl");
               e.target.value = "";
             }}
             className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-xs text-ivory-900 focus:outline-none focus:border-bronze-500 cursor-pointer max-w-[220px]"
@@ -616,7 +758,7 @@ export default function SoqlPanel({
             defaultValue=""
             onChange={(e) => {
               const h = savedItems.find((x) => x.id === e.target.value);
-              if (h) loadQuery(h.soql, h.tooling);
+              if (h) loadQuery(h.soql, h.tooling, (h.mode ?? "soql") as "soql" | "sosl");
               e.target.value = "";
             }}
             className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-xs text-ivory-900 focus:outline-none focus:border-bronze-500 cursor-pointer max-w-[220px]"
@@ -674,11 +816,11 @@ export default function SoqlPanel({
             onSelect={bumpCaret}
             spellCheck={false}
             rows={5}
-            aria-label="SOQL query editor"
-            placeholder="SELECT Id, Name FROM Account LIMIT 20"
+            aria-label={mode === "sosl" ? "SOSL search editor" : "SOQL query editor"}
+            placeholder={mode === "sosl" ? SOSL_STARTER : "SELECT Id, Name FROM Account LIMIT 20"}
             className="w-full rounded-lg border border-[var(--color-line)] bg-white px-3 py-2.5 font-mono text-[13px] leading-relaxed text-ivory-950 placeholder-ivory-500 focus:border-bronze-500 focus:outline-none focus:ring-1 focus:ring-bronze-500 resize-y"
           />
-          {suggestions.length > 0 && (
+          {mode === "soql" && suggestions.length > 0 && (
             <div className="mt-1.5">
               <p className="mb-1 text-[11px] text-ivory-600">
                 {fromObject ? `${fromObject} suggestions` : "Suggestions"} - click to insert at caret:
@@ -711,7 +853,7 @@ export default function SoqlPanel({
               Stop
             </Button>
           )}
-          <Button variant="secondary" onClick={handlePlan} disabled={!soql.trim() || running}>
+          <Button variant="secondary" onClick={handlePlan} disabled={!soql.trim() || running || mode !== "soql"} title={mode !== "soql" ? "Query plans are SOQL-only" : undefined}>
             Query Plan
           </Button>
           <span className="flex-1" />
@@ -746,8 +888,14 @@ export default function SoqlPanel({
               {result.truncated && (
                 <span className="font-medium text-amber-700">Truncated at fetch cap - add LIMIT to page deliberately.</span>
               )}
-              {tooling && <Badge variant="info">Tooling</Badge>}
-              {allRows && <Badge variant="warning">queryAll</Badge>}
+              {mode === "sosl" && <Badge variant="info">SOSL</Badge>}
+              {mode === "sosl" && soslCounts && (
+                <span className="text-ivory-600">
+                  {soslCounts.map((c) => `${c.type} ${c.count}`).join(" · ")}
+                </span>
+              )}
+              {mode === "soql" && tooling && <Badge variant="info">Tooling</Badge>}
+              {mode === "soql" && allRows && <Badge variant="warning">queryAll</Badge>}
             </div>
             <div className="max-h-96 overflow-auto">
               <table className="w-full border-collapse text-xs">

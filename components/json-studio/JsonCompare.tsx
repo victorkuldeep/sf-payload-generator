@@ -234,11 +234,35 @@ export function JsonCompare() {
       </div>
 
       {!pair ? (
-        <div className="rounded-xl border border-dashed border-[#E8E2D8] bg-white p-10 text-center">
-          <p className="text-sm font-semibold text-[#27241F]">Nothing compared yet</p>
-          <p className="mx-auto mt-1 max-w-md text-[13px] text-[#777168]">
-            Paste two payloads above - or load the sample composite batch - and walk every delta node by node.
-          </p>
+        <div className="rounded-xl border border-[#E8E2D8] bg-[#FBF8F1] px-6 py-10">
+          <div className="mx-auto flex max-w-3xl flex-col items-center gap-6 sm:flex-row sm:gap-8">
+          <svg width="360" height="168" viewBox="0 0 360 168" fill="none" aria-hidden="true" className="h-auto w-full max-w-[360px] shrink-0 sm:max-w-[300px]">
+            <ellipse cx="180" cy="84" rx="150" ry="66" stroke="#E3D9C6" strokeWidth="1.5" strokeDasharray="5 6" />
+            <rect x="52" y="34" width="92" height="100" rx="12" fill="#FFFFFF" stroke="#9A7653" strokeWidth="1.5" />
+            <rect x="216" y="34" width="92" height="100" rx="12" fill="#FFFFFF" stroke="#9A7653" strokeWidth="1.5" />
+            <line x1="66" y1="58" x2="130" y2="58" stroke="#E3D9C6" strokeWidth="4" strokeLinecap="round" />
+            <line x1="66" y1="74" x2="130" y2="74" stroke="#C9A86A" strokeWidth="4" strokeLinecap="round" />
+            <line x1="66" y1="90" x2="112" y2="90" stroke="#E3D9C6" strokeWidth="4" strokeLinecap="round" />
+            <line x1="66" y1="106" x2="122" y2="106" stroke="#E3D9C6" strokeWidth="4" strokeLinecap="round" />
+            <line x1="230" y1="58" x2="294" y2="58" stroke="#E3D9C6" strokeWidth="4" strokeLinecap="round" />
+            <line x1="230" y1="74" x2="294" y2="74" stroke="#7A5C3A" strokeWidth="4" strokeLinecap="round" />
+            <line x1="230" y1="90" x2="276" y2="90" stroke="#E3D9C6" strokeWidth="4" strokeLinecap="round" />
+            <line x1="230" y1="106" x2="286" y2="106" stroke="#E3D9C6" strokeWidth="4" strokeLinecap="round" />
+            <circle cx="180" cy="84" r="20" fill="#211F1B" />
+            <text x="180" y="91" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="18" fontWeight="700" fill="#F5F1E8">{"\u2260"}</text>
+            <text x="98" y="28" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="11" fontWeight="700" fill="#A39B8E">A</text>
+            <text x="262" y="28" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="11" fontWeight="700" fill="#A39B8E">B</text>
+          </svg>
+          <div className="text-center sm:text-left">
+            <p className="text-base font-bold text-[#27241F]">Nothing compared yet</p>
+            <p className="mt-1 max-w-md text-[13px] text-[#777168]">
+              Paste two payloads above - or load the sample composite batch - and walk every delta node by node.
+            </p>
+            <p className="mt-3 font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">
+              Side by side · Unified · Findings
+            </p>
+          </div>
+          </div>
         </div>
       ) : (
         <>

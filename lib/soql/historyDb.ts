@@ -5,6 +5,8 @@ export interface SoqlQuery {
   /** User-saved (named) vs auto history. */
   saved: boolean;
   tooling: boolean;
+  /** Query language. Absent on vintage records = "soql". */
+  mode?: "soql" | "sosl";
   rowCount: number | null;
   createdAt: number;
   lastRun: number;

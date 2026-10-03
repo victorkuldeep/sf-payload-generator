@@ -176,10 +176,36 @@ export function JsonEditorPane() {
 
       <div>
         {!doc ? (
-          <div className="rounded-xl border border-dashed border-[#E8E2D8] bg-white p-10 text-center">
-            <p className="text-sm font-semibold text-[#27241F]">No document loaded</p>
+          <div className="rounded-xl border border-[#E8E2D8] bg-[#FBF8F1] px-6 py-10 text-center">
+            <svg width="360" height="168" viewBox="0 0 360 168" fill="none" aria-hidden="true" className="mx-auto h-auto w-full max-w-[360px]">
+              <ellipse cx="180" cy="84" rx="128" ry="62" stroke="#E3D9C6" strokeWidth="1.5" strokeDasharray="5 6" />
+              <ellipse cx="180" cy="84" rx="88" ry="40" stroke="#EFE7D6" strokeWidth="1.5" />
+              <line x1="180" y1="84" x2="52" y2="34" stroke="#C9A86A" strokeWidth="1.5" />
+              <line x1="180" y1="84" x2="308" y2="34" stroke="#C9A86A" strokeWidth="1.5" />
+              <line x1="180" y1="84" x2="52" y2="134" stroke="#C9A86A" strokeWidth="1.5" />
+              <line x1="180" y1="84" x2="308" y2="134" stroke="#C9A86A" strokeWidth="1.5" />
+              <circle cx="52" cy="34" r="17" fill="#FFFFFF" stroke="#9A7653" strokeWidth="1.5" />
+              <circle cx="308" cy="34" r="17" fill="#FFFFFF" stroke="#9A7653" strokeWidth="1.5" />
+              <circle cx="52" cy="134" r="17" fill="#FFFFFF" stroke="#9A7653" strokeWidth="1.5" />
+              <circle cx="308" cy="134" r="17" fill="#FFFFFF" stroke="#9A7653" strokeWidth="1.5" />
+              <text x="52" y="39" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="13" fontWeight="700" fill="#7A5C3A">[ ]</text>
+              <text x="308" y="39" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="13" fontWeight="700" fill="#7A5C3A">{"{ }"}</text>
+              <text x="52" y="139" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="13" fontWeight="700" fill="#7A5C3A">01</text>
+              <text x="308" y="139" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="13" fontWeight="700" fill="#7A5C3A">" "</text>
+              <rect x="148" y="52" width="64" height="64" rx="16" fill="#FFFFFF" stroke="#9A7653" strokeWidth="2" />
+              <circle cx="180" cy="60" r="3" fill="#C9A86A" />
+              <text x="180" y="99" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="22" fontWeight="700" fill="#27241F">{"{;}"}</text>
+              <circle cx="180" cy="22" r="2.5" fill="#C9A86A" />
+              <circle cx="180" cy="146" r="2.5" fill="#C9A86A" />
+              <circle cx="322" cy="84" r="2.5" fill="#C9A86A" />
+              <circle cx="38" cy="84" r="2.5" fill="#C9A86A" />
+            </svg>
+            <p className="mt-4 text-base font-bold text-[#27241F]">No document loaded</p>
             <p className="mx-auto mt-1 max-w-sm text-[13px] text-[#777168]">
               Paste JSON on the left and load it - then browse, collapse, search and edit every node.
+            </p>
+            <p className="mt-3 font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">
+              Browse · Collapse · Search · Edit
             </p>
           </div>
         ) : (

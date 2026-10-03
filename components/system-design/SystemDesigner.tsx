@@ -64,6 +64,7 @@ import { RunsTab } from "./tabs/RunsTab";
 import { SettingsTab } from "./tabs/SettingsTab";
 import { ProjectNotesModal } from "./ProjectNotesModal";
 import { CredentialsModal } from "./CredentialsModal";
+import { RenameProjectModal } from "./RenameProjectModal";
 import { TemplatesModal } from "./TemplatesModal";
 import {
   findMissingVars,
@@ -366,7 +367,29 @@ function DesignerCanvas({
       {project.systems.length === 0 && (
         <div className="absolute inset-0 z-10 flex items-center justify-center p-6 pointer-events-none">
           <div className="pointer-events-auto max-w-sm rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] px-6 py-5 text-center shadow-[0_12px_36px_-16px_rgba(24,20,12,0.4)]">
-            <p className="text-[11px] font-bold uppercase tracking-[1.8px] text-[var(--color-accent-dark)]">
+            <svg width="300" height="120" viewBox="0 0 300 120" fill="none" aria-hidden="true" className="mx-auto h-auto w-full max-w-[280px]">
+              <rect x="14" y="36" width="72" height="48" rx="10" fill="#FFFFFF" stroke="#9A7653" strokeWidth="1.5" />
+              <circle cx="50" cy="52" r="7" fill="#C9A86A" />
+              <line x1="26" y1="68" x2="62" y2="68" stroke="#E3D9C6" strokeWidth="4" strokeLinecap="round" />
+              <line x1="26" y1="77" x2="74" y2="77" stroke="#E3D9C6" strokeWidth="4" strokeLinecap="round" />
+              <rect x="114" y="28" width="72" height="64" rx="10" fill="#27241F" />
+              <circle cx="150" cy="48" r="7" fill="#C9A86A" />
+              <line x1="126" y1="64" x2="162" y2="64" stroke="#C9A86A" strokeWidth="4" strokeLinecap="round" />
+              <line x1="126" y1="74" x2="174" y2="74" stroke="#6B655C" strokeWidth="4" strokeLinecap="round" />
+              <rect x="214" y="36" width="72" height="48" rx="10" fill="#FFFFFF" stroke="#9A7653" strokeWidth="1.5" />
+              <circle cx="250" cy="52" r="7" fill="none" stroke="#9A7653" strokeWidth="2" />
+              <circle cx="250" cy="52" r="2.5" fill="#9A7653" />
+              <line x1="226" y1="68" x2="262" y2="68" stroke="#E3D9C6" strokeWidth="4" strokeLinecap="round" />
+              <line x1="226" y1="77" x2="274" y2="77" stroke="#E3D9C6" strokeWidth="4" strokeLinecap="round" />
+              <line x1="86" y1="60" x2="114" y2="60" stroke="#C9A86A" strokeWidth="1.5" strokeDasharray="4 4" />
+              <circle cx="100" cy="60" r="3" fill="#C9A86A" />
+              <line x1="186" y1="60" x2="214" y2="60" stroke="#C9A86A" strokeWidth="1.5" strokeDasharray="4 4" />
+              <circle cx="200" cy="60" r="3" fill="#C9A86A" />
+              <text x="50" y="106" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="9" fontWeight="700" fill="#A39B8E">SOURCE</text>
+              <text x="150" y="106" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="9" fontWeight="700" fill="#A39B8E">HUB</text>
+              <text x="250" y="106" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="9" fontWeight="700" fill="#A39B8E">TARGET</text>
+            </svg>
+            <p className="mt-1 text-[11px] font-bold uppercase tracking-[1.8px] text-[var(--color-accent-dark)]">
               System Design
             </p>
             <p className="mt-1.5 text-xs leading-relaxed text-ivory-700">
@@ -471,6 +494,7 @@ export function SystemDesigner() {
   const [runVis, setRunVis] = useState<Record<string, "running" | "ok" | "failed">>({});
   const [notesOpen, setNotesOpen] = useState(false);
   const [credOpen, setCredOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
   const [tplOpen, setTplOpen] = useState(false);
   /** Overview map: hidden by default, toggle lives on the canvas. Choice persists per browser. */
   const [miniMapOn, setMiniMapOn] = useState<boolean>(() => {
@@ -985,6 +1009,16 @@ export function SystemDesigner() {
           </svg>
         </button>
       )}
+      {project && (
+        <RenameProjectModal
+          open={renameOpen}
+          currentName={project.name}
+          onClose={() => setRenameOpen(false)}
+          onRename={(name) => {
+            if (name !== project.name) mutate((p) => ({ ...p, name }));
+          }}
+        />
+      )}
       {/* Project bar */}
       {!present && (
       <>
@@ -992,10 +1026,12 @@ export function SystemDesigner() {
         <div className="flex flex-wrap items-center gap-2">
           <select
             value={project.id}
+            disabled={!projectList.some((p) => p.id !== project.id)}
             onChange={(e) => void openProject(e.target.value)}
+            onDoubleClick={() => setRenameOpen(true)}
             aria-label="Open project"
-            title="Open a saved project"
-            className="max-w-[220px] cursor-pointer truncate rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-2 py-1.5 text-xs font-semibold text-ivory-950"
+            title={!projectList.some((p) => p.id !== project.id) ? "Project name - save to add it to your library" : "Open a saved project - double-click to rename"}
+            className={!projectList.some((p) => p.id !== project.id) ? "max-w-[220px] appearance-none truncate bg-transparent px-2 py-1.5 text-xs font-semibold text-ivory-950 disabled:opacity-100" : "max-w-[220px] cursor-pointer truncate rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-2 py-1.5 text-xs font-semibold text-ivory-950"}
           >
             {projectList.every((p) => p.id !== project.id) && (
               <option value={project.id}>{project.name} (unsaved)</option>
@@ -1006,6 +1042,17 @@ export function SystemDesigner() {
               </option>
             ))}
           </select>
+          <button
+            type="button"
+            onClick={() => setRenameOpen(true)}
+            title="Rename this project"
+            aria-label="Rename this project"
+            className="rounded p-1 text-ivory-400 transition-colors cursor-pointer hover:text-ivory-950"
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+            </svg>
+          </button>
           <span
             title={saveState === "saved" ? "All changes saved" : saveState === "dirty" ? "Unsaved changes" : saveState === "saving" ? "Saving…" : "Save failed"}
             aria-label={saveState === "saved" ? "Saved" : "Unsaved changes"}

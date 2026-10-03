@@ -345,9 +345,39 @@ export function MappingRoute() {
     return (
       <div className="space-y-4">
         <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-4 text-center">
-          <h2 className="text-[15px] font-semibold text-[#27241F]">Mapping Studio</h2>
+          <svg
+            width="430"
+            height="168"
+            viewBox="0 0 430 168"
+            fill="none"
+            aria-hidden="true"
+            className="mx-auto mt-2 h-auto w-full max-w-[400px]"
+          >
+            <ellipse cx="215" cy="84" rx="185" ry="72" stroke="#E3D9C6" strokeWidth="1.5" strokeDasharray="5 6" />
+            <rect x="28" y="52" width="100" height="64" rx="10" fill="#FFFFFF" stroke="#9A7653" strokeWidth="1.5" />
+            <line x1="40" y1="70" x2="94" y2="70" stroke="#C9A86A" strokeWidth="4" strokeLinecap="round" />
+            <line x1="40" y1="84" x2="116" y2="84" stroke="#E3D9C6" strokeWidth="4" strokeLinecap="round" />
+            <line x1="40" y1="98" x2="104" y2="98" stroke="#E3D9C6" strokeWidth="4" strokeLinecap="round" />
+            <rect x="302" y="52" width="100" height="64" rx="10" fill="#FFFFFF" stroke="#9A7653" strokeWidth="1.5" />
+            <rect x="312" y="64" width="46" height="30" rx="4" fill="#F5F1E8" stroke="#C9A86A" strokeWidth="1.5" />
+            <line x1="366" y1="70" x2="394" y2="70" stroke="#C9A86A" strokeWidth="3" strokeLinecap="round" />
+            <line x1="366" y1="80" x2="388" y2="80" stroke="#E3D9C6" strokeWidth="3" strokeLinecap="round" />
+            <line x1="366" y1="90" x2="394" y2="90" stroke="#E3D9C6" strokeWidth="3" strokeLinecap="round" />
+            <line x1="128" y1="84" x2="176" y2="84" stroke="#C9A86A" strokeWidth="1.5" strokeDasharray="4 4" />
+            <line x1="254" y1="84" x2="302" y2="84" stroke="#C9A86A" strokeWidth="1.5" strokeDasharray="4 4" />
+            <rect x="176" y="52" width="78" height="64" rx="14" fill="#27241F" />
+            <path d="M186 92 C186 74 200 66 215 66 C230 66 244 74 244 92 C236 86 228 86 223 91 C218 86 210 86 205 91 C200 86 192 86 186 92 Z" fill="#C9A86A" />
+            <line x1="215" y1="91" x2="215" y2="102" stroke="#C9A86A" strokeWidth="2.5" strokeLinecap="round" />
+            <text x="78" y="134" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="10" fontWeight="700" fill="#A39B8E">INTEGRATION</text>
+            <text x="215" y="134" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="10" fontWeight="700" fill="#A39B8E">PROJECT</text>
+            <text x="352" y="134" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="10" fontWeight="700" fill="#A39B8E">SCREEN → PAYLOAD</text>
+          </svg>
+          <h2 className="mt-1 text-[15px] font-semibold text-[#27241F]">Mapping Studio</h2>
           <p className="mx-auto mt-1 max-w-xl text-xs text-[#777168]">
             A project umbrella (e.g. Accenture) holding many integration mappings plus UI screen-to-payload mapping. Everything stays in your browser.
+          </p>
+          <p className="mt-2 font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">
+            Project · Mappings · Screens
           </p>
           {view === "start" && (
             <div className="mt-4 flex flex-wrap justify-center gap-2">
@@ -361,6 +391,32 @@ export function MappingRoute() {
             </div>
           )}
         </div>
+
+        {view === "start" && (
+          <div className="grid gap-2 sm:grid-cols-3">
+            <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
+              <p className="font-mono text-[10px] font-bold uppercase tracking-[2px] text-[#A98450]">01</p>
+              <p className="mt-1 text-[13px] font-semibold text-[#27241F]">Create a project</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-[#777168]">
+                Open one umbrella per client or program, then add as many integration mappings as you need under it.
+              </p>
+            </div>
+            <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
+              <p className="font-mono text-[10px] font-bold uppercase tracking-[2px] text-[#A98450]">02</p>
+              <p className="mt-1 text-[13px] font-semibold text-[#27241F]">Map source to target</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-[#777168]">
+                Pick fields from live org snapshots, draw the links, and resolve every open decision before export.
+              </p>
+            </div>
+            <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
+              <p className="font-mono text-[10px] font-bold uppercase tracking-[2px] text-[#A98450]">03</p>
+              <p className="mt-1 text-[13px] font-semibold text-[#27241F]">Link screens to payloads</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-[#777168]">
+                Attach the experience workspace to bind UI screens to the same payloads, then export or share the set.
+              </p>
+            </div>
+          </div>
+        )}
 
         {view === "start" && studios.length > 0 && (
           <div className="rounded-xl border border-[#E8E2D8] bg-white p-4">
