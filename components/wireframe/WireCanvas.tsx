@@ -7,6 +7,7 @@ import { newScreen, type ComponentKind, type Experience } from "@/lib/wireframe/
 import { childrenOf, newComponent, paletteByCategory, patchComponent, removeSubtree, reorderSibling } from "@/lib/wireframe/registry";
 import { saveExperience } from "@/lib/wireframe/store";
 import { loadViewport, panBy, storeViewport, zoomAt, type Viewport } from "@/lib/wireframe/viewport";
+import { ApiPanel } from "./ApiPanel";
 import { BehaviorPanel } from "./BehaviorPanel";
 import { ComponentView } from "./ComponentView";
 import { DeltaPanel } from "./DeltaPanel";
@@ -35,6 +36,7 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
   const [deltaOpen, setDeltaOpen] = useState(false);
   const [behaviorOpen, setBehaviorOpen] = useState(false);
   const [journeyOpen, setJourneyOpen] = useState(false);
+  const [apiOpen, setApiOpen] = useState(false);
   const schema = useWireSchema();
   const [newName, setNewName] = useState("");
   const areaRef = useRef<HTMLDivElement | null>(null);
@@ -337,6 +339,9 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
         <Button size="sm" variant="secondary" onClick={() => setJourneyOpen((v) => !v)} title="Journeys" aria-expanded={journeyOpen} className="mt-1.5 w-full">
           {journeyOpen ? "Close journeys" : `⤳ Journeys${exp.journeys.length > 0 ? ` · ${exp.journeys.length}` : ""}`}
         </Button>
+        <Button size="sm" variant="secondary" onClick={() => setApiOpen((v) => !v)} title="API impact" aria-expanded={apiOpen} className="mt-1.5 w-full">
+          {apiOpen ? "Close APIs" : "API impact"}
+        </Button>
         <p className="mt-2 px-1 text-[10px] leading-relaxed text-[#A39B8E]">
           Drag headers to move · scroll to pan · Ctrl+scroll or pinch to zoom · Del removes
         </p>
@@ -398,6 +403,12 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
         <JourneyPanel
           exp={exp}
           onPatchJourneys={(journeys) => persist({ ...exp, journeys })}
+          onGotoScreen={(screenId) => setSelId(screenId)}
+        />
+      )}
+      {apiOpen && (
+        <ApiPanel
+          exp={exp}
           onGotoScreen={(screenId) => setSelId(screenId)}
         />
       )}

@@ -1,9 +1,13 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import Button from "../ui/Button";
+import { DraftDialog, type DraftConfirmation } from "../draw/DraftDialog";
+import { SYSTEM_DRAFT_KEY, buildSystemProject, type TopologyDraft } from "@/lib/draw/toSystemDraft";
 import { canTransition, newExperience, renameExperience, type Experience, type SnapshotStatus } from "@/lib/wireframe/model";
 import { deleteExperience, listExperiences, saveExperience } from "@/lib/wireframe/store";
+import { experienceToDraft } from "@/lib/wireframe/systemBridge";
 import { WireCanvas } from "./WireCanvas";
 
 const STATUS_STYLE: Record<SnapshotStatus, string> = {
@@ -24,12 +28,14 @@ const STATUS_LABEL: Record<SnapshotStatus, string> = {
  * identity, version, status - the model, not the pixels.
  */
 export function WireframeRoute() {
+  const router = useRouter();
   const [items, setItems] = useState<Experience[]>([]);
   const [name, setName] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
+  const [draft, setDraft] = useState<TopologyDraft | null>(null);
 
   const refresh = useCallback(async () => {
     setItems(await listExperiences().catch(() => []));
@@ -73,6 +79,18 @@ export function WireframeRoute() {
   };
 
   const active = items.find((i) => i.id === activeId) ?? null;
+
+  const handleConfirm = (selection: DraftConfirmation) => {
+    if (!draft) return;
+    const project = buildSystemProject(draft, selection);
+    try {
+      sessionStorage.setItem(SYSTEM_DRAFT_KEY, JSON.stringify(project));
+    } catch {
+      /* private mode etc - the canvas still holds the experience */
+    }
+    setDraft(null);
+    router.push("/system");
+  };
 
   return (
     <div className="space-y-3">
@@ -177,6 +195,9 @@ export function WireframeRoute() {
                 </Button>
               </>
             )}
+            <Button size="sm" variant="secondary" onClick={() => setDraft(experienceToDraft(active))} title="Send this experience to System Design">
+              Send to System
+            </Button>
           </div>
         )}
       </div>
@@ -246,6 +267,13 @@ export function WireframeRoute() {
           key={active.id}
           experience={active}
           onSaved={(next) => setItems((prev) => prev.map((i) => (i.id === next.id ? next : i)))}
+        />
+      )}
+      {draft && (
+        <DraftDialog
+          draft={draft}
+          onCancel={() => setDraft(null)}
+          onConfirm={handleConfirm}
         />
       )}
     </div>
