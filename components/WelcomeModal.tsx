@@ -49,8 +49,17 @@ export function WelcomeModal({ open, onConnect, onExplore }: WelcomeModalProps) 
           </Button>
         </div>
 
-        <p className="px-6 sm:px-8 pb-5 text-center text-[11px] text-ivory-600">
-          Your access token is never written to disk - session memory only.
+        <p className="px-6 sm:px-8 pb-5 text-center text-[11px] leading-relaxed text-ivory-600">
+          Your access token is never written to disk - session memory only. By connecting you
+          accept the{" "}
+          <a href="/terms" target="_blank" rel="noreferrer" className="font-medium underline hover:text-ivory-950">
+            Terms &amp; Conditions
+          </a>{" "}
+          and{" "}
+          <a href="/privacy" target="_blank" rel="noreferrer" className="font-medium underline hover:text-ivory-950">
+            Privacy Policy
+          </a>
+          . Independent project.
         </p>
       </div>
     </div>
