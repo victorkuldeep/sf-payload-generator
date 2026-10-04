@@ -8,7 +8,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Button from "../../ui/Button";
-import { deleteSystemRun, listSystemRuns, type SystemRunRecord } from "@/lib/system-design/runStore";
+import { deleteSystemRun, listSystemRuns, saveSystemRun, type SystemRunRecord } from "@/lib/system-design/runStore";
+import { computeVerdict } from "@/lib/system-design/verdict";
 import { downloadRunMarkdown, renderRunMarkdown } from "@/lib/system-design/runMarkdown";
 import { fieldLabel, panelShell, type Mutate } from "./shared";
 import type { SystemProject } from "@/lib/system-design/model";
@@ -101,6 +102,16 @@ export function RunsTab({ project }: Props) {
                   <span className="shrink-0 font-mono text-[10px] text-ivory-500">
                     {r.status} · {r.durationMs}ms · {new Date(r.createdAt).toLocaleString()}
                   </span>
+                  {r.scenarioId && (
+                    <span title={`Launched by scenario ${project.scenarios.find((s) => s.id === r.scenarioId)?.name ?? r.scenarioId}`} className="shrink-0 rounded-md border border-[var(--color-line)] bg-white px-1.5 py-0.5 font-mono text-[10px] text-bronze-700">
+                      {project.scenarios.find((s) => s.id === r.scenarioId)?.name ?? "deleted scenario"}
+                    </span>
+                  )}
+                  {r.verdict && (
+                    <span title={r.verdict === "override-pass" ? `Signed override${r.verdictNote ? `: ${r.verdictNote}` : ""}` : `Expected ${project.scenarios.find((s) => s.id === r.scenarioId)?.expectStatus ?? "?"} · deterministic`} className={`shrink-0 rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-bold ${r.verdict === "fail" ? "border-red-300 bg-red-50 text-red-700" : "border-[#2F6B45] bg-[#2F6B45]/10 text-[#2F6B45]"}`}>
+                      {r.verdict === "override-pass" ? "override-pass" : r.verdict}
+                    </span>
+                  )}
                   <button type="button" onClick={() => setOpenId(open ? null : r.id)} aria-expanded={open} className="rounded px-1.5 py-0.5 text-[11px] font-semibold text-ivory-600 hover:bg-ivory-300 cursor-pointer">{open ? "▾" : "▸"}</button>
                   <button
                     type="button"
@@ -125,6 +136,45 @@ export function RunsTab({ project }: Props) {
                   <div className="mt-2 space-y-1.5 border-t border-[var(--color-line-soft)] pt-2">
                     <p className={fieldLabel}>Endpoint</p>
                     <p className="break-all font-mono text-[10px] text-ivory-700">{r.endpoint}{r.truncated ? " · (truncated preview)" : ""}</p>
+                    {r.scenarioId && (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-mono text-[10px] text-ivory-500">
+                          Verdict {r.verdict ?? "none - scenario states no expectation"} · pinned at save, never re-judged.
+                        </span>
+                        {r.verdict === "override-pass" ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const s = project.scenarios.find((x) => x.id === r.scenarioId);
+                              const next = s ? computeVerdict(s.expectStatus, r.status) : null;
+                              const cleared: SystemRunRecord = { ...r };
+                              delete cleared.verdict;
+                              delete cleared.verdictNote;
+                              if (next) cleared.verdict = next;
+                              void saveSystemRun(cleared).then(refresh);
+                            }}
+                            className="rounded px-1.5 py-0.5 text-[11px] font-semibold text-bronze-600 hover:bg-bronze-500/10 cursor-pointer"
+                          >
+                            Clear override
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const note = window.prompt("Sign this override - why does this run count as handled?", "");
+                              if (note === null) return;
+                              const signed: SystemRunRecord = { ...r, verdict: "override-pass" };
+                              const trimmed = note.slice(0, 500);
+                              if (trimmed) signed.verdictNote = trimmed;
+                              void saveSystemRun(signed).then(refresh);
+                            }}
+                            className="rounded px-1.5 py-0.5 text-[11px] font-semibold text-bronze-600 hover:bg-bronze-500/10 cursor-pointer"
+                          >
+                            Mark handled
+                          </button>
+                        )}
+                      </div>
+                    )}
                     {(r.steps ?? []).length > 0 && (
                       <>
                         <p className={fieldLabel}>Hops ({r.steps!.length})</p>

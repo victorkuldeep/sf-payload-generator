@@ -99,10 +99,10 @@ export function proposeScenario(
   const [first] = opIds;
   const opName = project.operations.find((o) => o.id === first);
   const label = opName ? `${opName.method} ${opName.path}`.trim() || opName.name : first;
-  const validates: ScenarioValidates[] = finding.refs
+  const refIds = finding.refs
     .filter((r) => r.surface === "system" && (r.id === first || opIds.includes(r.id)))
     .map((r) => r.id);
-  const refs = validates.length > 0 ? validates : [first];
+  const refs = refIds.length > 0 ? refIds : [first];
   const base = {
     flowId: pickFlow(project, opIds),
     inputPayload: "{}",

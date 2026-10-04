@@ -160,7 +160,7 @@ export const DOC_SECTIONS: DocSection[] = [
     id: "risks",
     group: "Design & simulate",
     title: "Risk lens: deterministic architecture review",
-    keywords: "risks rules timeout retry idempotency chain spof review resilience policy",
+    keywords: "risks rules timeout retry idempotency chain spof review resilience policy validation proof verdict scenario reproduce",
     blocks: [
       {
         k: "p",
@@ -171,7 +171,10 @@ export const DOC_SECTIONS: DocSection[] = [
         items: [
           "State timeouts, retries and idempotency per operation in the Policy block; the lens only cites what is written.",
           "Each finding jumps to its records on the canvas and can become a linked ADR proposal in one click.",
-          "AI reads findings through risk_describe and proposes ADRs through Apply-gated risk_propose_adr - it explains, the rules decide.",
+          "Prove it drafts the failure scenario that tests the finding: reproduce expects the failure (a match confirms the risk), withstand expects the design to hold under latency.",
+          "Proof chips read unproven, covered, proven-live, proven-mock, reproduced - derived from pinned run evidence, decaying past retention, never hand-marked.",
+          "Track logs a Console task for the finding, linked to the project; run the scenario from Scenarios and the verdict lands on the evidence.",
+          "AI reads proof through validation_status, drafts scenarios through Apply-gated scenario_propose_for_risk, and explains verdicts through verdict_explain - it proposes the test, the verdict judges the run.",
         ],
       },
       {
@@ -219,7 +222,7 @@ export const DOC_SECTIONS: DocSection[] = [
         k: "list",
         items: [
           "The dialog previews the hierarchy tree and reports how many systems each view shows.",
-          "Architecture pack downloads one Markdown bundle: topology, operation policy, touching sequences as DSL, linked decisions and requirements with derived coverage, and risk findings.",
+          "Architecture pack downloads one Markdown bundle: topology, operation policy, touching sequences as DSL, linked decisions and requirements with derived coverage, risk findings, and a Validation section with scenarios, verdicts, and finding proof states.",
           "Wireframe experiences and Draw boards are per-surface and out of pack scope by design.",
         ],
       },
@@ -368,7 +371,9 @@ export const DOC_SECTIONS: DocSection[] = [
           "Unreachable hosts (VPN, Zscaler, not-built-yet) get per-node mocks — designing never blocks on access.",
           "Flow Lab names replayable paths across N systems × M APIs; save any chain via From last run.",
           "Scenarios bundle flow + seed input + mocks + expectations — replay before every middleware deploy.",
+          "Scenario runs stamp a deterministic verdict (expectation vs terminal status, pinned at save) and can validate linked risk findings.",
           "Runs trace forward and backward, export as Markdown, and persist to IndexedDB.",
+          "Signed overrides (Mark handled) record human judgment on the run; clearing one recomputes the verdict.",
           "Environments hold base URLs only; tokens live in the session vault. Production runs ask first.",
         ],
       },

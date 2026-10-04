@@ -530,6 +530,7 @@ export function SystemDesigner() {
   const [pendingBindOpId, setPendingBindOpId] = useState<string | null>(null);
   const [testOpId, setTestOpId] = useState<string | null>(null);
   const [runChainEdgeId, setRunChainEdgeId] = useState<string | null>(null);
+  const [runChainScenarioId, setRunChainScenarioId] = useState<string | null>(null);
   /** Ephemeral execution paint: edgeId -> run status. Cleared on close/rerun. */
   const [runVis, setRunVis] = useState<Record<string, "running" | "ok" | "failed">>({});
   const [notesOpen, setNotesOpen] = useState(false);
@@ -693,6 +694,7 @@ export function SystemDesigner() {
   const openEdgeRun = (edgeId: string): void => guardProd(() => setRunEdgeId(edgeId));
   const openChainRun = (edgeId: string): void => guardProd(() => {
     setRunChainEdgeId(edgeId);
+    setRunChainScenarioId(null);
     setRunVis({});
   });
   const locateSystem = (systemId: string): void => {
@@ -727,6 +729,7 @@ export function SystemDesigner() {
       mutate((p) => ({ ...p, runScope: { startEdgeId: flow.startEdgeId, lanes: [...flow.lanes], opByEdge: { ...flow.opByEdge } } }));
       setSubTab("canvas");
       setRunChainEdgeId(flow.startEdgeId);
+      setRunChainScenarioId(null);
       setRunVis({});
     });
   };
@@ -758,6 +761,7 @@ export function SystemDesigner() {
       });
       setSubTab("canvas");
       setRunChainEdgeId(flow.startEdgeId);
+      setRunChainScenarioId(s.id);
       setRunVis({});
     });
   };
@@ -1686,6 +1690,24 @@ export function SystemDesigner() {
           project={project}
           onClose={() => setRisksOpen(false)}
           onSelectNode={(id) => setSelNodeId(id)}
+          onAddScenario={(draft) =>
+            mutate((p) => ({
+              ...p,
+              scenarios: [
+                ...p.scenarios,
+                {
+                  id: newId("scn"),
+                  name: draft.name,
+                  flowId: draft.flowId && p.flows.some((f) => f.id === draft.flowId) ? draft.flowId : null,
+                  environmentId: null,
+                  inputPayload: draft.inputPayload,
+                  mockOverrides: draft.mockOverrides,
+                  expectStatus: draft.expectStatus,
+                  validates: draft.validates,
+                },
+              ],
+            }))
+          }
         />
       )}
 
@@ -1718,12 +1740,15 @@ export function SystemDesigner() {
         <ChainRunDialog
           onSaveScope={(scope) => mutate((p) => ({ ...p, runScope: scope }))}
           startEdgeId={runChainEdgeId}
+          scenarioId={runChainScenarioId}
+          expectStatus={runChainScenarioId ? (project.scenarios.find((s) => s.id === runChainScenarioId)?.expectStatus ?? null) : null}
           project={project}
           environments={project.environments}
           activeEnvironmentId={project.activeEnvironmentId}
           vault={vault}
           onClose={() => {
             setRunChainEdgeId(null);
+            setRunChainScenarioId(null);
             setRunVis({});
           }}
           onVisUpdate={(edgeId, status) => {

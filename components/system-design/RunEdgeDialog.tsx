@@ -229,6 +229,7 @@ export function RunEdgeDialog({
         await saveSystemRun({
           id: newId("run"),
           createdAt: Date.now(),
+          projectId: project.id,
           operationName: `Edge: ${sourceSys?.name ?? edge.sourceId} → ${targetSys?.name ?? edge.targetId}`,
           systemName: sourceSys?.name ?? "",
           environmentName: activeEnv?.name ?? "(no environment)",

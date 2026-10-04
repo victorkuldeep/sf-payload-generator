@@ -41,4 +41,56 @@ describe("architecture pack", () => {
     expect(json.counts).toMatchObject({ systems: 1, decisions: 1, requirements: 1 });
     expect(json.markdown).toContain("# Architecture Pack - Ordering topology");
   });
+
+  it("reports validation: scenarios with verdicts, findings with proof states", () => {
+    const withScenario = {
+      ...project,
+      operations: [{ id: "op1", interfaceId: "i1", name: "Create", method: "POST", path: "/orders", version: "v1" }],
+      connections: [{ id: "c1", sourceId: "s1", targetId: "s1", sourceOperationId: "op1", targetOperationId: "op1", label: "Self", status: "ready" as const }],
+      scenarios: [
+        {
+          id: "scn1",
+          name: "Transient failure",
+          flowId: null,
+          environmentId: null,
+          inputPayload: "{}",
+          mockOverrides: { op1: { status: 500, body: "{}", latencyMs: 0 } },
+          expectStatus: 500,
+          validates: [{ rule: "no-retry", refId: "op1", mode: "reproduce" as const }],
+        },
+      ],
+      settings: { retentionDays: 30 },
+    } as unknown as SystemProject;
+    const runs = [
+      {
+        id: "run1",
+        createdAt: Date.now(),
+        projectId: "p1",
+        scenarioId: "scn1",
+        verdict: "pass" as const,
+        operationName: "Chain",
+        systemName: "Shop",
+        environmentName: "(no environment)",
+        method: "CHAIN",
+        endpoint: "",
+        status: 500,
+        statusText: "chain with failures",
+        durationMs: 9,
+        truncated: false,
+        requestHeaders: {},
+        requestBodyPreview: "{}",
+        responseHeaders: {},
+        responseBodyPreview: "",
+        kind: "chain" as const,
+        steps: [],
+      },
+    ];
+    const md = buildPackMarkdown({ project: withScenario, sequences: [], decisions: [], requirements: [], runs });
+    expect(md).toContain("## Validation");
+    expect(md).toContain("### Transient failure");
+    expect(md).toContain("verdict pass");
+    expect(md).toContain("[failed] no-retry");
+    const json = JSON.parse(buildPackJson({ project: withScenario, sequences: [], decisions: [], requirements: [], runs }));
+    expect(json.counts).toMatchObject({ scenarios: 1, runs: 1 });
+  });
 });

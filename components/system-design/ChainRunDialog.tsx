@@ -7,6 +7,7 @@ import { preflightRun } from "@/lib/system-design/runner";
 import { compileMapping } from "@/lib/system-design/mapping";
 import { resolveChain, CHAIN_MAX_HOPS } from "@/lib/system-design/chain";
 import { saveSystemRun } from "@/lib/system-design/runStore";
+import { computeVerdict } from "@/lib/system-design/verdict";
 import { buildSendHeaders, authTokenPrefill } from "@/lib/system-design/headers";
 import { buildMockResult, sleep } from "@/lib/system-design/mock";
 import type { OperationMock } from "@/lib/system-design/model";
@@ -207,6 +208,8 @@ export function ChainRunDialog({
   onClose,
   onVisUpdate,
   onSaveScope,
+  scenarioId = null,
+  expectStatus = null,
 }: {
   startEdgeId: string;
   project: SystemProject;
@@ -217,6 +220,10 @@ export function ChainRunDialog({
   onVisUpdate: (edgeId: string, status: "running" | "ok" | "failed" | null) => void;
   /** Persist the picked lanes + overrides (travels with the project). */
   onSaveScope: (scope: RunScope) => void;
+  /** Launching scenario (validation epic): stamped on the saved run with a
+   * deterministic verdict against expectStatus. Null for ad-hoc runs. */
+  scenarioId?: string | null;
+  expectStatus?: number | null;
 }) {
   const lanes = useMemo(() => resolveChain(project, startEdgeId), [project, startEdgeId]);
   // Run scope: picked lanes + per-edge operation overrides. Saved scope
@@ -608,15 +615,20 @@ export function ChainRunDialog({
       }
       setDone(true);
       try {
+        const terminal = trail.some((t) => t.status === "failed") ? 500 : 200;
+        const verdict = scenarioId ? computeVerdict(expectStatus, terminal) : null;
         await saveSystemRun({
           id: newId("run"),
           createdAt: Date.now(),
+          projectId: project.id,
+          ...(scenarioId ? { scenarioId } : {}),
+          ...(verdict ? { verdict } : {}),
           operationName: `Chain from ${sysOf(startEdge?.sourceId ?? "")?.name ?? "?"} (${lanes.length} lane${lanes.length === 1 ? "" : "s"})`,
           systemName: sysOf(startEdge?.sourceId ?? "")?.name ?? "",
           environmentName: activeEnv?.name ?? "(no environment)",
           method: "CHAIN",
           endpoint: "",
-          status: trail.some((t) => t.status === "failed") ? 500 : 200,
+          status: terminal,
           statusText: trail.some((t) => t.status === "failed") ? "chain with failures" : "chain complete",
           durationMs: trail.reduce((n, t) => n + t.durationMs, 0),
           truncated: false,

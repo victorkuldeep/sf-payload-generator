@@ -100,7 +100,7 @@ describe("agent loop", () => {
   });
 
   it("routes packs by skill", () => {
-    expect(toolsForSkill("system").map((t: AgentTool) => t.name)).toEqual(["system_describe", "system_add", "system_connect", "risk_describe", "risk_propose_adr"]);
+    expect(toolsForSkill("system").map((t: AgentTool) => t.name)).toEqual(["system_describe", "system_add", "system_connect", "risk_describe", "risk_propose_adr", "validation_status", "scenario_propose_for_risk", "verdict_explain"]);
     expect(toolsForSkill("validate")).toEqual([]);
   });
 

@@ -2,7 +2,9 @@ import type { SystemProject } from "@/lib/system-design/model";
 import type { SequenceDocument } from "@/lib/sequence/model";
 import type { Decision } from "@/lib/decisions/model";
 import type { Requirement } from "@/lib/requirements/model";
+import type { SystemRunRecord } from "@/lib/system-design/runStore";
 import { analyzeProject, sequencesForProject } from "@/lib/risks/rules";
+import { findingKey, proveFindings } from "@/lib/risks/proof";
 import { coverageSummary } from "@/lib/requirements/coverage";
 import { buildIndex } from "@/lib/graph/index";
 import { printStatements } from "@/lib/sequence/dsl";
@@ -11,9 +13,10 @@ import { printStatements } from "@/lib/sequence/dsl";
  * Architecture Pack (Epic 6) - one-click stakeholder bundle for a System
  * project. Markdown narrative plus a JSON manifest, both generated from
  * live records: topology, policy, touching sequences (as DSL), linked
- * decisions and requirements (with derived coverage), and risk findings.
- * Wireframe experiences and Draw boards are not project-linked, so the
- * pack says so instead of guessing.
+ * decisions and requirements (with derived coverage), risk findings,
+ * and the Validation section (scenarios with verdicts, findings with
+ * derived proof states). Wireframe experiences and Draw boards are not
+ * project-linked, so the pack says so instead of guessing.
  */
 
 export interface PackInput {
@@ -21,6 +24,8 @@ export interface PackInput {
   sequences: SequenceDocument[];
   decisions: Decision[];
   requirements: Requirement[];
+  /** Pinned run evidence for the Validation section - absent reads as none. */
+  runs?: SystemRunRecord[];
 }
 
 function linked<T extends { links: { surface: string; recordId: string }[] }>(items: T[], projectId: string): T[] {
@@ -100,6 +105,25 @@ export function buildPackMarkdown(input: PackInput): string {
   }
   L.push("");
 
+  L.push("## Validation", "");
+  const packScenarios = p.scenarios ?? [];
+  const proofs = proveFindings(risks, packScenarios, input.runs ?? [], p.settings?.retentionDays ?? 30);
+  if (packScenarios.length === 0) L.push("No scenarios exercise this design yet.", "");
+  for (const s of packScenarios) {
+    const linked = (input.runs ?? []).filter((r) => r.scenarioId === s.id);
+    const latest = [...linked].sort((a, b) => b.createdAt - a.createdAt)[0];
+    const intent = (s.validates ?? []).map((v) => `${v.rule} (${v.mode === "reproduce" ? "reproduce" : "withstand"})`).join(", ") || "no linked findings";
+    L.push(`### ${s.name}`);
+    L.push(`Expects ${s.expectStatus ?? "no expectation"} · validates ${intent}.`);
+    L.push(latest ? `Last run: ${latest.status} · verdict ${latest.verdict ?? "none"} (${linked.length} run${linked.length === 1 ? "" : "s"} pinned).` : "Never run.");
+    L.push("");
+  }
+  for (const f of risks) {
+    const proof = proofs.find((x) => x.key === findingKey(f));
+    L.push(`- [${proof?.state ?? "unproven"}] ${f.rule}: ${f.message}`);
+  }
+  L.push("");
+
   L.push("---", "Wireframe experiences and Draw boards are modeled per-surface and are not project-linked, so they are out of pack scope by design.");
   return L.join("\n");
 }
@@ -120,6 +144,8 @@ export function buildPackJson(input: PackInput): string {
         sequences: sequencesForProject(p, input.sequences).length,
         decisions: linked(input.decisions, p.id).length,
         requirements: linked(input.requirements, p.id).length,
+        scenarios: (p.scenarios ?? []).length,
+        runs: (input.runs ?? []).length,
       },
       markdown: buildPackMarkdown(input),
     },

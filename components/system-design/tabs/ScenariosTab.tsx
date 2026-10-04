@@ -8,7 +8,7 @@
  * runner - then compare the verdict against the expectation.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Button from "../../ui/Button";
 import {
   newId,
@@ -16,6 +16,7 @@ import {
   type ScenarioDef,
   type SystemProject,
 } from "@/lib/system-design/model";
+import { listSystemRuns, type SystemRunRecord } from "@/lib/system-design/runStore";
 import { edgeLabel, fieldLabel, methodBadge, monoInput, panelShell, type Mutate } from "./shared";
 
 interface Props {
@@ -113,6 +114,27 @@ function ScenarioEditor({ project, scenario, mutate }: { project: SystemProject;
           <span className="mt-1 block text-[10px] leading-snug text-ivory-500">Checked by eye against run evidence.</span>
         </label>
       </div>
+      {(scenario.validates ?? []).length > 0 && (
+        <div>
+          <span className={fieldLabel}>Validates · {(scenario.validates ?? []).length} risk finding{(scenario.validates ?? []).length === 1 ? "" : "s"}</span>
+          <ul className="mt-1 space-y-1">
+            {(scenario.validates ?? []).map((v, i) => (
+              <li key={`${v.rule}:${v.refId}`} className="flex items-center gap-1.5 rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-canvas)] px-2 py-1">
+                <span className="font-mono text-[10px] font-bold text-ivory-950">{v.rule}</span>
+                <span className="font-mono text-[10px] text-ivory-500">{v.mode === "reproduce" ? "reproduce" : "withstand"} · {v.refId}</span>
+                <button
+                  type="button"
+                  onClick={() => patch({ validates: (scenario.validates ?? []).filter((_, j) => j !== i) })}
+                  aria-label={`Stop validating ${v.rule}`}
+                  className="ml-auto rounded px-1.5 text-ivory-400 hover:text-red-700 cursor-pointer"
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div>
         <span className={fieldLabel}>Mock overrides · {Object.keys(scenario.mockOverrides).length} (for unreachable / not-ready systems)</span>
         {Object.keys(scenario.mockOverrides).length === 0 ? (
@@ -190,6 +212,28 @@ function ScenarioEditor({ project, scenario, mutate }: { project: SystemProject;
 
 export function ScenariosTab({ project, mutate, onRunScenario }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [runs, setRuns] = useState<SystemRunRecord[]>([]);
+
+  useEffect(() => {
+    let live = true;
+    void listSystemRuns(100)
+      .catch(() => [])
+      .then((r) => {
+        if (live) setRuns(r);
+      });
+    return () => {
+      live = false;
+    };
+  }, [project.scenarios.length]);
+
+  const latestRun = (scenarioId: string): SystemRunRecord | null => {
+    let best: SystemRunRecord | null = null;
+    for (const r of runs) {
+      if (r.scenarioId !== scenarioId) continue;
+      if (!best || r.createdAt > best.createdAt) best = r;
+    }
+    return best;
+  };
 
   return (
     <div className={panelShell}>
@@ -234,7 +278,18 @@ export function ScenariosTab({ project, mutate, onRunScenario }: Props) {
                   />
                   <span className="shrink-0 font-mono text-[10px] text-ivory-500">
                     {flow ? flow.name : "no flow"} · {Object.keys(s.mockOverrides).length} mock{Object.keys(s.mockOverrides).length === 1 ? "" : "s"}{s.expectStatus ? ` · expect ${s.expectStatus}` : ""}
+                    {(s.validates ?? []).length > 0 && ` · validates ${(s.validates ?? []).map((v) => v.rule).join(", ")}`}
                   </span>
+                  {(() => {
+                    const last = latestRun(s.id);
+                    if (!last || !last.verdict) return null;
+                    const tone = last.verdict === "fail" ? "text-red-700" : "text-[#2F6B45]";
+                    return (
+                      <span title={`Last run ${new Date(last.createdAt).toLocaleString()} ended ${last.status}${last.verdict === "override-pass" ? " (signed override)" : ""}`} className={`shrink-0 font-mono text-[10px] font-bold ${tone}`}>
+                        {last.verdict === "override-pass" ? "override-pass" : last.verdict} · {last.status}
+                      </span>
+                    );
+                  })()}
                   <button type="button" onClick={() => setExpandedId(expanded ? null : s.id)} aria-expanded={expanded} className="rounded px-1.5 py-0.5 text-[11px] font-semibold text-ivory-600 hover:bg-ivory-300 cursor-pointer">{expanded ? "▾" : "▸"}</button>
                   <Button size="sm" disabled={!flow} title={flow ? "Apply mocks, seed input, open chain runner" : "Pick a flow first"} onClick={() => onRunScenario(s)}>Run</Button>
                   <button

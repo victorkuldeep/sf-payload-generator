@@ -7,6 +7,7 @@ import { buildPackMarkdown } from "@/lib/pack/bundle";
 import { listSequences } from "@/lib/sequence/store";
 import { listDecisions } from "@/lib/decisions/store";
 import { listRequirements } from "@/lib/requirements/store";
+import { listSystemRuns } from "@/lib/system-design/runStore";
 import type { SystemProject } from "@/lib/system-design/model";
 
 /**
@@ -149,15 +150,16 @@ export function ViewsDialog({
           <Button
             size="sm"
             variant="secondary"
-            title="Download the architecture pack: topology, policy, sequences, decisions, requirements, risks"
+            title="Download the architecture pack: topology, policy, sequences, decisions, requirements, risks, validation"
             onClick={() =>
               void (async () => {
-                const [sequences, decisions, requirements] = await Promise.all([
+                const [sequences, decisions, requirements, runs] = await Promise.all([
                   listSequences().catch(() => []),
                   listDecisions().catch(() => []),
                   listRequirements().catch(() => []),
+                  listSystemRuns(100).catch(() => []),
                 ]);
-                const blob = new Blob([buildPackMarkdown({ project, sequences, decisions, requirements })], {
+                const blob = new Blob([buildPackMarkdown({ project, sequences, decisions, requirements, runs })], {
                   type: "text/markdown",
                 });
                 const url = URL.createObjectURL(blob);
