@@ -10,6 +10,7 @@ import { loadViewport, panBy, storeViewport, zoomAt, type Viewport } from "@/lib
 import { ApiPanel } from "./ApiPanel";
 import { BehaviorPanel } from "./BehaviorPanel";
 import { ComponentView } from "./ComponentView";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { DeltaPanel } from "./DeltaPanel";
 import { Inspector } from "./Inspector";
 import { JourneyPanel } from "./JourneyPanel";
@@ -38,6 +39,9 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
   const [behaviorOpen, setBehaviorOpen] = useState(false);
   const [journeyOpen, setJourneyOpen] = useState(false);
   const [apiOpen, setApiOpen] = useState(false);
+  const [railOpen, setRailOpen] = useState(true);
+  const [locked, setLocked] = useState(false);
+  const [pendingScreenDelete, setPendingScreenDelete] = useState<string | null>(null);
   const schema = useWireSchema();
   const [newName, setNewName] = useState("");
   const areaRef = useRef<HTMLDivElement | null>(null);
@@ -97,7 +101,31 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
     return () => el.removeEventListener("wheel", onWheel);
   }, [view, setViewPersist]);
 
+  const fitView = () => {
+    const area = areaRef.current;
+    if (!area || exp.screens.length === 0) {
+      setViewPersist({ x: 40, y: 40, k: 1 });
+      return;
+    }
+    const pad = 60;
+    const xs = exp.screens.map((s) => s.position.x);
+    const ys = exp.screens.map((s) => s.position.y);
+    const minX = Math.min(...xs);
+    const minY = Math.min(...ys);
+    const maxX = Math.max(...xs) + 340;
+    const maxY = Math.max(...ys) + 480;
+    const w = area.clientWidth || 800;
+    const h = area.clientHeight || 560;
+    const k = Math.min(2.5, Math.max(0.25, Math.min(w / (maxX - minX + pad * 2), h / (maxY - minY + pad * 2))));
+    setViewPersist({
+      x: (w - (maxX - minX) * k) / 2 - minX * k,
+      y: (h - (maxY - minY) * k) / 2 - minY * k,
+      k: +k.toFixed(2),
+    });
+  };
+
   const onPointerDown = (e: React.PointerEvent) => {
+    if (locked) return;
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
     const g = gesture.current;
     const rect = areaRef.current?.getBoundingClientRect();
@@ -120,6 +148,8 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
 
   const onPointerMove = (e: React.PointerEvent) => {
     const g = gesture.current;
+    // Locked canvas still pinch-zooms; drag-pan and screen moves are frozen.
+    if (locked && g.pinch.size < 2) return;
     if (!g.pinch.has(e.pointerId)) return;
     const rect = areaRef.current?.getBoundingClientRect();
     g.pinch.set(e.pointerId, { x: e.clientX - (rect?.left ?? 0), y: e.clientY - (rect?.top ?? 0) });
@@ -188,7 +218,7 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
         deleteComponent(selComp);
       } else if (selId) {
         e.preventDefault();
-        void removeScreen(selId);
+        setPendingScreenDelete(selId);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -232,6 +262,7 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
   };
 
   const addBoundField = (field: SalesforceField, objectName: string) => {
+    if (locked) return;
     const target = selId ?? exp.screens[0]?.id;
     if (!target) return;
     const comp = buildBoundComponent(field, objectName, target);
@@ -268,8 +299,7 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
     setSelId(s.id);
   };
 
-  const removeScreen = async (id: string) => {
-    if (!window.confirm("Delete this screen and its components?")) return;
+  const removeScreen = (id: string) => {
     const valid = new Set(exp.screens.map((s) => s.id).filter((sid) => sid !== id));
     persist({
       ...exp,
@@ -278,16 +308,42 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
       journeys: exp.journeys.map((j) => pruneJourney(j, valid)),
     });
     if (selId === id) setSelId(null);
+    setPendingScreenDelete(null);
   };
 
   const grid = 28 * view.k;
 
   return (
     <div className="flex gap-3">
+      {!railOpen && (
+        <div className="flex shrink-0 flex-col items-center rounded-xl border border-[#E8E2D8] bg-white p-1.5">
+          <button
+            type="button"
+            onClick={() => setRailOpen(true)}
+            title="Expand sidebar"
+            aria-label="Expand sidebar"
+            className="cursor-pointer rounded-lg px-2 py-1.5 font-mono text-xs text-[#777168] hover:bg-[#F5F1E8] hover:text-[#27241F]"
+          >
+            »
+          </button>
+        </div>
+      )}
+      {railOpen && (
       <aside className="w-52 shrink-0 rounded-xl border border-[#E8E2D8] bg-white p-2.5">
-        <p className="mb-1.5 px-1 font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">
-          Screens · {exp.screens.length}
-        </p>
+        <div className="mb-1.5 flex items-center justify-between px-1">
+          <p className="font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">
+            Screens · {exp.screens.length}
+          </p>
+          <button
+            type="button"
+            onClick={() => setRailOpen(false)}
+            title="Collapse sidebar"
+            aria-label="Collapse sidebar"
+            className="cursor-pointer rounded px-1.5 py-0.5 font-mono text-[11px] text-[#A39B8E] hover:bg-[#F5F1E8] hover:text-[#27241F]"
+          >
+            «
+          </button>
+        </div>
         <ul className="mb-2 max-h-[420px] space-y-1 overflow-y-auto">
           {exp.screens.map((s) => {
             const n = exp.components.filter((c) => c.parentId === s.id).length;
@@ -307,7 +363,7 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
                 </button>
                 <button
                   type="button"
-                  onClick={() => void removeScreen(s.id)}
+                  onClick={() => setPendingScreenDelete(s.id)}
                   title={`Delete ${s.name}`}
                   aria-label={`Delete ${s.name}`}
                   className="shrink-0 rounded p-1 text-[#C9BFAE] opacity-0 transition-colors cursor-pointer hover:bg-red-500/10 hover:text-red-700 group-hover:opacity-100 focus-visible:opacity-100"
@@ -357,9 +413,10 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
           {apiOpen ? "Close APIs" : "API impact"}
         </Button>
         <p className="mt-2 px-1 text-[10px] leading-relaxed text-[#A39B8E]">
-          Drag headers to move · scroll to pan · Ctrl+scroll or pinch to zoom · Del removes
+          {locked ? "Locked - unlock to edit the canvas" : "Drag headers to move · scroll to pan · Ctrl+scroll or pinch to zoom · Del removes"}
         </p>
       </aside>
+      )}
 
       {paletteOpen && (
         <aside className="w-52 shrink-0 overflow-y-auto rounded-xl border border-[#E8E2D8] bg-white p-2.5" style={{ maxHeight: 640 }} aria-label="Component palette">
@@ -371,14 +428,15 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
                   <li key={d.kind}>
                     <button
                       type="button"
-                      draggable
+                      draggable={!locked}
                       onDragStart={(e) => {
                         e.dataTransfer.setData("application/x-wire-kind", d.kind);
                         e.dataTransfer.effectAllowed = "copy";
                       }}
                       onClick={() => addComponent(d.kind, selId)}
-                      title={`Add ${d.label}${selId ? "" : " to the first screen"}`}
-                      className="w-full cursor-grab truncate rounded-lg px-2 py-1.5 text-left text-xs text-[#27241F] transition-colors hover:bg-[#F5F1E8] active:cursor-grabbing"
+                      disabled={locked}
+                      title={locked ? "Unlock the canvas to add components" : `Add ${d.label}${selId ? "" : " to the first screen"}`}
+                      className="w-full cursor-grab truncate rounded-lg px-2 py-1.5 text-left text-xs text-[#27241F] transition-colors hover:bg-[#F5F1E8] active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {d.label}
                       <span className="ml-1 font-mono text-[9px] text-[#A39B8E]">{d.kind}</span>
@@ -473,6 +531,7 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
                     if ([...e.dataTransfer.types].includes("application/x-wire-kind")) e.preventDefault();
                   }}
                   onDrop={(e) => {
+                    if (locked) return;
                     const kind = e.dataTransfer.getData("application/x-wire-kind") as ComponentKind;
                     if (kind) {
                       e.preventDefault();
@@ -519,6 +578,23 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
           <button type="button" onClick={() => setViewPersist({ ...view, k: Math.max(0.25, +(view.k - 0.25).toFixed(2)) })} aria-label="Zoom out" className="rounded px-1.5 py-0.5 text-sm text-[#777168] cursor-pointer hover:bg-[#F5F1E8]">−</button>
           <span className="min-w-10 text-center font-mono text-[10px] text-[#777168]">{Math.round(view.k * 100)}%</span>
           <button type="button" onClick={() => setViewPersist({ ...view, k: Math.min(2.5, +(view.k + 0.25).toFixed(2)) })} aria-label="Zoom in" className="rounded px-1.5 py-0.5 text-sm text-[#777168] cursor-pointer hover:bg-[#F5F1E8]">+</button>
+          <button type="button" onClick={fitView} aria-label="Fit to content" title="Fit to content" className="rounded px-1.5 py-0.5 font-mono text-[10px] text-[#777168] cursor-pointer hover:bg-[#F5F1E8]">[]</button>
+          <button
+            type="button"
+            onClick={() => setLocked((v) => !v)}
+            aria-label={locked ? "Unlock canvas" : "Lock canvas"}
+            aria-pressed={locked}
+            title={locked ? "Unlock canvas" : "Lock canvas - freeze pan, drag and drop"}
+            className={`rounded p-1 cursor-pointer hover:bg-[#F5F1E8] ${locked ? "text-[#9A7653]" : "text-[#A39B8E] hover:text-[#777168]"}`}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+              {locked ? (
+                <><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>
+              ) : (
+                <><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 7.5-2" /></>
+              )}
+            </svg>
+          </button>
           <button type="button" onClick={() => setViewPersist({ x: 40, y: 40, k: 1 })} aria-label="Reset view" title="Reset view" className="rounded px-1.5 py-0.5 font-mono text-[10px] text-[#777168] cursor-pointer hover:bg-[#F5F1E8]">1:1</button>
         </div>
       </div>
@@ -531,6 +607,15 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
           onMove={(dir) => moveComponent(inspected.id, dir)}
           onDelete={() => deleteComponent(inspected.id)}
           onClose={() => setSelComp(null)}
+        />
+      )}
+      {pendingScreenDelete && (
+        <ConfirmDialog
+          title="Delete this screen?"
+          message={`"${exp.screens.find((s) => s.id === pendingScreenDelete)?.name ?? "Screen"}" and its components will be removed, and journey steps pointing at it will be pruned. This cannot be undone.`}
+          confirmLabel="Delete screen"
+          onCancel={() => setPendingScreenDelete(null)}
+          onConfirm={() => removeScreen(pendingScreenDelete)}
         />
       )}
     </div>

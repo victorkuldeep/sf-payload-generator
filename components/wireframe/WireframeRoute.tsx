@@ -8,6 +8,7 @@ import { SYSTEM_DRAFT_KEY, buildSystemProject, type TopologyDraft } from "@/lib/
 import { canTransition, newExperience, renameExperience, type Experience, type SnapshotStatus } from "@/lib/wireframe/model";
 import { deleteExperience, listExperiences, saveExperience } from "@/lib/wireframe/store";
 import { experienceToDraft } from "@/lib/wireframe/systemBridge";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { HistoryDialog } from "./HistoryDialog";
 import { SpecDialog } from "./SpecDialog";
 import { WireCanvas } from "./WireCanvas";
@@ -60,8 +61,10 @@ export function WireframeRoute() {
     }
   };
 
+  const [pendingExpDelete, setPendingExpDelete] = useState<string | null>(null);
+
   const remove = async (id: string) => {
-    if (!window.confirm("Delete this experience and its screens?")) return;
+    setPendingExpDelete(null);
     await deleteExperience(id).catch(() => {});
     if (activeId === id) setActiveId(null);
     await refresh();
@@ -251,7 +254,7 @@ export function WireframeRoute() {
                   </span>
                   <button
                     type="button"
-                    onClick={() => void remove(exp.id)}
+                    onClick={() => setPendingExpDelete(exp.id)}
                     title={`Delete ${exp.name}`}
                     aria-label={`Delete ${exp.name}`}
                     className="shrink-0 rounded p-1 text-[#C9BFAE] opacity-0 transition-colors cursor-pointer hover:bg-red-500/10 hover:text-red-700 group-hover:opacity-100 focus-visible:opacity-100"
@@ -299,6 +302,15 @@ export function WireframeRoute() {
             setRev((r) => r + 1);
             void refresh();
           }}
+        />
+      )}
+      {pendingExpDelete && (
+        <ConfirmDialog
+          title="Delete this experience?"
+          message={`"${items.find((i) => i.id === pendingExpDelete)?.name ?? "Experience"}" and all of its screens will be removed. Snapshots stay in history. This cannot be undone.`}
+          confirmLabel="Delete experience"
+          onCancel={() => setPendingExpDelete(null)}
+          onConfirm={() => void remove(pendingExpDelete)}
         />
       )}
     </div>
