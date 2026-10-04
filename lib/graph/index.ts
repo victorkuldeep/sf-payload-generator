@@ -2,6 +2,7 @@ import type { SystemProject } from "@/lib/system-design/model";
 import type { Experience } from "@/lib/wireframe/model";
 import type { SequenceDocument } from "@/lib/sequence/model";
 import type { Decision } from "@/lib/decisions/model";
+import type { Requirement } from "@/lib/requirements/model";
 import type { ConsoleTask } from "@/lib/console/model";
 import type { ErdSnapshot } from "@/lib/erd/snapshotDb";
 
@@ -17,7 +18,7 @@ import type { ErdSnapshot } from "@/lib/erd/snapshotDb";
  * Anything else is "unresolved" - listed visibly, never dropped silently.
  */
 
-export type GraphSurface = "system" | "wireframe" | "sequence" | "draw" | "schema" | "decision" | "console";
+export type GraphSurface = "system" | "wireframe" | "sequence" | "draw" | "schema" | "decision" | "console" | "requirement";
 
 export type GraphNodeKind =
   | "project"
@@ -30,6 +31,7 @@ export type GraphNodeKind =
   | "sequence"
   | "participant"
   | "decision"
+  | "requirement"
   | "console-task"
   | "snapshot"
   | "schema-object"
@@ -91,6 +93,7 @@ export interface GraphInput {
   experiences?: Experience[];
   sequences?: SequenceDocument[];
   decisions?: Decision[];
+  requirements?: Requirement[];
   tasks?: ConsoleTask[];
   snapshots?: ErdSnapshot[];
   /** The Draw canvas is single-slot - include it as one board node. */
@@ -305,7 +308,7 @@ function indexSequence(b: Builder, doc: SequenceDocument): void {
 function indexRecordLinks(
   b: Builder,
   from: string,
-  links: { surface: "system" | "wireframe" | "sequence" | "draw" | "schema" | "decision"; recordId: string; label: string }[],
+  links: { surface: "system" | "wireframe" | "sequence" | "draw" | "schema" | "decision" | "requirement"; recordId: string; label: string }[],
 ): void {
   for (const l of links) {
     if (l.surface === "draw") {
@@ -328,8 +331,8 @@ function indexRecordLinks(
       }
       continue;
     }
-    if (l.surface === "decision") {
-      const hit = b.resolve(from, "decision", "decision", { id: l.recordId, name: l.label });
+    if (l.surface === "decision" || l.surface === "requirement") {
+      const hit = b.resolve(from, l.surface, l.surface, { id: l.recordId, name: l.label });
       b.edge(from, hit.to, "links", hit.resolution, l.label);
       continue;
     }
@@ -375,6 +378,16 @@ export function buildIndex(input: GraphInput): GraphIndex {
       const hit = b.resolve(dk, "decision", "decision", { id: d.supersededBy, name: d.supersededBy });
       b.edge(dk, hit.to, "supersedes", hit.resolution);
     }
+  }
+  for (const r of input.requirements ?? []) {
+    const rk = b.add({
+      key: key("requirement", r.id),
+      kind: "requirement",
+      surface: "requirement",
+      recordId: r.id,
+      name: `${r.number} ${r.title}`,
+    });
+    indexRecordLinks(b, rk, r.links);
   }
   for (const t of input.tasks ?? []) {
     const tk = b.add({

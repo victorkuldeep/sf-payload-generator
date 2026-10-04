@@ -9,5 +9,6 @@ describe("console link hrefs", () => {
     expect(consoleLinkHref({ surface: "draw" })).toBe("/draw");
     expect(consoleLinkHref({ surface: "schema" })).toBe("/");
     expect(consoleLinkHref({ surface: "decision" })).toBe("/decisions");
+    expect(consoleLinkHref({ surface: "requirement" })).toBe("/requirements");
   });
 });

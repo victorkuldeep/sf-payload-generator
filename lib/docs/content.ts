@@ -181,6 +181,31 @@ export const DOC_SECTIONS: DocSection[] = [
     ],
   },
   {
+    id: "requirements",
+    group: "Design & simulate",
+    title: "Requirements: intent with receipts",
+    keywords: "requirements req traceability coverage verify satisfied links",
+    blocks: [
+      {
+        k: "p",
+        text: "Each requirement (REQ-102…) states intent and links the systems, experiences, sequences, boards, schema and decisions that satisfy it. Coverage is computed from the live architecture graph - the Check coverage button reports covered counts and names every requirement without design.",
+      },
+      {
+        k: "list",
+        items: [
+          "Lifecycle: Open → Covered → Verified, with Reopen; status is declared, coverage is derived.",
+          "Links address records and jump back to their tabs; dangling links never count as coverage.",
+          "Export/import portable JSON packages (re-id and re-number, never overwrite).",
+          "AI logs, links, and moves through Apply-gated req_log / req_link / req_move - it never declares coverage.",
+        ],
+      },
+      {
+        k: "routes",
+        items: [{ href: "/requirements", label: "Requirements", note: "Traceability with derived coverage" }],
+      },
+    ],
+  },
+  {
     id: "builder",
     group: "Build payloads",
     title: "Builder, Composite & REST",

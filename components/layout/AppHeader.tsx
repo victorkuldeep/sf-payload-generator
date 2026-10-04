@@ -97,6 +97,7 @@ export function AppHeader({
       label: "Govern",
       items: [
         { kind: "route", href: "/decisions", label: "Decisions", desc: "Architecture Decision Records" },
+        { kind: "route", href: "/requirements", label: "Requirements", desc: "Intent with derived coverage" },
       ],
     },
     {
