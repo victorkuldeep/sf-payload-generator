@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   addNote,
+  consoleLinkHref,
   CONSOLE_PRIORITIES,
   CONSOLE_STATUSES,
   moveTask,
@@ -410,7 +411,13 @@ function TaskDrawer({
             <ul className="mt-1 space-y-1">
               {task.links.map((l, i) => (
                 <li key={`${l.recordId}-${l.todoId ?? "record"}-${i}`} className="flex items-center gap-1.5 rounded-lg border border-[#E8E2D8] px-2 py-1.5">
-                  <span className="min-w-0 flex-1 truncate text-[12px] text-[#3A352D]">{l.label}</span>
+                  <a
+                    href={consoleLinkHref(l)}
+                    title={`Open in ${l.surface} tab`}
+                    className="min-w-0 flex-1 truncate text-[12px] font-medium text-[#3A352D] hover:text-[#8A6A2F] hover:underline"
+                  >
+                    {l.label}
+                  </a>
                   <span className="shrink-0 font-mono text-[9px] uppercase text-[#A39B8E]">{l.surface}</span>
                   <button type="button" onClick={() => void onUnlink(i)} aria-label={`Unlink ${l.label}`} className="shrink-0 cursor-pointer rounded p-1 text-[#C9BFAE] hover:bg-red-500/10 hover:text-red-700">
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">

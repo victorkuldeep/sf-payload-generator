@@ -6,7 +6,7 @@
  */
 
 export const DB_NAME = "gravenx-studio";
-export const DB_VERSION = 19;
+export const DB_VERSION = 20;
 
 export const STORES = {
   items: "request-collection",
@@ -30,6 +30,7 @@ export const STORES = {
   sequences: "sequences",
   sequenceSnapshots: "sequence-snapshots",
   consoleTasks: "console-tasks",
+  decisionRecords: "decision-records",
 } as const;
 
 export type StoreName = (typeof STORES)[keyof typeof STORES];

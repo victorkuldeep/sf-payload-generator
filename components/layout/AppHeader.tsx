@@ -57,48 +57,144 @@ export function AppHeader({
     fn();
   };
 
+  // Grouped product navigation (Home + Console stay direct; the studios sit
+  // under Build / Design / Deliver hover panels). One structure drives both
+  // desktop panels and the mobile scroll row so they cannot drift apart.
+  type ModeEntry = { kind: "mode"; id: Exclude<NavMode, "home">; label: string; desc: string };
+  type RouteEntry = { kind: "route"; href: string; label: string; desc: string; plus?: boolean };
+  type NavEntry = ModeEntry | RouteEntry;
+  interface NavGroup {
+    id: string;
+    label: string;
+    items: NavEntry[];
+  }
+
+  const navGroups: NavGroup[] = [
+    {
+      id: "build",
+      label: "Build",
+      items: [
+        { kind: "mode", id: "builder", label: "Builder", desc: "Single-object payload builder" },
+        { kind: "mode", id: "composite", label: "Composite", desc: "Composite batch builder" },
+        { kind: "mode", id: "soql", label: "Query", desc: "SOQL + SOSL query builder" },
+        { kind: "mode", id: "graphql", label: "GraphQL", desc: "GraphQL query builder" },
+        { kind: "mode", id: "rest", label: "Rest", desc: "REST explorer" },
+      ],
+    },
+    {
+      id: "design",
+      label: "Design",
+      items: [
+        { kind: "mode", id: "schema", label: "Schema", desc: "ERD + graph schema explorer" },
+        { kind: "route", href: "/system", label: "System", desc: "Visual architecture and integration workbench" },
+        { kind: "route", href: "/sequence", label: "Sequence", desc: "Describe the interaction, see the architecture" },
+        { kind: "route", href: "/wireframe", label: "Wireframe", desc: "Schema-aware experience modeling" },
+        { kind: "route", href: "/draw", label: "Draw", plus: true, desc: "Engineering whiteboard" },
+      ],
+    },
+    {
+      id: "govern",
+      label: "Govern",
+      items: [
+        { kind: "route", href: "/decisions", label: "Decisions", desc: "Architecture Decision Records" },
+      ],
+    },
+    {
+      id: "deliver",
+      label: "Deliver",
+      items: [
+        { kind: "route", href: "/contracts", label: "Contracts", desc: "OpenAPI profiles" },
+        { kind: "route", href: "/architect", label: "Architect", desc: "Design custom APIs" },
+        { kind: "route", href: "/json", label: "JSON", desc: "Editor and A/B payload comparator" },
+      ],
+    },
+  ];
+
   const pathname = usePathname();
-  const jsonActive = pathname === "/json";
-  const jsonLinkClass = jsonActive
-    ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors"
-    : "hover:text-[var(--color-ink)] transition-colors";
+  const activeClass =
+    "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors";
+  const idleClass = "hover:text-[var(--color-ink)] transition-colors";
 
-  // Single product navigation (Home first). Desktop renders it inline;
-  // mobile gets the same list as a scrollable row under the header.
-  const navItems: { id: "home" | "builder" | "composite" | "soql" | "graphql" | "schema" | "rest"; label: string; title: string }[] = [
-    { id: "home", label: "Home", title: "Back to the start" },
-    { id: "builder", label: "Builder", title: connected ? "Go to single-object builder" : "Connect to open the builder" },
-    { id: "composite", label: "Composite", title: connected ? "Go to composite builder" : "Connect to open composite" },
-    { id: "soql", label: "Query", title: connected ? "Go to SOQL query builder" : "Connect to open SOQL" },
-    { id: "graphql", label: "GraphQL", title: connected ? "Go to GraphQL query builder" : "Connect to open GraphQL" },
-    { id: "schema", label: "Schema", title: connected ? "Go to schema deep dive" : "Connect to open the ERD" },
-    { id: "rest", label: "Rest", title: connected ? "Go to REST explorer" : "Connect to open REST explorer" },
-  ];  const navLinkClass =
-    "hover:text-[var(--color-ink)] hover:underline underline-offset-4 transition-colors cursor-pointer whitespace-nowrap";
+  const isEntryActive = (entry: NavEntry) =>
+    entry.kind === "mode" ? entry.id === activeMode : pathname === entry.href;
 
-  const renderNavItems = () => (
+  const entryHint = (entry: NavEntry) =>
+    entry.kind === "mode" && !connected ? `Connect to open ${entry.label}` : entry.desc;
+
+  const renderEntryLabel = (entry: NavEntry) => (
     <>
-      {navItems.map((item) => {
-        const active = item.id === activeMode;
-        return (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => onNavigate(item.id)}
-            aria-current={active ? "page" : undefined}
-            className={
-              active
-                ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors cursor-pointer whitespace-nowrap"
-                : navLinkClass
-            }
-            title={item.title}
-          >
-            {item.label}
-          </button>
-        );
-      })}
+      {entry.label}
+      {entry.kind === "route" && entry.plus && (
+        <sup className="ml-[1px] text-[var(--color-accent)]">+</sup>
+      )}
     </>
   );
+
+  /** Row inside a desktop hover panel: label + one-line description. */
+  const renderPanelEntry = (entry: NavEntry) => {
+    const active = isEntryActive(entry);
+    const cls = `block w-full rounded-lg px-2.5 py-2 text-left transition-colors cursor-pointer ${
+      active ? "bg-[var(--color-canvas)]" : "hover:bg-[var(--color-canvas)]"
+    }`;
+    const body = (
+      <>
+        <span className="block text-xs font-semibold text-[var(--color-ink)]">
+          {renderEntryLabel(entry)}
+        </span>
+        <span className="block text-[11px] text-[var(--color-muted)]">{entry.desc}</span>
+      </>
+    );
+    return entry.kind === "mode" ? (
+      <button
+        key={entry.id}
+        type="button"
+        onClick={() => onNavigate(entry.id)}
+        aria-current={active ? "page" : undefined}
+        title={entryHint(entry)}
+        className={cls}
+      >
+        {body}
+      </button>
+    ) : (
+      <Link
+        key={entry.href}
+        href={entry.href}
+        aria-current={active ? "page" : undefined}
+        title={entry.desc}
+        className={cls}
+      >
+        {body}
+      </Link>
+    );
+  };
+
+  /** Flat item for the mobile scroll row. */
+  const renderFlatEntry = (entry: NavEntry) => {
+    const active = isEntryActive(entry);
+    const cls = `whitespace-nowrap ${active ? activeClass : `${idleClass} cursor-pointer`}`;
+    return entry.kind === "mode" ? (
+      <button
+        key={entry.id}
+        type="button"
+        onClick={() => onNavigate(entry.id)}
+        aria-current={active ? "page" : undefined}
+        className={cls}
+        title={entryHint(entry)}
+      >
+        {renderEntryLabel(entry)}
+      </button>
+    ) : (
+      <Link
+        key={entry.href}
+        href={entry.href}
+        aria-current={active ? "page" : undefined}
+        className={cls}
+        title={entry.desc}
+      >
+        {renderEntryLabel(entry)}
+      </Link>
+    );
+  };
 
   const copyOrgUrl = async () => {
     try {
@@ -121,96 +217,43 @@ export function AppHeader({
           <span className="gravenx-brand__tagline">Engineering Studio</span>
         </Link>
 
-        <nav className="hidden md:flex items-center gap-5 text-xs font-medium text-[var(--color-ink-soft)]" aria-label="Product">
-          {renderNavItems()}
-          <Link
-            href="/system"
-            aria-current={pathname === "/system" ? "page" : undefined}
-            className={
-              pathname === "/system"
-                ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors"
-                : "hover:text-[var(--color-ink)] transition-colors"
-            }
-            title="System Design Studio - visual architecture and integration workbench"
+        <nav className="hidden md:flex items-stretch gap-5 text-xs font-medium text-[var(--color-ink-soft)]" aria-label="Product">
+          <button
+            type="button"
+            onClick={() => onNavigate("home")}
+            aria-current={activeMode === "home" ? "page" : undefined}
+            title="Back to the start"
+            className={`cursor-pointer self-center whitespace-nowrap ${activeMode === "home" ? activeClass : idleClass}`}
           >
-            System
-          </Link>
-          <Link
-            href="/sequence"
-            aria-current={pathname === "/sequence" ? "page" : undefined}
-            className={
-              pathname === "/sequence"
-                ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors"
-                : "hover:text-[var(--color-ink)] transition-colors"
-            }
-            title="Sequence Studio - describe the interaction, see the architecture"
-          >
-            Sequence
-          </Link>
-          <Link
-            href="/wireframe"
-            aria-current={pathname === "/wireframe" ? "page" : undefined}
-            className={
-              pathname === "/wireframe"
-                ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors"
-                : "hover:text-[var(--color-ink)] transition-colors"
-            }
-            title="Wireframe Studio - schema-aware experience modeling"
-          >
-            Wireframe
-          </Link>
-          <Link
-            href="/contracts"
-            aria-current={pathname === "/contracts" ? "page" : undefined}
-            className={
-              pathname === "/contracts"
-                ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors"
-                : "hover:text-[var(--color-ink)] transition-colors"
-            }
-            title="API Contract Studio - OpenAPI profiles"
-          >
-            Contracts
-          </Link>
-          <Link
-            href="/architect"
-            aria-current={pathname === "/architect" ? "page" : undefined}
-            className={
-              pathname === "/architect"
-                ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors"
-                : "hover:text-[var(--color-ink)] transition-colors"
-            }
-            title="API Contract Architect - design custom APIs"
-          >
-            Architect
-          </Link>
-          <Link
-            href="/json"
-            aria-current={jsonActive ? "page" : undefined}
-            className={jsonLinkClass}
-            title="JSON Studio - editor and A/B payload comparator"
-          >
-            JSON
-          </Link>
-          <Link
-            href="/draw"
-            aria-current={pathname === "/draw" ? "page" : undefined}
-            className={
-              pathname === "/draw"
-                ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors"
-                : "hover:text-[var(--color-ink)] transition-colors"
-            }
-            title="Draw Studio - engineering whiteboard"
-          >
-            Draw<sup className="ml-[1px] text-[var(--color-accent)]">+</sup>
-          </Link>
+            Home
+          </button>
+          {navGroups.map((group) => {
+            const groupActive = group.items.some(isEntryActive);
+            return (
+              <div key={group.id} className="group relative flex items-stretch">
+                <button
+                  type="button"
+                  aria-haspopup="true"
+                  title={`${group.label} studios`}
+                  className={`flex cursor-pointer items-center gap-1 whitespace-nowrap ${groupActive ? activeClass : idleClass}`}
+                >
+                  {group.label}
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true" className="transition-transform group-hover:rotate-180">
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </button>
+                <div className="invisible absolute left-1/2 top-full z-50 -translate-x-1/2 pt-2 opacity-0 transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
+                  <div role="menu" aria-label={group.label} className="w-64 rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-1.5 shadow-[0_16px_48px_-12px_rgba(24,20,12,0.35)]">
+                    {group.items.map(renderPanelEntry)}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
           <Link
             href="/console"
             aria-current={pathname === "/console" ? "page" : undefined}
-            className={
-              pathname === "/console"
-                ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors"
-                : "hover:text-[var(--color-ink)] transition-colors"
-            }
+            className={`self-center whitespace-nowrap ${pathname === "/console" ? activeClass : idleClass}`}
             title="Console - architect task manager, two-way sync with canvas TODOs"
           >
             Console
@@ -356,67 +399,20 @@ export function AppHeader({
         </div>
       </div>
       <nav className="md:hidden flex items-center gap-4 overflow-x-auto px-5 pb-2.5 text-xs font-medium text-[var(--color-ink-soft)]" aria-label="Product">
-        {renderNavItems()}
-        <Link
-          href="/system"
-          aria-current={pathname === "/system" ? "page" : undefined}
-          className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
-          title="System Design Studio - visual architecture and integration workbench"
+        <button
+          type="button"
+          onClick={() => onNavigate("home")}
+          aria-current={activeMode === "home" ? "page" : undefined}
+          title="Back to the start"
+          className={`whitespace-nowrap cursor-pointer ${activeMode === "home" ? activeClass : idleClass}`}
         >
-          System
-        </Link>
-        <Link
-          href="/sequence"
-          aria-current={pathname === "/sequence" ? "page" : undefined}
-          className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
-          title="Sequence Studio - describe the interaction, see the architecture"
-        >
-          Sequence
-        </Link>
-        <Link
-          href="/wireframe"
-          aria-current={pathname === "/wireframe" ? "page" : undefined}
-          className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
-          title="Wireframe Studio - schema-aware experience modeling"
-        >
-          Wireframe
-        </Link>
-        <Link
-          href="/json"
-          aria-current={jsonActive ? "page" : undefined}
-          className={`${jsonLinkClass} whitespace-nowrap`}
-          title="JSON Studio - editor and A/B payload comparator"
-        >
-          JSON
-        </Link>
-        <Link
-          href="/contracts"
-          aria-current={pathname === "/contracts" ? "page" : undefined}
-          className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
-          title="API Contract Studio - OpenAPI profiles"
-        >
-          Contracts
-        </Link>
-        <Link
-          href="/architect"
-          aria-current={pathname === "/architect" ? "page" : undefined}
-          className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
-          title="API Contract Architect - design custom APIs"
-        >
-          Architect
-        </Link>
-        <Link
-          href="/draw"
-          aria-current={pathname === "/draw" ? "page" : undefined}
-          className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
-          title="Draw Studio - engineering whiteboard"
-        >
-          Draw<sup className="ml-[1px] text-[var(--color-accent)]">+</sup>
-        </Link>
+          Home
+        </button>
+        {navGroups.flatMap((group) => group.items.map(renderFlatEntry))}
         <Link
           href="/console"
           aria-current={pathname === "/console" ? "page" : undefined}
-          className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
+          className={`whitespace-nowrap ${pathname === "/console" ? activeClass : idleClass}`}
           title="Console - architect task manager, two-way sync with canvas TODOs"
         >
           Console

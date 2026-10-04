@@ -131,6 +131,32 @@ export const DOC_SECTIONS: DocSection[] = [
     ],
   },
   {
+    id: "decisions",
+    group: "Design & simulate",
+    title: "Decisions: Architecture Decision Records",
+    keywords: "decisions adr architecture decision records propose accept govern traceability",
+    blocks: [
+      {
+        k: "p",
+        text: "Decide once, trace everywhere. Each decision is a numbered ADR (ADR-001…) with context, the concrete decision, alternatives considered, and consequences — linked to the systems, experiences, sequences, boards and schema it governs. Links address records, never copy them.",
+      },
+      {
+        k: "list",
+        items: [
+          "Lifecycle: Proposed → In Review → Accepted, with Deprecated and Superseded terminals; illegal jumps refuse.",
+          "Supersede names its successor, so the chain of reasoning never breaks.",
+          "Link picker covers System, Wireframe, Sequence and Draw records; schema links arrive via AI or import.",
+          "Export/import portable JSON packages (re-id and re-number, never overwrite).",
+          "AI proposes, links, and moves through Apply-gated decision_propose / decision_link / decision_move.",
+        ],
+      },
+      {
+        k: "routes",
+        items: [{ href: "/decisions", label: "Decisions", note: "Decision Studio with governed links" }],
+      },
+    ],
+  },
+  {
     id: "builder",
     group: "Build payloads",
     title: "Builder, Composite & REST",

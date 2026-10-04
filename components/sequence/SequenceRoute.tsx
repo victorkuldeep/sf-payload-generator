@@ -211,6 +211,13 @@ export function SequenceRoute() {
             <Button size="sm" variant="secondary" onClick={() => setHistoryOpen(true)} title="Snapshots and export">
               History
             </Button>
+            <a
+              href="/console"
+              title="Open Console - track this sequence as tasks"
+              className="inline-flex items-center rounded-lg border border-[#E3D9C6] bg-white px-2.5 py-1 text-[12px] font-semibold text-[#3A352D] transition-colors hover:border-[#C9A86A] hover:text-[#27241F]"
+            >
+              Console
+            </a>
           </div>
         )}
       </div>

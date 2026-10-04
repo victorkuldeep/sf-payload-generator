@@ -153,7 +153,18 @@ export function DrawCanvas({ onSendToSystem }: DrawCanvasProps) {
           },
         } as Action);
       }}
-      renderTopRightUI={() => sendButton}
+      renderTopRightUI={() => (
+        <div className="flex items-center gap-1.5">
+          <a
+            href="/console"
+            title="Open Console - track this board as tasks"
+            className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-xs font-semibold text-[var(--color-ink)] hover:border-[var(--color-accent)] transition-colors cursor-pointer"
+          >
+            Console
+          </a>
+          {sendButton}
+        </div>
+      )}
       onChange={(elements, appState, files) => {
         if (saveTimer.current) window.clearTimeout(saveTimer.current);
         saveTimer.current = window.setTimeout(() => {

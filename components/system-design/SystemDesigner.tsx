@@ -468,6 +468,13 @@ function DesignerCanvas({
         >
           3x Hi-Res
         </button>
+        <a
+          href="/console"
+          title="Open Console - track this design as tasks with two-way TODO sync"
+          className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer"
+        >
+          Console
+        </a>
       </div>
       {project.systems.length > 0 && project.connections.length === 0 && (
         <div className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2">

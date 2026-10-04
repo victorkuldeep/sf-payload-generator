@@ -37,6 +37,7 @@ const ROUTE_LINKS: { label: ReactNode; href: string }[] = [
   },
   { label: "Wireframe", href: "/wireframe" },
   { label: "Sequence", href: "/sequence" },
+  { label: "Decisions", href: "/decisions" },
 ];
 
 interface SessionView {
