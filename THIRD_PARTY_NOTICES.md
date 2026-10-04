@@ -22,17 +22,26 @@ Required MIT notice (software distributed with this application):
 > See <https://github.com/excalidraw/excalidraw/blob/master/LICENSE> for the
 > full license text.
 
-## Wireframe icon glyphs (vendored path data)
+## Wireframe icon glyphs (Lucide + two vendored brands)
 
-- UI glyph geometry follows **Feather Icons** (MIT, Copyright (c) 2013-2023
-  Cole Bemis / Feather contributors): <https://feathericons.com>
+- UI glyphs render from the **`lucide-react` npm package** (ISC):
+  <https://lucide.dev> — pinned in `package.json` / `package-lock.json`,
+  imported statically per glyph in `components/wireframe/WireIcon.tsx` so
+  bundlers tree-shake to only the glyphs on the palette.
 - GitHub brand mark follows **Octicons** (MIT, GitHub): <https://primer.style/octicons>
 - LinkedIn brand mark follows **Simple Icons** (CC0 1.0 Universal):
   <https://simpleicons.org>
-- Only path data is vendored into `lib/wireframe/icons.ts` (no icon package
-  installed); glyphs render as inline SVG from our own origin.
+- Only the two brand marks are vendored as path data in
+  `lib/wireframe/icons.ts` (Lucide no longer ships brand icons); everything
+  renders as inline SVG from our own origin.
 
-Required MIT notice (Feather Icons, Octicons):
+Required ISC notice (Lucide):
+
+> "THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+> IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT."
+
+Required MIT notice (Octicons):
 
 > "THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 > IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
