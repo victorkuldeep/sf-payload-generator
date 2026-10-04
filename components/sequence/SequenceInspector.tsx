@@ -1,6 +1,7 @@
 "use client";
 
 import Button from "../ui/Button";
+import { ImpactSection } from "../graph/ImpactSection";
 import type { MessageKind, Participant, SeqBlock, SeqMessage, SeqNode } from "@/lib/sequence/model";
 
 const inputCls =
@@ -157,6 +158,24 @@ function MessageForm({ node: m, participants, onPatch }: { node: SeqMessage; par
             spellCheck={false} className={inputCls}
           />
         </div>
+      </Section>
+      <Section title="Operation">
+        <div>
+          <label className={labelCls} htmlFor="seq-opref">Operation ref</label>
+          <input
+            id="seq-opref" value={m.operationRef ?? ""}
+            onChange={(e) => set({ operationRef: e.target.value.slice(0, 200) || undefined })}
+            placeholder="e.g. POST /orders"
+            spellCheck={false} className={`${inputCls} font-mono text-[11px]`}
+          />
+        </div>
+        {m.operationRef && (
+          <ImpactSection
+            key={m.operationRef}
+            query={{ surface: "system", text: m.operationRef }}
+            caption={m.operationRef}
+          />
+        )}
       </Section>
     </>
   );

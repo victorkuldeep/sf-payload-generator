@@ -67,6 +67,7 @@ import { CredentialsModal } from "./CredentialsModal";
 import { RenameProjectModal } from "./RenameProjectModal";
 import { registerSystemBridge, snapshotOf } from "@/lib/ai/systemBridge";
 import { TemplatesModal } from "./TemplatesModal";
+import { ImpactSection } from "../graph/ImpactSection";
 import {
   findMissingVars,
   resolveEnvVars,
@@ -2135,6 +2136,7 @@ function OperationHttpConfig({
               </p>
             </div>
           )}
+          <ImpactSection key={op.id} query={{ surface: "system", id: op.id }} caption={`${op.method} ${op.path}`} />
           {!isEvent && (
             <div>
               <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-semibold text-ivory-800 select-none">

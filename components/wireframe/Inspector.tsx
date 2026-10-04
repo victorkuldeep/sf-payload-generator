@@ -1,6 +1,7 @@
 "use client";
 
 import Button from "../ui/Button";
+import { ImpactSection } from "../graph/ImpactSection";
 import { wireIconNames } from "@/lib/wireframe/icons";
 import { defFor } from "@/lib/wireframe/registry";
 import type { BindingState, ProposedField, WireComponent } from "@/lib/wireframe/model";
@@ -352,6 +353,19 @@ export function Inspector({
                 />
               )}
             </>
+          )}
+          {binding?.object && (
+            <div className="mt-1.5">
+              <ImpactSection
+                key={binding.field ? `${binding.object}.${binding.field}` : binding.object}
+                query={
+                  binding.field
+                    ? { object: binding.object, field: binding.field }
+                    : { object: binding.object }
+                }
+                caption={binding.field ? `${binding.object}.${binding.field}` : binding.object}
+              />
+            </div>
           )}
         </Section>
 
