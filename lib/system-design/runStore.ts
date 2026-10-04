@@ -14,12 +14,23 @@ export interface SystemRunStep {
   responseBodyPreview?: string;
 }
 
+/** Deterministic verdict of a scenario-linked run against its expectation.
+ * Computed at save and pinned with the evidence; override-pass is a signed
+ * human judgment recorded on the run row, never silent. */
+export type RunVerdict = "pass" | "fail" | "override-pass";
+
 /** Persisted test-run evidence. Bodies are truncated previews; request
  * headers are stored redacted; query strings are stripped from endpoints.
  * Full bodies live in memory only, for the session response view. */
 export interface SystemRunRecord {
   id: string;
   createdAt: number;
+  /** Owning project and launching scenario (validation epic). Absent on
+   * vintage records - those stay unattributed, never guessed. */
+  projectId?: string;
+  scenarioId?: string;
+  verdict?: RunVerdict;
+  verdictNote?: string;
   operationName: string;
   systemName: string;
   environmentName: string;

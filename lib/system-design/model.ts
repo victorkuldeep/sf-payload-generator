@@ -189,6 +189,20 @@ export interface ScenarioDef {
   inputPayload: string;
   mockOverrides: Record<string, OperationMock>;
   expectStatus: number | null;
+  /** Risk findings this scenario exercises (validation epic). Entries name
+   * a rule plus one record the rule cited - absent on vintage records. */
+  validates?: ScenarioValidates[];
+}
+
+/** One risk finding a scenario exercises: rule id plus cited record id.
+ * Mode declares the test intent - reproduce expects the feared outcome
+ * (a matching failure confirms the risk), withstand expects the design
+ * to hold under adverse conditions. Absent reads as withstand. */
+export interface ScenarioValidates {
+  rule: string;
+  refId: string;
+  mode?: "reproduce" | "withstand";
+  note?: string;
 }
 
 /** Project-level settings. Travels with export/import. */
@@ -339,6 +353,21 @@ export function coerceScenarios(raw: unknown): ScenarioDef[] {
       typeof r.expectStatus === "number" && Number.isInteger(r.expectStatus) && r.expectStatus >= 100 && r.expectStatus <= 599
         ? r.expectStatus
         : null;
+    const validates: ScenarioValidates[] = [];
+    if (Array.isArray(r.validates)) {
+      for (const v of r.validates) {
+        if (!v || typeof v !== "object") continue;
+        const e = v as Record<string, unknown>;
+        if (typeof e.rule !== "string" || !e.rule.trim()) continue;
+        if (typeof e.refId !== "string" || !e.refId) continue;
+        validates.push({
+          rule: e.rule.trim().slice(0, 80),
+          refId: e.refId.slice(0, 200),
+          ...(e.mode === "reproduce" || e.mode === "withstand" ? { mode: e.mode } : {}),
+          ...(typeof e.note === "string" && e.note ? { note: e.note.slice(0, 500) } : {}),
+        });
+      }
+    }
     out.push({
       id: r.id,
       name: r.name,
@@ -347,6 +376,7 @@ export function coerceScenarios(raw: unknown): ScenarioDef[] {
       inputPayload: typeof r.inputPayload === "string" ? r.inputPayload.slice(0, 20000) : "{}",
       mockOverrides,
       expectStatus,
+      ...(validates.length > 0 ? { validates } : {}),
     });
   }
   return out;
