@@ -24,13 +24,21 @@ describe("draw navigation", () => {
 
   it("home mobile nav includes Draw", () => {
     const src = read("components/layout/AppHeader.tsx");
+    // Grouped nav: one navGroups structure drives desktop panels and the
+    // mobile flat row, so Draw must be in the data and the flat renderer.
+    expect(src).toContain('href: "/draw"');
     const mobile = src.slice(src.indexOf("md:hidden"));
-    expect(mobile).toContain('href="/draw"');
+    expect(mobile).toContain("renderFlatEntry");
+    expect(mobile).toContain("navGroups");
   });
 
   it("tab reads Draw+ with a raised plus", () => {
-    for (const rel of ["components/layout/AppHeader.tsx", "components/layout/ToolHeader.tsx"]) {
-      expect(read(rel)).toContain("Draw<sup");
-    }
+    // ToolHeader is still flat: literal Draw<sup.
+    expect(read("components/layout/ToolHeader.tsx")).toContain("Draw<sup");
+    // AppHeader is grouped: the Draw entry carries plus:true and the shared
+    // label renderer raises it in a sup.
+    const app = read("components/layout/AppHeader.tsx");
+    expect(app).toContain('label: "Draw", plus: true');
+    expect(app).toContain("<sup");
   });
 });

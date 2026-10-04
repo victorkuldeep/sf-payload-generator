@@ -1,0 +1,44 @@
+import { describe, expect, it } from "vitest";
+import { buildPackJson, buildPackMarkdown } from "./bundle";
+import type { SystemProject } from "@/lib/system-design/model";
+import { linkDecision, newDecision } from "@/lib/decisions/model";
+import { linkRequirement, newRequirement } from "@/lib/requirements/model";
+
+const project = {
+  id: "p1",
+  name: "Ordering topology",
+  systems: [{ id: "s1", name: "Shop", systemType: "custom", description: "Storefront", baseUrl: "https://shop/x", position: { x: 0, y: 0 }, iconKey: "plus" }],
+  interfaces: [{ id: "i1", systemId: "s1", name: "Orders", protocol: "REST" }],
+  operations: [{ id: "op1", interfaceId: "i1", name: "Create", method: "POST", path: "/orders", version: "v1", policy: { timeoutSecs: 30 } }],
+  connections: [],
+  environments: [],
+  activeEnvironmentId: null,
+  notes: "",
+  todos: [],
+} as unknown as SystemProject;
+
+describe("architecture pack", () => {
+  it("bundles topology, policy, linked governance and risks", () => {
+    const d = linkDecision(newDecision("Sync for create", "ADR-001", 1), {
+      surface: "system",
+      recordId: "p1",
+      label: "Ordering topology",
+    });
+    const r = linkRequirement(newRequirement("Confirm fast", "REQ-001", 2), {
+      surface: "system",
+      recordId: "p1",
+      label: "Ordering topology",
+    });
+    const md = buildPackMarkdown({ project, sequences: [], decisions: [d], requirements: [r] });
+    expect(md).toContain("# Architecture Pack - Ordering topology");
+    expect(md).toContain("timeout 30s");
+    expect(md).toContain("ADR-001 Sync for create");
+    expect(md).toContain("REQ-001 Confirm fast");
+    expect(md).toContain("## Risks");
+    expect(md).toContain("out of pack scope by design");
+    const json = JSON.parse(buildPackJson({ project, sequences: [], decisions: [d], requirements: [r] }));
+    expect(json.type).toBe("gravenx-architecture-pack");
+    expect(json.counts).toMatchObject({ systems: 1, decisions: 1, requirements: 1 });
+    expect(json.markdown).toContain("# Architecture Pack - Ordering topology");
+  });
+});

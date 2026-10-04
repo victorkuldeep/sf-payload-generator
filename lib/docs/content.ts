@@ -206,6 +206,30 @@ export const DOC_SECTIONS: DocSection[] = [
     ],
   },
   {
+    id: "views-pack",
+    group: "Design & simulate",
+    title: "C4 views and the architecture pack",
+    keywords: "c4 context container component views projections hierarchy pack export stakeholder",
+    blocks: [
+      {
+        k: "p",
+        text: "The Views button on the System canvas assigns context/container/component levels (with parents) and projects the same canvas four ways: All, Context, Container, Component. Unleveled projects show everything everywhere - levels are opt-in, never mandatory.",
+      },
+      {
+        k: "list",
+        items: [
+          "The dialog previews the hierarchy tree and reports how many systems each view shows.",
+          "Architecture pack downloads one Markdown bundle: topology, operation policy, touching sequences as DSL, linked decisions and requirements with derived coverage, and risk findings.",
+          "Wireframe experiences and Draw boards are per-surface and out of pack scope by design.",
+        ],
+      },
+      {
+        k: "routes",
+        items: [{ href: "/system", label: "System", note: "Views and pack live on the System canvas" }],
+      },
+    ],
+  },
+  {
     id: "builder",
     group: "Build payloads",
     title: "Builder, Composite & REST",

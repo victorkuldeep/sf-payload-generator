@@ -68,6 +68,8 @@ import { RenameProjectModal } from "./RenameProjectModal";
 import { registerSystemBridge, snapshotOf } from "@/lib/ai/systemBridge";
 import { TemplatesModal } from "./TemplatesModal";
 import { RisksDialog } from "../risks/RisksDialog";
+import { ViewsDialog } from "../c4/ViewsDialog";
+import { hiddenNodeIds, type C4View } from "@/lib/c4/views";
 import { ImpactSection } from "../graph/ImpactSection";
 import {
   findMissingVars,
@@ -189,6 +191,8 @@ function DesignerCanvas({
   miniMapOn,
   onToggleMiniMap,
   onOpenRisks,
+  onOpenViews,
+  hiddenIds,
 }: {
   project: SystemProject;
   onMoveSystems: (moves: { id: string; x: number; y: number }[]) => void;
@@ -205,6 +209,8 @@ function DesignerCanvas({
   miniMapOn: boolean;
   onToggleMiniMap: () => void;
   onOpenRisks: () => void;
+  onOpenViews: () => void;
+  hiddenIds: Set<string>;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition, fitView, getNodes, getNodesBounds } = useReactFlow();
@@ -215,13 +221,19 @@ function DesignerCanvas({
   }, [rfInstance]);
   // 4x-feel pinch zoom (trackpad + touch); the native 1x handler stays off.
   useAmplifiedPinch(containerRef, { instanceRef: rfRef, minZoom: 0.15, maxZoom: 4 });
-  const nodes = useMemo(() => toFlowNodes(project), [project]);
+  const nodes = useMemo(
+    () => toFlowNodes(project).map((n) => (hiddenIds.has(n.id) ? { ...n, hidden: true } : n)),
+    [project, hiddenIds]
+  );
   // Selection is derived from parent state so inspector and canvas agree.
   const selNodes = useMemo(
     () => nodes.map((n) => ({ ...n, selected: n.id === selNodeId })),
     [nodes, selNodeId]
   );
-  const edges = useMemo(() => toFlowEdges(project, runVis), [project, runVis]);
+  const edges = useMemo(
+    () => toFlowEdges(project, runVis).filter((e) => !hiddenIds.has(e.source) && !hiddenIds.has(e.target)),
+    [project, runVis, hiddenIds]
+  );
   const selEdges = useMemo(
     () =>
       edges.map((e) => {
@@ -481,6 +493,14 @@ function DesignerCanvas({
         </a>
         <button
           type="button"
+          onClick={onOpenViews}
+          title="C4 views - context, container, component projections of this canvas"
+          className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer"
+        >
+          Views
+        </button>
+        <button
+          type="button"
           onClick={onOpenRisks}
           title="Risk lens - deterministic findings over this design"
           className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer"
@@ -553,6 +573,9 @@ export function SystemDesigner() {
   const [inventoryOpen, setInventoryOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [risksOpen, setRisksOpen] = useState(false);
+  const [viewsOpen, setViewsOpen] = useState(false);
+  const [c4View, setC4View] = useState<C4View>("all");
+  const hiddenIds = useMemo(() => (project ? hiddenNodeIds(project, c4View) : new Set<string>()), [project, c4View]);
   const [inventorySearch, setInventorySearch] = useState("");
   const [showList, setShowList] = useState(false);
   const [saveState, setSaveState] = useState<"saved" | "dirty" | "saving" | "error">("saved");
@@ -1399,6 +1422,8 @@ export function SystemDesigner() {
                 miniMapOn={miniMapOn}
                 onToggleMiniMap={() => setMiniMapOn((v) => !v)}
                 onOpenRisks={() => setRisksOpen(true)}
+                onOpenViews={() => setViewsOpen(true)}
+                hiddenIds={hiddenIds}
               />
             )}
           </ReactFlowProvider>
@@ -1661,6 +1686,16 @@ export function SystemDesigner() {
           project={project}
           onClose={() => setRisksOpen(false)}
           onSelectNode={(id) => setSelNodeId(id)}
+        />
+      )}
+
+      {viewsOpen && project && (
+        <ViewsDialog
+          project={project}
+          view={c4View}
+          onViewChange={setC4View}
+          onMutate={mutate}
+          onClose={() => setViewsOpen(false)}
         />
       )}
 

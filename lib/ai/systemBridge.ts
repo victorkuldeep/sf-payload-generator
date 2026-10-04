@@ -22,6 +22,8 @@ export interface SystemSnapshot {
 
 export interface SystemBridge {
   getSnapshot: () => SystemSnapshot | null;
+  /** Full project for headless analysis (risk lens). Null when none open. */
+  getProject: () => SystemProject | null;
   /** Applies a project transform through the canvas mutate path (undo + autosave intact). */
   apply: (fn: (p: SystemProject) => SystemProject, label: string) => { ok: boolean; error?: string };
 }

@@ -15,6 +15,14 @@ const FORBIDDEN_HOSTS = [
   "excalidraw.com",
 ];
 
+/**
+ * Single approved exception: the official shape-library hub. The editor
+ * boots and runs without it; it is fetched only when the user installs a
+ * library, and carries its own CSP connect-src pin. Strip it before the
+ * scan so only unapproved excalidraw.com references fail.
+ */
+const PINNED_HUB = "libraries.excalidraw.com";
+
 const SCANNED = [
   "components/draw/DrawCanvas.tsx",
   "components/draw/DrawStudio.tsx",
@@ -39,7 +47,8 @@ describe("draw self-hosting", () => {
     for (const rel of SCANNED) {
       const src = read(rel);
       for (const host of FORBIDDEN_HOSTS) {
-        expect(src, `${rel} mentions ${host}`).not.toContain(host);
+        const scoped = host === "excalidraw.com" ? src.replaceAll(PINNED_HUB, "") : src;
+        expect(scoped, `${rel} mentions ${host}`).not.toContain(host);
       }
     }
   });

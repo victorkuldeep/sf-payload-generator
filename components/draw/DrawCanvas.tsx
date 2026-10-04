@@ -55,7 +55,7 @@ export function DrawCanvas({ onSendToSystem }: DrawCanvasProps) {
   sendRef.current = onSendToSystem;
 
   // Library installs from libraries.excalidraw.com arrive as #addLibrary
-  // hashes. Stock excalidraw.com handles these internally; npm integrators
+  // hashes. The hosted editor handles these internally; npm integrators
   // must wire the official hook or installs silently never land (worse in an
   // SPA where the return trip doesn't remount the editor).
   useHandleLibrary({

@@ -57,6 +57,10 @@ export interface SystemNode {
   baseUrl?: string;
   position: { x: number; y: number };
   iconKey: string;
+  /** C4 level for projections. Absent = container (middle ground). */
+  level?: "context" | "container" | "component";
+  /** Parent system id for container/component nesting. */
+  parentId?: string;
 }
 
 export type MappingMode = "passthrough" | "template";
