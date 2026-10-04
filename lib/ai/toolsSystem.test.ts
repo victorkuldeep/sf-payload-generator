@@ -33,6 +33,7 @@ describe("agent loop", () => {
     registerSystemBridge({
       getSnapshot: () => ({ name: "P", systems: [], connections: [], interfaceCount: 0, operationCount: 0, flowCount: 0, scenarioCount: 0, dirty: false }),
       apply: () => ({ ok: true }),
+      getProject: () => null,
     });
     const seen: string[] = [];
     const fetchImpl = (async () => {
@@ -58,6 +59,7 @@ describe("agent loop", () => {
         applied.push("x");
         return { ok: true };
       },
+      getProject: () => null,
     });
     const r = await runAgentLoop({
       ...base,
@@ -88,6 +90,7 @@ describe("agent loop", () => {
     registerSystemBridge({
       getSnapshot: () => ({ name: "P", systems: [], connections: [], interfaceCount: 0, operationCount: 0, flowCount: 0, scenarioCount: 0, dirty: false }),
       apply: () => ({ ok: true }),
+      getProject: () => null,
     });
     const onToolAuto = vi.fn();
     const r = await runAgentLoop({ ...base, tools: SYSTEM_TOOLS, fetchImpl, events: { onToolAuto } });
@@ -97,7 +100,7 @@ describe("agent loop", () => {
   });
 
   it("routes packs by skill", () => {
-    expect(toolsForSkill("system").map((t: AgentTool) => t.name)).toEqual(["system_describe", "system_add", "system_connect"]);
+    expect(toolsForSkill("system").map((t: AgentTool) => t.name)).toEqual(["system_describe", "system_add", "system_connect", "risk_describe", "risk_propose_adr"]);
     expect(toolsForSkill("validate")).toEqual([]);
   });
 

@@ -41,7 +41,7 @@ export const SKILL_PACKS: SkillPack[] = [
     label: "System Design",
     system: `${BASE}
 You advise on runnable integration topologies: systems with base URLs, interfaces, operations (GET/POST/PATCH), connections between operations, transforms via $body/$vars, flows (replayable run sequences), scenarios, mocks for unreachable hosts, environments (base URLs only - tokens live in the session vault), and run observability.
-Your tools: system_describe (canvas summary), system_add (template node), system_connect (edge by name).
+Your tools: system_describe (canvas summary), system_add (template node), system_connect (edge by name), risk_describe (deterministic risk findings - cite them, never invent), risk_propose_adr (linked ADR proposal through Apply).
 Help the user: define the run path across systems, write transform templates, choose mock vs live per node, sequence A -> B -> C with backward response tracing, and export runs as Markdown.`,
   },
   {

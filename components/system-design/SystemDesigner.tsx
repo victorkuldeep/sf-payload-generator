@@ -67,6 +67,7 @@ import { CredentialsModal } from "./CredentialsModal";
 import { RenameProjectModal } from "./RenameProjectModal";
 import { registerSystemBridge, snapshotOf } from "@/lib/ai/systemBridge";
 import { TemplatesModal } from "./TemplatesModal";
+import { RisksDialog } from "../risks/RisksDialog";
 import { ImpactSection } from "../graph/ImpactSection";
 import {
   findMissingVars,
@@ -187,6 +188,7 @@ function DesignerCanvas({
   runVis,
   miniMapOn,
   onToggleMiniMap,
+  onOpenRisks,
 }: {
   project: SystemProject;
   onMoveSystems: (moves: { id: string; x: number; y: number }[]) => void;
@@ -202,6 +204,7 @@ function DesignerCanvas({
   runVis: Record<string, "running" | "ok" | "failed">;
   miniMapOn: boolean;
   onToggleMiniMap: () => void;
+  onOpenRisks: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition, fitView, getNodes, getNodesBounds } = useReactFlow();
@@ -476,6 +479,14 @@ function DesignerCanvas({
         >
           Console
         </a>
+        <button
+          type="button"
+          onClick={onOpenRisks}
+          title="Risk lens - deterministic findings over this design"
+          className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer"
+        >
+          Risks
+        </button>
       </div>
       {project.systems.length > 0 && project.connections.length === 0 && (
         <div className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2">
@@ -541,6 +552,7 @@ export function SystemDesigner() {
   }, [present]);
   const [inventoryOpen, setInventoryOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [risksOpen, setRisksOpen] = useState(false);
   const [inventorySearch, setInventorySearch] = useState("");
   const [showList, setShowList] = useState(false);
   const [saveState, setSaveState] = useState<"saved" | "dirty" | "saving" | "error">("saved");
@@ -842,6 +854,7 @@ export function SystemDesigner() {
   useEffect(() => {
     registerSystemBridge({
       getSnapshot: () => snapshotOf(project, saveState === "dirty"),
+      getProject: () => project,
       apply: (fn) => {
         mutate(fn);
         return { ok: true };
@@ -1385,6 +1398,7 @@ export function SystemDesigner() {
                 runVis={runVis}
                 miniMapOn={miniMapOn}
                 onToggleMiniMap={() => setMiniMapOn((v) => !v)}
+                onOpenRisks={() => setRisksOpen(true)}
               />
             )}
           </ReactFlowProvider>
@@ -1639,6 +1653,14 @@ export function SystemDesigner() {
           activeEnvironmentId={project.activeEnvironmentId}
           vault={vault}
           onClose={() => setTestOpId(null)}
+        />
+      )}
+
+      {risksOpen && project && (
+        <RisksDialog
+          project={project}
+          onClose={() => setRisksOpen(false)}
+          onSelectNode={(id) => setSelNodeId(id)}
         />
       )}
 
@@ -2137,6 +2159,49 @@ function OperationHttpConfig({
             </div>
           )}
           <ImpactSection key={op.id} query={{ surface: "system", id: op.id }} caption={`${op.method} ${op.path}`} />
+          <div>
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ivory-600" title="Resilience policy for this operation. Unstated means unchecked - the risk lens only cites what is written.">
+              Policy
+            </p>
+            <div className="grid grid-cols-3 gap-1.5">
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+                Timeout s
+                <input
+                  type="number"
+                  min={0}
+                  max={86400}
+                  value={op.policy?.timeoutSecs ?? ""}
+                  onChange={(e) => patchOp({ policy: { ...op.policy, timeoutSecs: e.target.value === "" ? undefined : Math.max(0, parseInt(e.target.value, 10) || 0) } })}
+                  placeholder="30"
+                  aria-label="Timeout seconds"
+                  className="mt-0.5 w-full rounded-md border border-[var(--color-line)] bg-white px-1.5 py-1 font-mono text-[10px] text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+                />
+              </label>
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
+                Retries
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={op.policy?.retryAttempts ?? ""}
+                  onChange={(e) => patchOp({ policy: { ...op.policy, retryAttempts: e.target.value === "" ? undefined : Math.min(100, Math.max(0, parseInt(e.target.value, 10) || 0)) } })}
+                  placeholder="3"
+                  aria-label="Retry attempts"
+                  className="mt-0.5 w-full rounded-md border border-[var(--color-line)] bg-white px-1.5 py-1 font-mono text-[10px] text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+                />
+              </label>
+              <label className="flex cursor-pointer items-end gap-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-ivory-600" title="Safe to retry: idempotency key or idempotent receiver">
+                <input
+                  type="checkbox"
+                  checked={!!op.policy?.idempotency}
+                  onChange={(e) => patchOp({ policy: { ...op.policy, idempotency: e.target.checked || undefined } })}
+                  aria-label="Idempotent"
+                  className="h-3.5 w-3.5 cursor-pointer accent-[#7A5C3A]"
+                />
+                Idempotent
+              </label>
+            </div>
+          </div>
           {!isEvent && (
             <div>
               <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-semibold text-ivory-800 select-none">

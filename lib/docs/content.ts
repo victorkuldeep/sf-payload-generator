@@ -157,6 +157,30 @@ export const DOC_SECTIONS: DocSection[] = [
     ],
   },
   {
+    id: "risks",
+    group: "Design & simulate",
+    title: "Risk lens: deterministic architecture review",
+    keywords: "risks rules timeout retry idempotency chain spof review resilience policy",
+    blocks: [
+      {
+        k: "p",
+        text: "The Risks button on the System canvas runs deterministic rules over the model - sync chains, missing timeouts and retries, fan-in hubs, unversioned operations, naked sync calls in linked sequences. Every finding cites its records; unstated policy reads as unchecked, never as safe.",
+      },
+      {
+        k: "list",
+        items: [
+          "State timeouts, retries and idempotency per operation in the Policy block; the lens only cites what is written.",
+          "Each finding jumps to its records on the canvas and can become a linked ADR proposal in one click.",
+          "AI reads findings through risk_describe and proposes ADRs through Apply-gated risk_propose_adr - it explains, the rules decide.",
+        ],
+      },
+      {
+        k: "routes",
+        items: [{ href: "/system", label: "System", note: "Risk lens lives on the System canvas" }],
+      },
+    ],
+  },
+  {
     id: "builder",
     group: "Build payloads",
     title: "Builder, Composite & REST",

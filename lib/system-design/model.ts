@@ -37,6 +37,16 @@ export type ConnectionStatus = "draft" | "partial" | "ready";
 
 export type OperationMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "EVENT" | "QUERY";
 
+/** Resilience policy for one callable operation. */
+export interface OperationPolicy {
+  /** Timeout in seconds. Absent = no timeout stated. */
+  timeoutSecs?: number;
+  /** Retry attempts (excluding the first try). Absent = no retry stated. */
+  retryAttempts?: number;
+  /** True when the operation is safe to retry (idempotency key etc.). */
+  idempotency?: boolean;
+}
+
 export interface SystemNode {
   id: string;
   name: string;
@@ -100,6 +110,8 @@ export interface SystemOperation {
   mock?: OperationMock;
   /** Sample payload prefill for test runs and edge runs (optional). */
   sampleBody?: string;
+  /** Resilience policy: timeout, retry, idempotency. Absent = unstated. */
+  policy?: OperationPolicy;
   /** Stored request headers (optional, max 20). Values may carry $env.NAME
    * refs resolved at send time - never paste literal secrets here, they
    * export with the project. Sent by every runner alongside Content-Type. */

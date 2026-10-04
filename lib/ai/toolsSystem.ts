@@ -12,6 +12,7 @@ import { SEQUENCE_TOOLS } from "./toolsSequence";
 import { DRAW_TOOLS } from "./toolsDraw";
 import { CONSOLE_TOOLS } from "./toolsConsole";
 import { DECISION_TOOLS } from "./toolsDecisions";
+import { RISK_TOOLS } from "./toolsRisks";
 import type { AgentTool } from "./tools";
 
 /**
@@ -173,7 +174,7 @@ const connectSystems: AgentTool = {
   },
 };
 
-export const SYSTEM_TOOLS: AgentTool[] = [describeCanvas, addSystem, connectSystems];
+export const SYSTEM_TOOLS: AgentTool[] = [describeCanvas, addSystem, connectSystems, ...RISK_TOOLS];
 
 /**
  * Tool set for the active route. System, Wireframe, Sequence and Draw get
