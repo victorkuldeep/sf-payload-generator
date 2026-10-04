@@ -283,7 +283,7 @@ export const DOC_SECTIONS: DocSection[] = [
     blocks: [
       {
         k: "p",
-        text: "Freeform engineering whiteboard on self-hosted Excalidraw — zero CDN, IDB autosave, full-bleed canvas. One labeled box per system, arrows between ports: Send to System parses the board into runnable nodes.",
+        text: "Freeform engineering whiteboard powered by Excalidraw (MIT, integrated unmodified) — zero CDN, IDB autosave, full-bleed canvas. One labeled box per system, arrows between ports: Send to System parses the board into runnable nodes.",
       },
       {
         k: "list",

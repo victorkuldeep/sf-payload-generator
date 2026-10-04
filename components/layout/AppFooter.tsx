@@ -25,20 +25,6 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
     </button>
   );
 
-  const credit = (
-    <span title="Designed & developed by Kuldeep Singh">
-      by{" "}
-      <a
-        href="https://www.linkedin.com/in/victorkuldeep/"
-        target="_blank"
-        rel="noreferrer"
-        className="underline hover:text-[var(--color-ink)] text-[var(--color-ink-soft)] transition-colors"
-      >
-        Kuldeep Singh
-      </a>
-    </span>
-  );
-
   if (variant === "slim") {
     return (
       <>
@@ -52,19 +38,33 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
           aria-hidden="true"
           className="absolute inset-0 opacity-20 pointer-events-none bg-[radial-gradient(#AE9B7D_1px,transparent_1px)] [background-size:24px_24px]"
         />
-        <div className="relative mx-auto w-full px-5 lg:px-8 py-1 flex flex-col items-center gap-y-1 font-mono text-[10px] text-[var(--color-muted)] md:flex-row md:flex-nowrap md:justify-between md:gap-x-3 md:whitespace-nowrap">
-          <div className="flex items-center gap-2">
+        <div className="relative mx-auto w-full px-5 lg:px-8 py-1 flex flex-row flex-nowrap items-center justify-between gap-x-3 overflow-x-auto font-mono text-[10px] whitespace-nowrap text-[var(--color-muted)]">
+          <div className="flex shrink-0 items-center gap-2">
             <Link href="/" className="font-semibold text-[var(--color-ink)] hover:text-[var(--color-accent)] transition-colors">
               GRAVENX
             </Link>
             <span aria-hidden="true">•</span>
             <span className="hidden xl:inline">For Architects · API-First Teams · Salesforce Practitioners</span>
           </div>
-          <small className="text-[10px]">
-            © {year} Kuldeep Singh · Independent project.
+          <small className="shrink-0 text-[10px]">
+            © {year}{" "}
+            <a
+              href="https://www.linkedin.com/in/victorkuldeep/"
+              target="_blank"
+              rel="noreferrer"
+              title="Designed & developed by Kuldeep Singh"
+              className="underline hover:text-[var(--color-ink)] transition-colors"
+            >
+              Kuldeep Singh
+            </a>{" "}
+            · Independent project.
           </small>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <nav aria-label="Legal" className="flex items-center gap-2">
+              <Link href="/about" className="hover:text-[var(--color-ink)] hover:underline transition-colors">
+                About
+              </Link>
+              <span aria-hidden="true">•</span>
               <Link href="/privacy" className="hover:text-[var(--color-ink)] hover:underline transition-colors">
                 Privacy
               </Link>
@@ -78,7 +78,6 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
               </Link>
             </nav>
             <span aria-hidden="true">•</span>
-            {credit}
             {coffeeButton}
           </div>
         </div>
@@ -391,7 +390,7 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
           </span>
         </div>
 
-        {/* Bottom bar - one row: brand | © disclaimer | legal + credit + coffee */}
+        {/* Bottom bar - one row: brand | © disclaimer | legal + coffee */}
         <div className="pt-4 flex flex-col items-center gap-y-1 font-mono text-[10px] text-[var(--color-muted)] md:flex-row md:flex-nowrap md:justify-between md:gap-x-3 md:whitespace-nowrap">
           <div className="flex items-center gap-2">
             <Link href="/" className="font-semibold text-[var(--color-ink)] hover:text-[var(--color-accent)] transition-colors">
@@ -401,10 +400,24 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
             <span className="hidden xl:inline">For Architects · API-First Teams · Salesforce Practitioners</span>
           </div>
           <small className="text-[10px]">
-            © {year} Kuldeep Singh · Independent project.
+            © {year}{" "}
+            <a
+              href="https://www.linkedin.com/in/victorkuldeep/"
+              target="_blank"
+              rel="noreferrer"
+              title="Designed & developed by Kuldeep Singh"
+              className="underline hover:text-[var(--color-ink)] transition-colors"
+            >
+              Kuldeep Singh
+            </a>{" "}
+            · Independent project.
           </small>
           <div className="flex items-center gap-2">
             <nav aria-label="Legal" className="flex items-center gap-2">
+              <Link href="/about" className="hover:text-[var(--color-ink)] hover:underline transition-colors">
+                About
+              </Link>
+              <span aria-hidden="true">•</span>
               <Link href="/privacy" className="hover:text-[var(--color-ink)] hover:underline transition-colors">
                 Privacy
               </Link>
@@ -418,7 +431,6 @@ export function AppFooter({ trail, variant }: { trail?: ReactNode; variant: "ful
               </Link>
             </nav>
             <span aria-hidden="true">•</span>
-            {credit}
             {coffeeButton}
           </div>
         </div>

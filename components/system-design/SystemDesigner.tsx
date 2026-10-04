@@ -1008,7 +1008,7 @@ export function SystemDesigner() {
   }
 
   return (
-    <div className={present ? "" : "space-y-3"}>
+    <div className={present ? "" : "space-y-0.5"}>
       {present && (
         <button
           type="button"
@@ -1229,7 +1229,7 @@ export function SystemDesigner() {
 
       {/* Workbench */}
       {subTab === "canvas" ? (
-      <div className="flex gap-3" style={present ? { height: "calc(100vh - 12px)" } : { height: "calc(100vh - 240px)", minHeight: 480 }}>
+      <div className="flex gap-0.5" style={present ? { height: "calc(100vh - 12px)" } : { height: "calc(100vh - 200px)", minHeight: 480 }}>
         {inventoryOpen ? (
           <aside className="flex w-72 shrink-0 flex-col overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)]" aria-label="Systems inventory">
             <div className="flex items-center gap-2 border-b border-[var(--color-line-soft)] px-3.5 py-2">
@@ -1599,7 +1599,7 @@ export function SystemDesigner() {
       </div>
       ) : (
         project && (
-        <div className="flex gap-3" style={present ? { height: "calc(100vh - 12px)" } : { height: "calc(100vh - 240px)", minHeight: 480 }}>
+        <div className="flex gap-0.5" style={present ? { height: "calc(100vh - 12px)" } : { height: "calc(100vh - 200px)", minHeight: 480 }}>
           {subTab === "flow" && (
             <FlowsTab project={project} mutate={mutate} onRunFlow={runFlow} />
           )}

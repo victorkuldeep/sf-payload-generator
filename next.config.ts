@@ -15,7 +15,10 @@ const cspDirectives = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  "connect-src 'self' https://*.salesforce.com https://*.force.com https://*.cloudforce.com ws: wss:",
+  // libraries.excalidraw.com: user-initiated Draw+ library installs only.
+// The hook fetches the chosen .excalidrawlib on explicit "Add" - nothing
+// else contacts this host. Matches DrawCanvas validateLibraryUrl.
+  "connect-src 'self' https://*.salesforce.com https://*.force.com https://*.cloudforce.com https://libraries.excalidraw.com ws: wss:",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

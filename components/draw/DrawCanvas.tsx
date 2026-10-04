@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Excalidraw, restoreElements, serializeAsJSON } from "@excalidraw/excalidraw";
+import { Excalidraw, restoreElements, serializeAsJSON, useHandleLibrary } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import type { ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
@@ -50,8 +50,24 @@ export function DrawCanvas({ onSendToSystem }: DrawCanvasProps) {
   const [initialScene] = useState<Promise<ExcalidrawInitialDataState | null>>(readInitialScene);
   const saveTimer = useRef<number | null>(null);
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const sendRef = useRef(onSendToSystem);
   sendRef.current = onSendToSystem;
+
+  // Library installs from libraries.excalidraw.com arrive as #addLibrary
+  // hashes. Stock excalidraw.com handles these internally; npm integrators
+  // must wire the official hook or installs silently never land (worse in an
+  // SPA where the return trip doesn't remount the editor).
+  useHandleLibrary({
+    excalidrawAPI: api,
+    validateLibraryUrl: (url) => {
+      try {
+        return new URL(url).hostname === "libraries.excalidraw.com";
+      } catch {
+        return false;
+      }
+    },
+  });
 
   const fireSend = () => {
     const api = apiRef.current;
@@ -120,6 +136,7 @@ export function DrawCanvas({ onSendToSystem }: DrawCanvasProps) {
       initialData={initialScene}
       excalidrawAPI={(api) => {
         apiRef.current = api;
+        setApi(api);
         registerBridge();
         // Command-palette entry mirroring the button. `name` is cast: the
         // closed ActionName union only knows built-ins, but the runtime

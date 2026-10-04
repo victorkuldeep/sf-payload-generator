@@ -8,7 +8,7 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
-const EFFECTIVE_DATE = "October 3, 2026";
+const EFFECTIVE_DATE = "October 4, 2026";
 
 function Section({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
   return (
@@ -41,7 +41,20 @@ export default function TermsPage() {
             </p>
           </Section>
 
-          <Section id="licence" title="2. Licence and acceptable use">
+          <Section id="third-party" title="2. Third-party software">
+            <p>
+              The Draw+ whiteboard is powered by{" "}
+              <a href="https://github.com/excalidraw/excalidraw" target="_blank" rel="noreferrer" className="underline hover:text-[var(--color-ink)]">
+                Excalidraw
+              </a>
+              , MIT licensed, integrated as an unmodified package with assets self-hosted from
+              our own origin. The MIT licence requires this notice: the software is provided
+              &ldquo;as is&rdquo;, without warranty of any kind. GRAVENX itself is an independent
+              project and is not affiliated with Excalidraw or Salesforce.
+            </p>
+          </Section>
+
+          <Section id="licence" title="3. Licence and acceptable use">
             <ul className="list-disc pl-5 space-y-1.5">
               <li>You may use the tool for designing, testing, and documenting integrations against orgs you are authorised to access.</li>
               <li>
@@ -55,7 +68,7 @@ export default function TermsPage() {
             </ul>
           </Section>
 
-          <Section id="data" title="3. Your data stays yours">
+          <Section id="data" title="4. Your data stays yours">
             <p>
               Sessions live in your browser tab (<code className="font-mono text-[12px]">sessionStorage</code>),
               designs in your browser&apos;s IndexedDB. Nothing is sold, and nothing is used for advertising.
@@ -65,7 +78,7 @@ export default function TermsPage() {
             </p>
           </Section>
 
-          <Section id="no-warranty" title="4. No warranty; verify before production">
+          <Section id="no-warranty" title="5. No warranty; verify before production">
             <p>
               The tool is provided <strong>&ldquo;as is&rdquo;</strong>, without warranties of any kind. Generated
               payloads, API suggestions, and topology views are design aids: always validate against your target
@@ -74,7 +87,7 @@ export default function TermsPage() {
             </p>
           </Section>
 
-          <Section id="liability" title="5. Liability">
+          <Section id="liability" title="6. Liability">
             <p>
               To the maximum extent permitted by law, the publisher is not liable for indirect, incidental, or
               consequential damages arising from use of the tool — including any change made in a connected
@@ -83,7 +96,7 @@ export default function TermsPage() {
             </p>
           </Section>
 
-          <Section id="changes" title="6. Changes and contact">
+          <Section id="changes" title="7. Changes and contact">
             <p>
               These terms may be updated; continued use after the effective date constitutes acceptance.
               Questions:{" "}
