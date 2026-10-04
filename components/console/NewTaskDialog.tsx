@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { AiMarkdown } from "@/components/ai/Markdown";
 import {
   CONSOLE_PRIORITIES,
   CONSOLE_STATUS_LABELS,
@@ -24,6 +25,7 @@ export interface NewTaskDraft {
 export function NewTaskDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (d: NewTaskDraft) => void }) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
+  const [descTab, setDescTab] = useState<"write" | "preview">("write");
   const [status, setStatus] = useState<ConsoleStatus>("open");
   const [priority, setPriority] = useState<ConsolePriority>("normal");
   const [dueDate, setDueDate] = useState("");
@@ -41,13 +43,13 @@ export function NewTaskDialog({ onClose, onCreate }: { onClose: () => void; onCr
   };
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Log a task" className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <div role="dialog" aria-modal="true" aria-label="Log a task" className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-5" onClick={onClose}>
+      <div className="flex h-[calc(100vh-40px)] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="border-b border-[#E8E2D8] px-5 py-3.5">
           <h3 className="text-[15px] font-semibold text-[#27241F]">Log a task</h3>
           <p className="font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">Console queue · autosaved to this browser</p>
         </div>
-        <div className="space-y-3 px-5 py-4">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
           <div>
             <label htmlFor="new-task-title" className="mb-1 block text-[12px] font-semibold text-[#3A352D]">Title</label>
             <input
@@ -63,21 +65,45 @@ export function NewTaskDialog({ onClose, onCreate }: { onClose: () => void; onCr
               className="w-full rounded-lg border border-[#E8E2D8] bg-white px-3 py-2 text-[13px] text-[#27241F] placeholder-[#A39B8E] focus:border-[#C9A86A] focus:outline-none"
             />
           </div>
-          <div>
-            <label htmlFor="new-task-body" className="mb-1 block text-[12px] font-semibold text-[#3A352D]">
-              Description <span className="font-normal text-[#A39B8E]">· markdown</span>
-            </label>
-            <textarea
-              id="new-task-body"
-              value={body}
-              onChange={(e) => setBody(e.target.value.slice(0, 12000))}
-              rows={4}
-              placeholder={"What needs doing, acceptance criteria, links…\n\n- [ ] first step\n- [ ] second step"}
-              spellCheck={false}
-              className="w-full resize-y rounded-lg border border-[#E8E2D8] bg-white px-3 py-2 font-mono text-[12px] leading-relaxed text-[#27241F] placeholder-[#A39B8E] focus:border-[#C9A86A] focus:outline-none"
-            />
+          <div className="flex min-h-40 flex-1 flex-col">
+            <div className="mb-1 flex items-center gap-2">
+              <label htmlFor="new-task-body" className="text-[12px] font-semibold text-[#3A352D]">
+                Description <span className="font-normal text-[#A39B8E]">· markdown</span>
+              </label>
+              <span className="ml-auto inline-flex overflow-hidden rounded-lg border border-[#E8E2D8]" role="group" aria-label="Description mode">
+                {(["write", "preview"] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setDescTab(t)}
+                    aria-pressed={descTab === t}
+                    className={`cursor-pointer px-2 py-0.5 text-[11px] font-semibold capitalize ${descTab === t ? "bg-[#27241F] text-[#F5F1E8]" : "bg-white text-[#777168] hover:text-[#27241F]"}`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </span>
+            </div>
+            {descTab === "write" ? (
+              <textarea
+                id="new-task-body"
+                value={body}
+                onChange={(e) => setBody(e.target.value.slice(0, 12000))}
+                placeholder={"What needs doing, acceptance criteria, links…\n\n- [ ] first step\n- [ ] second step"}
+                spellCheck={false}
+                className="w-full min-h-40 flex-1 resize-none rounded-lg border border-[#E8E2D8] bg-white px-3 py-2 font-mono text-[12px] leading-relaxed text-[#27241F] placeholder-[#A39B8E] focus:border-[#C9A86A] focus:outline-none"
+              />
+            ) : (
+              <div className="min-h-40 flex-1 overflow-y-auto rounded-lg border border-[#E8E2D8] bg-[#FBFAF7] px-3 py-2">
+                {body.trim() ? (
+                  <AiMarkdown content={body} />
+                ) : (
+                  <p className="text-[12px] text-[#A39B8E]">Nothing to preview yet — switch back to Write.</p>
+                )}
+              </div>
+            )}
           </div>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-3 border-t border-[#E8E2D8] pt-3">
             <label className="flex items-center gap-1.5 text-[12px] font-semibold text-[#3A352D]">
               Status
               <select
