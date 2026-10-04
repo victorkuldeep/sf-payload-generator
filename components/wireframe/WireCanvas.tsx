@@ -17,6 +17,7 @@ import { pruneJourney } from "@/lib/wireframe/journey";
 import { SchemaPanel } from "./SchemaPanel";
 import { useWireSchema } from "./useWireSchema";
 import { buildBoundComponent } from "@/lib/wireframe/schema";
+import { registerWireBridge, wireSnapshotOf } from "@/lib/ai/wireBridge";
 import { rollupProposedFields } from "@/lib/wireframe/model";
 import type { SalesforceField } from "@/lib/salesforce/types";
 
@@ -208,6 +209,19 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
     },
     [exp, persist],
   );
+
+  /** AI agent bridge: headless tools read/apply through the canvas persist path. */
+  useEffect(() => {
+    registerWireBridge({
+      getSnapshot: () => wireSnapshotOf(exp),
+      getExperience: () => exp,
+      apply: (fn) => {
+        persist(fn(exp));
+        return { ok: true };
+      },
+    });
+    return () => registerWireBridge(null);
+  }, [exp, persist]);
 
   const inspected = exp.components.find((c) => c.id === selComp) ?? null;
 

@@ -65,6 +65,14 @@ You advise on whiteboard architecture sketching: boxes for systems, arrows for c
 Help the user: lay out topologies that convert cleanly - one labeled box per system, arrows between ports.`,
   },
   {
+    route: "/wireframe",
+    name: "wireframe",
+    label: "Wireframe",
+    system: `${BASE}
+You advise on schema-aware experience modeling: screens of structured components bound to Salesforce schema (existing, proposed, external), interaction intents, journeys, API impact, and build-spec generation.
+You have tools for this tab - prefer acting through them over describing steps. Wireframe etiquette: for new screens demand the screen name first, then wire_add_screen. For components demand kind + target screen + label, then wire_add_component with an object.field when the field exists. For new fields demand object + label + type, then wire_bind with state proposed - the Delta panel and Author queue review follows. For behavior demand trigger + action + target, then wire_interact. Read tools (wire_describe, wire_components, wire_delta, wire_spec) run freely; every mutation goes through the user's explicit Apply and you never retry a discarded change unasked.`,
+  },
+  {
     route: "/architect",
     name: "architect",
     label: "Architect",

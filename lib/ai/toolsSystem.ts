@@ -7,6 +7,7 @@ import {
 } from "@/lib/system-design/model";
 import { getSystemBridge } from "./systemBridge";
 import { JSON_TOOLS, STUDIO_TOOLS } from "./toolsStudio";
+import { WIREFRAME_TOOLS } from "./toolsWireframe";
 import type { AgentTool } from "./tools";
 
 /**
@@ -169,13 +170,15 @@ const connectSystems: AgentTool = {
 export const SYSTEM_TOOLS: AgentTool[] = [describeCanvas, addSystem, connectSystems];
 
 /**
- * Tool set for the active route. System gets the live canvas pack; studio
- * home and JSON get headless read-only packs. Mapping, Validate, Draw,
- * Architect and Contracts stay in advisor mode until their bridges exist.
+ * Tool set for the active route. System and Wireframe get live canvas
+ * packs; studio home and JSON get headless read-only packs. Mapping,
+ * Validate, Draw, Architect and Contracts stay in advisor mode until
+ * their bridges exist.
  */
 export function toolsForSkill(skillName: string): AgentTool[] {
   if (skillName === "system") return SYSTEM_TOOLS;
   if (skillName === "studio") return STUDIO_TOOLS;
   if (skillName === "json") return JSON_TOOLS;
+  if (skillName === "wireframe") return WIREFRAME_TOOLS;
   return [];
 }
