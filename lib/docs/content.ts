@@ -220,6 +220,10 @@ export const DOC_SECTIONS: DocSection[] = [
         text: "The Views button on the System canvas assigns context/container/component levels (with parents) and projects the same canvas four ways: All, Context, Container, Component. Unleveled projects show everything everywhere - levels are opt-in, never mandatory.",
       },
       {
+        k: "p",
+        text: "C4 is zoom levels for one architecture: Context is your system in its world (people plus external systems), Containers are the deployable units inside (apps, services, datastores, queues), Components are the modules inside one container. The fourth C4 level, Code, is deliberately out of scope - GRAVENX stops at Component.",
+      },
+      {
         k: "list",
         items: [
           "The dialog previews the hierarchy tree and reports how many systems each view shows.",
