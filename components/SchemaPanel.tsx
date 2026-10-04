@@ -1021,7 +1021,7 @@ export default function SchemaPanel({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [spot, setSpot] = useState<{ focus: string; related: Set<string> } | null>(null);
+  const [spot, setSpot] = useState<{ focus: string; related: Set<string>; soft?: boolean } | null>(null);
   const [sideOpen, setSideOpen] = useState(true);
   const [staged, setStaged] = useState<Set<string>>(new Set());
   // Refresh + popover + snapshot state
@@ -4406,6 +4406,21 @@ export default function SchemaPanel({
     setGraphSelected(null);
   }, []);
 
+  // ERD link click: ring the parent end, dark-frame the child end, dim the
+  // rest - the relationship reads at a glance. Empty canvas clears.
+  const handleEdgeClick = useCallback(
+    (edgeId: string) => {
+      const edge = elements.edges.find((e) => e.id === edgeId);
+      if (!edge) return;
+      const apiOf = (id: string) => elements.nodes.find((n) => n.id === id)?.data.apiName ?? id;
+      const a = apiOf(edge.source);
+      const b = apiOf(edge.target);
+      setSpot({ focus: a, related: new Set([a, b]), soft: true });
+      setNotice(`${a} ↔ ${b} highlighted - click empty canvas to clear.`);
+    },
+    [elements]
+  );
+
   // Presentation mode: same-tab full screen (PPT-style). Hides the app header
   // + footer via body.sf-present - no route switch, no token handoff.
   // Exit is icon-only on purpose: Esc belongs to the laser + picklist popover.
@@ -5335,6 +5350,7 @@ export default function SchemaPanel({
               nodes={elements.nodes}
               edges={elements.edges}
               onNodeClick={handleNodeClick}
+              onEdgeClick={handleEdgeClick}
               onPaneClick={handlePaneClick}
               onViewportMove={() => setPopover(null)}
               connectable={authorMode}

@@ -238,7 +238,9 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
       className={`group w-[300px] rounded-xl border-2 bg-[var(--color-surface)] shadow-[0_8px_28px_-10px_rgba(24,20,12,0.35)] overflow-hidden transition-all ${
         data.spotlight
           ? "border-bronze-500 shadow-[0_0_0_4px_rgba(154,118,83,0.35),0_8px_28px_-10px_rgba(24,20,12,0.35)]"
-          : selected
+          : data.linked
+            ? "border-ivory-950 shadow-[0_0_0_3px_rgba(39,36,31,0.30),0_8px_28px_-10px_rgba(24,20,12,0.35)]"
+            : selected
             ? "border-bronze-500"
             : data.isRoot
               ? "border-ivory-950"

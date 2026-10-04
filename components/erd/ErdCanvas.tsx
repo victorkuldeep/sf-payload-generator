@@ -46,6 +46,8 @@ interface ErdCanvasProps {
   nodes: Node<ErdNodeData | GraphBubbleData>[];
   edges: Edge[];
   onNodeClick?: (id: string) => void;
+  /** Fires with the edge id when a relationship link is clicked. */
+  onEdgeClick?: (id: string) => void;
   onPaneClick?: () => void;
   onViewportMove?: () => void;
   onNodeDragStop?: (id: string, position: { x: number; y: number }) => void;
@@ -87,7 +89,7 @@ function pngFileName(scale: 2 | 3): string {
 }
 
 const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
-  { nodes: propNodes, edges: propEdges, onNodeClick, onPaneClick, onViewportMove, onNodeDragStop, layoutRev, enforcedPositions, storedViewport, onViewportChange, nodesLocked = false, onOobLockChange, connectable = false, onConnectNodes },
+  { nodes: propNodes, edges: propEdges, onNodeClick, onEdgeClick, onPaneClick, onViewportMove, onNodeDragStop, layoutRev, enforcedPositions, storedViewport, onViewportChange, nodesLocked = false, onOobLockChange, connectable = false, onConnectNodes },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -361,6 +363,7 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={(_, node) => onNodeClick?.(node.id)}
+        onEdgeClick={(_, edge) => onEdgeClick?.(edge.id)}
         onPaneClick={() => onPaneClick?.()}
         onNodeDragStop={(_, node) => onNodeDragStop?.(node.id, { ...node.position })}
         onMoveStart={() => onViewportMove?.()}

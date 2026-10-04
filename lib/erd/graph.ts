@@ -40,6 +40,8 @@ export interface ErdNodeData extends Record<string, unknown> {
   /** Spotlight mode: focused node gets a ring, everything unrelated dims. */
   spotlight: boolean;
   dimmed: boolean;
+  /** Link-clicked: related-but-not-focus end of a relationship, dark bold edge. */
+  linked: boolean;
   /** True while this node's describe is being refreshed. */
   refreshing: boolean;
   /** Design-note flags (entity notes) - header shows the note icon state. */
@@ -246,6 +248,8 @@ export const loopInHandleId = "erd-loop-in";
 export interface ErdSpotlight {
   focus: string;
   related: Set<string>;
+  /** Link highlight: ring + frames only, everything else stays as-is (no dim). */
+  soft?: boolean;
 }
 
 /**
@@ -297,7 +301,8 @@ export function buildErdElements(
         isJunction: detectJunction(describe),
         isRoot: apiName === root,
         spotlight: spot != null && spot.focus === apiName,
-        dimmed: spot != null && spot.focus !== apiName && !spot.related.has(apiName),
+        dimmed: spot != null && spot.soft !== true && spot.focus !== apiName && !spot.related.has(apiName),
+        linked: spot != null && spot.focus !== apiName && spot.related.has(apiName),
         // Panel overrides per live refresh state
         refreshing: false,
       },
@@ -383,6 +388,8 @@ export interface GraphBubbleData extends Record<string, unknown> {
   isJunction: boolean;
   dimmed: boolean;
   spotlight: boolean;
+  /** Link-clicked (ERD): related-but-not-focus end of a relationship, dark bold edge. */
+  linked?: boolean;
   /** Graph-scoped collision-free tag (assignBubbleTags). Falls back to initials. */
   bubbleTag?: string;
   /** Entity design note attached - bubble shows a marker dot. */

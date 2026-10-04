@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectJunction, buildEdges, buildGraphElements, rootNeighbors, bubbleInitials, assignBubbleTags, systemReason, isSystemObject, isNeuralExcluded } from "./graph";
+import { detectJunction, buildEdges, buildErdElements, buildGraphElements, rootNeighbors, bubbleInitials, assignBubbleTags, systemReason, isSystemObject, isNeuralExcluded } from "./graph";
 import type { SalesforceDescribeResult } from "@/lib/salesforce/types";
 
 const desc = (
@@ -352,5 +352,34 @@ describe("assignBubbleTags", () => {
     const a = assignBubbleTags(["Zulu", "Alpha", "Mike"]);
     const b = assignBubbleTags(["Mike", "Zulu", "Alpha"]);
     expect([...a.entries()]).toEqual([...b.entries()]);
+  });
+});
+
+describe("buildErdElements link spotlight", () => {
+  const canvas = () =>
+    new Map([
+      ["Account", desc("Account", [])],
+      ["Contact", desc("Contact", [{ name: "AccountId", type: "reference", referenceTo: ["Account"] }])],
+      ["Lead", desc("Lead", [])],
+    ]);
+  const flags = (spot: { focus: string; related: Set<string>; soft?: boolean } | null) => {
+    const { nodes } = buildErdElements(canvas(), new Map(), "Account", spot);
+    return new Map(nodes.map((n) => [n.id, { spotlight: n.data.spotlight, linked: n.data.linked, dimmed: n.data.dimmed }]));
+  };
+  it("marks the clicked link\u2019s other end linked, the rest dimmed", () => {
+    const f = flags({ focus: "Account", related: new Set(["Account", "Contact"]) });
+    expect(f.get("Account")).toMatchObject({ spotlight: true, linked: false, dimmed: false });
+    expect(f.get("Contact")).toMatchObject({ spotlight: false, linked: true, dimmed: false });
+    expect(f.get("Lead")).toMatchObject({ spotlight: false, linked: false, dimmed: true });
+  });
+  it("soft link highlight pairs without dimming the rest", () => {
+    const f = flags({ focus: "Account", related: new Set(["Account", "Contact"]), soft: true });
+    expect(f.get("Account")).toMatchObject({ spotlight: true, linked: false, dimmed: false });
+    expect(f.get("Contact")).toMatchObject({ spotlight: false, linked: true, dimmed: false });
+    expect(f.get("Lead")).toMatchObject({ spotlight: false, linked: false, dimmed: false });
+  });
+  it("clears every flag without a spot", () => {
+    const f = flags(null);
+    for (const v of f.values()) expect(v).toEqual({ spotlight: false, linked: false, dimmed: false });
   });
 });
