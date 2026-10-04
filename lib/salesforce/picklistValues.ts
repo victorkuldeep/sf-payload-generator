@@ -160,6 +160,23 @@ export function withAdditions(current: PickEntry[], additions: string[]): PickEn
   return next;
 }
 
+function escapeHtmlCell(v: string): string {
+  return v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/**
+ * Copy-all table for a picklist value list: HTML table (pastes as a real
+ * table into Teams/Docs) with a TSV fallback for plain-text targets.
+ */
+export function buildPicklistCopyTable(values: { label: string; value: string }[]): { html: string; text: string } {
+  const rows = values.map(
+    (v) => `<tr><td>${escapeHtmlCell(v.label)}</td><td>${escapeHtmlCell(v.value)}</td></tr>`,
+  );
+  const html = `<table><thead><tr><th>Label</th><th>API Name</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
+  const text = ["Label\tAPI Name", ...values.map((v) => `${v.label}\t${v.value}`)].join("\n");
+  return { html, text };
+}
+
 /** Tooling REST paths for the add-values flow. */
 export function toolingQueryPath(apiVersion: string, soql: string): string {
   return `/services/data/${apiVersion}/tooling/query/?q=${encodeURIComponent(soql)}`;

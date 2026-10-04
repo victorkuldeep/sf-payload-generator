@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CopyButton } from "@/components/ui/CopyButton";
+import { buildPicklistCopyTable } from "@/lib/salesforce/picklistValues";
 import type { ErdPickValue } from "@/lib/erd/graph";
 
 export interface PicklistPopoverData {
@@ -49,6 +50,36 @@ export function PicklistPopover({
   const W = 300;
   const left = Math.min(Math.max(8, pop.x), Math.max(8, window.innerWidth - W - 8));
   const top = Math.min(Math.max(8, pop.y), Math.max(8, window.innerHeight - 360));
+  const [tableCopied, setTableCopied] = useState(false);
+
+  // Whole list as Label | API Name: HTML table (pastes as a real table in
+  // Teams) with a TSV fallback. Inactive values ride along, flagged.
+  const copyTable = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const { html, text } = buildPicklistCopyTable(
+      pop.values.map((v) => ({ label: `${v.label}${v.active ? "" : " (inactive)"}`, value: v.value })),
+    );
+    try {
+      const item = new ClipboardItem({
+        "text/html": new Blob([html], { type: "text/html" }),
+        "text/plain": new Blob([text], { type: "text/plain" }),
+      });
+      await navigator.clipboard.write([item]);
+    } catch {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        ta.remove();
+      }
+    }
+    setTableCopied(true);
+    window.setTimeout(() => setTableCopied(false), 1500);
+  };
 
   return (
     <div
@@ -58,13 +89,33 @@ export function PicklistPopover({
       className="fixed z-[80] w-[300px] overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] shadow-[0_16px_48px_-12px_rgba(24,20,12,0.4)]"
       style={{ left, top }}
     >
-      <div className="border-b border-[var(--color-line-soft)] bg-[var(--color-surface-soft)] px-3 py-2">
-        <p className="truncate text-[11px] font-semibold text-ivory-950">
-          {pop.nodeLabel} · <span className="font-mono">{pop.fieldName}</span>
-        </p>
-        <p className="text-[10px] text-ivory-600">
-          {pop.fieldType} · {pop.values.length} value{pop.values.length === 1 ? "" : "s"}
-        </p>
+      <div className="flex items-center gap-2 border-b border-[var(--color-line-soft)] bg-[var(--color-surface-soft)] px-3 py-2">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[11px] font-semibold text-ivory-950">
+            {pop.nodeLabel} · <span className="font-mono">{pop.fieldName}</span>
+          </p>
+          <p className="text-[10px] text-ivory-600">
+            {pop.fieldType} · {pop.values.length} value{pop.values.length === 1 ? "" : "s"}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={copyTable}
+          title={tableCopied ? "Table copied - paste into Teams" : `Copy all ${pop.values.length} values as a Label | API Name table`}
+          aria-label={tableCopied ? "Table copied" : "Copy all values as a table"}
+          className="nodrag shrink-0 cursor-pointer rounded-md border border-[var(--color-line)] p-1.5 text-ivory-600 transition-colors hover:border-bronze-500 hover:text-ivory-950"
+        >
+          {tableCopied ? (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true">
+              <path d="m4 12.5 5 5L20 6.5" />
+            </svg>
+          ) : (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="M3 10h18M9 10v10M15 10v10" />
+            </svg>
+          )}
+        </button>
       </div>
       <ul className="max-h-64 overflow-y-auto py-1">
         {pop.values.map((v) => (

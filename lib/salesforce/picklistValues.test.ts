@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCustomFieldPatch,
   buildGlobalValueSetPatch,
+  buildPicklistCopyTable,
   buildRecordTypePatch,
   fieldIdQuery,
   isMasterRecordType,
@@ -101,5 +102,16 @@ describe("picklist add-values contract", () => {
 
   it("builds the field id query", () => {
     expect(fieldIdQuery("Account", "Risk_Level")).toContain("TableEnumOrId = 'Account'");
+  });
+
+  it("builds a copy-all table with HTML escaping", () => {
+    const { html, text } = buildPicklistCopyTable([
+      { label: "High & Dry", value: "High" },
+      { label: "Low", value: "Low<Value>" },
+    ]);
+    expect(html).toContain("<th>Label</th><th>API Name</th>");
+    expect(html).toContain("High &amp; Dry");
+    expect(html).toContain("Low&lt;Value&gt;");
+    expect(text).toBe("Label\tAPI Name\nHigh & Dry\tHigh\nLow\tLow<Value>");
   });
 });
