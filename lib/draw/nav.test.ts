@@ -41,4 +41,29 @@ describe("draw navigation", () => {
     expect(app).toContain('label: "Draw", plus: true');
     expect(app).toContain("<sup");
   });
+
+  it("JSON, Draw+ and Console stand alone at the end", () => {
+    const app = read("components/layout/AppHeader.tsx");
+    // Standalone routes render after the groups on desktop and at the end
+    // of the mobile flat row - Draw+ and JSON are no longer grouped.
+    expect(app).toContain("standaloneRoutes");
+    const table = app.slice(app.indexOf("const standaloneRoutes"));
+    expect(table.indexOf('href: "/json"')).toBeGreaterThan(-1);
+    expect(table.indexOf('href: "/draw"')).toBeGreaterThan(table.indexOf('href: "/json"'));
+    expect(table.indexOf('href: "/console"')).toBeGreaterThan(table.indexOf('href: "/draw"'));
+    const mobile = app.slice(app.indexOf("md:hidden"));
+    expect(mobile).toContain("standaloneRoutes");
+  });
+
+  it("grouped panels are full-width mega-panels with brand zones", () => {
+    const app = read("components/layout/AppHeader.tsx");
+    // Apple-style: one MegaPanel per group, brand copy on the group data,
+    // tagline zone follows the hovered entry.
+    expect(app).toContain("MegaPanel");
+    expect(app).toContain("fixed inset-x-0");
+    for (const field of ["eyebrow:", "headline:", "punch:"]) {
+      expect(app).toContain(field);
+    }
+    expect(app).toContain("On this tab");
+  });
 });

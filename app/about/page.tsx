@@ -102,6 +102,10 @@ export default function AboutPage() {
                 GRAVENX is my flagship productivity tool, hand-crafted for integration work and
                 shared with the community — designed by an architect, for architects.
               </p>
+              <p>
+                Every canvas, rule, and review in this studio was built hand-in-hand with my
+                personal coding companion — meet Meta Muse Spark below.
+              </p>
             </div>
             <div className="mt-4 flex flex-wrap gap-1.5">
               {DOMAINS.map((d) => (
@@ -141,6 +145,32 @@ export default function AboutPage() {
             </div>
           </div>
         </div>
+        <section className="mt-12" aria-label="Meta Muse Spark">
+          <p className="font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">The companion</p>
+          <p className="mt-2 max-w-2xl text-[22px] font-bold leading-tight tracking-tight text-[#27241F]">
+            Built proudly with Meta Muse Spark.
+          </p>
+          <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-[#3A352D]">
+            GRAVENX was designed and engineered together with Meta Muse Spark, my personal
+            coding companion — an architect&apos;s thinking partner from the first wireframe
+            to the final commit.
+          </p>
+          <div className="mt-4 overflow-hidden rounded-2xl border border-[#E8E2D8] bg-[#201209] shadow-sm">
+            <video
+              src="/MuseSpark.mp4"
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="metadata"
+              className="h-auto w-full object-cover"
+              aria-label="Meta Muse Spark photon sphere"
+            />
+            <p className="px-5 py-3 font-mono text-[10px] uppercase tracking-[2px] text-[#BFA98C]">
+              Meta Muse Spark · Photon Sphere
+            </p>
+          </div>
+        </section>
       </main>
       <AppFooter variant="slim" />
     </div>
