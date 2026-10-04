@@ -18,6 +18,8 @@ export interface AgentTool {
   parameters: Record<string, unknown>;
   /** Mutations wait for explicit Apply in the panel. */
   needsApproval: boolean;
+  /** True when the canvas can undo the apply (System mutate path). Omit when unsure - the card stays silent. */
+  undoable?: boolean;
   /** Short human label for the approval card, derived from args. */
   label: (args: unknown) => string;
   schema: z.ZodTypeAny;

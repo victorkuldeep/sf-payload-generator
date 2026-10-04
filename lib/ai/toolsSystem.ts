@@ -77,6 +77,7 @@ const addSystem: AgentTool = {
     additionalProperties: false,
   },
   needsApproval: true,
+  undoable: true,
   label: (a) => {
     const v = a as { type?: string; name?: string };
     return `Add ${v.name ?? v.type ?? "system"}`;
@@ -120,6 +121,7 @@ const connectSystems: AgentTool = {
     additionalProperties: false,
   },
   needsApproval: true,
+  undoable: true,
   label: (a) => {
     const v = a as { from?: string; to?: string };
     return `Connect ${v.from ?? "?"} → ${v.to ?? "?"}`;
