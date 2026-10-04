@@ -95,7 +95,7 @@ const blockSchema = z.object({
   elseChildren: z.array(z.lazy((): z.ZodTypeAny => seqNodeSchema)).max(500).optional(),
 });
 
-const seqNodeSchema: z.ZodType<SeqNode, z.ZodTypeDef, any> = z.discriminatedUnion("nodeType", [
+const seqNodeSchema: z.ZodType<SeqNode, z.ZodTypeDef, unknown> = z.discriminatedUnion("nodeType", [
   messageSchema,
   blockSchema,
 ]);
