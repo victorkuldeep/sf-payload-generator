@@ -3,9 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Button from "../ui/Button";
 import { parseStatements, printStatements } from "@/lib/sequence/dsl";
-import type { SequenceDocument } from "@/lib/sequence/model";
+import { findNode } from "@/lib/sequence/edit";
+import { patchNode, removeNode } from "@/lib/sequence/edit";
+import type { SequenceDocument, SeqNode } from "@/lib/sequence/model";
 import { saveSequence } from "@/lib/sequence/store";
 import { SequenceDiagram } from "./SequenceDiagram";
+import { SequenceInspector } from "./SequenceInspector";
 
 const SAVE_DEBOUNCE_MS = 800;
 
@@ -66,6 +69,27 @@ export function SequenceCanvas({ document, onSaved }: { document: SequenceDocume
     setText(canonical);
   };
 
+  /** Inspector edits land on the model, then reprint - text never drifts. */
+  const commitNodes = (nodes: SequenceDocument["nodes"]) => {
+    const next = { ...doc, nodes };
+    const printed = printStatements(next.participants, next.nodes);
+    setText(printed);
+    persist(next, printed);
+  };
+
+  const patchSelected = (node: SeqNode) => {
+    if (!selId) return;
+    commitNodes(patchNode(doc.nodes, selId, node));
+  };
+
+  const deleteSelected = () => {
+    if (!selId) return;
+    commitNodes(removeNode(doc.nodes, selId));
+    setSelId(null);
+  };
+
+  const selected = selId ? findNode(doc.nodes, selId) : null;
+
   return (
     <div className="flex flex-col gap-3 lg:flex-row">
       <div className="flex w-full flex-col rounded-xl border border-[#E8E2D8] bg-white lg:max-w-md">
@@ -99,6 +123,16 @@ export function SequenceCanvas({ document, onSaved }: { document: SequenceDocume
       <div className="min-w-0 flex-1 overflow-auto rounded-xl border border-[#E8E2D8] bg-white p-3">
         <SequenceDiagram doc={doc} selectedId={selId} onSelect={(id) => setSelId(id)} />
       </div>
+
+      {selected && (
+        <SequenceInspector
+          node={selected}
+          participants={doc.participants}
+          onPatch={patchSelected}
+          onDelete={deleteSelected}
+          onClose={() => setSelId(null)}
+        />
+      )}
     </div>
   );
 }
