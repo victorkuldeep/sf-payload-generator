@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Button from "../ui/Button";
 import { ConfirmDialog } from "../wireframe/ConfirmDialog";
+import { SequenceDiagram } from "./SequenceDiagram";
 import {
   canTransition,
   messageCount,
@@ -245,19 +246,18 @@ export function SequenceRoute() {
       )}
 
       {active && (
-        <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-6 text-center">
-          <p className="font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">
-            {active.participants.length} participant{active.participants.length === 1 ? "" : "s"} · {messageCount(active.nodes)} messages
-          </p>
-          {problems.length > 0 ? (
-            <ul className="mx-auto mt-2 max-w-lg space-y-1 text-left">
+        <div className="overflow-x-auto rounded-xl border border-[#E8E2D8] bg-white p-3">
+          {problems.length > 0 && (
+            <ul className="mb-2 max-w-2xl space-y-1">
               {problems.slice(0, 8).map((p) => (
                 <li key={p} className="text-[11px] text-red-700">⚠ {p}</li>
               ))}
             </ul>
-          ) : (
-            <p className="mt-2 text-xs text-[#777168]">The renderer (EPIC 02) and statement editor (EPIC 03) land next.</p>
           )}
+          <SequenceDiagram doc={active} />
+          <p className="mt-1 font-mono text-[10px] text-[#A39B8E]">
+            {active.participants.length} participant{active.participants.length === 1 ? "" : "s"} · {messageCount(active.nodes)} messages · statement editor lands in EPIC 03
+          </p>
         </div>
       )}
 

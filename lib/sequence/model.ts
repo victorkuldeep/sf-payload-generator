@@ -38,7 +38,7 @@ const retrySchema = z.object({
 });
 export type RetryPolicy = z.infer<typeof retrySchema>;
 
-interface SeqMessage {
+export interface SeqMessage {
   nodeType: "message";
   id: string;
   from: string;
@@ -51,7 +51,7 @@ interface SeqMessage {
   note?: string;
 }
 
-interface SeqBlock {
+export interface SeqBlock {
   nodeType: "block";
   id: string;
   type: BlockType;
@@ -62,6 +62,8 @@ interface SeqBlock {
   attempts?: number;
   waitSecs?: number;
   children: SeqNode[];
+  /** Else-branch of a condition block. */
+  elseChildren?: SeqNode[];
 }
 
 export type SeqNode = SeqMessage | SeqBlock;
@@ -90,6 +92,7 @@ const blockSchema = z.object({
   attempts: z.number().int().min(1).max(100).optional(),
   waitSecs: z.number().min(0).max(86400).optional(),
   children: z.array(z.lazy((): z.ZodTypeAny => seqNodeSchema)).max(500).default([]),
+  elseChildren: z.array(z.lazy((): z.ZodTypeAny => seqNodeSchema)).max(500).optional(),
 });
 
 const seqNodeSchema: z.ZodType<SeqNode, z.ZodTypeDef, any> = z.discriminatedUnion("nodeType", [
@@ -193,7 +196,7 @@ export function messageCount(nodes: SeqNode[]): number {
   let n = 0;
   for (const x of nodes) {
     if (x.nodeType === "message") n++;
-    else n += messageCount(x.children);
+    else n += messageCount(x.children) + messageCount(x.elseChildren ?? []);
   }
   return n;
 }
