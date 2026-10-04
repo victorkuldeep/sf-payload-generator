@@ -7,6 +7,7 @@ import Button from "../ui/Button";
 import { DraftDialog, type DraftConfirmation } from "../draw/DraftDialog";
 import { SYSTEM_DRAFT_KEY, buildSystemProject, type TopologyDraft } from "@/lib/draw/toSystemDraft";
 import { parseStatements, printStatements } from "@/lib/sequence/dsl";
+import { registerSeqBridge, seqSnapshotOf } from "@/lib/ai/seqBridge";
 import { sequenceToDraft } from "@/lib/sequence/systemBridge";
 import { seqPngFileName } from "@/lib/sequence/seqExport";
 import { SystemImportDialog } from "./SystemImportDialog";
@@ -102,6 +103,22 @@ export function SequenceCanvas({ document, onSaved }: { document: SequenceDocume
   };
 
   const selected = selId ? findNode(doc.nodes, selId) : null;
+
+  /** AI agent bridge: headless tools read/apply through the canvas persist path. */
+  useEffect(() => {
+    registerSeqBridge({
+      getSnapshot: () => seqSnapshotOf(doc),
+      getDocument: () => doc,
+      apply: (fn) => {
+        const next = fn(doc);
+        const printed = printStatements(next.participants, next.nodes);
+        setText(printed);
+        persist(next, printed);
+        return { ok: true };
+      },
+    });
+    return () => registerSeqBridge(null);
+  }, [doc, persist]);
 
   const doExport = useCallback(
     async (scale: 2 | 3) => {
