@@ -383,3 +383,21 @@ describe("buildErdElements link spotlight", () => {
     for (const v of f.values()) expect(v).toEqual({ spotlight: false, linked: false, dimmed: false });
   });
 });
+
+describe("buildErdElements record types", () => {
+  it("carries record type infos onto the table node", () => {
+    const withRt = {
+      ...desc("Account", []),
+      recordTypeInfos: [
+        { recordTypeId: "012ABC", developerName: "Customer", name: "Customer", active: true, master: false, defaultRecordTypeMapping: true },
+      ],
+    };
+    const { nodes } = buildErdElements(new Map([["Account", withRt]]), new Map(), "Account", null);
+    expect(nodes[0].data.recordTypes).toHaveLength(1);
+    expect(nodes[0].data.recordTypes[0]).toMatchObject({ developerName: "Customer", recordTypeId: "012ABC" });
+  });
+  it("defaults to empty without record type infos", () => {
+    const { nodes } = buildErdElements(new Map([["Account", desc("Account", [])]]), new Map(), "Account", null);
+    expect(nodes[0].data.recordTypes).toEqual([]);
+  });
+});

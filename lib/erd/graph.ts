@@ -1,6 +1,6 @@
 import dagre from "@dagrejs/dagre";
 import type { Node, Edge } from "@xyflow/react";
-import type { SalesforceDescribeResult } from "@/lib/salesforce/types";
+import type { SalesforceDescribeResult, SalesforceRecordTypeInfo } from "@/lib/salesforce/types";
 
 export interface ErdPickValue {
   label: string;
@@ -52,6 +52,10 @@ export interface ErdNodeData extends Record<string, unknown> {
   onMakeRoot?: (apiName: string) => void;
   /** Record-walk eye state: live data aboard, one-click reachable, or locked. */
   recordState?: "live" | "reachable" | "locked";
+  /** Record types on the object - badge + popover on the table node. */
+  recordTypes: SalesforceRecordTypeInfo[];
+  /** Open the record-type popover for this table. */
+  onRecordTypesClick?: (apiName: string, anchor: { x: number; y: number; width: number; height: number }) => void;
   recordHint?: string;
   onRecordClick?: (apiName: string, anchor: { x: number; y: number; width: number; height: number }) => void;
   /** Visualized record for this node: selected-row fields (full single when
@@ -300,6 +304,7 @@ export function buildErdElements(
         totalChildren: childRels.length,
         isJunction: detectJunction(describe),
         isRoot: apiName === root,
+        recordTypes: describe.recordTypeInfos ?? [],
         spotlight: spot != null && spot.focus === apiName,
         dimmed: spot != null && spot.soft !== true && spot.focus !== apiName && !spot.related.has(apiName),
         linked: spot != null && spot.focus !== apiName && spot.related.has(apiName),

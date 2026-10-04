@@ -269,6 +269,21 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
               Custom
             </span>
           )}
+          {(data.recordTypes?.length ?? 0) > 0 && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                const r = e.currentTarget.getBoundingClientRect();
+                data.onRecordTypesClick?.(data.apiName, { x: r.right + 8, y: r.top, width: r.width, height: r.height });
+              }}
+              title={`${data.recordTypes.length} record types - click to view ids`}
+              aria-label={`${data.recordTypes.length} record types on ${data.apiName}`}
+              className="nodrag shrink-0 cursor-pointer rounded border border-bronze-300 bg-bronze-100 px-1.5 py-px text-[9px] font-bold text-bronze-700 transition-colors hover:bg-bronze-200"
+            >
+              RT · {data.recordTypes.length}
+            </button>
+          )}
           <button
             type="button"
             onClick={(e) => {

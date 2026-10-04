@@ -86,6 +86,14 @@ export async function POST(req: NextRequest) {
       updateable: boolean;
       fields: SalesforceField[];
       childRelationships?: (SalesforceChildRelationship & { cascadeDelete?: unknown })[];
+      recordTypeInfos?: {
+        recordTypeId?: unknown;
+        developerName?: unknown;
+        name?: unknown;
+        active?: unknown;
+        master?: unknown;
+        defaultRecordTypeMapping?: unknown;
+      }[];
     };
 
     const result: SalesforceDescribeResult = {
@@ -104,6 +112,18 @@ export async function POST(req: NextRequest) {
               field: r.field,
               relationshipName: r.relationshipName ?? null,
               cascadeDelete: r.cascadeDelete === true,
+            }))
+        : [],
+      recordTypeInfos: Array.isArray(data.recordTypeInfos)
+        ? data.recordTypeInfos
+            .filter((r) => r && typeof r.recordTypeId === "string" && r.recordTypeId)
+            .map((r) => ({
+              recordTypeId: r.recordTypeId as string,
+              developerName: typeof r.developerName === "string" && r.developerName ? r.developerName : (r.recordTypeId as string),
+              name: typeof r.name === "string" && r.name ? r.name : (r.recordTypeId as string),
+              active: r.active !== false,
+              master: r.master === true,
+              defaultRecordTypeMapping: r.defaultRecordTypeMapping === true,
             }))
         : [],
     };

@@ -18,6 +18,7 @@ import { buildCustomFieldBody, buildCustomObjectBody, describeTypeFor, looksLike
 import { DiscoverPicker, type DiscoverCandidate } from "./erd/DiscoverPicker";
 import { HidePanel } from "./erd/HidePanel";
 import { PicklistPopover, type PicklistPopoverData } from "./erd/PicklistPopover";
+import { RecordTypePopover, type RecordTypePopoverData } from "./erd/RecordTypePopover";
 import {
   listSnapshotsByOrg,
   saveSnapshot as persistSnapshot,
@@ -1027,6 +1028,7 @@ export default function SchemaPanel({
   // Refresh + popover + snapshot state
   const [refreshingIds, setRefreshingIds] = useState<Set<string>>(new Set());
   const [popover, setPopover] = useState<PicklistPopoverData | null>(null);
+  const [rtPopover, setRtPopover] = useState<RecordTypePopoverData | null>(null);
   const [addValues, setAddValues] = useState<{
     objectApi: string;
     objectLabel: string;
@@ -2192,6 +2194,24 @@ export default function SchemaPanel({
     setNotice(`${apiName} is now the root - showing its full neighborhood in Graph + ERD.`);
   }, [describes, rootName]);
 
+  const openRecordTypes = useCallback(
+    (
+      nodeId: string,
+      anchor: { x: number; y: number; width: number; height: number }
+    ) => {
+      const d = describes.get(nodeId);
+      if (!d) return;
+      setRtPopover({
+        apiName: nodeId,
+        nodeLabel: d.label ?? nodeId,
+        recordTypes: d.recordTypeInfos ?? [],
+        x: anchor.x,
+        y: anchor.y,
+      });
+    },
+    [describes]
+  );
+
   const baseElements: { nodes: Node<ErdNodeData>[]; edges: Edge[] } = useMemo(() => {    if (visibleDescribes.size === 0 || !rootName) return { nodes: [], edges: [] };
     const built = buildErdElements(visibleDescribes, labels, rootName, spot, enforced);
     const describedSet = new Set(visibleDescribes.keys());
@@ -2212,11 +2232,12 @@ export default function SchemaPanel({
             hasTodo: !!en?.todo && !en?.done,
             onNoteClick: openEntityNote,
             onMakeRoot: makeRoot,
+            onRecordTypesClick: openRecordTypes,
           },
         };
       }),
     };
-  }, [visibleDescribes, describes, labels, rootName, spot, enforced, entityNotes, openEntityNote, makeRoot]);
+  }, [visibleDescribes, describes, labels, rootName, spot, enforced, entityNotes, openEntityNote, makeRoot, openRecordTypes]);
 
   // Graph default = FULL 1-level neighborhood (parents left, children right),
   // lite previews included - this is the intent of graph view. Family
@@ -2961,7 +2982,7 @@ export default function SchemaPanel({
         },
       })),
     }),
-    [baseElements, refreshingIds, refreshNode, openPicklist, recordNodeData, authorMode, openAuthorField, authorPendingApis, withSketchRows, sketchRowsByApi, authorEdges]
+    [baseElements, refreshingIds, refreshNode, openPicklist, openRecordTypes, recordNodeData, authorMode, openAuthorField, authorPendingApis, withSketchRows, sketchRowsByApi, authorEdges]
   );
 
   // Retired with the recursive "Discover full": the chain explorer walks
@@ -4403,6 +4424,7 @@ export default function SchemaPanel({
   const handlePaneClick = useCallback(() => {
     setSpot(null);
     setPopover(null);
+    setRtPopover(null);
     setGraphSelected(null);
   }, []);
 
@@ -5802,6 +5824,7 @@ export default function SchemaPanel({
       />
 
       {/* Picklist inspector */}
+      {rtPopover && <RecordTypePopover pop={rtPopover} onClose={() => setRtPopover(null)} />}
       {popover && (
         <PicklistPopover
           pop={popover}

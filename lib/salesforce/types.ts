@@ -68,6 +68,15 @@ export interface SalesforceChildRelationship {
   cascadeDelete: boolean;
 }
 
+export interface SalesforceRecordTypeInfo {
+  recordTypeId: string;
+  developerName: string;
+  name: string;
+  active: boolean;
+  master: boolean;
+  defaultRecordTypeMapping: boolean;
+}
+
 export interface SalesforceDescribeResult {
   name: string;
   label: string;
@@ -77,6 +86,8 @@ export interface SalesforceDescribeResult {
   updateable: boolean;
   fields: SalesforceField[];
   childRelationships: SalesforceChildRelationship[];
+  /** Record types on the object, when the org describe carries them. */
+  recordTypeInfos?: SalesforceRecordTypeInfo[];
 }
 
 export class SalesforceApiError extends Error {
