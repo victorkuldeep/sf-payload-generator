@@ -111,10 +111,11 @@ export function SequenceCanvas({ document, onSaved }: { document: SequenceDocume
         const el = diagramRef.current;
         if (!el) throw new Error("Diagram not ready");
         const dataUrl = await toPng(el, { backgroundColor: "#FFFFFF", pixelRatio: scale, cacheBust: true });
-        const a = document.createElement("a");
+        const d = globalThis.document;
+        const a = d.createElement("a");
         a.href = dataUrl;
         a.download = seqPngFileName(doc.name, scale);
-        document.body.appendChild(a);
+        d.body.appendChild(a);
         a.click();
         a.remove();
       } catch (err) {
