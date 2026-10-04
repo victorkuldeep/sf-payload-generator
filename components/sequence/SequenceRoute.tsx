@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Button from "../ui/Button";
 import { ConfirmDialog } from "../wireframe/ConfirmDialog";
 import { SequenceCanvas } from "./SequenceCanvas";
@@ -15,6 +15,7 @@ import {
   type SeqStatus,
 } from "@/lib/sequence/model";
 import { deleteSequence, listSequences, saveSequence } from "@/lib/sequence/store";
+import { importSequenceFile } from "@/lib/sequence/packageIo";
 
 const STATUS_STYLE: Record<SeqStatus, string> = {
   draft: "bg-[#F5F1E8] text-[#777168] border-[#E3D9C6]",
@@ -43,6 +44,8 @@ export function SequenceRoute() {
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [rev, setRev] = useState(0);
+  const [importError, setImportError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
 
   const refresh = useCallback(async () => {
     setItems(await listSequences().catch(() => []));
@@ -59,6 +62,28 @@ export function SequenceRoute() {
       setName("");
       setActiveId(doc.id);
       await refresh();
+    }
+  };
+
+  const importFile = async (file: File) => {
+    setImportError(null);
+    let text = "";
+    try {
+      text = await file.text();
+    } catch {
+      setImportError("Could not read that file.");
+      return;
+    }
+    const r = importSequenceFile(text, file.name);
+    if (!r.ok || !r.document) {
+      setImportError(r.error ?? "Import failed.");
+      return;
+    }
+    if (await saveSequence(r.document).catch(() => false)) {
+      setActiveId(r.document.id);
+      await refresh();
+    } else {
+      setImportError("Could not save the import.");
     }
   };
 
@@ -205,7 +230,23 @@ export function SequenceRoute() {
               className="min-w-0 flex-1 rounded-xl border border-[#E8E2D8] bg-white px-3 py-2 text-[13px] text-[#27241F] placeholder-[#A39B8E] focus:border-[#C9A86A] focus:outline-none"
             />
             <Button onClick={() => void create()}>New sequence</Button>
+            <Button variant="secondary" onClick={() => fileRef.current?.click()} title="Import a package JSON or DSL text file from a fellow dev">
+              Import
+            </Button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".json,.txt,.text,.seq,.dsl,application/json,text/plain"
+              className="hidden"
+              aria-label="Import sequence file"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (f) void importFile(f);
+              }}
+            />
           </div>
+          {importError && <p className="text-[11px] text-red-700">{importError}</p>}
 
           {loaded && items.length > 0 && (
             <ul className="grid gap-2 sm:grid-cols-2">

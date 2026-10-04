@@ -1,11 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Button from "../ui/Button";
 import { DraftDialog, type DraftConfirmation } from "../draw/DraftDialog";
 import { SYSTEM_DRAFT_KEY, buildSystemProject, type TopologyDraft } from "@/lib/draw/toSystemDraft";
 import { canTransition, newExperience, renameExperience, type Experience, type SnapshotStatus } from "@/lib/wireframe/model";
+import { importExperiencePackage } from "@/lib/wireframe/packageIo";
 import { deleteExperience, listExperiences, saveExperience } from "@/lib/wireframe/store";
 import { experienceToDraft } from "@/lib/wireframe/systemBridge";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -42,6 +43,8 @@ export function WireframeRoute() {
   const [specOpen, setSpecOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [rev, setRev] = useState(0);
+  const [importError, setImportError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
 
   const refresh = useCallback(async () => {
     setItems(await listExperiences().catch(() => []));
@@ -58,6 +61,28 @@ export function WireframeRoute() {
       setName("");
       setActiveId(exp.id);
       await refresh();
+    }
+  };
+
+  const importFile = async (file: File) => {
+    setImportError(null);
+    let text = "";
+    try {
+      text = await file.text();
+    } catch {
+      setImportError("Could not read that file.");
+      return;
+    }
+    const r = importExperiencePackage(text);
+    if (!r.ok || !r.experience) {
+      setImportError(r.error ?? "Import failed.");
+      return;
+    }
+    if (await saveExperience(r.experience).catch(() => false)) {
+      setActiveId(r.experience.id);
+      await refresh();
+    } else {
+      setImportError("Could not save the import.");
     }
   };
 
@@ -231,7 +256,23 @@ export function WireframeRoute() {
               className="min-w-0 flex-1 rounded-xl border border-[#E8E2D8] bg-white px-3 py-2 text-[13px] text-[#27241F] placeholder-[#A39B8E] focus:border-[#C9A86A] focus:outline-none"
             />
             <Button onClick={() => void create()}>New experience</Button>
+            <Button variant="secondary" onClick={() => fileRef.current?.click()} title="Import a package JSON from a fellow dev">
+              Import
+            </Button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              aria-label="Import experience package"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (f) void importFile(f);
+              }}
+            />
           </div>
+          {importError && <p className="text-[11px] text-red-700">{importError}</p>}
 
           {loaded && items.length > 0 && (
             <ul className="grid gap-2 sm:grid-cols-2">
