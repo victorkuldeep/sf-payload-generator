@@ -82,7 +82,7 @@ const proposeRiskAdr: AgentTool = {
     };
     d = linkDecision(d, { surface: "system", recordId: project.id, label: project.name });
     await backend.saveDecision(d);
-    return { ok: true, result: `Proposed ${d.number} "${d.title}", linked to ${project.name}.` };
+    return { ok: true, result: `Proposed ${d.number} "${d.title}", linked to ${project.name}. Open: /decisions?id=${d.id}` };
   },
 };
 

@@ -92,7 +92,7 @@ const logRequirement: AgentTool = {
       ...(args.body ? { body: args.body.slice(0, 8000) } : {}),
     };
     await backend.save(r);
-    return { ok: true, result: `Logged ${r.number} "${r.title}".` };
+    return { ok: true, result: `Logged ${r.number} "${r.title}". Open: /requirements?id=${r.id}` };
   },
 };
 

@@ -636,6 +636,24 @@ export default function Home() {
     [state.connected, openConnect, goMode, router]
   );
 
+  // Deep link: ?tab= lands on the exact home mode (schema links use it).
+  // Runs once - offline visitors connect first, then land automatically.
+  const deepTabDone = useRef(false);
+  useEffect(() => {
+    if (deepTabDone.current) return;
+    let tab: string | null = null;
+    try {
+      tab = new URLSearchParams(window.location.search).get("tab")?.trim() || null;
+    } catch {
+      tab = null;
+    }
+    if (!tab) return;
+    const mode = tab === "builder" ? "single" : tab;
+    if (mode !== "single" && mode !== "composite" && mode !== "soql" && mode !== "graphql" && mode !== "schema" && mode !== "rest") return;
+    deepTabDone.current = true;
+    jumpToMode(mode as Exclude<BuilderMode, "home">);
+  }, [jumpToMode]);
+
   // Zig-zag capability opener: modes via jump flow, routes direct.
   const openZigZag = useCallback(
     (t: ZigZagTarget) => {

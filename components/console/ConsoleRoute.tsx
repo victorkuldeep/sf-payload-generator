@@ -14,6 +14,7 @@ import {
   type ConsoleTask,
 } from "@/lib/console/model";
 import { exportConsoleTasks, importConsoleTasks, deleteConsoleTask, listConsoleTasks, saveConsoleTask } from "@/lib/console/store";
+import { findDeepRecord, useDeepParam } from "@/lib/deep/deep";
 import {
   consoleToCanvas,
   liveSystemFns,
@@ -64,6 +65,18 @@ export function ConsoleRoute() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Deep link: ?task= selects the exact task.
+  const deepTask = useDeepParam("task");
+  const deepDone = useRef(false);
+  useEffect(() => {
+    if (deepDone.current || !loaded || deepTask === null) return;
+    const hit = findDeepRecord(tasks, deepTask);
+    if (hit) {
+      setSelectedId(hit.id);
+      deepDone.current = true;
+    }
+  }, [loaded, deepTask, tasks]);
 
   const persist = useCallback(async (task: ConsoleTask) => {
     setTasks((prev) => prev.map((t) => (t.id === task.id ? task : t)).sort((a, b) => b.updatedAt - a.updatedAt));

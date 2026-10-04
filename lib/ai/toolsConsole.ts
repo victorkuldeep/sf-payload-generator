@@ -117,7 +117,7 @@ const addConsoleTask: AgentTool = {
       priority: args.priority ?? "normal",
     };
     await backend.save(task);
-    return { ok: true, result: `Logged "${task.title}" (${task.id}).` };
+    return { ok: true, result: `Logged "${task.title}" (${task.id}). Open: /console?task=${task.id}` };
   },
 };
 

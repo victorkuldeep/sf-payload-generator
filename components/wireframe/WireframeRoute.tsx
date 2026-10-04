@@ -8,6 +8,7 @@ import { SYSTEM_DRAFT_KEY, buildSystemProject, type TopologyDraft } from "@/lib/
 import { canTransition, cloneExperience, newExperience, renameExperience, type Experience, type SnapshotStatus } from "@/lib/wireframe/model";
 import { importExperiencePackage } from "@/lib/wireframe/packageIo";
 import { deleteExperience, listExperiences, saveExperience } from "@/lib/wireframe/store";
+import { findDeepRecord, useDeepParam } from "@/lib/deep/deep";
 import { experienceToDraft } from "@/lib/wireframe/systemBridge";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { HistoryDialog } from "./HistoryDialog";
@@ -105,6 +106,18 @@ export function WireframeRoute() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Deep link: ?exp= opens the exact experience.
+  const deepExp = useDeepParam("exp");
+  const deepDone = useRef(false);
+  useEffect(() => {
+    if (deepDone.current || !loaded || deepExp === null) return;
+    const hit = findDeepRecord(items, deepExp);
+    if (hit) {
+      setActiveId(hit.id);
+      deepDone.current = true;
+    }
+  }, [loaded, deepExp, items]);
 
   const create = async () => {
     const exp = newExperience(name);

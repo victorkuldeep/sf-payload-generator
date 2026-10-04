@@ -118,6 +118,7 @@ export const DOC_SECTIONS: DocSection[] = [
         k: "list",
         items: [
           "Board groups by status; Timeline replays every creation, move, and note newest-first.",
+          "Every link lands on the exact record (?task=, ?id=, ?project=&select=) - findings, runs and tasks open where they live.",
           "Link picker pulls live canvas TODOs and design notes — adopting the canvas status so both sides start agreed.",
           "Stale guard: if the canvas moved on, its side keeps the newer state and Console tells you.",
           "Export/import portable JSON packages (re-id, never overwrite).",
@@ -197,7 +198,7 @@ export const DOC_SECTIONS: DocSection[] = [
         k: "list",
         items: [
           "Lifecycle: Open → Covered → Verified, with Reopen; status is declared, coverage is derived.",
-          "Links address records and jump back to their tabs; dangling links never count as coverage.",
+          "Links address records and land on them (?id=, numbers accepted); dangling links never count as coverage.",
           "Export/import portable JSON packages (re-id and re-number, never overwrite).",
           "AI logs, links, and moves through Apply-gated req_log / req_link / req_move - it never declares coverage.",
         ],

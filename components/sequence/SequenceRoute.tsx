@@ -16,6 +16,7 @@ import {
 } from "@/lib/sequence/model";
 import { deleteSequence, listSequences, saveSequence } from "@/lib/sequence/store";
 import { importSequenceFile } from "@/lib/sequence/packageIo";
+import { findDeepRecord, useDeepParam } from "@/lib/deep/deep";
 
 const STATUS_STYLE: Record<SeqStatus, string> = {
   draft: "bg-[#F5F1E8] text-[#777168] border-[#E3D9C6]",
@@ -55,6 +56,18 @@ export function SequenceRoute() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Deep link: ?id= opens the exact sequence document.
+  const deepId = useDeepParam("id");
+  const deepDone = useRef(false);
+  useEffect(() => {
+    if (deepDone.current || !loaded || deepId === null) return;
+    const hit = findDeepRecord(items, deepId);
+    if (hit) {
+      setActiveId(hit.id);
+      deepDone.current = true;
+    }
+  }, [loaded, deepId, items]);
 
   const create = async () => {
     const doc = newSequence(name);

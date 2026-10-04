@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import Button from "../ui/Button";
 import { ConfirmDialog } from "../wireframe/ConfirmDialog";
-import { CONSOLE_SURFACE_ROUTES } from "@/lib/console/model";
+import { consoleLinkHref } from "@/lib/console/model";
+import { findDeepRecord, useDeepParam } from "@/lib/deep/deep";
 import {
   canTransition,
   linkRequirement,
@@ -83,6 +84,18 @@ export function RequirementsRoute() {
       live = false;
     };
   }, []);
+
+  // Deep link: ?id= lands on the exact record (id or REQ number).
+  const deepId = useDeepParam("id");
+  const deepDone = useRef(false);
+  useEffect(() => {
+    if (deepDone.current || !loaded || deepId === null) return;
+    const hit = findDeepRecord(items, deepId);
+    if (hit) {
+      setActiveId(hit.id);
+      deepDone.current = true;
+    }
+  }, [loaded, deepId, items]);
 
   const persist = async (next: Requirement) => {
     setItems((prev) => prev.map((i) => (i.id === next.id ? next : i)));
@@ -415,7 +428,7 @@ function RequirementEditor({
             {r.links.map((l) => (
               <li key={`${l.surface}-${l.recordId}`} className="flex items-center gap-1.5 rounded-lg border border-[#E8E2D8] px-2 py-1.5">
                 <a
-                  href={CONSOLE_SURFACE_ROUTES[l.surface]}
+                  href={consoleLinkHref(l)}
                   title={`Open in ${l.surface} tab`}
                   className="min-w-0 flex-1 truncate text-[12px] font-medium text-[#3A352D] hover:text-[#8A6A2F] hover:underline"
                 >

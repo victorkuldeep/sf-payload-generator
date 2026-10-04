@@ -615,6 +615,34 @@ export function SystemDesigner() {
       }
       const list = await listSystemProjects();
       setProjectList(list);
+      let deepProject: string | null = null;
+      let deepSelect: string | null = null;
+      try {
+        const q = new URLSearchParams(window.location.search);
+        deepProject = q.get("project")?.trim() || null;
+        deepSelect = q.get("select")?.trim() || null;
+      } catch {
+        /* non-browser or blocked query - normal load */
+      }
+      if (deepProject && list.some((p) => p.id === deepProject)) {
+        const deepLoaded = await loadSystemProject(deepProject);
+        if (deepLoaded) {
+          const { project: deepValid } = validateProject(deepLoaded);
+          if (deepValid) {
+            setProject(deepValid);
+            if (deepSelect) {
+              if (deepValid.systems.some((s) => s.id === deepSelect)) {
+                setSelNodeId(deepSelect);
+                setSelEdgeId(null);
+              } else if (deepValid.connections.some((c) => c.id === deepSelect)) {
+                setSelEdgeId(deepSelect);
+                setSelNodeId(null);
+              }
+            }
+            return;
+          }
+        }
+      }
       if (list.length > 0) {
         const loaded = await loadSystemProject(list[0].id);
         if (loaded) {

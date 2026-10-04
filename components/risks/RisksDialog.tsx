@@ -56,7 +56,7 @@ export function RisksDialog({
   const [runs, setRuns] = useState<SystemRunRecord[]>([]);
   const [proposed, setProposed] = useState<Record<string, string>>({});
   const [proved, setProved] = useState<Record<string, string>>({});
-  const [tracked, setTracked] = useState<Record<string, boolean>>({});
+  const [tracked, setTracked] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let live = true;
@@ -125,7 +125,7 @@ export function RisksDialog({
       history: [...base.history, { at: Date.now(), what: "Tracked from the risk lens." }],
     };
     await saveConsoleTask(task);
-    setTracked((prev) => ({ ...prev, [key]: true }));
+    setTracked((prev) => ({ ...prev, [key]: task.id }));
   };
 
   return (
@@ -198,8 +198,8 @@ export function RisksDialog({
                       ) : (
                         <a
                           key={r.id}
-                          href="/sequence"
-                          title="Open in Sequence tab"
+                          href={`/sequence?id=${encodeURIComponent(r.id)}`}
+                          title="Open the exact sequence document"
                           className="rounded-md border border-[var(--color-line)] bg-white px-1.5 py-0.5 font-mono text-[10px] text-bronze-700 hover:border-bronze-500"
                         >
                           {r.name}
@@ -222,8 +222,8 @@ export function RisksDialog({
                     ) : null}
                     {proposed[key] ? (
                       <a
-                        href="/decisions"
-                        title="Open in Decisions tab"
+                        href={`/decisions?id=${encodeURIComponent(proposed[key])}`}
+                        title="Open the exact decision"
                         className="ml-auto font-mono text-[10px] font-bold text-[#2F6B45] hover:underline"
                       >
                         {proposed[key]} proposed →
@@ -240,8 +240,8 @@ export function RisksDialog({
                     )}
                     {tracked[key] ? (
                       <a
-                        href="/console"
-                        title="Open in Console"
+                        href={`/console?task=${encodeURIComponent(tracked[key])}`}
+                        title="Open the exact Console task"
                         className="font-mono text-[10px] font-bold text-[#2F6B45] hover:underline"
                       >
                         tracked →

@@ -39,9 +39,32 @@ export const CONSOLE_SURFACE_ROUTES: Record<ConsoleLink["surface"], string> = {
   requirement: "/requirements",
 };
 
-/** Where a Console link opens: the owning studio tab (deep-link later). */
-export function consoleLinkHref(link: Pick<ConsoleLink, "surface">): string {
-  return CONSOLE_SURFACE_ROUTES[link.surface] ?? "/console";
+/**
+ * Where a Console link opens: the exact record when addressable, else the
+ * owning studio tab. Canvas TODO granularity stays project-level - the
+ * designer has no todo selection to land on.
+ */
+export function consoleLinkHref(link: Pick<ConsoleLink, "surface"> & Partial<Pick<ConsoleLink, "recordId">>): string {
+  const id = (link.recordId ?? "").trim();
+  const q = id ? encodeURIComponent(id) : "";
+  switch (link.surface) {
+    case "decision":
+      return q ? `/decisions?id=${q}` : "/decisions";
+    case "requirement":
+      return q ? `/requirements?id=${q}` : "/requirements";
+    case "sequence":
+      return q ? `/sequence?id=${q}` : "/sequence";
+    case "wireframe":
+      return q ? `/wireframe?exp=${q}` : "/wireframe";
+    case "system":
+      return q ? `/system?project=${q}` : "/system";
+    case "schema":
+      return "/?tab=schema";
+    case "draw":
+      return "/draw";
+    default:
+      return CONSOLE_SURFACE_ROUTES[link.surface] ?? "/console";
+  }
 }
 
 export interface ConsoleNote {

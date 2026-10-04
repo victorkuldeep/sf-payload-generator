@@ -93,7 +93,7 @@ const proposeDecision: AgentTool = {
       ...(args.decision ? { decision: args.decision.slice(0, 8000) } : {}),
     };
     await backend.save(d);
-    return { ok: true, result: `Proposed ${d.number} "${d.title}".` };
+    return { ok: true, result: `Proposed ${d.number} "${d.title}". Open: /decisions?id=${d.id}` };
   },
 };
 
