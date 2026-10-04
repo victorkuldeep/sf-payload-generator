@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Button from "../ui/Button";
 import { ConfirmDialog } from "../wireframe/ConfirmDialog";
 import { SequenceCanvas } from "./SequenceCanvas";
+import { SequenceHistoryDialog } from "./SequenceHistoryDialog";
 import {
   canTransition,
   messageCount,
@@ -40,6 +41,8 @@ export function SequenceRoute() {
   const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [rev, setRev] = useState(0);
 
   const refresh = useCallback(async () => {
     setItems(await listSequences().catch(() => []));
@@ -180,6 +183,9 @@ export function SequenceRoute() {
                 </Button>
               </>
             )}
+            <Button size="sm" variant="secondary" onClick={() => setHistoryOpen(true)} title="Snapshots and export">
+              History
+            </Button>
           </div>
         )}
       </div>
@@ -255,7 +261,7 @@ export function SequenceRoute() {
             </ul>
           )}
           <SequenceCanvas
-            key={active.id}
+            key={`${active.id}:${rev}`}
             document={active}
             onSaved={(next) => setItems((prev) => prev.map((i) => (i.id === next.id ? next : i)))}
           />
@@ -269,6 +275,17 @@ export function SequenceRoute() {
           confirmLabel="Delete sequence"
           onCancel={() => setPendingDelete(null)}
           onConfirm={() => void remove(pendingDelete)}
+        />
+      )}
+      {historyOpen && active && (
+        <SequenceHistoryDialog
+          doc={active}
+          onClose={() => setHistoryOpen(false)}
+          onRestored={() => {
+            setHistoryOpen(false);
+            setRev((r) => r + 1);
+            void refresh();
+          }}
         />
       )}
     </div>
