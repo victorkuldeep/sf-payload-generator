@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Button from "../ui/Button";
 import { C4_VIEWS, c4Tree, hiddenNodeIds, levelOf, type C4Level, type C4TreeNode, type C4View } from "@/lib/c4/views";
+import { suggestC4, type C4Suggestion } from "@/lib/c4/suggest";
 import { buildPackMarkdown } from "@/lib/pack/bundle";
 import { listSequences } from "@/lib/sequence/store";
 import { listDecisions } from "@/lib/decisions/store";
@@ -30,6 +31,26 @@ export function ViewsDialog({
 }) {
   const tree = useMemo(() => c4Tree(project), [project]);
   const visible = project.systems.length - hiddenNodeIds(project, view).size;
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const suggestions = useMemo(() => (suggestOpen ? suggestC4(project) : []), [suggestOpen, project]);
+  const fillCount = suggestions.filter((g) => g.level && !g.alreadySet).length;
+
+  /** Accept fills unset levels (and unset parents of new components) only - explicit choices never move. */
+  const acceptSuggestions = (list: C4Suggestion[]) => {
+    onMutate((p) => ({
+      ...p,
+      systems: p.systems.map((s) => {
+        const g = list.find((x) => x.id === s.id);
+        if (!g || !g.level || s.level !== undefined) return s;
+        let next = { ...s, level: g.level };
+        if (g.level === "component" && s.parentId === undefined && g.parentId) {
+          next = { ...next, parentId: g.parentId };
+        }
+        return next;
+      }),
+    }));
+    setSuggestOpen(false);
+  };
 
   const setLevel = (id: string, level: C4Level | undefined) => {
     onMutate((p) => ({
@@ -107,7 +128,50 @@ export function ViewsDialog({
         </div>
 
         <div className="mt-3">
-          <p className="font-mono text-[9px] uppercase tracking-[2px] text-[var(--color-muted)]">Assign levels</p>
+          <div className="flex items-center gap-2">
+            <p className="font-mono text-[9px] uppercase tracking-[2px] text-[var(--color-muted)]">Assign levels</p>
+            <div className="ml-auto">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSuggestOpen((v) => !v)}
+                aria-expanded={suggestOpen}
+                title="Preview deterministic level + parent suggestions from topology and system type - fills unset only"
+              >
+                {suggestOpen ? "Hide suggestions" : "Suggest"}
+              </Button>
+            </div>
+          </div>
+          {suggestOpen && (
+            <div className="mt-1.5 rounded-xl border border-bronze-500/40 bg-bronze-500/5 p-2.5">
+              <ul className="space-y-1.5">
+                {suggestions.map((g) => {
+                  const parentName = g.parentId ? (project.systems.find((x) => x.id === g.parentId)?.name ?? g.parentId) : null;
+                  return (
+                    <li key={g.id} className="text-[11px] leading-snug">
+                      <span className="font-bold text-ivory-950">{g.name}</span>
+                      {" → "}
+                      {g.level ? (
+                        <span className="font-mono font-bold text-bronze-700">
+                          {g.level}{parentName ? ` inside ${parentName}` : ""}
+                        </span>
+                      ) : (
+                        <span className="font-mono text-ivory-500">no suggestion</span>
+                      )}
+                      <span className="text-ivory-600"> · {g.rationale}</span>
+                      {g.alreadySet && g.level && <span className="font-mono text-[10px] text-[#2F6B45]"> · yours kept</span>}
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="mt-2 flex items-center gap-1.5">
+                <Button size="sm" disabled={fillCount === 0} onClick={() => acceptSuggestions(suggestions)} title="Fill unset levels (and unset parents) from these suggestions">
+                  Accept fills{fillCount > 0 ? ` (${fillCount})` : ""}
+                </Button>
+                <span className="font-mono text-[10px] text-ivory-500">explicit levels never move · per-node Unset undoes</span>
+              </div>
+            </div>
+          )}
           <ul className="mt-1.5 space-y-1.5">
             {project.systems.map((s) => (
               <li key={s.id} className="flex items-center gap-1.5">

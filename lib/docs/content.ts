@@ -223,6 +223,7 @@ export const DOC_SECTIONS: DocSection[] = [
         k: "list",
         items: [
           "The dialog previews the hierarchy tree and reports how many systems each view shows.",
+          "Suggest drafts levels and parents from topology and system type - preview with reasons, Accept fills unset only, per-node Unset undoes.",
           "Architecture pack downloads one Markdown bundle: topology, operation policy, touching sequences as DSL, linked decisions and requirements with derived coverage, risk findings, and a Validation section with scenarios, verdicts, and finding proof states.",
           "Wireframe experiences and Draw boards are per-surface and out of pack scope by design.",
         ],
