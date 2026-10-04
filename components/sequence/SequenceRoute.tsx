@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Button from "../ui/Button";
 import { ConfirmDialog } from "../wireframe/ConfirmDialog";
-import { SequenceDiagram } from "./SequenceDiagram";
+import { SequenceCanvas } from "./SequenceCanvas";
 import {
   canTransition,
   messageCount,
@@ -246,19 +246,20 @@ export function SequenceRoute() {
       )}
 
       {active && (
-        <div className="overflow-x-auto rounded-xl border border-[#E8E2D8] bg-white p-3">
+        <>
           {problems.length > 0 && (
-            <ul className="mb-2 max-w-2xl space-y-1">
+            <ul className="max-w-2xl space-y-1 rounded-xl border border-red-200 bg-white px-3 py-2">
               {problems.slice(0, 8).map((p) => (
                 <li key={p} className="text-[11px] text-red-700">⚠ {p}</li>
               ))}
             </ul>
           )}
-          <SequenceDiagram doc={active} />
-          <p className="mt-1 font-mono text-[10px] text-[#A39B8E]">
-            {active.participants.length} participant{active.participants.length === 1 ? "" : "s"} · {messageCount(active.nodes)} messages · statement editor lands in EPIC 03
-          </p>
-        </div>
+          <SequenceCanvas
+            key={active.id}
+            document={active}
+            onSaved={(next) => setItems((prev) => prev.map((i) => (i.id === next.id ? next : i)))}
+          />
+        </>
       )}
 
       {pendingDelete && (
