@@ -113,12 +113,12 @@ export function AppHeader({
   return (
     <header className="app-chrome-header sticky top-0 z-40 w-full bg-[var(--color-canvas)]/95 backdrop-blur-sm border-b border-[var(--color-line)]">
       <div className="w-full px-5 flex items-center justify-between h-[54px] gap-3">
-        <Link href="/" className="gravenx-brand" aria-label="GRAVENX - The Architecture Engineering Studio">
+        <Link href="/" className="gravenx-brand" aria-label="GRAVENX - Engineering Studio">
           <span className="gravenx-brand__title">
             <span className="gravenx-brand__lead">GRAVEN</span>
             <span className="gravenx-brand__rest">X</span>
           </span>
-          <span className="gravenx-brand__tagline">The Architecture Engineering Studio</span>
+          <span className="gravenx-brand__tagline">Engineering Studio</span>
         </Link>
 
         <nav className="hidden md:flex items-center gap-5 text-xs font-medium text-[var(--color-ink-soft)]" aria-label="Product">
@@ -190,6 +190,18 @@ export function AppHeader({
             title="Wireframe Studio - schema-aware experience modeling"
           >
             Wireframe
+          </Link>
+          <Link
+            href="/sequence"
+            aria-current={pathname === "/sequence" ? "page" : undefined}
+            className={
+              pathname === "/sequence"
+                ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors"
+                : "hover:text-[var(--color-ink)] transition-colors"
+            }
+            title="Sequence Studio - describe the interaction, see the architecture"
+          >
+            Sequence
           </Link>
         </nav>
 

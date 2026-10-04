@@ -36,6 +36,7 @@ const ROUTE_LINKS: { label: ReactNode; href: string }[] = [
     href: "/draw",
   },
   { label: "Wireframe", href: "/wireframe" },
+  { label: "Sequence", href: "/sequence" },
 ];
 
 interface SessionView {
@@ -131,7 +132,7 @@ export function ToolHeader() {
             <span className="gravenx-brand__lead">GRAVEN</span>
             <span className="gravenx-brand__rest">X</span>
           </span>
-          <span className="gravenx-brand__tagline">The Architecture Engineering Studio</span>
+          <span className="gravenx-brand__tagline">Engineering Studio</span>
         </Link>
 
         <nav className="hidden md:flex items-center gap-5 text-xs font-medium text-[var(--color-ink-soft)]" aria-label="Product">
