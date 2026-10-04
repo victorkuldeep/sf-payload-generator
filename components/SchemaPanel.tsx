@@ -5387,6 +5387,8 @@ export default function SchemaPanel({
               edges={elements.edges}
               onNodeClick={handleNodeClick}
               onEdgeClick={handleEdgeClick}
+              focusLabel={focusName || rootName}
+              onRecenter={() => focusCanvasOn(focusName || rootName)}
               onPaneClick={handlePaneClick}
               onViewportMove={() => setPopover(null)}
               connectable={authorMode}

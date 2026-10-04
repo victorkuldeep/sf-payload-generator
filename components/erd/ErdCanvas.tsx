@@ -66,6 +66,10 @@ interface ErdCanvasProps {
   onConnectNodes?: (sourceApi: string, targetApi: string) => void;
   /** Reports the built-in OOB lock state upward (for mutual exclusion). */
   onOobLockChange?: (locked: boolean) => void;
+  /** Focus-node name shown on the recenter chip; hidden when null. */
+  focusLabel?: string | null;
+  /** Glide back onto the focus node. */
+  onRecenter?: () => void;
 }
 
 interface Stroke {
@@ -89,7 +93,7 @@ function pngFileName(scale: 2 | 3): string {
 }
 
 const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
-  { nodes: propNodes, edges: propEdges, onNodeClick, onEdgeClick, onPaneClick, onViewportMove, onNodeDragStop, layoutRev, enforcedPositions, storedViewport, onViewportChange, nodesLocked = false, onOobLockChange, connectable = false, onConnectNodes },
+  { nodes: propNodes, edges: propEdges, onNodeClick, onEdgeClick, onPaneClick, onViewportMove, onNodeDragStop, layoutRev, enforcedPositions, storedViewport, onViewportChange, nodesLocked = false, onOobLockChange, connectable = false, onConnectNodes, focusLabel, onRecenter },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -397,6 +401,22 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
         />
         <Controls position="bottom-left" showInteractive={!nodesLocked} />
       </ReactFlow>
+      {focusLabel && onRecenter && (
+        <button
+          type="button"
+          onClick={onRecenter}
+          title={`Back to ${focusLabel}`}
+          aria-label={`Center canvas on ${focusLabel}`}
+          className="absolute right-3 top-3 z-10 flex max-w-[220px] cursor-pointer items-center gap-1.5 rounded-full border border-[#DDD3BC] bg-white/95 py-1.5 pl-2.5 pr-3 shadow-[0_8px_24px_-12px_rgba(24,20,12,0.4)] transition-colors hover:border-[#722F37]"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#722F37" strokeWidth="2.2" aria-hidden="true" className="shrink-0">
+            <circle cx="12" cy="12" r="7" />
+            <circle cx="12" cy="12" r="1.6" fill="#722F37" stroke="none" />
+            <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+          </svg>
+          <span className="truncate font-mono text-[11px] font-semibold text-[#27241F]">{focusLabel}</span>
+        </button>
+      )}
 
       {laser && (
         <svg
