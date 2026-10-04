@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 type ModeEntry = { kind: "mode"; id: Exclude<NavMode, "home">; label: string; desc: string };
 type RouteEntry = { kind: "route"; href: string; label: string; desc: string; plus?: boolean };
@@ -36,14 +36,19 @@ function BrandMark() {
  */
 function MegaPanel({
   group,
+  open,
   isEntryActive,
   onNavigate,
+  onPick,
   entryHint,
   renderLabel,
 }: {
   group: NavGroup;
+  open: boolean;
   isEntryActive: (entry: NavEntry) => boolean;
-  onNavigate: (mode: NavMode) => void;
+  onNavigate?: (mode: NavMode) => void;
+  /** Close the panel (link click, Escape, route change). */
+  onPick: () => void;
   entryHint: (entry: NavEntry) => string;
   renderLabel: (entry: NavEntry) => ReactNode;
 }) {
@@ -79,29 +84,54 @@ function MegaPanel({
         <span className={labelCls(entry)}>{renderLabel(entry)}</span>
       </>
     );
-    return entry.kind === "mode" ? (
-      <button
+    if (entry.kind === "route") {
+      return (
+        <Link
+          key={entry.href}
+          href={entry.href}
+          role="menuitem"
+          onClick={onPick}
+          onMouseEnter={() => setHoverKey(k)}
+          onFocus={() => setHoverKey(k)}
+          aria-current={isEntryActive(entry) ? "page" : undefined}
+          title={entry.desc}
+          className={linkCls(entry)}
+        >
+          {body}
+        </Link>
+      );
+    }
+    // Home wires onNavigate; every other route deep-links the mode instead.
+    if (onNavigate) {
+      return (
+        <button
+          key={entry.id}
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            onPick();
+            onNavigate(entry.id);
+          }}
+          onMouseEnter={() => setHoverKey(k)}
+          onFocus={() => setHoverKey(k)}
+          aria-current={isEntryActive(entry) ? "page" : undefined}
+          title={entryHint(entry)}
+          className={linkCls(entry)}
+        >
+          {body}
+        </button>
+      );
+    }
+    return (
+      <Link
         key={entry.id}
-        type="button"
+        href={`/?tab=${entry.id}`}
         role="menuitem"
-        onClick={() => onNavigate(entry.id)}
+        onClick={onPick}
         onMouseEnter={() => setHoverKey(k)}
         onFocus={() => setHoverKey(k)}
         aria-current={isEntryActive(entry) ? "page" : undefined}
         title={entryHint(entry)}
-        className={linkCls(entry)}
-      >
-        {body}
-      </button>
-    ) : (
-      <Link
-        key={entry.href}
-        href={entry.href}
-        role="menuitem"
-        onMouseEnter={() => setHoverKey(k)}
-        onFocus={() => setHoverKey(k)}
-        aria-current={isEntryActive(entry) ? "page" : undefined}
-        title={entry.desc}
         className={linkCls(entry)}
       >
         {body}
@@ -110,7 +140,11 @@ function MegaPanel({
   };
 
   return (
-    <div className="invisible fixed inset-x-0 top-[53px] z-50 opacity-0 transition-opacity duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
+    <div
+      className={`fixed inset-x-0 top-[53px] z-50 transition-opacity duration-150 ${
+        open ? "visible opacity-100" : "invisible opacity-0"
+      }`}
+    >
       <div className="border-b border-[#3A2318] bg-[#201209] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.55)]">
         <div className="mx-auto grid w-full max-w-5xl gap-10 px-8 py-8 md:grid-cols-[250px_1fr_230px]">
           <div>
@@ -140,31 +174,95 @@ function MegaPanel({
 export type NavMode = "home" | "builder" | "composite" | "soql" | "graphql" | "schema" | "rest";
 
 interface AppHeaderProps {
-  connected: boolean;
-  instanceUrl: string;
-  apiVersion: string;
-  objectCount: number;
-  connecting: boolean;
-  onConnectClick: () => void;
-  onDisconnect: () => void;
-  onNavigate: (mode: NavMode) => void;
+  connected?: boolean;
+  instanceUrl?: string;
+  apiVersion?: string;
+  objectCount?: number;
+  connecting?: boolean;
+  onConnectClick?: () => void;
+  onDisconnect?: () => void;
+  onNavigate?: (mode: NavMode) => void;
   /** Current mode - the matching tab renders underlined. Omit on routes. */
   activeMode?: NavMode;
 }
 
-export function AppHeader({
-  connected,
-  instanceUrl,
-  apiVersion,
-  objectCount,
-  connecting,
-  onConnectClick,
-  onDisconnect,
-  onNavigate,
-  activeMode,
-}: AppHeaderProps) {
+const ROUTE_OFFLINE = { connected: false, instanceUrl: "", apiVersion: "", objectCount: 0 };
+
+export function AppHeader(props: AppHeaderProps) {
+  const { onNavigate, activeMode } = props;
+  const router = useRouter();
+  // Route pages render bare: the session comes from the tab-scoped store,
+  // exactly like the old ToolHeader did. Home passes live props instead.
+  const [routeSession, setRouteSession] = useState(ROUTE_OFFLINE);
+  useEffect(() => {
+    if (props.connected !== undefined) return;
+    const read = () => {
+      try {
+        const saved = JSON.parse(sessionStorage.getItem("gravenx_session") ?? "null") as {
+          instanceUrl?: string;
+          token?: string;
+          apiVersion?: string;
+        } | null;
+        setRouteSession(
+          saved?.token && saved?.instanceUrl
+            ? { connected: true, instanceUrl: saved.instanceUrl, apiVersion: saved.apiVersion ?? "", objectCount: 0 }
+            : ROUTE_OFFLINE,
+        );
+      } catch {
+        setRouteSession(ROUTE_OFFLINE);
+      }
+    };
+    read();
+    window.addEventListener("storage", read);
+    window.addEventListener("focus", read);
+    return () => {
+      window.removeEventListener("storage", read);
+      window.removeEventListener("focus", read);
+    };
+  }, [props.connected]);
+  const connected = props.connected ?? routeSession.connected;
+  const instanceUrl = props.instanceUrl ?? routeSession.instanceUrl;
+  const apiVersion = props.apiVersion ?? routeSession.apiVersion;
+  const objectCount = props.objectCount ?? routeSession.objectCount;
+  const connecting = props.connecting ?? false;
+  const onConnectClick = props.onConnectClick ?? (() => router.push("/"));
+  const onDisconnect =
+    props.onDisconnect ??
+    (() => {
+      try {
+        sessionStorage.removeItem("gravenx_session");
+      } catch {
+        /* storage unavailable */
+      }
+      setRouteSession(ROUTE_OFFLINE);
+    });
   const [menuOpen, setMenuOpen] = useState(false);
   const [copiedOrg, setCopiedOrg] = useState(false);
+  // Controlled mega-panels: hover intent with a grace timer (sub-pixel gaps
+  // must not slam the panel), closed on pick, route change, or Escape.
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
+  const closeTimer = useRef<number | null>(null);
+  const openPanel = (id: string) => {
+    if (closeTimer.current !== null) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+    setOpenGroup(id);
+  };
+  const scheduleClose = () => {
+    if (closeTimer.current !== null) window.clearTimeout(closeTimer.current);
+    closeTimer.current = window.setTimeout(() => {
+      closeTimer.current = null;
+      setOpenGroup(null);
+    }, 140);
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpenGroup(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -254,6 +352,11 @@ export function AppHeader({
   ];
 
   const pathname = usePathname();
+  // Navigation always closes the panel - the red-dot-active tab never sits
+  // under an open menu.
+  useEffect(() => {
+    setOpenGroup(null);
+  }, [pathname]);
   const activeClass =
     "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors";
   const idleClass = "hover:text-[var(--color-ink)] transition-colors";
@@ -277,24 +380,41 @@ export function AppHeader({
   const renderFlatEntry = (entry: NavEntry) => {
     const active = isEntryActive(entry);
     const cls = `whitespace-nowrap self-center ${active ? activeClass : `${idleClass} cursor-pointer`}`;
-    return entry.kind === "mode" ? (
-      <button
+    if (entry.kind === "route") {
+      return (
+        <Link
+          key={entry.href}
+          href={entry.href}
+          aria-current={active ? "page" : undefined}
+          className={cls}
+          title={entry.desc}
+        >
+          {renderEntryLabel(entry)}
+        </Link>
+      );
+    }
+    // Home wires onNavigate; every other route deep-links the mode instead.
+    if (onNavigate) {
+      return (
+        <button
+          key={entry.id}
+          type="button"
+          onClick={() => onNavigate(entry.id)}
+          aria-current={active ? "page" : undefined}
+          className={cls}
+          title={entryHint(entry)}
+        >
+          {renderEntryLabel(entry)}
+        </button>
+      );
+    }
+    return (
+      <Link
         key={entry.id}
-        type="button"
-        onClick={() => onNavigate(entry.id)}
+        href={`/?tab=${entry.id}`}
         aria-current={active ? "page" : undefined}
         className={cls}
         title={entryHint(entry)}
-      >
-        {renderEntryLabel(entry)}
-      </button>
-    ) : (
-      <Link
-        key={entry.href}
-        href={entry.href}
-        aria-current={active ? "page" : undefined}
-        className={cls}
-        title={entry.desc}
       >
         {renderEntryLabel(entry)}
       </Link>
@@ -323,34 +443,56 @@ export function AppHeader({
         </Link>
 
         <nav className="hidden md:flex items-stretch gap-5 text-xs font-medium text-[var(--color-ink-soft)]" aria-label="Product">
-          <button
-            type="button"
-            onClick={() => onNavigate("home")}
-            aria-current={activeMode === "home" ? "page" : undefined}
-            title="Back to the start"
-            className={`cursor-pointer self-center whitespace-nowrap ${activeMode === "home" ? activeClass : idleClass}`}
-          >
-            Home
-          </button>
+          {onNavigate ? (
+            <button
+              type="button"
+              onClick={() => onNavigate("home")}
+              aria-current={activeMode === "home" ? "page" : undefined}
+              title="Back to the start"
+              className={`cursor-pointer self-center whitespace-nowrap ${activeMode === "home" ? activeClass : idleClass}`}
+            >
+              Home
+            </button>
+          ) : (
+            <Link
+              href="/"
+              aria-current={pathname === "/" ? "page" : undefined}
+              title="Back to the start"
+              className={`self-center whitespace-nowrap ${pathname === "/" ? activeClass : idleClass}`}
+            >
+              Home
+            </Link>
+          )}
           {navGroups.map((group) => {
             const groupActive = group.items.some(isEntryActive);
+            const open = openGroup === group.id;
             return (
-              <div key={group.id} className="group flex items-stretch">
+              <div
+                key={group.id}
+                className="group flex items-stretch"
+                onMouseEnter={() => openPanel(group.id)}
+                onMouseLeave={scheduleClose}
+              >
                 <button
                   type="button"
                   aria-haspopup="true"
+                  aria-expanded={open}
+                  onFocus={() => openPanel(group.id)}
+                  onClick={() => (open ? setOpenGroup(null) : openPanel(group.id))}
                   title={`${group.label} studios`}
                   className={`flex cursor-pointer items-center gap-1 whitespace-nowrap ${groupActive ? activeClass : idleClass}`}
                 >
                   {group.label}
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true" className="transition-transform group-hover:rotate-180">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true" className={`transition-transform ${open ? "rotate-180" : ""}`}>
                     <path d="m6 9 6 6 6-6" />
                   </svg>
                 </button>
                 <MegaPanel
                   group={group}
+                  open={open}
                   isEntryActive={isEntryActive}
                   onNavigate={onNavigate}
+                  onPick={() => setOpenGroup(null)}
                   entryHint={entryHint}
                   renderLabel={renderEntryLabel}
                 />
@@ -499,15 +641,26 @@ export function AppHeader({
         </div>
       </div>
       <nav className="md:hidden flex items-center gap-4 overflow-x-auto px-5 pb-2.5 text-xs font-medium text-[var(--color-ink-soft)]" aria-label="Product">
-        <button
-          type="button"
-          onClick={() => onNavigate("home")}
-          aria-current={activeMode === "home" ? "page" : undefined}
-          title="Back to the start"
-          className={`whitespace-nowrap cursor-pointer ${activeMode === "home" ? activeClass : idleClass}`}
-        >
-          Home
-        </button>
+        {onNavigate ? (
+          <button
+            type="button"
+            onClick={() => onNavigate("home")}
+            aria-current={activeMode === "home" ? "page" : undefined}
+            title="Back to the start"
+            className={`whitespace-nowrap cursor-pointer ${activeMode === "home" ? activeClass : idleClass}`}
+          >
+            Home
+          </button>
+        ) : (
+          <Link
+            href="/"
+            aria-current={pathname === "/" ? "page" : undefined}
+            title="Back to the start"
+            className={`whitespace-nowrap ${pathname === "/" ? activeClass : idleClass}`}
+          >
+            Home
+          </Link>
+        )}
         {navGroups.flatMap((group) => group.items.map(renderFlatEntry))}
         {standaloneRoutes.map(renderFlatEntry)}
       </nav>

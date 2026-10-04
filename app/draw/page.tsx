@@ -1,4 +1,4 @@
-import { ToolHeader } from "@/components/layout/ToolHeader";
+import { AppHeader } from "@/components/layout/AppHeader";
 import { AppFooter } from "@/components/layout/AppFooter";
 import { DrawStudio } from "@/components/draw/DrawStudio";
 
@@ -11,7 +11,7 @@ export const metadata = {
 export default function DrawPage() {
   return (
     <div className="flex flex-col min-h-screen">
-      <ToolHeader />
+      <AppHeader />
       <main className="w-full flex-1 flex flex-col min-h-0">
         <DrawStudio />
       </main>

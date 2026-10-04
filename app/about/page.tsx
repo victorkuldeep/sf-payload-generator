@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ToolHeader } from "@/components/layout/ToolHeader";
+import { AppHeader } from "@/components/layout/AppHeader";
 import { AppFooter } from "@/components/layout/AppFooter";
 
 export const metadata = {
@@ -57,7 +57,7 @@ function SocialIcon({ icon }: { icon: (typeof SOCIALS)[number]["icon"] }) {
 export default function AboutPage() {
   return (
     <div className="flex flex-col min-h-screen">
-      <ToolHeader />
+      <AppHeader />
       <main className="mx-auto w-full max-w-5xl px-5 pt-8 pb-4 flex-1">
         <p className="font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">About the architect</p>
         <div className="mt-4 grid gap-8 md:grid-cols-[240px_1fr]">

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ToolHeader } from "@/components/layout/ToolHeader";
+import { AppHeader } from "@/components/layout/AppHeader";
 import { AppFooter } from "@/components/layout/AppFooter";
 
 export const metadata = {
@@ -26,7 +26,7 @@ function Section({ id, title, children }: { id: string; title: string; children:
 export default function PrivacyPage() {
   return (
     <div className="flex flex-col min-h-screen">
-      <ToolHeader />
+      <AppHeader />
       <main className="mx-auto w-full max-w-3xl px-5 pt-10 pb-16 flex-1" id="main-content">
         <p className="font-mono text-[11px] uppercase tracking-[2px] text-[var(--color-accent-dark)]">
           Legal · GDPR-ready

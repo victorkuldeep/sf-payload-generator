@@ -163,11 +163,7 @@ describe("privacy / GDPR surface", () => {
   });
 
   it("collection tray lives in builder tabs, never in headers", () => {
-    for (const h of [
-      "components/layout/ToolHeader.tsx",
-      "components/layout/AppHeader.tsx",
-      "components/layout/AppShell.tsx",
-    ]) {
+    for (const h of ["components/layout/AppHeader.tsx", "components/layout/AppShell.tsx"]) {
       const src = read(h);
       expect(src).not.toMatch(/collectionCount|onCollectionClick|listCollectionItems/);
     }

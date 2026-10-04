@@ -643,7 +643,8 @@ export default function Home() {
     if (deepTabDone.current) return;
     let tab: string | null = null;
     try {
-      tab = new URLSearchParams(window.location.search).get("tab")?.trim() || null;
+      const q = new URLSearchParams(window.location.search);
+      tab = q.get("tab")?.trim() || q.get("mode")?.trim() || null;
     } catch {
       tab = null;
     }
