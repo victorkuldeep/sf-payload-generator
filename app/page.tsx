@@ -38,6 +38,7 @@ import {
 import { ConnectModal } from "@/components/ConnectModal";
 import { ObjectSearchOverlay } from "@/components/ObjectSearchOverlay";
 import { getCachedConnection, setCachedConnection, clearCachedConnection } from "@/lib/session/cache";
+import { clearSessionExpired, markSessionExpired } from "@/lib/ai/gate";
 import { loadAutosave, queueAutosave, flushAutosaves, clearAutosave, migrateLegacyWorkspace } from "@/lib/workspace/autosave";
 import Button from "@/components/ui/Button";
 import ObjectPanel from "@/components/ObjectPanel";
@@ -167,6 +168,12 @@ const COMPOSITE_STEPS = [
 const SOQL_STEPS = [
   { label: "Connect", hint: "Org + token" },
   { label: "Query", hint: "SOQL + plan" },
+  { label: "Export", hint: "CSV + JSON" },
+];
+
+const SOSL_STEPS = [
+  { label: "Connect", hint: "Org + token" },
+  { label: "Search", hint: "SOSL + grid" },
   { label: "Export", hint: "CSV + JSON" },
 ];
 
@@ -503,6 +510,7 @@ export default function Home() {
   const [collection, setCollection] = useState<CollectionItem[]>([]);
   const [pickerItem, setPickerItem] = useState<NewCollectionItem | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [queryLang, setQueryLang] = useState<"soql" | "sosl">("soql");
   const [builderLeftOpen, setBuilderLeftOpen] = useState(true);
   const [builderRightOpen, setBuilderRightOpen] = useState(true);
   // Org key for workspace autosave: resolved from the live session after
@@ -533,6 +541,7 @@ export default function Home() {
 
   const handleSessionExpired = useCallback(() => {
     clearCachedConnection();
+    markSessionExpired();
     setSessionExpired(true);
   }, []);
 
@@ -784,6 +793,7 @@ export default function Home() {
       setShowConnect(false);
       setShowWelcome(false);
       setSessionExpired(false);
+      clearSessionExpired();
       sessionStorage.setItem("sf_welcomed", "1");
       if (pendingModeRef.current) {
         const m = pendingModeRef.current;
@@ -1472,7 +1482,7 @@ export default function Home() {
                   state.mode === "composite"
                     ? COMPOSITE_STEPS
                     : state.mode === "soql"
-                      ? SOQL_STEPS
+                      ? (queryLang === "sosl" ? SOSL_STEPS : SOQL_STEPS)
                       : state.mode === "graphql"
                         ? GRAPHQL_STEPS
                         : state.mode === "rest"
@@ -1560,6 +1570,7 @@ export default function Home() {
                   apiVersion={state.apiVersion}
                   getToken={() => tokenRef.current}
                   onSessionExpired={handleSessionExpired}
+                  onLanguageChange={setQueryLang}
                 />
               </section>
             </div>

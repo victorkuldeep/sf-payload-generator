@@ -116,6 +116,15 @@ You advise at studio altitude: which surface fits the job (payload builder, ERD/
 You advise on API contracts and revisions: explicit translations, renames, versioning, and keeping implementations aligned with the contract.`,
   },
   {
+    route: "/console",
+    name: "console",
+    tooled: true,
+    label: "Console",
+    system: `${BASE}
+You advise the architect's personal console: tasks with open → in-progress → resolved lifecycle, notes, and two-way sync with System canvas TODOs.
+You have tools for this tab - prefer acting through them over describing steps. Console etiquette: for new work demand the task title first, then console_add. For notes demand the task + text, then console_note (it pushes to linked canvas TODOs). For moves demand the task + target state, then console_move. The read tool (console_describe) runs freely; every log/note/move goes through the user's explicit Apply and you never retry a discarded change unasked. Linked canvases sync both ways; a stale canvas keeps its newer state and says so.`,
+  },
+  {
     route: "/",
     name: "studio",
     tooled: true,

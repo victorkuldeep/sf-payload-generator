@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import { clearCachedConnection, setCachedConnection } from "@/lib/session/cache";
-import { aiHistoryKey, isSalesforceConnected } from "./gate";
+import { aiHistoryKey, clearSessionExpired, isSalesforceConnected, markSessionExpired } from "./gate";
 
 const conn = {
   instanceUrl: "https://x.my.salesforce.com",
@@ -13,6 +13,7 @@ const conn = {
 
 beforeEach(() => {
   clearCachedConnection();
+  clearSessionExpired();
   sessionStorage.clear();
 });
 
@@ -36,6 +37,16 @@ describe("salesforce gate", () => {
     expect(isSalesforceConnected()).toBe(false);
     sessionStorage.setItem("gravenx_session", "[[broken");
     expect(isSalesforceConnected()).toBe(false);
+  });
+
+  it("stays closed after expiry despite cache and session record", () => {
+    setCachedConnection(conn);
+    sessionStorage.setItem("gravenx_session", JSON.stringify({ instanceUrl: "https://x", token: "t", apiVersion: "v1" }));
+    expect(isSalesforceConnected()).toBe(true);
+    markSessionExpired();
+    expect(isSalesforceConnected()).toBe(false);
+    clearSessionExpired();
+    expect(isSalesforceConnected()).toBe(true);
   });
 });
 

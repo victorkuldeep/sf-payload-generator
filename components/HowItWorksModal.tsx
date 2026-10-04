@@ -108,7 +108,7 @@ export function HowItWorksModal({ open, onClose, onConnect }: HowItWorksModalPro
             {STEPS.map((s, i) => (
               <li key={s.n} className="rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-4">
                 <div className="flex items-baseline gap-2">
-                  <span className={`font-display text-2xl font-bold ${i % 2 === 0 ? "text-bronze-500" : "text-[#c41230]"}`}>{s.n}</span>
+                  <span className={`font-display text-2xl font-bold ${i % 2 === 0 ? "text-[#722F37]" : "text-[#C9A86A]"}`}>{s.n}</span>
                   <p className="text-sm font-semibold text-ivory-950">{s.title}</p>
                 </div>
                 <ul className="mt-2 space-y-1.5">

@@ -12,6 +12,29 @@ import { getCachedConnection } from "@/lib/session/cache";
 const SESSION_KEY = "gravenx_session";
 
 /**
+ * Expired-token latch. Presence checks cannot detect a dead token (the
+ * session record survives expiry), so the app sets this when Salesforce
+ * reports 401/invalid-session and clears it on reconnect. While set, the
+ * gate stays closed even with a session record on disk.
+ */
+let sessionDead = false;
+
+export const SESSION_EXPIRED_EVENT = "gravenx:session-expired";
+
+export function markSessionExpired(): void {
+  sessionDead = true;
+  try {
+    window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+  } catch {
+    /* non-browser module graph - flag alone still closes the gate */
+  }
+}
+
+export function clearSessionExpired(): void {
+  sessionDead = false;
+}
+
+/**
  * Org key scoping AI memory. Prefers the live connection's resolved org
  * key, falls back to the session record's hostname, then "local".
  */
@@ -44,6 +67,7 @@ export function aiHistoryKey(): string {
 }
 
 export function isSalesforceConnected(): boolean {
+  if (sessionDead) return false;
   try {
     if (getCachedConnection()) return true;
   } catch {

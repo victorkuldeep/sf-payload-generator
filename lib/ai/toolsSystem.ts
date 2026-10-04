@@ -10,6 +10,7 @@ import { JSON_TOOLS, STUDIO_TOOLS } from "./toolsStudio";
 import { WIREFRAME_TOOLS } from "./toolsWireframe";
 import { SEQUENCE_TOOLS } from "./toolsSequence";
 import { DRAW_TOOLS } from "./toolsDraw";
+import { CONSOLE_TOOLS } from "./toolsConsole";
 import type { AgentTool } from "./tools";
 
 /**
@@ -186,5 +187,6 @@ export function toolsForSkill(skillName: string): AgentTool[] {
   if (skillName === "wireframe") return WIREFRAME_TOOLS;
   if (skillName === "sequence") return SEQUENCE_TOOLS;
   if (skillName === "draw") return DRAW_TOOLS;
+  if (skillName === "console") return CONSOLE_TOOLS;
   return [];
 }

@@ -161,10 +161,10 @@ export function ConnectModal({
       onClick={() => { if (!loading) onClose(); }}
     >
       <div
-        className="modal-card max-w-2xl max-h-[85dvh] overflow-y-auto"
+        className="modal-card max-w-2xl max-h-[85dvh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-[var(--color-line-soft)]">
+        <div className="flex shrink-0 items-start justify-between px-6 pt-5 pb-4 border-b border-[var(--color-line-soft)]">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[2px] text-[var(--color-accent-dark)]">
               Live connection
@@ -196,7 +196,7 @@ export function ConnectModal({
           </div>
         </div>
 
-        <div className="px-6 pt-4">
+        <div className="px-6 pt-4 shrink-0">
           <div className="flex rounded-lg border border-[var(--color-line)] overflow-hidden w-fit max-w-full text-xs font-medium" role="tablist" aria-label="Connect dialog tabs">
             {(Object.keys(TAB_LABELS) as Tab[]).map((t) => (
               <button
@@ -214,6 +214,7 @@ export function ConnectModal({
           </div>
         </div>
 
+        <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === "credentials" ? (
           <div className="px-6 py-4 space-y-4">
             <Input
@@ -337,8 +338,9 @@ export function ConnectModal({
             </div>
           </div>
         )}
+        </div>
 
-        <div className="px-6 py-4 border-t border-[var(--color-line-soft)] bg-[var(--color-canvas)] space-y-3">
+        <div className="px-6 py-4 border-t border-[var(--color-line-soft)] bg-[var(--color-canvas)] space-y-3 shrink-0">
           <label className="flex cursor-pointer items-start gap-2 text-[12px] leading-relaxed text-ivory-700">
             <input
               type="checkbox"
@@ -384,7 +386,7 @@ export function ConnectModal({
                 disabled={loading || !accepted}
                 title={!accepted && !loading ? "Accept the Terms & Conditions first" : undefined}
               >
-                {tab === "session" ? "Connect" : <>Test &amp; Connect</>}
+                <>Test &amp; Connect</>
               </Button>
             </div>
           </div>

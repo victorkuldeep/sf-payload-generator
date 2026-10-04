@@ -14,7 +14,7 @@ import { getProviderKey } from "@/lib/ai/keyVault";
 import { skillForPath, systemPromptFor } from "@/lib/ai/skills";
 import { runAgentLoop } from "@/lib/ai/tools";
 import { toolsForSkill } from "@/lib/ai/toolsSystem";
-import { aiHistoryKey, isSalesforceConnected } from "@/lib/ai/gate";
+import { aiHistoryKey, isSalesforceConnected, SESSION_EXPIRED_EVENT } from "@/lib/ai/gate";
 import { deleteAiSession, listAiSessions, loadAiSession, newSessionId, saveAiSession, type AiSession } from "@/lib/ai/historyDb";
 import { AiMarkdown } from "./Markdown";
 import { ModelStudio } from "./ModelStudio";
@@ -70,12 +70,15 @@ export function AiDock() {
   useEffect(() => {
     if (!open) return;
     const check = () => setSfOk(isSalesforceConnected());
+    const onExpired = () => setSfOk(false);
     check();
     window.addEventListener("focus", check);
     window.addEventListener("storage", check);
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
     return () => {
       window.removeEventListener("focus", check);
       window.removeEventListener("storage", check);
+      window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
     };
   }, [open]);
 
@@ -145,7 +148,7 @@ export function AiDock() {
     if (!text || busy) return;
     if (!isSalesforceConnected()) {
       setSfOk(false);
-      setSendError("Connect to Salesforce first - the org connection unlocks the agent.");
+      setSendError("Connect to Salesforce to get started with AI - the org connection unlocks the agent.");
       return;
     }
     const key = getProviderKey(providerId);
@@ -284,7 +287,7 @@ export function AiDock() {
           <div className="flex items-start justify-between gap-2 border-b border-[var(--color-line-soft)] px-4 py-3">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[2px] text-[var(--color-accent-dark)]">
-                GravenX - AI Agent advising: {skill.label}
+                GravenX - AI Agent
               </p>
               <p className="mt-0.5 text-[11px] leading-relaxed text-ivory-600">
                 Disclaimer: key stays in this tab - forwarded per request, never stored or logged.
@@ -382,7 +385,7 @@ export function AiDock() {
                   <path d="M8 10V7a4 4 0 0 1 8 0v3" />
                 </svg>
                 <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-[#8A6A2F]">
-                  Agent locked - connect to Salesforce first.
+                  Connect to Salesforce to get started with AI.
                 </p>
                 <Link href="/" className="shrink-0 rounded-lg bg-ivory-950 px-2.5 py-1.5 text-[11px] font-semibold text-ivory-100 hover:bg-bronze-600 transition-colors">
                   Connect
@@ -493,9 +496,9 @@ export function AiDock() {
                     void send();
                   }
                 }}
-                placeholder={`Ask about ${skill.label}…`}
+                placeholder={sfOk ? `Ask about ${skill.label}…` : "Connect to Salesforce to start…"}
                 aria-label="Ask the agent"
-                disabled={busy}
+                disabled={busy || !sfOk}
                 className="min-w-0 flex-1 rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-2.5 py-2 text-xs text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none disabled:opacity-60"
               />
               {busy ? (
@@ -503,7 +506,7 @@ export function AiDock() {
                   Stop
                 </Button>
               ) : (
-                <Button size="sm" onClick={() => void send()} disabled={draft.trim() === ""}>
+                <Button size="sm" onClick={() => void send()} disabled={draft.trim() === "" || !sfOk}>
                   Send
                 </Button>
               )}

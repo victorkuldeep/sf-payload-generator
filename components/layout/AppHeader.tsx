@@ -124,12 +124,40 @@ export function AppHeader({
         <nav className="hidden md:flex items-center gap-5 text-xs font-medium text-[var(--color-ink-soft)]" aria-label="Product">
           {renderNavItems()}
           <Link
-            href="/json"
-            aria-current={jsonActive ? "page" : undefined}
-            className={jsonLinkClass}
-            title="JSON Studio - editor and A/B payload comparator"
+            href="/system"
+            aria-current={pathname === "/system" ? "page" : undefined}
+            className={
+              pathname === "/system"
+                ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors"
+                : "hover:text-[var(--color-ink)] transition-colors"
+            }
+            title="System Design Studio - visual architecture and integration workbench"
           >
-            JSON
+            System
+          </Link>
+          <Link
+            href="/sequence"
+            aria-current={pathname === "/sequence" ? "page" : undefined}
+            className={
+              pathname === "/sequence"
+                ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors"
+                : "hover:text-[var(--color-ink)] transition-colors"
+            }
+            title="Sequence Studio - describe the interaction, see the architecture"
+          >
+            Sequence
+          </Link>
+          <Link
+            href="/wireframe"
+            aria-current={pathname === "/wireframe" ? "page" : undefined}
+            className={
+              pathname === "/wireframe"
+                ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors"
+                : "hover:text-[var(--color-ink)] transition-colors"
+            }
+            title="Wireframe Studio - schema-aware experience modeling"
+          >
+            Wireframe
           </Link>
           <Link
             href="/contracts"
@@ -156,16 +184,12 @@ export function AppHeader({
             Architect
           </Link>
           <Link
-            href="/system"
-            aria-current={pathname === "/system" ? "page" : undefined}
-            className={
-              pathname === "/system"
-                ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors"
-                : "hover:text-[var(--color-ink)] transition-colors"
-            }
-            title="System Design Studio - visual architecture and integration workbench"
+            href="/json"
+            aria-current={jsonActive ? "page" : undefined}
+            className={jsonLinkClass}
+            title="JSON Studio - editor and A/B payload comparator"
           >
-            System
+            JSON
           </Link>
           <Link
             href="/draw"
@@ -180,28 +204,16 @@ export function AppHeader({
             Draw<sup className="ml-[1px] text-[var(--color-accent)]">+</sup>
           </Link>
           <Link
-            href="/wireframe"
-            aria-current={pathname === "/wireframe" ? "page" : undefined}
+            href="/console"
+            aria-current={pathname === "/console" ? "page" : undefined}
             className={
-              pathname === "/wireframe"
+              pathname === "/console"
                 ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors"
                 : "hover:text-[var(--color-ink)] transition-colors"
             }
-            title="Wireframe Studio - schema-aware experience modeling"
+            title="Console - architect task manager, two-way sync with canvas TODOs"
           >
-            Wireframe
-          </Link>
-          <Link
-            href="/sequence"
-            aria-current={pathname === "/sequence" ? "page" : undefined}
-            className={
-              pathname === "/sequence"
-                ? "text-[var(--color-ink)] underline underline-offset-4 decoration-[var(--color-accent)] decoration-2 font-semibold transition-colors"
-                : "hover:text-[var(--color-ink)] transition-colors"
-            }
-            title="Sequence Studio - describe the interaction, see the architecture"
-          >
-            Sequence
+            Console
           </Link>
         </nav>
 
@@ -325,10 +337,50 @@ export function AppHeader({
               </div>
             )}
           </div>
+          <Link
+            href="/docs"
+            aria-current={pathname === "/docs" ? "page" : undefined}
+            aria-label="Docs"
+            title="Docs - architect onboarding and guides"
+            className={`shrink-0 rounded-full border p-2 transition-colors ${
+              pathname === "/docs"
+                ? "border-[var(--color-accent)] bg-[var(--color-surface)] text-[var(--color-ink)]"
+                : "border-[var(--color-line)] text-[var(--color-ink-soft)] hover:border-[var(--color-accent)] hover:text-[var(--color-ink)]"
+            }`}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+              <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+            </svg>
+          </Link>
         </div>
       </div>
       <nav className="md:hidden flex items-center gap-4 overflow-x-auto px-5 pb-2.5 text-xs font-medium text-[var(--color-ink-soft)]" aria-label="Product">
         {renderNavItems()}
+        <Link
+          href="/system"
+          aria-current={pathname === "/system" ? "page" : undefined}
+          className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
+          title="System Design Studio - visual architecture and integration workbench"
+        >
+          System
+        </Link>
+        <Link
+          href="/sequence"
+          aria-current={pathname === "/sequence" ? "page" : undefined}
+          className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
+          title="Sequence Studio - describe the interaction, see the architecture"
+        >
+          Sequence
+        </Link>
+        <Link
+          href="/wireframe"
+          aria-current={pathname === "/wireframe" ? "page" : undefined}
+          className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
+          title="Wireframe Studio - schema-aware experience modeling"
+        >
+          Wireframe
+        </Link>
         <Link
           href="/json"
           aria-current={jsonActive ? "page" : undefined}
@@ -354,14 +406,6 @@ export function AppHeader({
           Architect
         </Link>
         <Link
-          href="/system"
-          aria-current={pathname === "/system" ? "page" : undefined}
-          className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
-          title="System Design Studio - visual architecture and integration workbench"
-        >
-          System
-        </Link>
-        <Link
           href="/draw"
           aria-current={pathname === "/draw" ? "page" : undefined}
           className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
@@ -370,12 +414,12 @@ export function AppHeader({
           Draw<sup className="ml-[1px] text-[var(--color-accent)]">+</sup>
         </Link>
         <Link
-          href="/wireframe"
-          aria-current={pathname === "/wireframe" ? "page" : undefined}
+          href="/console"
+          aria-current={pathname === "/console" ? "page" : undefined}
           className="hover:text-[var(--color-ink)] transition-colors whitespace-nowrap"
-          title="Wireframe Studio - schema-aware experience modeling"
+          title="Console - architect task manager, two-way sync with canvas TODOs"
         >
-          Wireframe
+          Console
         </Link>
       </nav>
     </header>

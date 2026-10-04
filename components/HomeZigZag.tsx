@@ -80,7 +80,7 @@ const ITEMS: ZigZagItem[] = [
 
 /**
  * Home capabilities as numbered zig-zag slogans (archtools language):
- * giant index alternating sides, ink + red display type, hairlines.
+ * giant index alternating sides, mocha/burgundy numerals, hairlines.
  */
 export function HomeZigZag({ onOpen }: { onOpen: (t: ZigZagTarget) => void }) {
   return (
@@ -93,12 +93,13 @@ export function HomeZigZag({ onOpen }: { onOpen: (t: ZigZagTarget) => void }) {
             <div className={`flex flex-col gap-4 md:flex-row md:items-start ${flip ? "md:flex-row-reverse md:text-right" : ""}`}>
               <span
                 aria-hidden="true"
-                className="font-mono font-extrabold leading-none text-[#AEA48E] select-none text-6xl sm:text-7xl md:w-40 shrink-0"
+                style={{ color: i % 2 === 0 ? "#722F37" : "#4E342E" }}
+                className="font-mono font-extrabold leading-none select-none text-6xl sm:text-7xl md:w-40 shrink-0"
               >
                 {num}
               </span>
               <div className="min-w-0 flex-1">
-                <h2 className="hero-title text-4xl sm:text-5xl text-ivory-950">
+                <h2 className="hero-title zigzag-title text-4xl sm:text-5xl text-ivory-950">
                   {item.titleA} <em>{item.titleEm}</em>
                 </h2>
                 <p className="mt-3 max-w-xl text-sm leading-relaxed text-ivory-700 md:ml-0" style={flip ? { marginLeft: "auto" } : undefined}>

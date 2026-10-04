@@ -34,7 +34,10 @@ interface SoqlPanelProps {
   apiVersion: string;
   getToken: () => string;
   onSessionExpired?: () => void;
+  onLanguageChange?: (mode: "soql" | "sosl") => void;
 }
+
+const SOQL_STARTER = "SELECT Id, Name FROM Account LIMIT 20";
 
 const SOQL_TIMEOUT_MS = 120000;
 const RENDER_CAP = 500;
@@ -131,8 +134,9 @@ export default function SoqlPanel({
   apiVersion,
   getToken,
   onSessionExpired,
+  onLanguageChange,
 }: SoqlPanelProps) {
-  const [soql, setSoql] = useState("SELECT Id, Name FROM Account LIMIT 20");
+  const [soql, setSoql] = useState(SOQL_STARTER);
   const [tooling, setTooling] = useState(false);
   const [allRows, setAllRows] = useState(false);
   const [mode, setMode] = useState<"soql" | "sosl">("soql");
@@ -593,19 +597,28 @@ export default function SoqlPanel({
 
   const switchMode = useCallback((next: "soql" | "sosl") => {
     setMode(next);
+    onLanguageChange?.(next);
     setResult(null);
     setRunError(null);
     setSoslCounts(null);
     setPlanOpen(false);
     setSoql((prev) => {
-      if (prev.trim() !== "") return prev;
-      return next === "sosl" ? SOSL_STARTER : "SELECT Id, Name FROM Account LIMIT 20";
+      const t = prev.trim();
+      // Swap the starter when the box still holds the other language's
+      // default (or nothing) - never clobber the user's own query.
+      if (t === "" || t === SOQL_STARTER || t === SOSL_STARTER) {
+        return next === "sosl" ? SOSL_STARTER : SOQL_STARTER;
+      }
+      return prev;
     });
-  }, []);
+  }, [onLanguageChange]);
 
   const loadQuery = useCallback(
     (q: string, useTooling: boolean, useMode?: "soql" | "sosl") => {
-      if (useMode) setMode(useMode);
+      if (useMode) {
+        setMode(useMode);
+        onLanguageChange?.(useMode);
+      }
       setSoql(q);
       setTooling(useTooling);
       setResult(null);
@@ -613,7 +626,7 @@ export default function SoqlPanel({
       setSoslCounts(null);
       setPlanOpen(false);
     },
-    []
+    [onLanguageChange]
   );
 
   const handleSave = useCallback(async () => {
@@ -817,7 +830,7 @@ export default function SoqlPanel({
             spellCheck={false}
             rows={5}
             aria-label={mode === "sosl" ? "SOSL search editor" : "SOQL query editor"}
-            placeholder={mode === "sosl" ? SOSL_STARTER : "SELECT Id, Name FROM Account LIMIT 20"}
+            placeholder={mode === "sosl" ? SOSL_STARTER : SOQL_STARTER}
             className="w-full rounded-lg border border-[var(--color-line)] bg-white px-3 py-2.5 font-mono text-[13px] leading-relaxed text-ivory-950 placeholder-ivory-500 focus:border-bronze-500 focus:outline-none focus:ring-1 focus:ring-bronze-500 resize-y"
           />
           {mode === "soql" && suggestions.length > 0 && (
