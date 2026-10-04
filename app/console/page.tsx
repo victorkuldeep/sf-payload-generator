@@ -1,4 +1,4 @@
-import { ToolHeader } from "@/components/layout/ToolHeader";
+import { AppHeader } from "@/components/layout/AppHeader";
 import { AppFooter } from "@/components/layout/AppFooter";
 import { ConsoleRoute } from "@/components/console/ConsoleRoute";
 
@@ -11,7 +11,7 @@ export const metadata = {
 export default function ConsolePage() {
   return (
     <div className="flex flex-col min-h-screen">
-      <ToolHeader />
+      <AppHeader />
       <main className="mx-auto w-full max-w-[1600px] px-2.5 pt-3 pb-1 flex-1">
         <ConsoleRoute />
       </main>
