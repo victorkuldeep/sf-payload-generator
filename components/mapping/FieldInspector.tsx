@@ -1,5 +1,6 @@
 "use client";
 
+import { CopyButton } from "@/components/ui/CopyButton";
 import type { SnapshotField } from "@/lib/mapping/types";
 
 function Prop({ label, value, tip }: { label: string; value: string; tip?: string }) {
@@ -54,8 +55,13 @@ export function FieldInspector({ objectName, field }: { objectName: string | nul
                 title={p.active ? "Active value" : "Inactive value"}
               >
                 <span className={`h-1.5 w-1.5 rounded-full ${p.active ? "bg-[#2F7D4F]" : "bg-[#D8CFC0]"}`} aria-hidden="true" />
-                <span className="truncate">{p.value}</span>
-                {p.label !== p.value && <span className="truncate text-[10px] text-[#A39B8E]">({p.label})</span>}
+                <span className="min-w-0 flex-1 truncate">
+                  <span className="block truncate">{p.label}</span>
+                  <span className="block truncate font-mono text-[10px] text-[#A39B8E]" title={`API name: ${p.value}`}>
+                    {p.value}
+                  </span>
+                </span>
+                <CopyButton text={p.value} label="API name" className="text-[#A39B8E] hover:bg-[#F0EBE0] hover:text-[#27241F]" />
               </li>
             ))}
           </ul>

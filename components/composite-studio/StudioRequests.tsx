@@ -608,6 +608,9 @@ function FieldRow({
 
   const mapping = doc.mappings.find((m) => m.id === field.mappingId) ?? null;
   const pickValues = meta ? getActivePicklistValues(meta).map((p) => p.value) : [];
+  const pickLabels = meta
+    ? Object.fromEntries(getActivePicklistValues(meta).map((p) => [p.value, p.label]))
+    : undefined;
   const refTargets = meta?.referenceTo ?? [];
   const isPicklist = (field.fieldType === "picklist" || field.fieldType === "multipicklist") && pickValues.length > 0;
   const sourceReq = mapping ? doc.requests.find((r) => r.id === mapping.sourceRequestId) : undefined;
@@ -675,7 +678,7 @@ function FieldRow({
             ) : field.mode === "null" ? (
               <span className="inline-block rounded-lg border border-[#E8E2D8] bg-[#F8F6F0] px-2.5 py-1.5 font-mono text-[13px] text-[#A39B8E]">null</span>
             ) : (
-              <LiteralInput field={field} pickValues={pickValues} onChange={(v) => actions.onSetLiteral(request.id, field.apiName, v)} />
+              <LiteralInput field={field} pickValues={pickValues} pickLabels={pickLabels} onChange={(v) => actions.onSetLiteral(request.id, field.apiName, v)} />
             )}
           </div>
           <select
@@ -817,7 +820,7 @@ function FieldRow({
 
 // ── Literal value input by Salesforce type ──────────────────────────────────
 
-function LiteralInput({ field, pickValues, onChange }: { field: StudioFieldValue; pickValues: string[]; onChange: (v: unknown) => void }) {
+function LiteralInput({ field, pickValues, pickLabels, onChange }: { field: StudioFieldValue; pickValues: string[]; pickLabels?: Record<string, string>; onChange: (v: unknown) => void }) {
   const cls =
     "w-full rounded-lg border border-[#E8E2D8] bg-white px-2.5 py-1.5 text-[13px] text-[#27241F] placeholder-[#A39B8E] focus:border-[#A98450] focus:outline-none font-mono";
   const str = field.literal === undefined || field.literal === null ? "" : String(field.literal);
@@ -830,6 +833,7 @@ function LiteralInput({ field, pickValues, onChange }: { field: StudioFieldValue
         value={str}
         multiple={t === "multipicklist"}
         ariaLabel={`Pick value for ${field.apiName}`}
+        labels={pickLabels}
         onChange={(v) => onChange(v)}
       />
     );

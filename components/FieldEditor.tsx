@@ -128,7 +128,7 @@ export default function FieldEditor({ field, value, onChange }: FieldEditorProps
           <option value="">-- Select --</option>
           {activePicklistValues.map((pv) => (
             <option key={pv.value} value={pv.value}>
-              {pv.label}
+              {pv.label}{pv.label !== pv.value ? ` (${pv.value})` : ""}
             </option>
           ))}
         </select>
@@ -156,7 +156,10 @@ export default function FieldEditor({ field, value, onChange }: FieldEditorProps
                 }}
                 className="h-4 w-4 rounded border-ivory-400 bg-white text-bronze-600 focus:ring-bronze-500"
               />
-              <span className="text-sm text-ivory-800">{pv.label}</span>
+              <span className="text-sm text-ivory-800">
+                {pv.label}
+                {pv.label !== pv.value && <span className="font-mono text-xs text-ivory-500"> ({pv.value})</span>}
+              </span>
             </label>
           ))}
           {activePicklistValues.length === 0 && (

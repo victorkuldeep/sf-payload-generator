@@ -381,7 +381,7 @@ function EnumEditor({
                 <option value="">choose…</option>
                 {active.map((p) => (
                   <option key={p.value} value={p.value}>
-                    {p.value}
+                    {p.label}{p.label !== p.value ? ` (${p.value})` : ""}
                   </option>
                 ))}
               </select>

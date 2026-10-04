@@ -1042,6 +1042,17 @@ export default function SchemaPanel({
   // ERD table coordinates (first graph open looked wind-blown until Rebalance).
   const [graphEnforced, setGraphEnforced] = useState<Map<string, { x: number; y: number }> | null>(null);
   const canvasRef = useRef<ErdCanvasHandle | null>(null);
+  // New arrivals land off-viewport (spiral) - glide the canvas onto them
+  // with a few retries while the node syncs through. No viewport steal on
+  // data-only refreshes: callers invoke this only for explicit adds.
+  const focusCanvasOn = useCallback((name: string) => {
+    let tries = 0;
+    const tick = () => {
+      if (!name || canvasRef.current?.focusNode(name) || tries++ > 10) return;
+      window.setTimeout(tick, 120);
+    };
+    window.setTimeout(tick, 60);
+  }, []);
   const [snapshots, setSnapshots] = useState<ErdSnapshot[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [showShare, setShowShare] = useState(false);
@@ -3131,6 +3142,7 @@ export default function SchemaPanel({
       setFocusName(first);
       setStaged(new Set());
       setRootSearch("");
+      focusCanvasOn(first);
       setNotice(`${first} is already on the canvas - focused.`);
       return;
     }
@@ -3148,6 +3160,7 @@ export default function SchemaPanel({
         setRootName(fresh[0].name);
       }
       setFocusName(fresh[fresh.length - 1]?.name ?? rootName);
+      if (fresh.length > 0) focusCanvasOn(fresh[fresh.length - 1].name);
       setStaged(new Set());
       setRootSearch("");
       setNotice(
@@ -3160,7 +3173,7 @@ export default function SchemaPanel({
     } finally {
       setBusy(null);
     }
-  }, [staged, describes, busy, rootName, addNames]);
+  }, [staged, describes, busy, rootName, addNames, focusCanvasOn]);
 
   const refreshAll = useCallback(async () => {
     if (busy || describes.size === 0) return;
@@ -4238,6 +4251,7 @@ export default function SchemaPanel({
       try {
         const fresh = await addNames(names);
         setFocusName(fresh[fresh.length - 1]?.name ?? target);
+        if (fresh.length > 0) focusCanvasOn(fresh[fresh.length - 1].name);
         if (mode === "parents" && target) {
           const dd = fresh.find((x) => x.name === target) ?? describes.get(target);
           const allParents = dd
@@ -4266,7 +4280,7 @@ export default function SchemaPanel({
         setBusy(null);
       }
     },
-    [picker, busy, describes, focusName, rootName, addNames]
+    [picker, busy, describes, focusName, rootName, addNames, focusCanvasOn]
   );
 
   const removeNode = useCallback(() => {
@@ -5829,15 +5843,19 @@ export default function SchemaPanel({
         <PicklistPopover
           pop={popover}
           onClose={() => setPopover(null)}
-          onAddValues={() => {
-            setAddValues({
-              objectApi: popover.apiName,
-              objectLabel: popover.nodeLabel,
-              fieldApi: popover.fieldName,
-              fieldLabel: popover.fieldName,
-            });
-            setPopover(null);
-          }}
+          onAddValues={
+            authorMode
+              ? () => {
+                  setAddValues({
+                    objectApi: popover.apiName,
+                    objectLabel: popover.nodeLabel,
+                    fieldApi: popover.fieldName,
+                    fieldLabel: popover.fieldName,
+                  });
+                  setPopover(null);
+                }
+              : undefined
+          }
         />
       )}
 

@@ -236,16 +236,16 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
   return (
     <div
       className={`group w-[300px] rounded-xl border-2 bg-[var(--color-surface)] shadow-[0_8px_28px_-10px_rgba(24,20,12,0.35)] overflow-hidden transition-all ${
-        data.spotlight
-          ? "border-bronze-500 shadow-[0_0_0_4px_rgba(154,118,83,0.35),0_8px_28px_-10px_rgba(24,20,12,0.35)]"
-          : data.linked
-            ? "border-[#722F37] shadow-[0_0_0_3px_rgba(114,47,55,0.38),0_8px_28px_-10px_rgba(24,20,12,0.35)]"
+        data.linked || data.linkFocus
+          ? "border-[#722F37] shadow-[0_0_0_3px_rgba(114,47,55,0.38),0_8px_28px_-10px_rgba(24,20,12,0.35)]"
+          : data.spotlight
+            ? "border-bronze-500 shadow-[0_0_0_4px_rgba(154,118,83,0.35),0_8px_28px_-10px_rgba(24,20,12,0.35)]"
             : selected
             ? "border-bronze-500"
             : data.isRoot
               ? "border-ivory-950"
               : "border-[var(--color-line)]"
-      } ${data.dimmed ? "opacity-40" : ""}`}
+      } ${(data.linked || data.linkFocus) ? "erd-link-glow" : ""} ${data.dimmed ? "opacity-40" : ""}`}
     >
       {/* Side-edge docks: exits at header height, entries at footer height */}
       <Handle type="source" id={parentExitHandleId} position={Position.Right} style={dockStyle(data.authorMode, { top: ERD_HEADER_H / 2 })} />

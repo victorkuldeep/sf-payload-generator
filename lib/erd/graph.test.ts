@@ -364,7 +364,7 @@ describe("buildErdElements link spotlight", () => {
     ]);
   const flags = (spot: { focus: string; related: Set<string>; soft?: boolean } | null) => {
     const { nodes } = buildErdElements(canvas(), new Map(), "Account", spot);
-    return new Map(nodes.map((n) => [n.id, { spotlight: n.data.spotlight, linked: n.data.linked, dimmed: n.data.dimmed }]));
+    return new Map(nodes.map((n) => [n.id, { spotlight: n.data.spotlight, linked: n.data.linked, linkFocus: n.data.linkFocus, dimmed: n.data.dimmed }]));
   };
   it("marks the clicked link\u2019s other end linked, the rest dimmed", () => {
     const f = flags({ focus: "Account", related: new Set(["Account", "Contact"]) });
@@ -374,13 +374,13 @@ describe("buildErdElements link spotlight", () => {
   });
   it("soft link highlight pairs without dimming the rest", () => {
     const f = flags({ focus: "Account", related: new Set(["Account", "Contact"]), soft: true });
-    expect(f.get("Account")).toMatchObject({ spotlight: true, linked: false, dimmed: false });
-    expect(f.get("Contact")).toMatchObject({ spotlight: false, linked: true, dimmed: false });
-    expect(f.get("Lead")).toMatchObject({ spotlight: false, linked: false, dimmed: false });
+    expect(f.get("Account")).toMatchObject({ spotlight: true, linked: false, linkFocus: true, dimmed: false });
+    expect(f.get("Contact")).toMatchObject({ spotlight: false, linked: true, linkFocus: false, dimmed: false });
+    expect(f.get("Lead")).toMatchObject({ spotlight: false, linked: false, linkFocus: false, dimmed: false });
   });
   it("clears every flag without a spot", () => {
     const f = flags(null);
-    for (const v of f.values()) expect(v).toEqual({ spotlight: false, linked: false, dimmed: false });
+    for (const v of f.values()) expect(v).toEqual({ spotlight: false, linked: false, linkFocus: false, dimmed: false });
   });
 });
 

@@ -103,7 +103,7 @@ function FieldInput({
         <option value="">—</option>
         {meta.picklistValues.map((p) => (
           <option key={p.value} value={p.value}>
-            {p.label}
+            {p.label}{p.label !== p.value ? ` (${p.value})` : ""}
           </option>
         ))}
       </select>

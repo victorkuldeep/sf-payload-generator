@@ -42,6 +42,8 @@ export interface ErdNodeData extends Record<string, unknown> {
   dimmed: boolean;
   /** Link-clicked: related-but-not-focus end of a relationship, dark bold edge. */
   linked: boolean;
+  /** Link-clicked focus end of a soft spot: same burgundy frame, no bronze ring. */
+  linkFocus: boolean;
   /** True while this node's describe is being refreshed. */
   refreshing: boolean;
   /** Design-note flags (entity notes) - header shows the note icon state. */
@@ -308,6 +310,7 @@ export function buildErdElements(
         spotlight: spot != null && spot.focus === apiName,
         dimmed: spot != null && spot.soft !== true && spot.focus !== apiName && !spot.related.has(apiName),
         linked: spot != null && spot.focus !== apiName && spot.related.has(apiName),
+        linkFocus: spot != null && spot.soft === true && spot.focus === apiName,
         // Panel overrides per live refresh state
         refreshing: false,
       },

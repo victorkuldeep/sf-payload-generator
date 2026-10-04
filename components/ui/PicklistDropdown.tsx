@@ -10,6 +10,8 @@ interface PicklistDropdownProps {
   multiple?: boolean;
   placeholder?: string;
   ariaLabel: string;
+  /** API value → display label. Rows show "Label (api)" when they differ. */
+  labels?: Record<string, string>;
   onChange: (value: string) => void;
 }
 
@@ -24,8 +26,13 @@ export default function PicklistDropdown({
   multiple = false,
   placeholder = "-- Select --",
   ariaLabel,
+  labels,
   onChange,
 }: PicklistDropdownProps) {
+  const text = (v: string) => {
+    const l = labels?.[v];
+    return l && l !== v ? `${l} (${v})` : v;
+  };
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
@@ -52,8 +59,8 @@ export default function PicklistDropdown({
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return values;
-    return values.filter((v) => v.toLowerCase().includes(q));
-  }, [values, query]);
+    return values.filter((v) => v.toLowerCase().includes(q) || (labels?.[v] ?? "").toLowerCase().includes(q));
+  }, [values, query, labels]);
 
   useEffect(() => {
     if (!open) return;
@@ -90,10 +97,10 @@ export default function PicklistDropdown({
   const label = multiple
     ? selected.size === 0
       ? placeholder
-      : [...selected].join("; ")
+      : [...selected].map(text).join("; ")
     : value === ""
       ? placeholder
-      : value;
+      : text(value);
 
   const pick = (v: string) => {
     if (!multiple) {
@@ -198,7 +205,7 @@ export default function PicklistDropdown({
                   >
                     ✓
                   </span>
-                  <span className="min-w-0 flex-1 truncate">{v}</span>
+                  <span className="min-w-0 flex-1 truncate" title={text(v)}>{text(v)}</span>
                 </button>
               );
             })}

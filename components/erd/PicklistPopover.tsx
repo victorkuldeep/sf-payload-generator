@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { CopyButton } from "@/components/ui/CopyButton";
 import type { ErdPickValue } from "@/lib/erd/graph";
 
 export interface PicklistPopoverData {
@@ -79,10 +80,11 @@ export function PicklistPopover({
             )}
             <span className="min-w-0 flex-1">
               <span className="block truncate text-xs font-medium text-ivory-950">{v.label}</span>
-              {v.label !== v.value && (
-                <span className="block truncate font-mono text-[10px] text-ivory-600">{v.value}</span>
-              )}
+              <span className="block truncate font-mono text-[10px] text-ivory-600" title={`API name: ${v.value}`}>
+                {v.value}
+              </span>
             </span>
+            <CopyButton text={v.value} label="API name" />
             {!v.active && (
               <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wide text-ivory-500">
                 off
