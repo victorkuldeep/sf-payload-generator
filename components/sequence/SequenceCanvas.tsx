@@ -1,8 +1,13 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Button from "../ui/Button";
+import { DraftDialog, type DraftConfirmation } from "../draw/DraftDialog";
+import { SYSTEM_DRAFT_KEY, buildSystemProject, type TopologyDraft } from "@/lib/draw/toSystemDraft";
 import { parseStatements, printStatements } from "@/lib/sequence/dsl";
+import { sequenceToDraft } from "@/lib/sequence/systemBridge";
+import { SystemImportDialog } from "./SystemImportDialog";
 import { findNode } from "@/lib/sequence/edit";
 import { patchNode, removeNode } from "@/lib/sequence/edit";
 import type { SequenceDocument, SeqNode } from "@/lib/sequence/model";
@@ -18,7 +23,10 @@ const SAVE_DEBOUNCE_MS = 800;
  * persist - errors show per line and the last good model stays live.
  */
 export function SequenceCanvas({ document, onSaved }: { document: SequenceDocument; onSaved: (doc: SequenceDocument) => void }) {
+  const router = useRouter();
   const [doc, setDoc] = useState(document);
+  const [importOpen, setImportOpen] = useState(false);
+  const [draft, setDraft] = useState<TopologyDraft | null>(null);
   const [text, setText] = useState(() => printStatements(document.participants, document.nodes));
   const [selId, setSelId] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -90,13 +98,31 @@ export function SequenceCanvas({ document, onSaved }: { document: SequenceDocume
 
   const selected = selId ? findNode(doc.nodes, selId) : null;
 
+  const handleConfirm = (selection: DraftConfirmation) => {
+    if (!draft) return;
+    const project = buildSystemProject(draft, selection);
+    try {
+      sessionStorage.setItem(SYSTEM_DRAFT_KEY, JSON.stringify(project));
+    } catch {
+      /* private mode etc - the canvas still holds the document */
+    }
+    setDraft(null);
+    router.push("/system");
+  };
+
   return (
     <div className="flex flex-col gap-3 lg:flex-row">
       <div className="flex w-full flex-col rounded-xl border border-[#E8E2D8] bg-white lg:max-w-md">
-        <div className="flex items-center justify-between border-b border-[#EFE9DC] px-3 py-2">
-          <p className="font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">
+        <div className="flex items-center justify-between gap-1.5 border-b border-[#EFE9DC] px-3 py-2">
+          <p className="min-w-0 flex-1 truncate font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">
             Statements · {valid ? `${parsed.nodes.length} top-level` : "fix errors to save"}
           </p>
+          <Button size="sm" variant="secondary" onClick={() => setImportOpen(true)} title="Import a System flow or project">
+            ⇄ System
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => setDraft(sequenceToDraft(doc))} title="Send participants and messages to System Design">
+            Send to System
+          </Button>
           <Button size="sm" variant="secondary" onClick={format} title="Reprint canonical DSL">
             Format
           </Button>
@@ -131,6 +157,22 @@ export function SequenceCanvas({ document, onSaved }: { document: SequenceDocume
           onPatch={patchSelected}
           onDelete={deleteSelected}
           onClose={() => setSelId(null)}
+        />
+      )}
+      {importOpen && (
+        <SystemImportDialog
+          onClose={() => setImportOpen(false)}
+          onImport={(statements) => {
+            setImportOpen(false);
+            onEdit(text.trim() === "" ? statements : `${text.replace(/\s+$/, "")}\n\n${statements}`);
+          }}
+        />
+      )}
+      {draft && (
+        <DraftDialog
+          draft={draft}
+          onCancel={() => setDraft(null)}
+          onConfirm={handleConfirm}
         />
       )}
     </div>
