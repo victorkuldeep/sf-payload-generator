@@ -239,7 +239,7 @@ export function TaskDetail({
                   aria-label="Task description markdown"
                   className="w-full resize-y rounded-xl border border-[#E8E2D8] bg-white px-3 py-2 font-mono text-[12px] leading-relaxed text-[#27241F] placeholder-[#A39B8E] focus:border-[#C9A86A] focus:outline-none"
                 />
-                <div className="mt-1.5 flex justify-end gap-1.5">
+                <div className="mt-1.5 flex justify-center gap-1.5">
                   <button
                     type="button"
                     onClick={() => {

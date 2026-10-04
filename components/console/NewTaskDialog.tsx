@@ -45,9 +45,16 @@ export function NewTaskDialog({ onClose, onCreate }: { onClose: () => void; onCr
   return (
     <div role="dialog" aria-modal="true" aria-label="Log a task" className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-5" onClick={onClose}>
       <div className="flex h-[calc(100vh-40px)] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="border-b border-[#E8E2D8] px-5 py-3.5">
-          <h3 className="text-[15px] font-semibold text-[#27241F]">Log a task</h3>
-          <p className="font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">Console queue · autosaved to this browser</p>
+        <div className="flex items-start gap-2 border-b border-[#E8E2D8] px-5 py-3.5">
+          <div className="min-w-0 flex-1">
+            <h3 className="text-[15px] font-semibold text-[#27241F]">Log a task</h3>
+            <p className="font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">Console queue · autosaved to this browser</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="cursor-pointer rounded p-1.5 text-[#A39B8E] hover:bg-[#F5F1E8] hover:text-[#27241F]">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
         </div>
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
           <div>
@@ -139,7 +146,7 @@ export function NewTaskDialog({ onClose, onCreate }: { onClose: () => void; onCr
             </label>
           </div>
         </div>
-        <div className="flex justify-end gap-2 border-t border-[#E8E2D8] px-5 py-3">
+        <div className="flex justify-center gap-2 border-t border-[#E8E2D8] px-5 py-3">
           <button type="button" onClick={onClose} className="cursor-pointer rounded-lg border border-[#E8E2D8] px-3 py-1.5 text-xs font-semibold text-[#27241F] hover:border-[#C9A86A]">
             Cancel
           </button>
