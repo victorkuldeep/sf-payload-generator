@@ -8,7 +8,7 @@ export default function MappingPage() {
   return (
     <div className="flex flex-col min-h-screen">
       <ToolHeader />
-      <main className="mx-auto w-full max-w-[1500px] px-5 pt-6 pb-1 flex-1">
+      <main className="mx-auto w-full max-w-[1600px] px-2 pt-3 pb-1 flex-1">
         <MappingRoute />
       </main>
       <AppFooter variant="slim" />
