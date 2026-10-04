@@ -62,10 +62,11 @@ async function findTask(ref: string): Promise<{ task: ConsoleTask } | { candidat
  * clobbering. Our own pushes stamp both sides, so agreement is the norm.
  */
 async function pushStatus(task: ConsoleTask, baseline: number, to: ConsoleStatus): Promise<boolean> {
+  const canvas = consoleToCanvas(to);
   let stale = false;
   for (const link of task.links) {
     if (link.surface !== "system" || !link.todoId) continue;
-    const r = await pushTodoStatus(liveSystemFns, link.recordId, link.todoId, consoleToCanvas(to), baseline);
+    const r = await pushTodoStatus(liveSystemFns, link.recordId, link.todoId, canvas, baseline);
     if (!r.ok && r.stale) stale = true;
   }
   return stale;
@@ -157,7 +158,7 @@ const moveArgs = z.object({
 
 const moveConsoleTask: AgentTool = {
   name: "console_move",
-  description: "Move a Console task through open → in-progress → resolved (reopen to open). Syncs linked canvas TODOs.",
+  description: "Move a Console task through open → in-progress → blocked / awaiting-feedback → resolved (reopen to open). Syncs linked canvas TODOs both ways.",
   parameters: {
     type: "object",
     properties: { task: { type: "string" }, to: { type: "string" } },

@@ -26,7 +26,7 @@ export interface ShareStructure {
     body?: string;
     assignee?: string;
     dueDate?: string;
-    status: "open" | "in-progress" | "done";
+    status: "open" | "in-progress" | "blocked" | "awaiting-feedback" | "done";
     createdAt: number;
     updatedAt: number;
   }[];
@@ -62,7 +62,13 @@ export function validateShareStructure(raw: unknown): ShareStructure | null {
     for (const t of p.todos) {
       const todo = t as Record<string, unknown>;
       if (!todo || typeof todo.id !== "string" || !todo.id || typeof todo.title !== "string") return null;
-      const status = todo.status === "done" || todo.status === "in-progress" ? todo.status : "open";
+      const status =
+        todo.status === "done" ||
+        todo.status === "in-progress" ||
+        todo.status === "blocked" ||
+        todo.status === "awaiting-feedback"
+          ? todo.status
+          : "open";
       todos.push({
         id: todo.id,
         title: todo.title,

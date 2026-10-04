@@ -1,5 +1,7 @@
 import { STORES, withStore } from "@/lib/db";
-import { consoleTaskSchema, type ConsoleTask } from "./model";
+import { consoleAttachmentSchema } from "./attachments";
+import type { ConsoleAttachment, ConsoleTask } from "./model";
+import { consoleTaskSchema } from "./model";
 
 /**
  * Console persistence: tasks live in their own `console-tasks` store
@@ -38,36 +40,62 @@ export async function deleteConsoleTask(id: string): Promise<boolean> {
   }
 }
 
-export function exportConsoleTasks(tasks: ConsoleTask[]): string {
+export function exportConsoleTasks(tasks: ConsoleTask[], attachments: ConsoleAttachment[] = []): string {
   return JSON.stringify(
-    { version: 1, type: "gravenx-console-package", exportedAt: new Date().toISOString(), tasks },
+    { version: 2, type: "gravenx-console-package", exportedAt: new Date().toISOString(), tasks, attachments },
     null,
     2,
   );
 }
 
-/** Import a package: re-ids every task so imports never overwrite. */
-export function importConsoleTasks(json: string, now = Date.now()): { tasks: ConsoleTask[]; error?: string } {
+/**
+ * Import a package: re-ids every task so imports never overwrite, and
+ * remaps attachment taskIds onto the new ids so screenshots travel along.
+ * v1 packages (tasks only) still import - attachments default to none.
+ */
+export function importConsoleTasks(
+  json: string,
+  now = Date.now(),
+): { tasks: ConsoleTask[]; attachments: ConsoleAttachment[]; error?: string } {
   let raw: unknown;
   try {
     raw = JSON.parse(json);
   } catch {
-    return { tasks: [], error: "Not valid JSON." };
+    return { tasks: [], attachments: [], error: "Not valid JSON." };
   }
   const list = (raw as { tasks?: unknown }).tasks;
-  if (!Array.isArray(list)) return { tasks: [], error: "No tasks array in this package." };
+  if (!Array.isArray(list)) return { tasks: [], attachments: [], error: "No tasks array in this package." };
   const tasks: ConsoleTask[] = [];
+  const idMap = new Map<string, string>();
   for (const item of list) {
     const parsed = consoleTaskSchema.safeParse(item);
     if (!parsed.success) continue;
     const t = parsed.data;
+    const nextId = `task_${now.toString(36)}_${Math.floor(Math.random() * 1e6).toString(36)}`;
+    idMap.set(t.id, nextId);
     tasks.push({
       ...t,
-      id: `task_${now.toString(36)}_${Math.floor(Math.random() * 1e6).toString(36)}`,
+      id: nextId,
       history: [...t.history, { at: now, what: "Imported into Console." }],
     });
     now++;
   }
-  if (tasks.length === 0) return { tasks: [], error: "No valid tasks in this package." };
-  return { tasks };
+  if (tasks.length === 0) return { tasks: [], attachments: [], error: "No valid tasks in this package." };
+  const attachments: ConsoleAttachment[] = [];
+  const rawAtts = (raw as { attachments?: unknown }).attachments;
+  if (Array.isArray(rawAtts)) {
+    for (const item of rawAtts) {
+      const parsed = consoleAttachmentSchema.safeParse(item);
+      if (!parsed.success) continue;
+      const targetId = idMap.get(parsed.data.taskId);
+      if (!targetId) continue;
+      attachments.push({
+        ...parsed.data,
+        id: `att_${now.toString(36)}_${Math.floor(Math.random() * 1e6).toString(36)}`,
+        taskId: targetId,
+      });
+      now++;
+    }
+  }
+  return { tasks, attachments };
 }

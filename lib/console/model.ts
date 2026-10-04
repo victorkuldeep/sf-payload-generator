@@ -10,8 +10,21 @@ import { z } from "zod";
  * appends history on both sides.
  */
 
-export const CONSOLE_STATUSES = ["open", "in-progress", "resolved"] as const;
+export const CONSOLE_STATUSES = ["open", "in-progress", "blocked", "awaiting-feedback", "resolved"] as const;
 export type ConsoleStatus = (typeof CONSOLE_STATUSES)[number];
+
+export const CONSOLE_STATUS_LABELS: Record<ConsoleStatus, string> = {
+  open: "Open",
+  "in-progress": "In Progress",
+  blocked: "Blocked",
+  "awaiting-feedback": "Awaiting Feedback",
+  resolved: "Resolved",
+};
+
+/** Short queue key, e.g. CX-9K2Q - stable per task, JIRA-style. */
+export function consoleTaskKey(task: Pick<ConsoleTask, "id" | "createdAt">): string {
+  return `CX-${task.createdAt.toString(36).toUpperCase().slice(-4)}`;
+}
 
 export const CONSOLE_PRIORITIES = ["low", "normal", "high", "critical"] as const;
 export type ConsolePriority = (typeof CONSOLE_PRIORITIES)[number];
@@ -73,6 +86,20 @@ export interface ConsoleNote {
   text: string;
 }
 
+/** Screenshot/file pinned to a task. Bytes live in the console-attachments IDB store, never in the task record. */
+export interface ConsoleAttachment {
+  id: string;
+  taskId: string;
+  name: string;
+  mime: string;
+  size: number;
+  dataUrl: string;
+  at: number;
+}
+
+export const CONSOLE_ATTACHMENT_MAX_BYTES = 3 * 1024 * 1024;
+export const CONSOLE_ATTACHMENT_MIMES = ["image/png", "image/jpeg", "image/webp", "image/gif"] as const;
+
 export interface ConsoleHistoryEntry {
   at: number;
   what: string;
@@ -117,7 +144,7 @@ const linkSchema = z.object({
 export const consoleTaskSchema: z.ZodType<ConsoleTask> = z.object({
   id: z.string().min(1).max(160),
   title: z.string().min(1).max(160),
-  body: z.string().max(4000).optional(),
+  body: z.string().max(12000).optional(),
   status: z.enum(CONSOLE_STATUSES),
   priority: z.enum(CONSOLE_PRIORITIES),
   dueDate: z.string().max(32).optional(),
@@ -130,13 +157,26 @@ export const consoleTaskSchema: z.ZodType<ConsoleTask> = z.object({
   updatedAt: z.number(),
 });
 
-/** Status transitions. resolved is terminal unless explicitly reopened. */
+/**
+ * Status transitions. blocked and awaiting-feedback are working states that
+ * return to the flow (reopen to open); resolved is terminal unless reopened.
+ */
+const TRANSITIONS: Record<ConsoleStatus, ConsoleStatus[]> = {
+  open: ["in-progress", "blocked", "resolved"],
+  "in-progress": ["open", "blocked", "awaiting-feedback", "resolved"],
+  blocked: ["open", "in-progress"],
+  "awaiting-feedback": ["open", "in-progress"],
+  resolved: ["open"],
+};
+
 export function canTransition(from: ConsoleStatus, to: ConsoleStatus): boolean {
   if (from === to) return true;
-  if (from === "open" && (to === "in-progress" || to === "resolved")) return true;
-  if (from === "in-progress" && (to === "resolved" || to === "open")) return true;
-  if (from === "resolved" && to === "open") return true;
-  return false;
+  return TRANSITIONS[from].includes(to);
+}
+
+/** Targets offered in the status dropdown - everything reachable from here. */
+export function nextStatuses(from: ConsoleStatus): ConsoleStatus[] {
+  return [...TRANSITIONS[from]];
 }
 
 export function moveTask(task: ConsoleTask, to: ConsoleStatus, now = Date.now()): ConsoleTask {

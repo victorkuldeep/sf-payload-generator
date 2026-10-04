@@ -47,6 +47,16 @@ describe("share link structure", () => {
     expect(p?.todos?.[1].status).toBe("open");
   });
 
+  it("keeps the shared lifecycle states across a share", () => {
+    const p = validateShareStructure(shape({
+      todos: [
+        { id: "t1", title: "Stuck", status: "blocked", createdAt: 1, updatedAt: 2 },
+        { id: "t2", title: "Waiting", status: "awaiting-feedback", createdAt: 1, updatedAt: 2 },
+      ],
+    }));
+    expect(p?.todos?.map((t) => t.status)).toEqual(["blocked", "awaiting-feedback"]);
+  });
+
   it("rejects malformed todos", () => {
     expect(validateShareStructure(shape({ todos: "nope" as unknown as ShareStructure["todos"] }))).toBeNull();
     expect(validateShareStructure(shape({ todos: [{ title: "no id" }] as unknown as ShareStructure["todos"] }))).toBeNull();

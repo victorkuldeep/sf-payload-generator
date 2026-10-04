@@ -31,6 +31,11 @@ export interface PushResult {
   error?: string;
 }
 
+/**
+ * One lifecycle everywhere: only the terminal differs (done ↔ resolved).
+ * Every working state - open, in-progress, blocked, awaiting-feedback -
+ * syncs verbatim in both directions, canvas TODOs included.
+ */
 export function canvasToConsole(status: CanvasTodoStatus): ConsoleStatus {
   return status === "done" ? "resolved" : status;
 }

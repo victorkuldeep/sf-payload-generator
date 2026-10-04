@@ -6,7 +6,7 @@
  */
 
 export const DB_NAME = "gravenx-studio";
-export const DB_VERSION = 21;
+export const DB_VERSION = 22;
 
 export const STORES = {
   items: "request-collection",
@@ -30,6 +30,7 @@ export const STORES = {
   sequences: "sequences",
   sequenceSnapshots: "sequence-snapshots",
   consoleTasks: "console-tasks",
+  consoleAttachments: "console-attachments",
   decisionRecords: "decision-records",
   requirementRecords: "requirement-records",
 } as const;

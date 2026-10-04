@@ -212,7 +212,7 @@ function matchesQuery(item: ArchitectureInboxItem, q: InboxQuery): boolean {
 
 /** Deterministic workflow sort: open tasks/questions first, then by recency. */
 const KIND_RANK: Record<string, number> = { task: 0, question: 1, decision: 2, note: 3 };
-const STATUS_RANK: Record<string, number> = { open: 0, "in-progress": 1, resolved: 2 };
+const STATUS_RANK: Record<string, number> = { open: 0, "in-progress": 1, blocked: 2, "awaiting-feedback": 2, resolved: 3 };
 
 export function queryInbox(items: ArchitectureInboxItem[], q: InboxQuery): ArchitectureInboxItem[] {
   return items

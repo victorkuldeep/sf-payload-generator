@@ -1,19 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addNote,
-  consoleLinkHref,
-  CONSOLE_PRIORITIES,
+  CONSOLE_STATUS_LABELS,
   CONSOLE_STATUSES,
+  consoleTaskKey,
   moveTask,
   newConsoleTask,
   type ConsoleLink,
-  type ConsolePriority,
   type ConsoleStatus,
   type ConsoleTask,
 } from "@/lib/console/model";
 import { exportConsoleTasks, importConsoleTasks, deleteConsoleTask, listConsoleTasks, saveConsoleTask } from "@/lib/console/store";
+import { countAttachments, deleteTaskAttachments, listAllAttachments, saveAttachment } from "@/lib/console/attachments";
 import { findDeepRecord, useDeepParam } from "@/lib/deep/deep";
 import {
   consoleToCanvas,
@@ -23,30 +23,52 @@ import {
   pushTodoStatus,
   type CanvasLinkView,
 } from "@/lib/console/sync";
+import { TaskDetail, fmtDate } from "./TaskDetail";
+import { NewTaskDialog, type NewTaskDraft } from "./NewTaskDialog";
 
-const PRIORITY_DOT: Record<ConsolePriority, string> = {
+const PRIORITY_DOT: Record<string, string> = {
   low: "bg-[#A39B8E]",
   normal: "bg-[#C9A86A]",
   high: "bg-[#C26A2E]",
   critical: "bg-red-700",
 };
 
-const STATUS_LABEL: Record<ConsoleStatus, string> = {
-  open: "Open",
-  "in-progress": "In Progress",
-  resolved: "Resolved",
+const STATUS_PILL: Record<ConsoleStatus, string> = {
+  open: "border-[#D8D0C0] bg-white text-[#777168]",
+  "in-progress": "border-[#E5C98F] bg-[#F5EEDF] text-[#8A6A2F]",
+  blocked: "border-[#E5AFAF] bg-[#F9E9E9] text-[#A02C2C]",
+  "awaiting-feedback": "border-[#C3BCE0] bg-[#ECEAF6] text-[#4E4494]",
+  resolved: "border-[#B5CFA8] bg-[#EBF2E6] text-[#3E6B34]",
 };
 
-function fmtDate(n: number): string {
-  return new Date(n).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+function todayKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function DueBadge({ task }: { task: ConsoleTask }) {
+  if (!task.dueDate) return null;
+  const overdue = task.status !== "resolved" && task.dueDate < todayKey();
+  return (
+    <span
+      title={overdue ? "Overdue" : "Due date"}
+      className={`shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold ${overdue ? "bg-[#F9E9E9] text-[#A02C2C]" : "bg-[#F0EBE0] text-[#777168]"}`}
+    >
+      {overdue ? `overdue ${task.dueDate}` : `due ${task.dueDate}`}
+    </span>
+  );
 }
 
 export function ConsoleRoute() {
   const [tasks, setTasks] = useState<ConsoleTask[]>([]);
   const [views, setViews] = useState<CanvasLinkView[]>([]);
+  const [attachCounts, setAttachCounts] = useState<Record<string, number>>({});
   const [loaded, setLoaded] = useState(false);
-  const [view, setView] = useState<"board" | "timeline">("board");
+  const [view, setView] = useState<"queue" | "board" | "timeline">("queue");
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<ConsoleStatus | "all">("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   // Last-seen canvas timestamps per linked TODO - the stale-write guard.
@@ -59,6 +81,7 @@ export function ConsoleRoute() {
     for (const item of v) {
       if (item.todoId) knownRef.current.set(`${item.recordId}:${item.todoId}`, item.updatedAt);
     }
+    setAttachCounts(await countAttachments(t.map((x) => x.id)));
     setLoaded(true);
   }, []);
 
@@ -83,10 +106,17 @@ export function ConsoleRoute() {
     await saveConsoleTask(task);
   }, []);
 
-  const create = useCallback(async () => {
-    const task = newConsoleTask("Untitled task");
+  const create = useCallback(async (draft: NewTaskDraft) => {
+    const task: ConsoleTask = {
+      ...newConsoleTask(draft.title),
+      ...(draft.body ? { body: draft.body } : {}),
+      status: draft.status,
+      priority: draft.priority,
+      ...(draft.dueDate ? { dueDate: draft.dueDate } : {}),
+    };
     setTasks((prev) => [task, ...prev]);
     await saveConsoleTask(task);
+    setShowCreate(false);
     setSelectedId(task.id);
   }, []);
 
@@ -95,11 +125,12 @@ export function ConsoleRoute() {
     async (task: ConsoleTask, to: ConsoleStatus) => {
       const next = moveTask(task, to);
       if (next === task) return;
+      const canvas = consoleToCanvas(to);
       let stale = false;
       for (const link of task.links) {
         if (link.surface !== "system" || !link.todoId) continue;
         const key = `${link.recordId}:${link.todoId}`;
-        const r = await pushTodoStatus(liveSystemFns, link.recordId, link.todoId, consoleToCanvas(to), knownRef.current.get(key) ?? 0);
+        const r = await pushTodoStatus(liveSystemFns, link.recordId, link.todoId, canvas, knownRef.current.get(key) ?? 0);
         if (!r.ok && r.stale) stale = true;
       }
       await persist(next);
@@ -153,17 +184,71 @@ export function ConsoleRoute() {
     [persist],
   );
 
+  const deleteTask = useCallback(
+    async (task: ConsoleTask) => {
+      await deleteConsoleTask(task.id);
+      await deleteTaskAttachments(task.id);
+      setTasks((prev) => prev.filter((t) => t.id !== task.id));
+      setAttachCounts((prev) => {
+        const next = { ...prev };
+        delete next[task.id];
+        return next;
+      });
+      setSelectedId(null);
+    },
+    [],
+  );
+
+  const doExport = useCallback(async () => {
+    const atts = (await listAllAttachments()).filter((a) => tasks.some((t) => t.id === a.taskId));
+    const blob = new Blob([exportConsoleTasks(tasks, atts)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "gravenx-console.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    setNotice(`Exported ${tasks.length} task${tasks.length === 1 ? "" : "s"} with ${atts.length} screenshot${atts.length === 1 ? "" : "s"}.`);
+  }, [tasks]);
+
+  const doImport = useCallback(
+    async (text: string) => {
+      const { tasks: incoming, attachments, error } = importConsoleTasks(text);
+      if (error || incoming.length === 0) {
+        setNotice(error ?? "Nothing to import.");
+        return;
+      }
+      for (const t of incoming) await saveConsoleTask(t);
+      for (const a of attachments) await saveAttachment(a);
+      setTasks((prev) => [...incoming, ...prev].sort((a, b) => b.updatedAt - a.updatedAt));
+      setAttachCounts(await countAttachments(incoming.map((x) => x.id)));
+      setNotice(
+        `Imported ${incoming.length} task${incoming.length === 1 ? "" : "s"}${attachments.length > 0 ? ` with ${attachments.length} screenshot${attachments.length === 1 ? "" : "s"}` : ""} (re-id, nothing overwritten).`,
+      );
+    },
+    [],
+  );
+
   const selected = tasks.find((t) => t.id === selectedId) ?? null;
 
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return tasks.filter(
+      (t) =>
+        (statusFilter === "all" || t.status === statusFilter) &&
+        (q === "" || t.title.toLowerCase().includes(q) || (t.body ?? "").toLowerCase().includes(q) || consoleTaskKey(t).toLowerCase() === q),
+    );
+  }, [tasks, query, statusFilter]);
+
   const timeline = tasks
-    .flatMap((t) =>
-      [
-        ...t.history.map((h) => ({ at: h.at, task: t.title, what: h.what })),
-        ...t.notes.map((n) => ({ at: n.at, task: t.title, what: `Note: ${n.text.slice(0, 140)}` })),
-      ],
-    )
+    .flatMap((t) => [
+      ...t.history.map((h) => ({ at: h.at, task: t.title, what: h.what })),
+      ...t.notes.map((n) => ({ at: n.at, task: t.title, what: `Note: ${n.text.slice(0, 140)}` })),
+    ])
     .sort((a, b) => b.at - a.at)
     .slice(0, 120);
+
+  const openCount = tasks.filter((t) => t.status === "open").length;
+  const activeCount = tasks.filter((t) => t.status === "in-progress" || t.status === "blocked" || t.status === "awaiting-feedback").length;
 
   return (
     <div className="space-y-3">
@@ -172,11 +257,10 @@ export function ConsoleRoute() {
           <div>
             <h2 className="text-[15px] font-semibold text-[#27241F]">Console</h2>
             <p className="font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">
-              {tasks.filter((t) => t.status === "open").length} open · {tasks.filter((t) => t.status === "in-progress").length} active ·{" "}
-              {views.length} canvas items linked live
+              {openCount} open · {activeCount} active · {views.length} canvas items linked live
             </p>
           </div>
-          <span className="ml-auto flex items-center gap-1.5">
+          <span className="ml-auto flex flex-wrap items-center gap-1.5">
             <ViewToggle view={view} setView={setView} />
             <button
               type="button"
@@ -188,26 +272,46 @@ export function ConsoleRoute() {
             </button>
             <button
               type="button"
-              onClick={() => {
-                const blob = new Blob([exportConsoleTasks(tasks)], { type: "application/json" });
-                const a = document.createElement("a");
-                a.href = URL.createObjectURL(blob);
-                a.download = "gravenx-console.json";
-                a.click();
-                URL.revokeObjectURL(a.href);
-              }}
-              title="Export all tasks as portable JSON"
+              onClick={() => void doExport()}
+              title="Export all tasks with screenshots as portable JSON"
               className="cursor-pointer rounded-lg border border-[#E8E2D8] px-2.5 py-1.5 text-xs font-semibold text-[#27241F] transition-colors hover:border-[#C9A86A]"
             >
               Export
             </button>
             <button
               type="button"
-              onClick={() => void create()}
+              onClick={() => setShowCreate(true)}
               className="cursor-pointer rounded-lg bg-[#27241F] px-2.5 py-1.5 text-xs font-semibold text-[#F5F1E8] transition-colors hover:bg-[#3A352D]"
             >
               New task
             </button>
+          </span>
+        </div>
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search title, description or key (CX-…)"
+            aria-label="Search tasks"
+            spellCheck={false}
+            className="min-w-40 flex-1 rounded-lg border border-[#E8E2D8] bg-white px-2.5 py-1.5 text-[12px] text-[#27241F] placeholder-[#A39B8E] focus:border-[#C9A86A] focus:outline-none sm:max-w-xs"
+          />
+          <span className="inline-flex flex-wrap gap-1" role="group" aria-label="Filter by status">
+            {(["all", ...CONSOLE_STATUSES] as const).map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setStatusFilter(s)}
+                aria-pressed={statusFilter === s}
+                className={`cursor-pointer rounded-full border px-2 py-1 text-[11px] font-semibold ${
+                  statusFilter === s
+                    ? "border-[#27241F] bg-[#27241F] text-[#F5F1E8]"
+                    : "border-[#E8E2D8] bg-white text-[#777168] hover:border-[#C9A86A]"
+                }`}
+              >
+                {s === "all" ? "All" : CONSOLE_STATUS_LABELS[s]}
+              </button>
+            ))}
           </span>
         </div>
         <input
@@ -220,16 +324,7 @@ export function ConsoleRoute() {
             const f = e.target.files?.[0];
             e.target.value = "";
             if (!f) return;
-            void f.text().then(async (text) => {
-              const { tasks: incoming, error } = importConsoleTasks(text);
-              if (error || incoming.length === 0) {
-                setNotice(error ?? "Nothing to import.");
-                return;
-              }
-              for (const t of incoming) await saveConsoleTask(t);
-              setTasks((prev) => [...incoming, ...prev].sort((a, b) => b.updatedAt - a.updatedAt));
-              setNotice(`Imported ${incoming.length} task${incoming.length === 1 ? "" : "s"} (re-id, nothing overwritten).`);
-            });
+            void f.text().then((text) => void doImport(text));
           }}
         />
       </div>
@@ -240,15 +335,67 @@ export function ConsoleRoute() {
         </p>
       )}
 
-      {view === "board" ? (
-        <div className="grid gap-2.5 md:grid-cols-3">
+      {view === "queue" && (
+        <ol className="overflow-hidden rounded-xl border border-[#E8E2D8] bg-white">
+          <li className="hidden grid-cols-[64px_1fr_150px_130px_120px] gap-2 border-b border-[#E8E2D8] bg-[#FBFAF7] px-4 py-1.5 font-mono text-[9px] uppercase tracking-[2px] text-[#A39B8E] md:grid">
+            <span>Key</span><span>Summary</span><span>Status</span><span>Due</span><span className="text-right">Activity</span>
+          </li>
+          {filtered.map((t) => (
+            <li key={t.id} className="border-b border-[#E8E2D8] last:border-0">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setSelectedId(t.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") setSelectedId(t.id);
+                }}
+                title="Open task panel"
+                className="grid cursor-pointer grid-cols-[auto_1fr_auto] items-center gap-2 px-4 py-2.5 transition-colors hover:bg-[#FBFAF7] md:grid-cols-[64px_1fr_150px_130px_120px]"
+              >
+                <span className="font-mono text-[11px] font-semibold text-[#777168]">{consoleTaskKey(t)}</span>
+                <span className="min-w-0">
+                  <span className="flex items-center gap-1.5">
+                    <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${PRIORITY_DOT[t.priority]}`} />
+                    <span className="truncate text-[13px] font-semibold text-[#27241F]">{t.title}</span>
+                  </span>
+                  <span className="mt-0.5 block truncate font-mono text-[10px] text-[#A39B8E]">
+                    {t.links.length > 0 ? `${t.links.length} link${t.links.length === 1 ? "" : "s"} · ` : ""}
+                    {t.notes.length} note{t.notes.length === 1 ? "" : "s"} · {attachCounts[t.id] ?? 0} shot{(attachCounts[t.id] ?? 0) === 1 ? "" : "s"}
+                  </span>
+                </span>
+                <select
+                  value={t.status}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => void moveWithSync(t, e.target.value as ConsoleStatus)}
+                  aria-label={`Status of ${t.title}`}
+                  className={`cursor-pointer justify-self-start rounded-lg border px-1.5 py-1 text-[11px] font-semibold focus:outline-none ${STATUS_PILL[t.status]}`}
+                >
+                  {[t.status, ...CONSOLE_STATUSES.filter((s) => s !== t.status)].map((s) => (
+                    <option key={s} value={s}>{CONSOLE_STATUS_LABELS[s]}</option>
+                  ))}
+                </select>
+                <span className="hidden md:block"><DueBadge task={t} /></span>
+                <span className="hidden text-right font-mono text-[10px] text-[#A39B8E] md:block">{fmtDate(t.updatedAt)}</span>
+              </div>
+            </li>
+          ))}
+          {loaded && filtered.length === 0 && (
+            <li className="px-4 py-6 text-center text-[12px] text-[#A39B8E]">
+              {tasks.length === 0 ? "No tasks yet — log the first one above." : "Nothing matches this filter."}
+            </li>
+          )}
+        </ol>
+      )}
+
+      {view === "board" && (
+        <div className="grid gap-2.5 md:grid-cols-3 xl:grid-cols-5">
           {CONSOLE_STATUSES.map((status) => (
             <div key={status} className="rounded-xl border border-[#E8E2D8] bg-[#FBFAF7] p-2">
               <p className="px-1.5 pb-1.5 font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">
-                {STATUS_LABEL[status]} · {tasks.filter((t) => t.status === status).length}
+                {CONSOLE_STATUS_LABELS[status]} · {filtered.filter((t) => t.status === status).length}
               </p>
               <div className="space-y-1.5">
-                {tasks
+                {filtered
                   .filter((t) => t.status === status)
                   .map((t) => (
                     <button
@@ -261,21 +408,24 @@ export function ConsoleRoute() {
                         <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${PRIORITY_DOT[t.priority]}`} />
                         <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-[#27241F]">{t.title}</span>
                       </span>
-                      <span className="mt-1 block truncate font-mono text-[10px] text-[#A39B8E]">
-                        {t.links.length > 0 ? `${t.links.length} link${t.links.length === 1 ? "" : "s"} · ` : ""}
-                        {t.notes.length} note{t.notes.length === 1 ? "" : "s"}
-                        {t.dueDate ? ` · due ${t.dueDate}` : ""}
+                      <span className="mt-1 flex items-center gap-1.5 font-mono text-[10px] text-[#A39B8E]">
+                        <span>{consoleTaskKey(t)}</span>
+                        {t.dueDate ? <span>· {t.dueDate}</span> : null}
+                        <span className="ml-auto">{attachCounts[t.id] ?? 0}⧉ {t.notes.length}✎</span>
                       </span>
+                      {t.body && <span className="mt-1 line-clamp-2 block text-[11px] leading-snug text-[#777168]">{t.body.slice(0, 140)}</span>}
                     </button>
                   ))}
-                {loaded && tasks.filter((t) => t.status === status).length === 0 && (
+                {loaded && filtered.filter((t) => t.status === status).length === 0 && (
                   <p className="px-1.5 py-3 text-center text-[11px] text-[#A39B8E]">Nothing here.</p>
                 )}
               </div>
             </div>
           ))}
         </div>
-      ) : (
+      )}
+
+      {view === "timeline" && (
         <ol className="relative ml-2 space-y-0 rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
           {timeline.map((e, i) => (
             <li key={`${e.at}-${i}`} className="relative flex gap-3 pb-3 last:pb-0">
@@ -293,36 +443,34 @@ export function ConsoleRoute() {
         </ol>
       )}
 
+      {showCreate && <NewTaskDialog onClose={() => setShowCreate(false)} onCreate={(d) => void create(d)} />}
+
       {selected && (
-        <TaskDrawer
+        <TaskDetail
           task={selected}
           views={views}
           onClose={() => setSelectedId(null)}
           onMove={(to) => void moveWithSync(selected, to)}
           onNote={(text) => void addNoteWithSync(selected, text)}
           onLink={(item) => void linkView(selected, item)}
-          onUnlink={async (idx) => {
+          onUnlink={(idx) => {
             const next = { ...selected, links: selected.links.filter((_, i) => i !== idx), updatedAt: Date.now() };
-            await persist(next);
+            void persist(next);
           }}
-          onPatch={async (patch) => {
-            await persist({ ...selected, ...patch, updatedAt: Date.now() });
+          onPatch={(patch) => {
+            void persist({ ...selected, ...patch, updatedAt: Date.now() });
           }}
-          onDelete={async () => {
-            await deleteConsoleTask(selected.id);
-            setTasks((prev) => prev.filter((t) => t.id !== selected.id));
-            setSelectedId(null);
-          }}
+          onDelete={() => void deleteTask(selected)}
         />
       )}
     </div>
   );
 }
 
-function ViewToggle({ view, setView }: { view: "board" | "timeline"; setView: (v: "board" | "timeline") => void }) {
+function ViewToggle({ view, setView }: { view: "queue" | "board" | "timeline"; setView: (v: "queue" | "board" | "timeline") => void }) {
   return (
     <span className="inline-flex overflow-hidden rounded-lg border border-[#E8E2D8]" role="group" aria-label="Console view">
-      {(["board", "timeline"] as const).map((v) => (
+      {(["queue", "board", "timeline"] as const).map((v) => (
         <button
           key={v}
           type="button"
@@ -336,207 +484,5 @@ function ViewToggle({ view, setView }: { view: "board" | "timeline"; setView: (v
         </button>
       ))}
     </span>
-  );
-}
-
-function TaskDrawer({
-  task,
-  views,
-  onClose,
-  onMove,
-  onNote,
-  onLink,
-  onUnlink,
-  onPatch,
-  onDelete,
-}: {
-  task: ConsoleTask;
-  views: CanvasLinkView[];
-  onClose: () => void;
-  onMove: (to: ConsoleStatus) => void;
-  onNote: (text: string) => void;
-  onLink: (item: CanvasLinkView) => void;
-  onUnlink: (idx: number) => void;
-  onPatch: (patch: Partial<ConsoleTask>) => void;
-  onDelete: () => void;
-}) {
-  const [draft, setDraft] = useState("");
-  const [showLinker, setShowLinker] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  return (
-    <div role="dialog" aria-modal="true" aria-label={task.title} className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={onClose}>
-      <div className="flex h-full w-full max-w-md flex-col overflow-hidden bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-2 border-b border-[#E8E2D8] px-4 py-3">
-          <input
-            value={task.title}
-            onChange={(e) => void onPatch({ title: e.target.value.slice(0, 160) || "Untitled task" })}
-            aria-label="Task title"
-            spellCheck={false}
-            className="min-w-0 flex-1 rounded-lg px-1 py-0.5 text-[15px] font-semibold text-[#27241F] focus:outline-none focus:ring-1 focus:ring-[#C9A86A]"
-          />
-          <button type="button" onClick={onClose} aria-label="Close task" className="cursor-pointer rounded p-1.5 text-[#A39B8E] hover:bg-[#F5F1E8] hover:text-[#27241F]">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-              <path d="M6 6l12 12M18 6 6 18" />
-            </svg>
-          </button>
-        </div>
-
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {CONSOLE_STATUSES.filter((s) => s !== task.status).map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => onMove(s)}
-                className="cursor-pointer rounded-lg border border-[#E8E2D8] px-2 py-1 text-[11px] font-semibold text-[#27241F] transition-colors hover:border-[#C9A86A]"
-              >
-                Move to {STATUS_LABEL[s]}
-              </button>
-            ))}
-            <label className="ml-auto flex items-center gap-1 text-[11px] text-[#777168]">
-              Priority
-              <select
-                value={task.priority}
-                onChange={(e) => void onPatch({ priority: e.target.value as ConsolePriority })}
-                aria-label="Task priority"
-                className="cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-1.5 py-1 text-[11px] text-[#27241F] focus:border-[#C9A86A] focus:outline-none"
-              >
-                {CONSOLE_PRIORITIES.map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-            </label>
-            <label className="flex items-center gap-1 text-[11px] text-[#777168]">
-              Due
-              <input
-                type="date"
-                value={task.dueDate ?? ""}
-                onChange={(e) => void onPatch({ dueDate: e.target.value || undefined })}
-                aria-label="Due date"
-                className="cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-1.5 py-1 text-[11px] text-[#27241F] focus:border-[#C9A86A] focus:outline-none"
-              />
-            </label>
-          </div>
-
-          <div>
-            <p className="font-mono text-[9px] uppercase tracking-[2px] text-[#A39B8E]">Links · two-way with canvas</p>
-            <ul className="mt-1 space-y-1">
-              {task.links.map((l, i) => (
-                <li key={`${l.recordId}-${l.todoId ?? "record"}-${i}`} className="flex items-center gap-1.5 rounded-lg border border-[#E8E2D8] px-2 py-1.5">
-                  <a
-                    href={consoleLinkHref(l)}
-                    title={`Open in ${l.surface} tab`}
-                    className="min-w-0 flex-1 truncate text-[12px] font-medium text-[#3A352D] hover:text-[#8A6A2F] hover:underline"
-                  >
-                    {l.label}
-                  </a>
-                  <span className="shrink-0 font-mono text-[9px] uppercase text-[#A39B8E]">{l.surface}</span>
-                  <button type="button" onClick={() => void onUnlink(i)} aria-label={`Unlink ${l.label}`} className="shrink-0 cursor-pointer rounded p-1 text-[#C9BFAE] hover:bg-red-500/10 hover:text-red-700">
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-                      <path d="M6 6l12 12M18 6 6 18" />
-                    </svg>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <button type="button" onClick={() => setShowLinker((v) => !v)} className="mt-1.5 cursor-pointer text-[12px] font-semibold text-[#8A6A2F] hover:underline">
-              {showLinker ? "Hide canvas items" : "+ Link a canvas TODO or note"}
-            </button>
-            {showLinker && (
-              <ul className="mt-1 max-h-48 space-y-1 overflow-y-auto rounded-xl border border-[#E8E2D8] bg-[#FBFAF7] p-1.5">
-                {views.map((v) => {
-                  const linked = task.links.some((l) => l.recordId === v.recordId && (l.todoId ?? "") === (v.todoId ?? ""));
-                  return (
-                    <li key={`${v.recordId}-${v.todoId ?? "notes"}`}>
-                      <button
-                        type="button"
-                        disabled={linked}
-                        onClick={() => onLink(v)}
-                        className="block w-full cursor-pointer rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-white disabled:cursor-default disabled:opacity-50"
-                      >
-                        <span className="block truncate text-[12px] font-semibold text-[#27241F]">
-                          {v.todoId ? `${v.recordName} · ${v.title}` : v.title}
-                        </span>
-                        <span className="block truncate font-mono text-[10px] text-[#A39B8E]">
-                          {v.status ? STATUS_LABEL[v.status] : "Note"} · {v.recordName}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-                {views.length === 0 && <li className="px-2 py-2 text-[12px] text-[#A39B8E]">No canvas TODOs yet — add some on a System project.</li>}
-              </ul>
-            )}
-          </div>
-
-          <div>
-            <p className="font-mono text-[9px] uppercase tracking-[2px] text-[#A39B8E]">Notes · sync to linked TODOs</p>
-            <ul className="mt-1 space-y-1.5">
-              {task.notes.map((n) => (
-                <li key={n.id} className="rounded-lg bg-[#FBFAF7] px-2.5 py-1.5">
-                  <p className="text-[12px] leading-relaxed text-[#3A352D]">{n.text}</p>
-                  <p className="mt-0.5 font-mono text-[10px] text-[#A39B8E]">{fmtDate(n.at)}</p>
-                </li>
-              ))}
-              {task.notes.length === 0 && <li className="text-[12px] text-[#A39B8E]">No notes yet.</li>}
-            </ul>
-            <div className="mt-1.5 flex gap-1.5">
-              <input
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && draft.trim()) {
-                    onNote(draft);
-                    setDraft("");
-                  }
-                }}
-                placeholder="Add a note — pushes to linked canvas TODOs"
-                aria-label="New note"
-                spellCheck={false}
-                className="min-w-0 flex-1 rounded-lg border border-[#E8E2D8] bg-white px-2.5 py-1.5 text-[12px] text-[#27241F] placeholder-[#A39B8E] focus:border-[#C9A86A] focus:outline-none"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  if (draft.trim()) {
-                    onNote(draft);
-                    setDraft("");
-                  }
-                }}
-                className="shrink-0 cursor-pointer rounded-lg bg-[#27241F] px-2.5 py-1.5 text-xs font-semibold text-[#F5F1E8] hover:bg-[#3A352D]"
-              >
-                Add
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <p className="font-mono text-[9px] uppercase tracking-[2px] text-[#A39B8E]">Activity</p>
-            <ul className="mt-1 space-y-1">
-              {[...task.history].reverse().slice(0, 20).map((h, i) => (
-                <li key={`${h.at}-${i}`} className="text-[12px] text-[#777168]">
-                  {h.what} <span className="font-mono text-[10px] text-[#A39B8E]">· {fmtDate(h.at)}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="border-t border-[#E8E2D8] pt-3">
-            {confirmDelete ? (
-              <p className="text-[12px] text-[#3A352D]">
-                Delete this task and its notes?{" "}
-                <button type="button" onClick={() => void onDelete()} className="cursor-pointer font-semibold text-red-700 hover:underline">Delete</button>{" "}
-                <button type="button" onClick={() => setConfirmDelete(false)} className="cursor-pointer underline">Keep</button>
-              </p>
-            ) : (
-              <button type="button" onClick={() => setConfirmDelete(true)} className="cursor-pointer text-[12px] text-[#A39B8E] hover:text-red-700 hover:underline">
-                Delete this task
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }

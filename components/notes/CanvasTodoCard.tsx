@@ -57,6 +57,16 @@ export function CanvasTodoCard({
             Active
           </span>
         )}
+        {todo.status === "blocked" && (
+          <span className="shrink-0 rounded-full bg-red-100 border border-red-300 px-1.5 py-px text-[9px] font-bold text-red-800">
+            Blocked
+          </span>
+        )}
+        {todo.status === "awaiting-feedback" && (
+          <span className="shrink-0 rounded-full bg-violet-100 border border-violet-300 px-1.5 py-px text-[9px] font-bold text-violet-800">
+            Waiting
+          </span>
+        )}
         {todo.dueDate && (
           <span className={`shrink-0 font-mono text-[10px] ${overdue ? "font-bold text-red-600" : "text-ivory-500"}`} title={overdue ? "Overdue" : `Due ${todo.dueDate}`}>
             {todo.dueDate.slice(5)}
@@ -133,6 +143,8 @@ export function CanvasTodoCard({
               >
                 <option value="open">Open</option>
                 <option value="in-progress">Active</option>
+                <option value="blocked">Blocked</option>
+                <option value="awaiting-feedback">Awaiting feedback</option>
                 <option value="done">Done</option>
               </select>
             </label>

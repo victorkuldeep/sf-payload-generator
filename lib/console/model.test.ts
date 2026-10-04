@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addNote, canTransition, consoleTaskSchema, moveTask, newConsoleTask } from "./model";
+import { addNote, canTransition, consoleTaskKey, consoleTaskSchema, moveTask, newConsoleTask, nextStatuses } from "./model";
 
 describe("console model", () => {
   it("creates open tasks with creation history", () => {
@@ -12,7 +12,10 @@ describe("console model", () => {
 
   it("walks the lifecycle and rejects jumps", () => {
     expect(canTransition("open", "in-progress")).toBe(true);
-    expect(canTransition("in-progress", "resolved")).toBe(true);
+    expect(canTransition("open", "blocked")).toBe(true);
+    expect(canTransition("in-progress", "awaiting-feedback")).toBe(true);
+    expect(canTransition("awaiting-feedback", "in-progress")).toBe(true);
+    expect(canTransition("blocked", "resolved")).toBe(false);
     expect(canTransition("resolved", "open")).toBe(true);
     expect(canTransition("resolved", "in-progress")).toBe(false);
     const moved = moveTask(newConsoleTask("X", 1), "resolved", 2);
@@ -20,6 +23,15 @@ describe("console model", () => {
     expect(moved.history).toHaveLength(2);
     const stuck = moveTask(moved, "in-progress", 3);
     expect(stuck.status).toBe("resolved");
+  });
+
+  it("offers reachable statuses and stable queue keys", () => {
+    expect(nextStatuses("in-progress")).toEqual(["open", "blocked", "awaiting-feedback", "resolved"]);
+    expect(nextStatuses("resolved")).toEqual(["open"]);
+    const a = newConsoleTask("Alpha", 1000);
+    const b = newConsoleTask("Beta", 1000);
+    expect(consoleTaskKey(a)).toMatch(/^CX-/);
+    expect(consoleTaskKey(a)).toBe(consoleTaskKey(b));
   });
 
   it("adds notes with history and trims empties", () => {

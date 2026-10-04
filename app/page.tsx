@@ -1274,6 +1274,11 @@ export default function Home() {
         void migrateLegacyWorkspace(orgKey, id);
       }
       if (deepLink) return; // deep link wins for mode
+      // Home means home: the saved mode restores only on a real browser
+      // reload. Header/brand Home clicks (client-side nav to "/") must land
+      // on the hero, never yank back into the last build tab.
+      const navEntry = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+      if (navEntry && navEntry.type !== "reload") return;
       const m = snap?.data.mode;
       if (m && m !== "home" && (m as BuilderMode) !== state.mode) goMode(m as BuilderMode);
     })();

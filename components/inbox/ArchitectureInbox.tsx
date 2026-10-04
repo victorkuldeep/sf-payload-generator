@@ -65,7 +65,11 @@ function StatusPill({ status }: { status: InboxStatus }) {  const cls =
       ? "bg-green-100 text-green-800 border-green-300"
       : status === "in-progress"
         ? "bg-amber-100 text-amber-800 border-amber-300"
-        : "bg-[var(--color-canvas)] text-ivory-700 border-[var(--color-line)]";
+        : status === "blocked"
+          ? "bg-red-100 text-red-800 border-red-300"
+          : status === "awaiting-feedback"
+            ? "bg-violet-100 text-violet-800 border-violet-300"
+            : "bg-[var(--color-canvas)] text-ivory-700 border-[var(--color-line)]";
   return (
     <span className={`shrink-0 rounded-full border px-1.5 py-px text-[10px] font-semibold capitalize ${cls}`}>
       {status}
@@ -537,6 +541,8 @@ export function ArchitectureInbox({
                     >
                       <option value="open">Open</option>
                       <option value="in-progress">In progress</option>
+                      <option value="blocked">Blocked</option>
+                      <option value="awaiting-feedback">Awaiting feedback</option>
                       <option value="resolved">Resolved</option>
                     </select>
                   </label>

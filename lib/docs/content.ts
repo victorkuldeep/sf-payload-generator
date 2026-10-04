@@ -112,7 +112,7 @@ export const DOC_SECTIONS: DocSection[] = [
     blocks: [
       {
         k: "p",
-        text: "Log tasks (ERD it, sequence it, draw it, API it), track open → In Progress → Resolved with notes and due dates, and watch everything land on a vertical activity timeline. Console syncs two-way with System canvas TODOs: link a canvas item, and status moves plus notes push back to the owning project.",
+        text: "Log tasks (ERD it, sequence it, draw it, API it), track Open → In Progress → Blocked / Awaiting Feedback → Resolved with markdown descriptions, screenshots, notes and due dates, and watch everything land on a vertical activity timeline. One lifecycle runs everywhere: Console, canvas TODOs and Inbox share the same statuses, and Console syncs two-way with System canvas TODOs - link a canvas item, and status moves plus notes push back to the owning project.",
       },
       {
         k: "list",

@@ -66,6 +66,15 @@ describe("console tools", () => {
     expect(tasks.find((t) => t.title === "Draw the hub")!.status).toBe("in-progress");
   });
 
+  it("moves through the full lifecycle, blocked included", async () => {
+    seed();
+    const moved = await run("console_move", { task: "ERD the Order object", to: "blocked" });
+    expect(moved.ok).toBe(true);
+    expect(tasks.find((t) => t.title === "ERD the Order object")!.status).toBe("blocked");
+    const back = await run("console_move", { task: "ERD the Order object", to: "in-progress" });
+    expect(back.ok).toBe(true);
+  });
+
   it("answers honestly on misses and ambiguity", async () => {
     seed();
     expect((await run("console_note", { task: "nope", text: "x" })).ok).toBe(false);

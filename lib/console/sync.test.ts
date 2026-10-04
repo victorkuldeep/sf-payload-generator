@@ -28,11 +28,16 @@ function seedStore(): { fns: SystemStoreFns; projects: Map<string, SystemProject
 }
 
 describe("console sync", () => {
-  it("maps statuses both ways", () => {
+  it("maps one lifecycle both ways - only the terminal differs", () => {
     expect(canvasToConsole("done")).toBe("resolved");
     expect(canvasToConsole("in-progress")).toBe("in-progress");
+    expect(canvasToConsole("blocked")).toBe("blocked");
+    expect(canvasToConsole("awaiting-feedback")).toBe("awaiting-feedback");
     expect(consoleToCanvas("resolved")).toBe("done");
     expect(consoleToCanvas("open")).toBe("open");
+    expect(consoleToCanvas("in-progress")).toBe("in-progress");
+    expect(consoleToCanvas("blocked")).toBe("blocked");
+    expect(consoleToCanvas("awaiting-feedback")).toBe("awaiting-feedback");
   });
 
   it("pulls TODOs and notes as link views", async () => {

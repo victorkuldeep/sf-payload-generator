@@ -9,14 +9,15 @@
 
 export type InboxItemKind = "note" | "task" | "question" | "decision";
 
-export type InboxStatus = "open" | "in-progress" | "resolved";
+/** One lifecycle everywhere: Console, canvas TODOs and Inbox share it. */
+export type InboxStatus = "open" | "in-progress" | "blocked" | "awaiting-feedback" | "resolved";
 
 export type InboxPriority = "low" | "normal" | "high" | "critical";
 
 export type DecisionState = "proposed" | "confirmed" | "rejected" | "superseded";
 
-/** Canvas-level TODO status. Maps to InboxStatus (done → resolved). */
-export type CanvasTodoStatus = "open" | "in-progress" | "done";
+/** Canvas-level TODO status. Maps to InboxStatus (done → resolved); the working states are identical. */
+export type CanvasTodoStatus = "open" | "in-progress" | "blocked" | "awaiting-feedback" | "done";
 
 /** One canvas TODO: title + lifecycle, tracked individually. */
 export interface CanvasTodo {
