@@ -6,7 +6,7 @@ import type { ComponentKind, WireComponent } from "./model";
  * Container kinds nest children; everything else is a leaf.
  */
 
-export type PaletteCategory = "Foundation" | "Form" | "Actions" | "Layout" | "Data" | "Salesforce";
+export type PaletteCategory = "Foundation" | "Form" | "Actions" | "Icons" | "Layout" | "Data" | "Salesforce";
 
 export interface ComponentDef {
   kind: ComponentKind;
@@ -57,6 +57,8 @@ export const COMPONENT_REGISTRY: ComponentDef[] = [
   def("iconbutton", "Icon Button", "Actions", { defaultLabel: "" }),
   def("link", "Link", "Actions", { defaultLabel: "Learn more" }),
 
+  def("icon", "Icon", "Icons", { defaultLabel: "", defaultProps: { icon: "star" } }),
+
   def("container", "Container", "Layout", { defaultLabel: "", container: true }),
   def("card", "Card", "Layout", { defaultLabel: "Details", container: true }),
   def("panel", "Panel", "Layout", { defaultLabel: "Panel", container: true }),
@@ -97,7 +99,7 @@ export function defFor(kind: ComponentKind): ComponentDef {
 }
 
 export function paletteByCategory(): { category: PaletteCategory; items: ComponentDef[] }[] {
-  const order: PaletteCategory[] = ["Foundation", "Form", "Actions", "Layout", "Data", "Salesforce"];
+  const order: PaletteCategory[] = ["Foundation", "Form", "Actions", "Icons", "Layout", "Data", "Salesforce"];
   return order.map((category) => ({ category, items: COMPONENT_REGISTRY.filter((d) => d.category === category) }));
 }
 

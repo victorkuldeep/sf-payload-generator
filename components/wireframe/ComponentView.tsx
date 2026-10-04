@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { defFor } from "@/lib/wireframe/registry";
 import type { WireComponent } from "@/lib/wireframe/model";
+import { WireIcon } from "./WireIcon";
 
 const DOT: Record<string, string> = {
   existing: "bg-[#32815B]",
@@ -183,6 +184,17 @@ export function ComponentView({
     case "iconbutton":
       body = <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[#D8CFBB] text-[12px] text-[#777168]">○</span>;
       break;
+    case "icon": {
+      const name = typeof props.icon === "string" ? props.icon : "star";
+      const size = typeof props.size === "number" && props.size >= 12 && props.size <= 96 ? props.size : 28;
+      body = (
+        <span className="inline-flex items-center gap-1.5" title={name}>
+          <WireIcon name={name} size={size} />
+          {comp.label ? <span className="text-[11px] text-[#57534A]">{comp.label}</span> : null}
+        </span>
+      );
+      break;
+    }
     case "link":
       body = <span className="text-[11px] font-medium text-[#8A6A2F] underline">{comp.label || "Learn more"}</span>;
       break;

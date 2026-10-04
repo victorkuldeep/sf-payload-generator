@@ -25,6 +25,7 @@ export const COMPONENT_KINDS = [
   "form", "recordheader",
   "sffield", "sflookup", "sfpicklist", "sfrecordform", "sfrelatedlist",
   "sfdatatable", "sfrecordsearch", "sfrecordheader",
+  "icon",
 ] as const;
 export type ComponentKind = (typeof COMPONENT_KINDS)[number];
 

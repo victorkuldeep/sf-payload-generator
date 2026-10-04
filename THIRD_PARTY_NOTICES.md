@@ -21,3 +21,19 @@ Required MIT notice (software distributed with this application):
 > MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT."
 > See <https://github.com/excalidraw/excalidraw/blob/master/LICENSE> for the
 > full license text.
+
+## Wireframe icon glyphs (vendored path data)
+
+- UI glyph geometry follows **Feather Icons** (MIT, Copyright (c) 2013-2023
+  Cole Bemis / Feather contributors): <https://feathericons.com>
+- GitHub brand mark follows **Octicons** (MIT, GitHub): <https://primer.style/octicons>
+- LinkedIn brand mark follows **Simple Icons** (CC0 1.0 Universal):
+  <https://simpleicons.org>
+- Only path data is vendored into `lib/wireframe/icons.ts` (no icon package
+  installed); glyphs render as inline SVG from our own origin.
+
+Required MIT notice (Feather Icons, Octicons):
+
+> "THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+> IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT."

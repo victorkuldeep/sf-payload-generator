@@ -18,7 +18,7 @@ describe("component registry", () => {
 
   it("groups the palette by category", () => {
     const cats = paletteByCategory();
-    expect(cats.map((c) => c.category)).toEqual(["Foundation", "Form", "Actions", "Layout", "Data", "Salesforce"]);
+    expect(cats.map((c) => c.category)).toEqual(["Foundation", "Form", "Actions", "Icons", "Layout", "Data", "Salesforce"]);
     expect(cats.every((c) => c.items.length > 0)).toBe(true);
   });
 

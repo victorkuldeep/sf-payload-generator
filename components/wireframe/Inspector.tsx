@@ -1,6 +1,7 @@
 "use client";
 
 import Button from "../ui/Button";
+import { wireIconNames } from "@/lib/wireframe/icons";
 import { defFor } from "@/lib/wireframe/registry";
 import type { BindingState, ProposedField, WireComponent } from "@/lib/wireframe/model";
 import { PROPOSED_FIELD_TYPES, suggestApiName, validateProposed } from "@/lib/wireframe/proposed";
@@ -228,6 +229,24 @@ export function Inspector({
           </div>
           <p className="font-mono text-[10px] text-[#A39B8E]">kind: {comp.kind} · id: {comp.id}</p>
         </Section>
+
+        {comp.kind === "icon" && (
+          <Section title="Glyph">
+            <div>
+              <label className={labelCls} htmlFor="insp-icon">Icon</label>
+              <select
+                id="insp-icon"
+                value={typeof props.icon === "string" ? props.icon : "star"}
+                onChange={(e) => onPatch({ props: { ...props, icon: e.target.value } })}
+                className={`${inputCls} cursor-pointer`}
+              >
+                {wireIconNames().map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </div>
+          </Section>
+        )}
 
         <Section title="Data">
           <div>
