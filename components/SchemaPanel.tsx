@@ -11,6 +11,7 @@ import { rankObjects } from "@/lib/search/rank";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import { apiFetch } from "@/lib/api";
 import { ErdCanvas, type ErdCanvasHandle } from "./erd/ErdCanvas";
+import { AddPicklistValuesDialog } from "./erd/AddPicklistValuesDialog";
 import { AuthorFieldDialog } from "./erd/AuthorFieldDialog";
 import { AuthorObjectDialog } from "./erd/AuthorObjectDialog";
 import { buildCustomFieldBody, buildCustomObjectBody, describeTypeFor, looksLikeSandbox, newAuthorId, parseToolingResult, syntheticDescribeForObject, toolingCreatePath, type AuthorChange, type DesignFieldType, type FieldDraft, type ObjectDraft } from "@/lib/salesforce/design";
@@ -1026,6 +1027,12 @@ export default function SchemaPanel({
   // Refresh + popover + snapshot state
   const [refreshingIds, setRefreshingIds] = useState<Set<string>>(new Set());
   const [popover, setPopover] = useState<PicklistPopoverData | null>(null);
+  const [addValues, setAddValues] = useState<{
+    objectApi: string;
+    objectLabel: string;
+    fieldApi: string;
+    fieldLabel: string;
+  } | null>(null);
   const [layoutRev, setLayoutRev] = useState(0);
   const [enforced, setEnforced] = useState<Map<string, { x: number; y: number }> | null>(null);
   // Graph drag pins live apart from ERD pins: same apiName keys, two
@@ -2920,6 +2927,7 @@ export default function SchemaPanel({
         nodeLabel: d?.label ?? nodeId,
         fieldName,
         fieldType: f.type,
+        customField: fieldName.endsWith("__c"),
         values: (f.picklistValues ?? []).slice(0, 100).map((p) => ({
           label: p.label ?? p.value,
           value: p.value,
@@ -5778,7 +5786,21 @@ export default function SchemaPanel({
       />
 
       {/* Picklist inspector */}
-      {popover && <PicklistPopover pop={popover} onClose={() => setPopover(null)} />}
+      {popover && (
+        <PicklistPopover
+          pop={popover}
+          onClose={() => setPopover(null)}
+          onAddValues={() => {
+            setAddValues({
+              objectApi: popover.apiName,
+              objectLabel: popover.nodeLabel,
+              fieldApi: popover.fieldName,
+              fieldLabel: popover.fieldName,
+            });
+            setPopover(null);
+          }}
+        />
+      )}
 
       {/* Schema authoring dialogs */}
       {authorDialog?.kind === "field" && describes.has(authorDialog.objectApi) && (
@@ -5817,6 +5839,30 @@ export default function SchemaPanel({
           isProduction={isProductionOrg}
           onClose={() => setAuthorDialog(null)}
           onDeploy={(draft) => void submitAuthorObject(draft)}
+        />
+      )}
+      {addValues && (
+        <AddPicklistValuesDialog
+          objectApi={addValues.objectApi}
+          objectLabel={addValues.objectLabel}
+          fieldApi={addValues.fieldApi}
+          fieldLabel={addValues.fieldLabel}
+          instanceUrl={instanceUrl}
+          apiVersion={apiVersion}
+          getToken={getToken}
+          isProduction={isProductionOrg}
+          onClose={() => setAddValues(null)}
+          onApplied={() => {
+            void (async () => {
+              try {
+                mergeDescribes([await fetchDescribe(addValues.objectApi)]);
+              } catch {
+                /* canvas keeps prior data */
+              }
+            })();
+            setNotice(`${addValues.fieldApi} updated - canvas refreshed from the org.`);
+          }}
+          onSessionExpired={onSessionExpired}
         />
       )}
 

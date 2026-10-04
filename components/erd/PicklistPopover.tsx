@@ -9,6 +9,8 @@ export interface PicklistPopoverData {
   fieldName: string;
   fieldType: string;
   values: ErdPickValue[];
+  /** Custom picklist field - eligible for in-canvas Add values. */
+  customField?: boolean;
   /** Viewport anchor (row rect) - panel flips to fit. */
   x: number;
   y: number;
@@ -17,9 +19,12 @@ export interface PicklistPopoverData {
 export function PicklistPopover({
   pop,
   onClose,
+  onAddValues,
 }: {
   pop: PicklistPopoverData;
   onClose: () => void;
+  /** Open the Add-values fast track (custom fields only). */
+  onAddValues?: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -89,9 +94,18 @@ export function PicklistPopover({
           <li className="px-3 py-4 text-center text-xs text-ivory-600">No values defined.</li>
         )}
       </ul>
-      <p className="border-t border-[var(--color-line-soft)] px-3 py-1.5 text-[10px] text-ivory-500">
-        Esc or click elsewhere to close
-      </p>
+      <div className="flex items-center gap-2 border-t border-[var(--color-line-soft)] px-3 py-1.5">
+        <p className="flex-1 text-[10px] text-ivory-500">Esc or click elsewhere to close</p>
+        {pop.customField && onAddValues && (
+          <button
+            type="button"
+            onClick={onAddValues}
+            className="cursor-pointer rounded-lg bg-[#27241F] px-2 py-1 text-[11px] font-semibold text-[#F5F1E8] hover:bg-[#3A352D]"
+          >
+            + Add values
+          </button>
+        )}
+      </div>
     </div>
   );
 }
