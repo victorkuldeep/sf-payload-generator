@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildOdaManifest,
   canTransition,
+  cloneExperience,
   ExperienceSchema,
   newExperience,
   newScreen,
@@ -73,5 +74,26 @@ describe("experience model", () => {
     expect(m.schemaDelta.existing).toEqual(["Account.Name"]);
     expect(m.schemaDelta.proposed.map((p) => p.apiName)).toEqual(["Seg__c"]);
     expect(m.screens[0]).toMatchObject({ name: "Detail", components: 1 });
+  });
+
+  it("clones with fresh identity and remapped refs", () => {
+    const exp = {
+      ...newExperience("Shop"),
+      status: "approved" as const,
+      version: 4,
+      screens: [{ ...newScreen("Detail"), id: "s1" }],
+      components: [{ ...proposed("Seg__c"), parentId: "s1" }],
+      journeys: [{ id: "j1", name: "Signup", screenIds: ["s1", "gone"] }],
+    };
+    const c = cloneExperience(exp);
+    expect(c.id).not.toBe(exp.id);
+    expect(c.name).toBe("Shop (copy)");
+    expect(c.status).toBe("draft");
+    expect(c.version).toBe(1);
+    expect(c.screens[0].id).not.toBe("s1");
+    expect(c.components[0].parentId).toBe(c.screens[0].id);
+    expect(c.components[0].id).not.toBe(exp.components[0].id);
+    expect(c.journeys[0].screenIds).toEqual([c.screens[0].id]);
+    expect(ExperienceSchema.safeParse(c).success).toBe(true);
   });
 });

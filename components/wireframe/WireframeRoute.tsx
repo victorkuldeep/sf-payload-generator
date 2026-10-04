@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Button from "../ui/Button";
 import { DraftDialog, type DraftConfirmation } from "../draw/DraftDialog";
 import { SYSTEM_DRAFT_KEY, buildSystemProject, type TopologyDraft } from "@/lib/draw/toSystemDraft";
-import { canTransition, newExperience, renameExperience, type Experience, type SnapshotStatus } from "@/lib/wireframe/model";
+import { canTransition, cloneExperience, newExperience, renameExperience, type Experience, type SnapshotStatus } from "@/lib/wireframe/model";
 import { importExperiencePackage } from "@/lib/wireframe/packageIo";
 import { deleteExperience, listExperiences, saveExperience } from "@/lib/wireframe/store";
 import { experienceToDraft } from "@/lib/wireframe/systemBridge";
@@ -25,6 +25,57 @@ const STATUS_LABEL: Record<SnapshotStatus, string> = {
   "in-review": "In review",
   approved: "Approved",
 };
+
+const STATUS_HINT: Record<SnapshotStatus, string> = {
+  draft: "Submit for review",
+  "in-review": "Approve, or send back to draft",
+  approved: "Terminal - clone to iterate",
+};
+
+/** Workflow status menu: current state checked, only legal transitions clickable. */
+function StatusMenu({ exp, onPick }: { exp: Experience; onPick: (to: SnapshotStatus) => void }) {
+  const [open, setOpen] = useState(false);
+  const options = (Object.keys(STATUS_LABEL) as SnapshotStatus[]).filter(
+    (s) => s === exp.status || canTransition(exp.status, s),
+  );
+  return (
+    <div className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={STATUS_HINT[exp.status]}
+        className={`cursor-pointer rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${STATUS_STYLE[exp.status]}`}
+      >
+        {STATUS_LABEL[exp.status]} ▾
+      </button>
+      {open && (
+        <>
+          <button type="button" aria-label="Close status menu" className="fixed inset-0 z-10 cursor-default" onClick={() => setOpen(false)} />
+          <div role="menu" className="absolute right-0 z-20 mt-1 w-36 overflow-hidden rounded-lg border border-[#E8E2D8] bg-white py-1 shadow-md">
+            {options.map((s) => (
+              <button
+                key={s}
+                type="button"
+                role="menuitem"
+                disabled={s === exp.status}
+                onClick={() => {
+                  setOpen(false);
+                  if (s !== exp.status) onPick(s);
+                }}
+                className="flex w-full cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-left text-xs text-[#27241F] hover:bg-[#F5F1E8] disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent"
+              >
+                <span className="w-3 text-center text-[#9A7653]">{s === exp.status ? "✓" : ""}</span>
+                {STATUS_LABEL[s]}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 /**
  * Wireframe Studio route (EPIC 01): experience library with the
@@ -95,6 +146,14 @@ export function WireframeRoute() {
     await refresh();
   };
 
+  const clone = async (exp: Experience) => {
+    const copy = cloneExperience(exp);
+    if (await saveExperience(copy).catch(() => false)) {
+      setActiveId(copy.id);
+      await refresh();
+    }
+  };
+
   const transition = async (exp: Experience, to: SnapshotStatus) => {
     if (!canTransition(exp.status, to)) return;
     if (await saveExperience({ ...exp, status: to }).catch(() => false)) {
@@ -129,6 +188,7 @@ export function WireframeRoute() {
     <div className="space-y-3">
       <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] px-4 py-3">
         {!active ? (
+          loaded && items.length === 0 ? (
           <>
             <svg
               width="430"
@@ -162,6 +222,17 @@ export function WireframeRoute() {
               Experience · Schema · API · Build
             </p>
           </>
+          ) : (
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h2 className="text-[15px] font-semibold text-[#27241F]">Wireframe Studio</h2>
+            <p className="font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">
+              Experience · Schema · API · Build
+            </p>
+            <span className="ml-auto font-mono text-[10px] text-[#A39B8E]">
+              {items.length} experience{items.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          )
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" variant="ghost" onClick={() => setActiveId(null)} title="Back to the library">
@@ -237,6 +308,9 @@ export function WireframeRoute() {
             <Button size="sm" variant="secondary" onClick={() => setHistoryOpen(true)} title="Snapshots and export">
               History
             </Button>
+            <Button size="sm" variant="secondary" onClick={() => void clone(active)} title="Duplicate this experience and open the copy">
+              Clone
+            </Button>
           </div>
         )}
       </div>
@@ -255,7 +329,7 @@ export function WireframeRoute() {
               spellCheck={false}
               className="min-w-0 flex-1 rounded-xl border border-[#E8E2D8] bg-white px-3 py-2 text-[13px] text-[#27241F] placeholder-[#A39B8E] focus:border-[#C9A86A] focus:outline-none"
             />
-            <Button onClick={() => void create()}>New experience</Button>
+            <Button onClick={() => void create()}>New Exp</Button>
             <Button variant="secondary" onClick={() => fileRef.current?.click()} title="Import a package JSON from a fellow dev">
               Import
             </Button>
@@ -275,9 +349,14 @@ export function WireframeRoute() {
           {importError && <p className="text-[11px] text-red-700">{importError}</p>}
 
           {loaded && items.length > 0 && (
-            <ul className="grid gap-2 sm:grid-cols-2">
+            <ul className="space-y-1.5">
+              <li aria-hidden="true" className="flex items-center gap-3 px-3 font-mono text-[9px] uppercase tracking-[2px] text-[#A39B8E]">
+                <span className="flex-1">Experience</span>
+                <span className="w-24 shrink-0 text-right">State</span>
+                <span className="w-[68px] shrink-0" />
+              </li>
               {items.map((exp) => (
-                <li key={exp.id} className="group flex items-center gap-2 rounded-xl border border-[#E8E2D8] bg-white px-3 py-2.5">
+                <li key={exp.id} className="group flex items-center gap-3 rounded-xl border border-[#E8E2D8] bg-white px-3 py-2">
                   <button
                     type="button"
                     onClick={() => setActiveId(exp.id)}
@@ -285,25 +364,40 @@ export function WireframeRoute() {
                     title={`Open ${exp.name}`}
                   >
                     <span className="block truncate text-[13px] font-semibold text-[#27241F]">{exp.name}</span>
-                    <span className="mt-0.5 block font-mono text-[10px] text-[#A39B8E]">
+                    <span className="mt-0.5 block truncate font-mono text-[10px] text-[#A39B8E]">
                       v{exp.version} · {exp.screens.length} screen{exp.screens.length === 1 ? "" : "s"} ·{" "}
+                      {exp.components.length} component{exp.components.length === 1 ? "" : "s"} ·{" "}
                       {new Date(exp.updatedAt).toLocaleDateString()}
                     </span>
                   </button>
-                  <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${STATUS_STYLE[exp.status]}`}>
-                    {STATUS_LABEL[exp.status]}
+                  <span className="w-24 shrink-0 text-right">
+                    <StatusMenu exp={exp} onPick={(to) => void transition(exp, to)} />
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => setPendingExpDelete(exp.id)}
-                    title={`Delete ${exp.name}`}
-                    aria-label={`Delete ${exp.name}`}
-                    className="shrink-0 rounded p-1 text-[#C9BFAE] opacity-0 transition-colors cursor-pointer hover:bg-red-500/10 hover:text-red-700 group-hover:opacity-100 focus-visible:opacity-100"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-                      <path d="M6 6l12 12M18 6 6 18" />
-                    </svg>
-                  </button>
+                  <span className="flex w-[68px] shrink-0 items-center justify-end gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => void clone(exp)}
+                      title={`Clone ${exp.name}`}
+                      aria-label={`Clone ${exp.name}`}
+                      className="rounded p-1.5 text-[#A39B8E] opacity-0 transition-colors cursor-pointer hover:bg-[#F5F1E8] hover:text-[#27241F] group-hover:opacity-100 focus-visible:opacity-100"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <rect x="9" y="9" width="12" height="12" rx="2" />
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPendingExpDelete(exp.id)}
+                      title={`Delete ${exp.name}`}
+                      aria-label={`Delete ${exp.name}`}
+                      className="rounded p-1.5 text-[#C9BFAE] opacity-0 transition-colors cursor-pointer hover:bg-red-500/10 hover:text-red-700 group-hover:opacity-100 focus-visible:opacity-100"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                        <path d="M6 6l12 12M18 6 6 18" />
+                      </svg>
+                    </button>
+                  </span>
                 </li>
               ))}
             </ul>

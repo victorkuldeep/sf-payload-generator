@@ -191,6 +191,36 @@ export function renameExperience(exp: Experience, draft: string): Experience | n
   return { ...exp, name: clean };
 }
 
+/**
+ * Deep clone for the library workflow: fresh document identity, remapped
+ * screen/component ids (parents and journey steps follow), back to draft.
+ * Snapshots stay with the original - history never clones.
+ */
+export function cloneExperience(exp: Experience): Experience {
+  const now = Date.now();
+  const screenIds = new Map(exp.screens.map((s) => [s.id, wid("scr")]));
+  return {
+    ...exp,
+    id: wid("exp"),
+    name: `${exp.name} (copy)`.slice(0, 160),
+    version: 1,
+    status: "draft",
+    screens: exp.screens.map((s) => ({ ...s, id: screenIds.get(s.id)! })),
+    components: exp.components.map((c) => ({
+      ...c,
+      id: wid("cmp"),
+      parentId: c.parentId ? (screenIds.get(c.parentId) ?? c.parentId) : c.parentId,
+    })),
+    journeys: exp.journeys.map((j) => ({
+      ...j,
+      id: wid("jor"),
+      screenIds: j.screenIds.filter((id) => screenIds.has(id)).map((id) => screenIds.get(id)!),
+    })),
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 /** Approval workflow: review first, build only from approved. */
 export function canTransition(from: SnapshotStatus, to: SnapshotStatus): boolean {
   if (from === to) return true;
