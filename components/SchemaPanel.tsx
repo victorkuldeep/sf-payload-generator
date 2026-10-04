@@ -4784,7 +4784,25 @@ export default function SchemaPanel({
             {rootName && (
               <>
                 <label className="block text-xs font-medium text-ivory-700" title="Working node for Discover / Remove - picking one glides it to canvas center">
-                  Focus node - centers canvas
+                  <span className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        focusCanvasOn(focusName || rootName);
+                      }}
+                      title={`Center canvas on ${focusName || rootName}`}
+                      aria-label={`Center canvas on ${focusName || rootName}`}
+                      className="cursor-pointer rounded p-0.5 text-[#722F37] hover:bg-[#F0EBE0]"
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+                        <circle cx="12" cy="12" r="7" />
+                        <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+                        <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+                      </svg>
+                    </button>
+                    <span>Focus node - centers canvas</span>
+                  </span>
                   <select
                     value={focusName}
                     onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleFocusChange(e.target.value)}
@@ -5387,8 +5405,6 @@ export default function SchemaPanel({
               edges={elements.edges}
               onNodeClick={handleNodeClick}
               onEdgeClick={handleEdgeClick}
-              focusLabel={focusName || rootName}
-              onRecenter={() => focusCanvasOn(focusName || rootName)}
               onPaneClick={handlePaneClick}
               onViewportMove={() => setPopover(null)}
               connectable={authorMode}
