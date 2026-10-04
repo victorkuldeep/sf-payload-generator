@@ -9,7 +9,8 @@ import {
 } from "@xyflow/react";
 
 const STROKE = "#8A8070";
-const STROKE_ACTIVE = "#9A7653";
+/** Clicked relationship: deep burgundy, unmistakable at any zoom. */
+const STROKE_LINKED = "#722F37";
 
 function dirFor(pos: Position): { x: number; y: number } {
   if (pos === Position.Right) return { x: 1, y: 0 };
@@ -102,8 +103,8 @@ function ErdEdgeInner({
   const edgeData = (data as { kind?: string; pending?: boolean } | undefined) ?? {};
   const isMd = edgeData.kind === "md";
   const pending = edgeData.pending === true;
-  const stroke = pending ? "#B45309" : selected ? STROKE_ACTIVE : STROKE;
-  const lineWidth = selected ? 2.2 : isMd ? 2 : 1.5;
+  const stroke = pending ? "#B45309" : selected ? STROKE_LINKED : STROKE;
+  const lineWidth = selected ? 2.4 : isMd ? 2 : 1.5;
   const dash = pending ? "4 3" : isMd ? undefined : "7 5";
 
   return (
