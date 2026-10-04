@@ -9,6 +9,7 @@ import { getSystemBridge } from "./systemBridge";
 import { JSON_TOOLS, STUDIO_TOOLS } from "./toolsStudio";
 import { WIREFRAME_TOOLS } from "./toolsWireframe";
 import { SEQUENCE_TOOLS } from "./toolsSequence";
+import { DRAW_TOOLS } from "./toolsDraw";
 import type { AgentTool } from "./tools";
 
 /**
@@ -173,9 +174,9 @@ const connectSystems: AgentTool = {
 export const SYSTEM_TOOLS: AgentTool[] = [describeCanvas, addSystem, connectSystems];
 
 /**
- * Tool set for the active route. System, Wireframe and Sequence get live
- * canvas packs; studio home and JSON get headless read-only packs.
- * Mapping, Validate, Draw, Architect and Contracts stay in advisor mode
+ * Tool set for the active route. System, Wireframe, Sequence and Draw get
+ * live canvas packs; studio home and JSON get headless read-only packs.
+ * Mapping, Validate, Architect and Contracts stay in advisor mode
  * until their bridges exist.
  */
 export function toolsForSkill(skillName: string): AgentTool[] {
@@ -184,5 +185,6 @@ export function toolsForSkill(skillName: string): AgentTool[] {
   if (skillName === "json") return JSON_TOOLS;
   if (skillName === "wireframe") return WIREFRAME_TOOLS;
   if (skillName === "sequence") return SEQUENCE_TOOLS;
+  if (skillName === "draw") return DRAW_TOOLS;
   return [];
 }

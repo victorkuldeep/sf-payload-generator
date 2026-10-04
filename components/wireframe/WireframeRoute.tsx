@@ -22,7 +22,7 @@ const STATUS_STYLE: Record<SnapshotStatus, string> = {
 
 const STATUS_LABEL: Record<SnapshotStatus, string> = {
   draft: "Draft",
-  "in-review": "In review",
+  "in-review": "In Review",
   approved: "Approved",
 };
 
@@ -405,7 +405,7 @@ export function WireframeRoute() {
 
           {loaded && items.length === 0 && (
             <p className="rounded-xl border border-dashed border-[#E3D9C6] px-4 py-6 text-center text-xs text-[#777168]">
-              No experiences yet - name one above and start modeling. The design canvas arrives in EPIC 02.
+              No experiences yet - name one above and start modeling.
             </p>
           )}
         </>

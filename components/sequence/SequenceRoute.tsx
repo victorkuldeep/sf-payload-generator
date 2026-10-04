@@ -25,13 +25,13 @@ const STATUS_STYLE: Record<SeqStatus, string> = {
 
 const STATUS_LABEL: Record<SeqStatus, string> = {
   draft: "Draft",
-  "in-review": "In review",
+  "in-review": "In Review",
   approved: "Approved",
 };
 
 /**
- * Sequence Studio route (EPIC 01): library with the approval workflow.
- * The statement editor + renderer arrive in EPIC 02/03; this shell owns
+ * Sequence Studio route: library with the approval workflow.
+ * This shell owns
  * identity, version, status - the model, not the pixels.
  */
 export function SequenceRoute() {
@@ -224,12 +224,12 @@ export function SequenceRoute() {
               onKeyDown={(e) => {
                 if (e.key === "Enter") void create();
               }}
-              placeholder="New sequence - e.g. Order to fulfillment"
-              aria-label="New sequence name"
+              placeholder="New Sequence - e.g. Order to fulfillment"
+              aria-label="New Sequence name"
               spellCheck={false}
               className="min-w-0 flex-1 rounded-xl border border-[#E8E2D8] bg-white px-3 py-2 text-[13px] text-[#27241F] placeholder-[#A39B8E] focus:border-[#C9A86A] focus:outline-none"
             />
-            <Button onClick={() => void create()}>New sequence</Button>
+            <Button onClick={() => void create()}>New Sequence</Button>
             <Button variant="secondary" onClick={() => fileRef.current?.click()} title="Import a package JSON or DSL text file from a fellow dev">
               Import
             </Button>
@@ -286,7 +286,7 @@ export function SequenceRoute() {
 
           {loaded && items.length === 0 && (
             <p className="rounded-xl border border-dashed border-[#E3D9C6] px-4 py-6 text-center text-xs text-[#777168]">
-              No sequences yet - name one above and start modeling. The statement editor arrives in EPIC 03.
+              No sequences yet - name one above and start modeling.
             </p>
           )}
         </>

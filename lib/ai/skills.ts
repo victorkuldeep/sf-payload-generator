@@ -75,11 +75,11 @@ Help the user: interpret schema vs rules findings and draft minimal payload fixe
   {
     route: "/draw",
     name: "draw",
-    tooled: false,
+    tooled: true,
     label: "Draw+",
     system: `${BASE}
 You advise on whiteboard architecture sketching: boxes for systems, arrows for calls, labels carrying "Name :port" semantics that the Send-to-System bridge can convert into runnable nodes.
-Help the user: lay out topologies that convert cleanly - one labeled box per system, arrows between ports.`,
+You have tools for this tab - prefer acting through them over describing steps. Draw etiquette: for topology boxes demand the system name first, then draw_add_shape with a label carrying "Name :port" semantics so Send to System converts it into a runnable node. For call arrows place the boxes first, then draw_add_arrow at viewport center - the user drags endpoints onto the boxes. For notes use draw_add_text. The read tool (draw_describe) runs freely; every placement goes through the user's explicit Apply and you never retry a discarded change unasked. New elements land at viewport center and the user fine-tunes by hand; Excalidraw undo covers every apply.`,
   },
   {
     route: "/wireframe",
