@@ -17,7 +17,9 @@ import { JourneyPanel } from "./JourneyPanel";
 import { pruneJourney } from "@/lib/wireframe/journey";
 import { SchemaPanel } from "./SchemaPanel";
 import { useWireSchema } from "./useWireSchema";
+import { toPng } from "html-to-image";
 import { buildBoundComponent } from "@/lib/wireframe/schema";
+import { contentBounds, frameFor, toWorld, wirePngFileName } from "@/lib/wireframe/canvasExport";
 import { registerWireBridge, wireSnapshotOf } from "@/lib/ai/wireBridge";
 import { rollupProposedFields } from "@/lib/wireframe/model";
 import type { SalesforceField } from "@/lib/salesforce/types";
@@ -42,6 +44,9 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
   const [railOpen, setRailOpen] = useState(true);
   const [locked, setLocked] = useState(false);
   const [pendingScreenDelete, setPendingScreenDelete] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const worldRef = useRef<HTMLDivElement | null>(null);
   const schema = useWireSchema();
   const [newName, setNewName] = useState("");
   const areaRef = useRef<HTMLDivElement | null>(null);
@@ -123,6 +128,50 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
       k: +k.toFixed(2),
     });
   };
+
+  const doExport = useCallback(
+    async (scale: 2 | 3) => {
+      setExporting(true);
+      setExportError(null);
+      try {
+        const area = areaRef.current;
+        const world = worldRef.current;
+        if (!area || !world) throw new Error("Canvas not ready");
+        const areaRect = area.getBoundingClientRect();
+        // Direct children only: drag headers carry the same attribute.
+        const cards = [...world.querySelectorAll(":scope > [data-screen-id]")].map((el) => {
+          const r = (el as HTMLElement).getBoundingClientRect();
+          return toWorld(r, areaRect, view);
+        });
+        const bounds = contentBounds(cards);
+        if (!bounds) throw new Error("Nothing to export - add a screen first");
+        const frame = frameFor(bounds);
+        const dataUrl = await toPng(world, {
+          backgroundColor: "#FBF8F1",
+          pixelRatio: scale,
+          cacheBust: true,
+          width: frame.imgW,
+          height: frame.imgH,
+          style: {
+            width: `${frame.imgW}px`,
+            height: `${frame.imgH}px`,
+            transform: `translate(${frame.tx}px, ${frame.ty}px) scale(${frame.zoom})`,
+          },
+        });
+        const a = document.createElement("a");
+        a.href = dataUrl;
+        a.download = wirePngFileName(exp.name, scale);
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } catch (err) {
+        setExportError(err instanceof Error ? err.message : "PNG export failed");
+      } finally {
+        setExporting(false);
+      }
+    },
+    [exp.name, view],
+  );
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (locked) return;
@@ -412,6 +461,31 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
         <Button size="sm" variant="secondary" onClick={() => setApiOpen((v) => !v)} title="API impact" aria-expanded={apiOpen} className="mt-1.5 w-full">
           {apiOpen ? "Close APIs" : "API impact"}
         </Button>
+        <div className="mt-1.5 flex gap-1.5">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => void doExport(2)}
+            disabled={exporting || exp.screens.length === 0}
+            title="Download the full canvas as PNG (2x)"
+            className="flex-1"
+          >
+            {exporting ? "Exporting…" : "⤓ Snapshot PNG"}
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => void doExport(3)}
+            disabled={exporting || exp.screens.length === 0}
+            title="Download the full canvas as hi-res PNG (3x) for decks"
+            className="flex-1"
+          >
+            {exporting ? "Exporting…" : "3x Hi-Res"}
+          </Button>
+        </div>
+        {exportError && (
+          <p className="mt-1 px-1 text-[11px] text-red-700">{exportError}</p>
+        )}
         <p className="mt-2 px-1 text-[10px] leading-relaxed text-[#A39B8E]">
           {locked ? "Locked - unlock to edit the canvas" : "Drag headers to move · scroll to pan · Ctrl+scroll or pinch to zoom · Del removes"}
         </p>
@@ -500,6 +574,7 @@ export function WireCanvas({ experience, onSaved }: { experience: Experience; on
           }}
         >
           <div
+            ref={worldRef}
             className="absolute left-0 top-0"
             style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})`, transformOrigin: "0 0" }}
           >
