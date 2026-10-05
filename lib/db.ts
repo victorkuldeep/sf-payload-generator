@@ -6,7 +6,9 @@
  */
 
 export const DB_NAME = "gravenx-studio";
-export const DB_VERSION = 22;
+// v23: additive heal - recreates any store missing from an already-upgraded
+// DB (e.g. decision-records), so a stuck browser self-repairs on next open.
+export const DB_VERSION = 23;
 
 export const STORES = {
   items: "request-collection",
@@ -54,6 +56,8 @@ function openDb(): Promise<IDBDatabase> {
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error ?? new Error("Failed to open IndexedDB"));
+    // A second tab holding an old connection must never hang load/save forever.
+    req.onblocked = () => reject(new Error("IndexedDB upgrade blocked by another open tab"));
   });
 }
 

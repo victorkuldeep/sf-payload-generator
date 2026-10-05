@@ -46,3 +46,21 @@ Required MIT notice (Octicons):
 > "THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 > IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 > FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT."
+
+## Tiptap (ADR Decision rich-text editor)
+
+- Packages: `@tiptap/react` + `@tiptap/starter-kit` +
+  `@tiptap/extension-highlight` (exact pin `3.31.4`, see `package.json` /
+  `package-lock.json`)
+- License: **MIT** (as declared in the packages' `package.json`)
+- Source: <https://github.com/ueberdosis/tiptap>
+- Integrated as unmodified npm dependencies rendered through our own
+  `components/decisions/RichTextEditor.tsx` adapter. Bundled with the app —
+  no CDN, no external requests. Stored Decision HTML is allowlist-sanitized
+  by `lib/decisions/richtext.ts`; packs and AI read back tag-free text.
+
+Required MIT notice (Tiptap):
+
+> "THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+> IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT."

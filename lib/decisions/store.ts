@@ -11,11 +11,18 @@ function clean(d: Decision): Decision {
   return decisionSchema.parse(d);
 }
 
+function report(op: string, err: unknown): void {
+  // Silent degrade stays, but the cause must be visible in DevTools -
+  // a swallowed error here is a decision lost on reload.
+  if (typeof console !== "undefined") console.error(`[decisions] ${op} failed:`, err);
+}
+
 export async function listDecisions(): Promise<Decision[]> {
   try {
     const all = await withStore<Decision[]>(STORES.decisionRecords, "readonly", (s) => s.getAll());
     return all.sort((a, b) => b.updatedAt - a.updatedAt);
-  } catch {
+  } catch (err) {
+    report("load", err);
     return [];
   }
 }
@@ -24,7 +31,8 @@ export async function saveDecision(d: Decision): Promise<boolean> {
   try {
     await withStore(STORES.decisionRecords, "readwrite", (s) => s.put(clean({ ...d, updatedAt: Date.now() })));
     return true;
-  } catch {
+  } catch (err) {
+    report("save", err);
     return false;
   }
 }
@@ -33,7 +41,8 @@ export async function deleteDecision(id: string): Promise<boolean> {
   try {
     await withStore(STORES.decisionRecords, "readwrite", (s) => s.delete(id));
     return true;
-  } catch {
+  } catch (err) {
+    report("delete", err);
     return false;
   }
 }

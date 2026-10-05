@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { AiMarkdown } from "@/components/ai/Markdown";
+import { NoteEditor } from "@/components/notes/NoteEditor";
 import {
   CONSOLE_PRIORITIES,
   CONSOLE_STATUS_LABELS,
@@ -9,10 +10,11 @@ import {
   type ConsolePriority,
   type ConsoleStatus,
 } from "@/lib/console/model";
+import { emptyNoteBody, noteBodyEmpty, type NoteBody } from "@/lib/notes/notebody";
 
 export interface NewTaskDraft {
   title: string;
-  body?: string;
+  body?: NoteBody;
   status: ConsoleStatus;
   priority: ConsolePriority;
   dueDate?: string;
@@ -24,8 +26,7 @@ export interface NewTaskDraft {
  */
 export function NewTaskDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (d: NewTaskDraft) => void }) {
   const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [descTab, setDescTab] = useState<"write" | "preview">("write");
+  const [body, setBody] = useState<NoteBody>(() => emptyNoteBody());
   const [status, setStatus] = useState<ConsoleStatus>("open");
   const [priority, setPriority] = useState<ConsolePriority>("normal");
   const [dueDate, setDueDate] = useState("");
@@ -35,7 +36,7 @@ export function NewTaskDialog({ onClose, onCreate }: { onClose: () => void; onCr
     if (!clean) return;
     onCreate({
       title: clean.slice(0, 160),
-      ...(body.trim() ? { body: body.trim().slice(0, 12000) } : {}),
+      ...(noteBodyEmpty(body) ? {} : { body }),
       status,
       priority,
       ...(dueDate ? { dueDate } : {}),
@@ -73,42 +74,13 @@ export function NewTaskDialog({ onClose, onCreate }: { onClose: () => void; onCr
             />
           </div>
           <div className="flex min-h-40 flex-1 flex-col">
-            <div className="mb-1 flex items-center gap-2">
-              <label htmlFor="new-task-body" className="text-[12px] font-semibold text-[#3A352D]">
-                Description <span className="font-normal text-[#A39B8E]">· markdown</span>
-              </label>
-              <span className="ml-auto inline-flex overflow-hidden rounded-lg border border-[#E8E2D8]" role="group" aria-label="Description mode">
-                {(["write", "preview"] as const).map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setDescTab(t)}
-                    aria-pressed={descTab === t}
-                    className={`cursor-pointer px-2 py-0.5 text-[11px] font-semibold capitalize ${descTab === t ? "bg-[#27241F] text-[#F5F1E8]" : "bg-white text-[#777168] hover:text-[#27241F]"}`}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </span>
-            </div>
-            {descTab === "write" ? (
-              <textarea
-                id="new-task-body"
-                value={body}
-                onChange={(e) => setBody(e.target.value.slice(0, 12000))}
-                placeholder={"What needs doing, acceptance criteria, links…\n\n- [ ] first step\n- [ ] second step"}
-                spellCheck={false}
-                className="w-full min-h-40 flex-1 resize-none rounded-lg border border-[#E8E2D8] bg-white px-3 py-2 font-mono text-[12px] leading-relaxed text-[#27241F] placeholder-[#A39B8E] focus:border-[#C9A86A] focus:outline-none"
-              />
-            ) : (
-              <div className="min-h-40 flex-1 overflow-y-auto rounded-lg border border-[#E8E2D8] bg-[#FBFAF7] px-3 py-2">
-                {body.trim() ? (
-                  <AiMarkdown content={body} />
-                ) : (
-                  <p className="text-[12px] text-[#A39B8E]">Nothing to preview yet — switch back to Write.</p>
-                )}
-              </div>
-            )}
+            <NoteEditor
+              draft={body}
+              onDraft={setBody}
+              label="Description"
+              placeholder={"What needs doing, acceptance criteria, links…\n\n- [ ] first step\n- [ ] second step"}
+              renderPreview={(md) => <AiMarkdown content={md} />}
+            />
           </div>
           <div className="flex flex-wrap gap-3 border-t border-[#E8E2D8] pt-3">
             <label className="flex items-center gap-1.5 text-[12px] font-semibold text-[#3A352D]">

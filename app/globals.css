@@ -324,3 +324,15 @@ body.sf-present .app-chrome-footer {
 body.sf-present #main-content > main {
   padding: 5px;
 }
+
+/* Rich-text highlights: stored as <mark data-color> (no inline styles),
+   painted here so editor and read-only previews match exactly. */
+.tiptap mark, .rich-body mark {
+  border-radius: 2px;
+  padding: 0 1px;
+  background-color: #FFEB9C;
+}
+.tiptap mark[data-color="#FFEB9C"], .rich-body mark[data-color="#FFEB9C"] { background-color: #FFEB9C; }
+.tiptap mark[data-color="#C6F6C6"], .rich-body mark[data-color="#C6F6C6"] { background-color: #C6F6C6; }
+.tiptap mark[data-color="#F9C9D4"], .rich-body mark[data-color="#F9C9D4"] { background-color: #F9C9D4; }
+.tiptap mark[data-color="#C4E3FC"], .rich-body mark[data-color="#C4E3FC"] { background-color: #C4E3FC; }

@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { addNote, canTransition, consoleTaskKey, consoleTaskSchema, moveTask, newConsoleTask, nextStatuses } from "./model";
+import {
+  addNote,
+  canTransition,
+  consoleBodyToNote,
+  consoleTaskKey,
+  consoleTaskSchema,
+  moveTask,
+  newConsoleTask,
+  nextStatuses,
+  noteToConsoleBody,
+} from "./model";
+import { noteBodyFromHtml, noteBodyFromMd } from "@/lib/notes/notebody";
 
 describe("console model", () => {
   it("creates open tasks with creation history", () => {
@@ -45,5 +56,24 @@ describe("console model", () => {
     const t = newConsoleTask("X", 1);
     expect(consoleTaskSchema.safeParse({ ...t, status: "archived" }).success).toBe(false);
     expect(consoleTaskSchema.safeParse({ ...t, links: [{ surface: "figma", recordId: "1", label: "x" }] }).success).toBe(false);
+  });
+
+  it("round-trips the dual-format description triple", () => {
+    // Vintage markdown-only task migrates on first touch.
+    const legacy = { ...newConsoleTask("X", 1), body: "## Goal\n\n- [ ] ship" };
+    const migrated = consoleBodyToNote(legacy);
+    expect(migrated.format).toBe("md");
+    expect(migrated.md).toBe(legacy.body);
+    expect(migrated.html).toContain("<h2>Goal</h2>");
+    // Rich task keeps its side and editor memory.
+    const rich = { ...newConsoleTask("Y", 2), ...noteToConsoleBody(noteBodyFromHtml("<p>Hi <strong>there</strong></p>")) };
+    expect(consoleTaskSchema.safeParse(rich).success).toBe(true);
+    expect(consoleBodyToNote(rich).format).toBe("rich");
+    expect(consoleBodyToNote(rich).html).toContain("<strong>there</strong>");
+    // Empty drafts clear all three sides; md commits validate.
+    expect(noteToConsoleBody(noteBodyFromMd("   "))).toEqual({ body: undefined, bodyFormat: undefined, bodyHtml: undefined });
+    const md = { ...newConsoleTask("Z", 3), ...noteToConsoleBody(noteBodyFromMd("plain")) };
+    expect(consoleTaskSchema.safeParse(md).success).toBe(true);
+    expect(consoleTaskSchema.safeParse({ ...md, bodyFormat: "quill" }).success).toBe(false);
   });
 });

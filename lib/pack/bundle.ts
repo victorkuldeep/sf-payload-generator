@@ -1,3 +1,4 @@
+import { htmlToText } from "@/lib/decisions/richtext";
 import type { SystemProject } from "@/lib/system-design/model";
 import type { SequenceDocument } from "@/lib/sequence/model";
 import type { Decision } from "@/lib/decisions/model";
@@ -83,7 +84,7 @@ export function buildPackMarkdown(input: PackInput): string {
   if (decs.length === 0) L.push("No decisions govern this project yet.", "");
   for (const d of decs) {
     L.push(`### ${d.number} ${d.title} (${d.status})`);
-    if (d.decision) L.push(d.decision);
+    if (d.decision) L.push(htmlToText(d.decision));
     L.push("");
   }
 

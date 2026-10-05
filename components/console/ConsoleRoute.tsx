@@ -8,6 +8,7 @@ import {
   consoleTaskKey,
   moveTask,
   newConsoleTask,
+  noteToConsoleBody,
   type ConsoleLink,
   type ConsoleStatus,
   type ConsoleTask,
@@ -109,7 +110,7 @@ export function ConsoleRoute() {
   const create = useCallback(async (draft: NewTaskDraft) => {
     const task: ConsoleTask = {
       ...newConsoleTask(draft.title),
-      ...(draft.body ? { body: draft.body } : {}),
+      ...(draft.body ? noteToConsoleBody(draft.body) : {}),
       status: draft.status,
       priority: draft.priority,
       ...(draft.dueDate ? { dueDate: draft.dueDate } : {}),

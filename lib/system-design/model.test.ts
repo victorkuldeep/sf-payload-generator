@@ -8,9 +8,12 @@ import {
   importProject,
   projectFileName,
   connectionReadiness,
+  noteToSystemNotes,
+  systemNotesToNote,
   SYSTEM_TEMPLATES,
   SYSTEM_DESIGN_SCHEMA_VERSION,
 } from "./model";
+import { noteBodyFromHtml, noteBodyFromMd } from "@/lib/notes/notebody";
 import { buildDemoProject } from "./demo";
 
 describe("system design model", () => {
@@ -122,6 +125,27 @@ describe("system design model", () => {
     expect(ok.issues).toEqual([]);
     expect(ok.project?.notes).toBe("# Plan");
     expect(ok.project?.todos[0].assignee).toBe("Asha");
+  });
+
+  it("carries the dual-format notes triple and migrates vintage notes", () => {
+    const base = { id: "p1", name: "P", schemaVersion: 1, updatedAt: 1, systems: [], connections: [], todos: [] };
+    // Vintage markdown-only notes validate and migrate on first touch.
+    const vintage = validateProject({ ...base, notes: "# Plan" });
+    expect(vintage.issues).toEqual([]);
+    expect(vintage.project?.notesFormat).toBeUndefined();
+    expect(systemNotesToNote(vintage.project!).format).toBe("md");
+    expect(systemNotesToNote(vintage.project!).html).toContain("<h2>Plan</h2>");
+    // Rich triple validates, round-trips, and rejects junk formats.
+    const triple = noteToSystemNotes(noteBodyFromHtml("<p>Hi <strong>there</strong></p>"));
+    const rich = validateProject({ ...base, notes: triple.notes, notesFormat: triple.notesFormat, notesHtml: triple.notesHtml });
+    expect(rich.issues).toEqual([]);
+    expect(systemNotesToNote(rich.project!).format).toBe("rich");
+    const junk = validateProject({ ...base, notes: "", notesFormat: "quill", notesHtml: 42 });
+    expect(junk.issues).toEqual([]);
+    expect(junk.project?.notesFormat).toBeUndefined();
+    expect(junk.project?.notesHtml).toBeUndefined();
+    // Empty drafts clear the triple.
+    expect(noteToSystemNotes(noteBodyFromMd("  "))).toEqual({ notes: "", notesFormat: undefined, notesHtml: undefined });
   });
 
   it("derives readiness from live bindings, never stored status", () => {

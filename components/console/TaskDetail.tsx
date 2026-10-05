@@ -12,7 +12,9 @@ import {
 import {
   CONSOLE_PRIORITIES,
   CONSOLE_STATUS_LABELS,
+  consoleBodyToNote,
   consoleTaskKey,
+  noteToConsoleBody,
   nextStatuses,
   type ConsoleAttachment,
   type ConsolePriority,
@@ -20,6 +22,7 @@ import {
   type ConsoleTask,
 } from "@/lib/console/model";
 import { consoleLinkHref } from "@/lib/console/model";
+import { NoteEditor } from "@/components/notes/NoteEditor";
 import type { CanvasLinkView } from "@/lib/console/sync";
 
 const STATUS_PILL: Record<ConsoleStatus, string> = {
@@ -64,8 +67,8 @@ export function TaskDetail({
   onDelete: () => void;
 }) {
   const [title, setTitle] = useState(task.title);
-  const [descTab, setDescTab] = useState<"view" | "edit">("view");
-  const [descDraft, setDescDraft] = useState(task.body ?? "");
+  const [descDraft, setDescDraft] = useState(() => consoleBodyToNote(task));
+  const [savedRev, setSavedRev] = useState(0);
   const [noteDraft, setNoteDraft] = useState("");
   const [showLinker, setShowLinker] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -77,15 +80,14 @@ export function TaskDetail({
   // Fresh detail state whenever another task is picked from the queue.
   useEffect(() => {
     setTitle(task.title);
-    setDescDraft(task.body ?? "");
-    setDescTab("view");
+    setDescDraft(consoleBodyToNote(task));
     setNoteDraft("");
     setShowLinker(false);
     setConfirmDelete(false);
     setAttachError(null);
     setLightbox(null);
     void listAttachments(task.id).then(setAttachments);
-  }, [task.id, task.title, task.body]);
+  }, [task.id, task.title, task.body, task.bodyFormat, task.bodyHtml]);
 
   const commitTitle = () => {
     const clean = title.trim().slice(0, 160);
@@ -94,9 +96,12 @@ export function TaskDetail({
   };
 
   const saveDescription = () => {
-    const clean = descDraft.trim().slice(0, 12000);
-    if ((clean || undefined) !== (task.body || undefined)) onPatch({ body: clean || undefined });
-    setDescTab("view");
+    const triple = noteToConsoleBody(descDraft);
+    if (triple.body !== task.body || triple.bodyFormat !== task.bodyFormat || triple.bodyHtml !== task.bodyHtml) {
+      onPatch({ ...triple });
+    }
+    // Remount lands the editor back on Preview.
+    setSavedRev((r) => r + 1);
   };
 
   const upload = (files: FileList | null) => {
@@ -194,72 +199,43 @@ export function TaskDetail({
 
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
           <section>
-            <div className="flex items-center gap-2">
-              <h4 className="font-mono text-[9px] uppercase tracking-[2px] text-[#A39B8E]">Description · markdown</h4>
-              <span className="ml-auto inline-flex overflow-hidden rounded-lg border border-[#E8E2D8]" role="group" aria-label="Description mode">
-                {(["view", "edit"] as const).map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => {
-                      if (t === "edit") setDescDraft(task.body ?? "");
-                      setDescTab(t);
-                    }}
-                    aria-pressed={descTab === t}
-                    className={`cursor-pointer px-2 py-0.5 text-[11px] font-semibold capitalize ${descTab === t ? "bg-[#27241F] text-[#F5F1E8]" : "bg-white text-[#777168] hover:text-[#27241F]"}`}
-                  >
-                    {t === "view" ? "Preview" : "Write"}
-                  </button>
-                ))}
-              </span>
-            </div>
-            {descTab === "view" ? (
-              task.body ? (
-                <div className="mt-1.5 rounded-xl border border-[#E8E2D8] bg-[#FBFAF7] px-3 py-2">
-                  <AiMarkdown content={task.body} />
-                </div>
-              ) : (
+            <NoteEditor
+              key={`${task.id}:${savedRev}`}
+              draft={descDraft}
+              onDraft={setDescDraft}
+              label="Description"
+              initialTab="preview"
+              placeholder={"## Goal\n\nWhat done looks like.\n\n- [ ] acceptance one\n- [ ] acceptance two"}
+              renderPreview={(md) => <AiMarkdown content={md} />}
+              emptyPreview={(edit) => (
                 <button
                   type="button"
-                  onClick={() => setDescTab("edit")}
-                  className="mt-1.5 block w-full cursor-pointer rounded-xl border border-dashed border-[#D8D0C0] px-3 py-3 text-left text-[12px] text-[#A39B8E] hover:border-[#C9A86A] hover:text-[#777168]"
+                  onClick={edit}
+                  className="block w-full cursor-pointer rounded-xl border border-dashed border-[#D8D0C0] px-3 py-3 text-left text-[12px] text-[#A39B8E] hover:border-[#C9A86A] hover:text-[#777168]"
                 >
                   Add a description — goal, acceptance criteria, context…
                 </button>
-              )
-            ) : (
-              <div className="mt-1.5">
-                <textarea
-                  value={descDraft}
-                  onChange={(e) => setDescDraft(e.target.value.slice(0, 12000))}
-                  rows={7}
-                  autoFocus
-                  placeholder={"## Goal\n\nWhat done looks like.\n\n- [ ] acceptance one\n- [ ] acceptance two"}
-                  spellCheck={false}
-                  aria-label="Task description markdown"
-                  className="w-full resize-y rounded-xl border border-[#E8E2D8] bg-white px-3 py-2 font-mono text-[12px] leading-relaxed text-[#27241F] placeholder-[#A39B8E] focus:border-[#C9A86A] focus:outline-none"
-                />
-                <div className="mt-1.5 flex justify-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDescDraft(task.body ?? "");
-                      setDescTab("view");
-                    }}
-                    className="cursor-pointer rounded-lg border border-[#E8E2D8] px-2.5 py-1 text-[12px] font-semibold text-[#27241F] hover:border-[#C9A86A]"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={saveDescription}
-                    className="cursor-pointer rounded-lg bg-[#27241F] px-2.5 py-1 text-[12px] font-semibold text-[#F5F1E8] hover:bg-[#3A352D]"
-                  >
-                    Save description
-                  </button>
-                </div>
-              </div>
-            )}
+              )}
+            />
+            <div className="mt-1.5 flex justify-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setDescDraft(consoleBodyToNote(task));
+                  setSavedRev((r) => r + 1);
+                }}
+                className="cursor-pointer rounded-lg border border-[#E8E2D8] px-2.5 py-1 text-[12px] font-semibold text-[#27241F] hover:border-[#C9A86A]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={saveDescription}
+                className="cursor-pointer rounded-lg bg-[#27241F] px-2.5 py-1 text-[12px] font-semibold text-[#F5F1E8] hover:bg-[#3A352D]"
+              >
+                Save description
+              </button>
+            </div>
           </section>
 
           <section>

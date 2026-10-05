@@ -21,6 +21,7 @@ import {
   listDecisions,
   saveDecision,
 } from "@/lib/decisions/store";
+import { RichTextEditor } from "../notes/RichTextEditor";
 import { consoleLinkHref } from "@/lib/console/model";
 import { findDeepRecord, useDeepParam } from "@/lib/deep/deep";
 import { listSystemProjects } from "@/lib/system-design/store";
@@ -75,6 +76,7 @@ export function DecisionsRoute() {
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "failed">("idle");
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -102,9 +104,17 @@ export function DecisionsRoute() {
     }
   }, [loaded, deepId, items]);
 
+  /** Every write funnels through here so a failed save is visible, never silent. */
+  const recordSave = async (d: Decision): Promise<boolean> => {
+    setSaveState("saving");
+    const ok = await saveDecision(d);
+    setSaveState(ok ? "saved" : "failed");
+    return ok;
+  };
+
   const persist = async (next: Decision) => {
     setItems((prev) => prev.map((i) => (i.id === next.id ? next : i)));
-    await saveDecision(next);
+    await recordSave(next);
   };
 
   const create = async () => {
@@ -113,7 +123,7 @@ export function DecisionsRoute() {
     const d = newDecision(name, nextDecisionNumber(items));
     setTitle("");
     setItems((prev) => [d, ...prev]);
-    await saveDecision(d);
+    await recordSave(d);
     setActiveId(d.id);
   };
 
@@ -135,7 +145,7 @@ export function DecisionsRoute() {
       history: [{ at: Date.now(), what: `Cloned from ${d.number}.` }],
     };
     setItems((prev) => [copy, ...prev]);
-    await saveDecision(copy);
+    await recordSave(copy);
     setActiveId(copy.id);
   };
 
@@ -163,7 +173,7 @@ export function DecisionsRoute() {
       setImportError(r.error ?? "Import failed.");
       return;
     }
-    for (const d of r.decisions) await saveDecision(d);
+    for (const d of r.decisions) await recordSave(d);
     setItems((prev) => [...r.decisions, ...prev].sort((a, b) => b.updatedAt - a.updatedAt));
   };
 
@@ -202,27 +212,41 @@ export function DecisionsRoute() {
               Architecture Decision Records linked to the systems, APIs, sequences and
               experiences they govern. Decide once, trace everywhere.
             </p>
-            <p className="mt-2 text-center font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">
+            <p className="mt-2 flex items-center justify-center gap-2 text-center font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">
               Propose · Review · Accept
+              <SavePill state={saveState} />
             </p>
           </>
         ) : (
-          <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="ghost" onClick={() => setActiveId(null)} title="Back to the library">
-              ← Library
-            </Button>
-            <span className="font-mono text-[11px] font-bold text-[#8A6A2F]">{active.number}</span>
-            <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold text-[#27241F]">{active.title}</h2>
-            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${STATUS_STYLE[active.status]}`}>
-              {STATUS_LABEL[active.status]}
-            </span>
-            <a
-              href="/console"
-              title="Open Console - track this decision as tasks"
-              className="inline-flex items-center rounded-lg border border-[#E3D9C6] bg-white px-2.5 py-1 text-[12px] font-semibold text-[#3A352D] transition-colors hover:border-[#C9A86A] hover:text-[#27241F]"
-            >
-              Console
-            </a>
+          <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <Button size="sm" variant="ghost" onClick={() => setActiveId(null)} title="Back to the library">
+                ← Library
+              </Button>
+              <span className="rounded-md bg-[#F5F1E8] px-2 py-1 font-mono text-[12px] font-bold text-[#8A6A2F]">{active.number}</span>
+              <span className="ml-auto flex items-center gap-2">
+                <SavePill state={saveState} />
+                <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${STATUS_STYLE[active.status]}`}>
+                  {STATUS_LABEL[active.status]}
+                </span>
+                <a
+                  href="/console"
+                  title="Open Console - track this decision as tasks"
+                  className="inline-flex items-center rounded-lg border border-[#E3D9C6] bg-white px-2.5 py-1 text-[12px] font-semibold text-[#3A352D] transition-colors hover:border-[#C9A86A] hover:text-[#27241F]"
+                >
+                  Console
+                </a>
+              </span>
+            </div>
+            <TitleInput
+              key={active.id}
+              title={active.title}
+              large
+              onDone={(t) => void persist({ ...active, title: t, updatedAt: Date.now() })}
+            />
+            <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">
+              Architecture Decision Record · updated {new Date(active.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+            </p>
           </div>
         )}
       </div>
@@ -270,7 +294,7 @@ export function DecisionsRoute() {
                     className="min-w-0 flex-1 cursor-pointer text-left"
                     title={`Open ${d.number} ${d.title}`}
                   >
-                    <span className="block truncate text-[13px] font-semibold text-[#27241F]">
+                    <span className="block truncate text-[14px] font-semibold text-[#27241F]">
                       <span className="mr-1.5 font-mono text-[11px] font-bold text-[#8A6A2F]">{d.number}</span>
                       {d.title}
                     </span>
@@ -332,8 +356,53 @@ export function DecisionsRoute() {
   );
 }
 
+/** IndexedDB write state: a failed save must shout, never vanish on reload. */
+function SavePill({ state }: { state: "idle" | "saving" | "saved" | "failed" }) {
+  if (state === "idle") return null;
+  if (state === "saving") return <span className="font-mono text-[10px] text-[#A39B8E]">Saving…</span>;
+  if (state === "saved")
+    return (
+      <span className="font-mono text-[10px] font-bold text-[#2F6B45]" title="Written to this browser's IndexedDB">
+        Saved ✓
+      </span>
+    );
+  return (
+    <span
+      className="rounded-full border border-red-300 bg-red-50 px-2 py-0.5 font-mono text-[10px] font-bold text-red-700"
+      title="IndexedDB write failed - see DevTools console for [decisions]. Private windows and blocked storage lose data on reload."
+    >
+      Save failed
+    </span>
+  );
+}
+
 const fieldCls =
-  "w-full rounded-xl border border-[#E8E2D8] bg-white px-3 py-2 text-[13px] text-[#27241F] placeholder-[#A39B8E] focus:border-[#C9A86A] focus:outline-none";
+  "w-full rounded-xl border border-[#E8E2D8] bg-white px-3 py-2 text-[14px] leading-relaxed text-[#27241F] placeholder-[#A39B8E] focus:border-[#C9A86A] focus:outline-none";
+
+/** Inline decision title: heading-sized input, commits on blur or Enter. */
+function TitleInput({ title, large, onDone }: { title: string; large?: boolean; onDone: (t: string) => void }) {
+  const [draft, setDraft] = useState(title);
+  const commit = () => {
+    const clean = draft.trim().slice(0, 160);
+    if (clean && clean !== title) onDone(clean);
+    else setDraft(title);
+  };
+  return (
+    <input
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+      }}
+      aria-label="Decision title"
+      spellCheck={false}
+      className={`mt-2 w-full rounded-lg px-1 py-0.5 font-bold tracking-tight text-[#27241F] focus:outline-none focus:ring-1 focus:ring-[#C9A86A] ${
+        large ? "text-[23px] leading-snug" : "min-w-0 flex-1 truncate text-[17px]"
+      }`}
+    />
+  );
+}
 
 function Field({
   label,
@@ -352,7 +421,7 @@ function Field({
   useEffect(() => setDraft(value), [value]);
   return (
     <label className="block">
-      <span className="mb-1 block font-mono text-[9px] uppercase tracking-[2px] text-[#A39B8E]">{label}</span>
+      <span className="mb-1.5 block font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">{label}</span>
       <textarea
         value={draft}
         rows={rows}
@@ -398,19 +467,27 @@ function DecisionEditor({
   const successors = items.filter((i) => i.id !== d.id && i.status !== "superseded");
 
   return (
-    <div className="grid gap-2.5 lg:grid-cols-[1fr_300px]">
-      <div className="space-y-2.5">
-        <Field label="Context" value={d.context} placeholder="What forced this decision? Constraints, background…" rows={3}
+    <div className="grid gap-3 lg:grid-cols-[1fr_300px]">
+      <div className="space-y-3">
+        <Field label="Context" value={d.context} placeholder="What forced this decision? Constraints, background…" rows={4}
           onDone={(v) => onPatch(stamp({ ...d, context: v.slice(0, 8000) }))} />
-        <Field label="Decision" value={d.decision} placeholder="What did we decide? Be concrete: names, paths, payloads…" rows={3}
-          onDone={(v) => onPatch(stamp({ ...d, decision: v.slice(0, 8000) }))} />
+        <div>
+          <p className="mb-1.5 font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">Decision · rich text</p>
+          <RichTextEditor
+            key={d.id}
+            value={d.decision}
+            label="Decision"
+            hint="What did we decide? Be concrete: names, paths, payloads…"
+            onDone={(v) => onPatch(stamp({ ...d, decision: v.slice(0, 20000) }))}
+          />
+        </div>
 
         <div>
           <p className="mb-1 font-mono text-[9px] uppercase tracking-[2px] text-[#A39B8E]">Alternatives considered</p>
           <ul className="space-y-1.5">
             {d.alternatives.map((a, i) => (
               <li key={`${a.title}-${i}`} className="flex items-center gap-1.5 rounded-xl border border-[#E8E2D8] bg-white px-2.5 py-2">
-                <span className="min-w-0 flex-1 truncate text-[12px] text-[#3A352D]">
+                <span className="min-w-0 flex-1 truncate text-[13px] text-[#3A352D]">
                   <span className="font-semibold">{a.title}</span>
                   {a.note && <span className="text-[#777168]"> — {a.note}</span>}
                 </span>
@@ -458,7 +535,7 @@ function DecisionEditor({
           </div>
         </div>
 
-        <Field label="Consequences" value={d.consequences} placeholder="What follows? Trade-offs accepted, follow-ups required…" rows={2}
+        <Field label="Consequences" value={d.consequences} placeholder="What follows? Trade-offs accepted, follow-ups required…" rows={3}
           onDone={(v) => onPatch(stamp({ ...d, consequences: v.slice(0, 8000) }))} />
       </div>
 
@@ -519,7 +596,7 @@ function DecisionEditor({
                 <a
                   href={consoleLinkHref(l)}
                   title={`Open in ${l.surface} tab`}
-                  className="min-w-0 flex-1 truncate text-[12px] font-medium text-[#3A352D] hover:text-[#8A6A2F] hover:underline"
+                  className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#3A352D] hover:text-[#8A6A2F] hover:underline"
                 >
                   {l.label}
                 </a>

@@ -1,13 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Button from "../ui/Button";
 import { renderMarkdownLite, toggleTaskLine } from "../erd/notesMd";
 import { CanvasTodoCard } from "../notes/CanvasTodoCard";
+import { NoteEditor } from "../notes/NoteEditor";
 import type { CanvasTodo } from "@/lib/inbox/types";
+import { commitNoteBody, emptyNoteBody, type NoteBody } from "@/lib/notes/notebody";
 
 /**
- * Project notes & TODOs (System Design): markdown Write/Preview, full TODO
+ * Project notes & TODOs (System Design): Rich/Markdown/Preview, full TODO
  * engine, Markdown download. Writes route through parent mutate() so every
  * keystroke is undoable and autosaved with the project.
  */
@@ -25,15 +27,15 @@ export function ProjectNotesModal({
   open: boolean;
   onClose: () => void;
   projectName: string;
-  notes: string;
+  notes: NoteBody;
   todos: CanvasTodo[];
-  onNotes: (text: string) => void;
+  onNotes: (b: NoteBody) => void;
   onAddTodo: () => string;
   onPatchTodo: (id: string, patch: Partial<CanvasTodo>) => void;
   onDeleteTodo: (id: string) => void;
 }) {
-  const [tab, setTab] = useState<"write" | "preview">("write");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const md = useMemo(() => notes.md, [notes]);
 
   if (!open) return null;
   const openCount = todos.filter((t) => t.status !== "done").length;
@@ -44,7 +46,7 @@ export function ProjectNotesModal({
     const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
     const slug = projectName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "architecture";
     const todoLines = todos.map((t) => `- [${t.status === "done" ? "x" : " "}] ${t.title.trim() || "Untitled TODO"}`).join("\n");
-    const body = `# ${projectName} - design notes\n\n${notes}${todos.length > 0 ? `\n\n## TODOs\n\n${todoLines}\n` : ""}`;
+    const body = `# ${projectName} - design notes\n\n${notes.md}${todos.length > 0 ? `\n\n## TODOs\n\n${todoLines}\n` : ""}`;
     const blob = new Blob([body], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -69,19 +71,6 @@ export function ProjectNotesModal({
             <h2 id="notes-title" className="mt-1 text-lg font-bold text-ivory-950">
               Design Notes{openCount > 0 ? ` · ${openCount} open TODO${openCount === 1 ? "" : "s"}` : ""}
             </h2>
-          </div>
-          <div className="flex rounded-lg border border-[var(--color-line)] overflow-hidden" role="tablist" aria-label="Notes mode">
-            {(["write", "preview"] as const).map((t) => (
-              <button
-                key={t}
-                role="tab"
-                aria-selected={tab === t}
-                onClick={() => setTab(t)}
-                className={`px-2.5 py-1 text-[11px] font-semibold capitalize transition-colors cursor-pointer ${tab === t ? "bg-ivory-950 text-ivory-100" : "text-ivory-600 hover:text-ivory-950"}`}
-              >
-                {t}
-              </button>
-            ))}
           </div>
           <button
             type="button"
@@ -135,47 +124,34 @@ export function ProjectNotesModal({
             )}
           </div>
 
-          {tab === "write" ? (
-            <textarea
-              value={notes}
-              onChange={(e) => onNotes(e.target.value)}
-              placeholder={"# Design log\n- [ ] Confirm the ServiceNow mapping\n- 14:32 — middleware retry policy…"}
-              spellCheck={false}
-              aria-label="Project design notes (markdown)"
-              rows={10}
-              className="min-h-[220px] w-full resize-y rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-3 font-mono text-xs leading-relaxed text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
-            />
-          ) : (
-            <div className="min-h-[220px] break-words overflow-x-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-3">
-              {notes.trim() ? (
-                renderMarkdownLite(notes, (idx) => {
-                  const lines = notes.split("\n");
-                  const line = lines[idx] ?? "";
-                  const m = /^(\s*[-*]\s+\[)([ xX])(\]\s+.*)$/.exec(line);
-                  if (!m) return;
-                  lines[idx] = `${m[1]}${m[2] === " " ? "x" : " "}${m[3]}`;
-                  onNotes(lines.join("\n"));
-                })
-              ) : (
-                <p className="text-xs text-ivory-500">Nothing to preview yet - write some markdown.</p>
-              )}
-            </div>
-          )}
+          <NoteEditor
+            draft={notes}
+            onDraft={onNotes}
+            label="Design notes"
+            placeholder={"# Design log\n- [ ] Confirm the ServiceNow mapping\n- 14:32 — middleware retry policy…"}
+            textareaRows={10}
+            renderPreview={(previewMd) =>
+              renderMarkdownLite(previewMd, (idx) => {
+                const next = toggleTaskLine(previewMd, idx);
+                if (next !== previewMd) onNotes(commitNoteBody(notes, "md", next));
+              })
+            }
+          />
           <div className="flex items-center justify-between gap-2">
             <p className="text-[10px] text-ivory-500">
-              {notes.trim().split(/\s+/).filter(Boolean).length} words · markdown-lite · saved with the project
+              {md.trim().split(/\s+/).filter(Boolean).length} words · {notes.format === "rich" ? "rich text" : "markdown"} · saved with the project
             </p>
             <div className="flex shrink-0 items-center gap-2">
-              {notes.trim() && (
+              {md.trim() && (
                 <button
                   type="button"
-                  onClick={() => onNotes("")}
+                  onClick={() => onNotes(emptyNoteBody())}
                   className="text-[10px] text-ivory-500 hover:text-red-700 underline cursor-pointer"
                 >
                   Delete note
                 </button>
               )}
-              {notes.trim() && (
+              {md.trim() && (
                 <button
                   type="button"
                   onClick={download}

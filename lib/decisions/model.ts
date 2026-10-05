@@ -71,7 +71,7 @@ export const decisionSchema = z.object({
   title: z.string().min(1).max(160),
   status: z.enum(DECISION_STATUSES),
   context: z.string().max(8000),
-  decision: z.string().max(8000),
+  decision: z.string().max(20000),
   alternatives: z.array(alternativeSchema).max(12),
   consequences: z.string().max(8000),
   links: z.array(decisionLinkSchema).max(40),

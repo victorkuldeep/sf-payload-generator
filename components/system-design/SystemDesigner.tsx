@@ -33,6 +33,8 @@ import {
   projectFileName,
   connectionReadiness,
   operationsForSystem,
+  noteToSystemNotes,
+  systemNotesToNote,
   type SystemNode,
   type SystemConnection,
   type SystemProject,
@@ -1825,9 +1827,9 @@ export function SystemDesigner() {
           open={notesOpen}
           onClose={() => setNotesOpen(false)}
           projectName={project.name}
-          notes={project.notes}
+          notes={systemNotesToNote(project)}
           todos={project.todos}
-          onNotes={(text) => mutate((p) => ({ ...p, notes: text }))}
+          onNotes={(b) => mutate((p) => ({ ...p, ...noteToSystemNotes(b) }))}
           onAddTodo={addProjectTodo}
           onPatchTodo={patchProjectTodo}
           onDeleteTodo={(id) => mutate((p) => ({ ...p, todos: p.todos.filter((t) => t.id !== id) }))}

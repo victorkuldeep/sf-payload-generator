@@ -54,4 +54,30 @@ describe("decisions model", () => {
       decisionSchema.safeParse({ ...d, links: [{ surface: "figma", recordId: "1", label: "x" }] }).success,
     ).toBe(false);
   });
+
+  it("keeps every model output inside the save gate", () => {
+    // saveDecision runs decisionSchema.parse before put: anything the model
+    // hands it must validate, or the write is silently dropped (blank on reload).
+    const fresh = newDecision("Middleware owns orchestration", nextDecisionNumber([]), 1000);
+    expect(decisionSchema.safeParse(fresh).success).toBe(true);
+    const moved = transitionDecision(fresh, "in-review", 1001);
+    expect(decisionSchema.safeParse(moved).success).toBe(true);
+    const linked = linkDecision(
+      moved,
+      { surface: "system", recordId: "p1", label: "Ordering topology" },
+      1002,
+    );
+    expect(decisionSchema.safeParse(linked).success).toBe(true);
+    expect(decisionSchema.safeParse(unlinkDecision(linked, "system", "p1", 1003)).success).toBe(true);
+    // Rich-text HTML at the route's slice caps must still validate.
+    const html = `<p>${"Decision text. ".repeat(1200)}</p>`;
+    const edited: typeof fresh = {
+      ...linked,
+      context: "<p>Why.</p>".slice(0, 8000),
+      decision: html.slice(0, 20000),
+      consequences: "<ul><li>Trade-off.</li></ul>",
+    };
+    expect(decisionSchema.safeParse(edited).success).toBe(true);
+    expect(decisionSchema.safeParse({ ...edited, decision: `${html}X${html}` }).success).toBe(false);
+  });
 });

@@ -9,6 +9,7 @@
  */
 
 import type { CanvasTodo } from "@/lib/inbox/types";
+import { noteBodyFromMd, type NoteBody, type NoteFormat } from "@/lib/notes/notebody";
 
 export const SYSTEM_DESIGN_SCHEMA_VERSION = 1;
 
@@ -224,9 +225,13 @@ export interface SystemProject {
   operations: SystemOperation[];
   environments: SystemEnvironment[];
   activeEnvironmentId: string | null;
-  /** Project design notes (markdown) + TODO tracker. Absent on vintage
-   * records - default to empty. Exported/imported with the project. */
+  /** Project design notes (markdown side) + TODO tracker. Absent on
+   * vintage records - default to empty. Exported/imported with the project. */
   notes: string;
+  /** Rich side of the design notes + the editor last used. Absent on
+   * vintage records - the Markdown side migrates them on first touch. */
+  notesFormat?: NoteFormat;
+  notesHtml?: string;
   todos: CanvasTodo[];
   /** Last run scope for chain simulations. Absent on vintage records -
    * defaults to undefined (run everything). Travels with export/import. */
@@ -273,6 +278,25 @@ export function newId(prefix: string): string {
       ? crypto.randomUUID().slice(0, 8)
       : Math.random().toString(36).slice(2, 10);
   return `${prefix}_${rand}`;
+}
+
+/**
+ * Stored notes triple → editor-ready dual body. Vintage projects carry
+ * Markdown only and migrate on first touch.
+ */
+export function systemNotesToNote(
+  p: Pick<SystemProject, "notes" | "notesFormat" | "notesHtml">,
+): NoteBody {
+  if (p.notesFormat === "rich" && p.notesHtml?.trim()) {
+    return { format: "rich", md: p.notes ?? "", html: p.notesHtml };
+  }
+  return noteBodyFromMd(p.notes ?? "");
+}
+
+/** Editor draft → storable triple. The Markdown side is required and stays fresh. */
+export function noteToSystemNotes(b: NoteBody): Pick<SystemProject, "notes" | "notesFormat" | "notesHtml"> {
+  if (!b.md.trim() && !b.html.trim()) return { notes: "", notesFormat: undefined, notesHtml: undefined };
+  return { notes: b.md, notesFormat: b.format, notesHtml: b.html };
 }
 
 export function newProject(name = "Untitled architecture"): SystemProject {
@@ -778,6 +802,8 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
       }),
       activeEnvironmentId: activeEnv,
       notes,
+      notesFormat: p.notesFormat === "rich" || p.notesFormat === "md" ? p.notesFormat : undefined,
+      notesHtml: typeof p.notesHtml === "string" ? p.notesHtml.slice(0, 30000) : undefined,
       todos,
       runScope: (() => {
         const scope = coerceRunScope((p as Record<string, unknown>).runScope);

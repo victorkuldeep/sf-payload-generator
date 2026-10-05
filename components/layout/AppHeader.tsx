@@ -59,13 +59,13 @@ function MegaPanel({
 
   const linkCls = (entry: NavEntry): string => {
     const on = isEntryActive(entry) || keyOf(entry) === hoverKey;
-    return `group/link flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors ${
-      on ? "bg-white/[0.07]" : ""
+    return `group/link flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2.5 text-left transition-colors ${
+      on ? "bg-white/[0.09]" : ""
     }`;
   };
   const labelCls = (entry: NavEntry): string =>
-    `text-[15px] font-semibold transition-colors ${
-      isEntryActive(entry) || keyOf(entry) === hoverKey ? "text-white" : "text-[#EFE3CC]"
+    `text-base font-bold transition-colors ${
+      isEntryActive(entry) || keyOf(entry) === hoverKey ? "text-white" : "text-[#F4EAD6]"
     }`;
 
   const renderMegaEntry = (entry: NavEntry) => {
@@ -74,7 +74,7 @@ function MegaPanel({
       <span
         aria-hidden="true"
         className={`h-1.5 w-1.5 shrink-0 rounded-full transition-opacity ${
-          isEntryActive(entry) ? "bg-[#C4505C] opacity-100" : "bg-[#C9A86A] opacity-0 group-hover/link:opacity-100"
+          isEntryActive(entry) ? "bg-[#C4505C] opacity-100" : "bg-[#C9A86A] opacity-40 group-hover/link:opacity-100"
         }`}
       />
     );
@@ -146,17 +146,19 @@ function MegaPanel({
       }`}
     >
       <div className="border-b border-[#3A2318] bg-[#201209] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.55)]">
-        <div className="mx-auto grid w-full max-w-5xl gap-10 px-8 py-8 md:grid-cols-[250px_1fr_230px]">
+        <div className="mx-auto grid w-full max-w-6xl gap-14 px-12 py-9 md:grid-cols-[250px_1fr_230px]">
           <div>
             <BrandMark />
             <p className="mt-3 text-[11px] font-semibold uppercase tracking-[2px] text-[#C9A86A]">{group.eyebrow}</p>
-            <p className="mt-1.5 text-[26px] font-bold leading-tight tracking-tight text-[#F4EAD6]">{group.headline}</p>
+            <p className="mt-1.5 text-[22px] font-bold leading-tight tracking-tight text-[#F4EAD6]">{group.headline}</p>
             <p className="mt-2 text-[13px] leading-relaxed text-[#BFA98C]">{group.punch}</p>
           </div>
-          <div role="menu" aria-label={group.label} className={`grid content-start gap-0.5 ${group.items.length > 2 ? "sm:grid-cols-2" : ""}`}>
-            {group.items.map(renderMegaEntry)}
+          <div className="rounded-xl border border-white/10 bg-white/[0.05] p-3">
+            <div role="menu" aria-label={group.label} className={`grid content-start gap-1 ${group.items.length > 2 ? "sm:grid-cols-2" : ""}`}>
+              {group.items.map(renderMegaEntry)}
+            </div>
           </div>
-          <div className="border-l border-white/10 pl-8" aria-live="polite">
+          <div className="border-l border-white/10 pl-10" aria-live="polite">
             <p className="text-[10px] font-semibold uppercase tracking-[2px] text-[#8F7A5F]">On this tab</p>
             {shown && (
               <>

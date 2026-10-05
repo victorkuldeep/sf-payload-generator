@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { noteBodyFromMd, type NoteBody, type NoteFormat } from "@/lib/notes/notebody";
 
 /**
  * Console domain model - the architect's personal task console.
@@ -108,7 +109,12 @@ export interface ConsoleHistoryEntry {
 export interface ConsoleTask {
   id: string;
   title: string;
+  /** Markdown side of the description (previews, search, queue, AI). */
   body?: string;
+  /** Rich side of the description + the editor last used. Absent on
+   * vintage records - the Markdown side migrates them on first touch. */
+  bodyFormat?: NoteFormat;
+  bodyHtml?: string;
   status: ConsoleStatus;
   priority: ConsolePriority;
   dueDate?: string;
@@ -117,6 +123,23 @@ export interface ConsoleTask {
   history: ConsoleHistoryEntry[];
   createdAt: number;
   updatedAt: number;
+}
+
+/**
+ * Stored description triple → editor-ready dual body. Vintage tasks carry
+ * Markdown only and migrate on first touch; rich tasks keep their side.
+ */
+export function consoleBodyToNote(t: Pick<ConsoleTask, "body" | "bodyFormat" | "bodyHtml">): NoteBody {
+  if (t.bodyFormat === "rich" && t.bodyHtml?.trim()) {
+    return { format: "rich", md: t.body ?? "", html: t.bodyHtml };
+  }
+  return noteBodyFromMd(t.body ?? "");
+}
+
+/** Editor draft → storable triple. Empty drafts clear all three sides. */
+export function noteToConsoleBody(b: NoteBody): Pick<ConsoleTask, "body" | "bodyFormat" | "bodyHtml"> {
+  if (!b.md.trim() && !b.html.trim()) return { body: undefined, bodyFormat: undefined, bodyHtml: undefined };
+  return { body: b.md, bodyFormat: b.format, bodyHtml: b.html };
 }
 
 export function newConsoleTask(title: string, now = Date.now()): ConsoleTask {
@@ -145,6 +168,8 @@ export const consoleTaskSchema: z.ZodType<ConsoleTask> = z.object({
   id: z.string().min(1).max(160),
   title: z.string().min(1).max(160),
   body: z.string().max(12000).optional(),
+  bodyFormat: z.enum(["md", "rich"]).optional(),
+  bodyHtml: z.string().max(30000).optional(),
   status: z.enum(CONSOLE_STATUSES),
   priority: z.enum(CONSOLE_PRIORITIES),
   dueDate: z.string().max(32).optional(),
