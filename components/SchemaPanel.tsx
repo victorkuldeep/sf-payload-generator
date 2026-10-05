@@ -6,7 +6,7 @@ import type {
   SalesforceObject,
   SalesforceDescribeResult,
 } from "@/lib/salesforce/types";
-import { buildErdElements, buildGraphElements, rootNeighbors, systemReason, isEffectivelyHidden, isSystemObject, AUDIT_REFERENCE_FIELDS, parentExitHandleId, childEntryHandleId, type ErdNodeData, type ErdFieldRow, type ErdEdgeData, type GraphNeighbor } from "@/lib/erd/graph";
+import { buildErdElements, buildGraphElements, rootNeighbors, systemReason, isEffectivelyHidden, isSystemObject, AUDIT_REFERENCE_FIELDS, parentExitHandleId, childEntryHandleId, customParentTargets, customChildTargets, type ErdNodeData, type ErdFieldRow, type ErdEdgeData, type GraphNeighbor } from "@/lib/erd/graph";
 import { rankObjects } from "@/lib/search/rank";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import { apiFetch } from "@/lib/api";
@@ -2237,6 +2237,46 @@ export default function SchemaPanel({
     [describes]
   );
 
+  // Per-entity custom pull (ERD box icons): one shot adds every custom
+  // parent or custom direct child of THAT entity - standard relationships
+  // never qualify. Focus stays on the entity so the architect repeats the
+  // sweep box by box; links draw automatically where both ends land.
+  // addNames reads live at click time (defined below with its fetch deps),
+  // so it stays out of this array by design.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const pullCustomFamily = useCallback(async (api: string, dir: "parents" | "children") => {
+    if (busy) return;
+    const d = describes.get(api);
+    if (!d) return;
+    const targets = (dir === "parents" ? customParentTargets(d) : customChildTargets(d))
+      .filter((n) => !describes.has(n));
+    if (targets.length === 0) {
+      setNotice(`${api} has no custom ${dir} outside the canvas.`);
+      return;
+    }
+    const names = targets.slice(0, MAX_NEW_PER_ACTION);
+    if (describes.size + names.length > MAX_NODES) {
+      setNotice(`Canvas cap is ${MAX_NODES} objects - adding ${names.length} would exceed it. Remove some nodes first.`);
+      return;
+    }
+    setError(null);
+    setNotice(null);
+    setBusy(`Pulling custom ${dir} of ${api}…`);
+    try {
+      const fresh = await addNames(names);
+      setFocusName(api);
+      setNotice(
+        fresh.length === 1
+          ? `${fresh[0].name} joined ${api} - custom ${dir === "parents" ? "parent" : "child"}, links draw automatically.`
+          : `${fresh.length} custom ${dir} pulled for ${api} - links draw automatically where both ends are present.`
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Discovery failed");
+    } finally {
+      setBusy(null);
+    }
+  }, [busy, describes]);
+
   const baseElements: { nodes: Node<ErdNodeData>[]; edges: Edge[] } = useMemo(() => {    if (visibleDescribes.size === 0 || !rootName) return { nodes: [], edges: [] };
     const built = buildErdElements(visibleDescribes, labels, rootName, spot, enforced);
     const describedSet = new Set(visibleDescribes.keys());
@@ -2258,11 +2298,15 @@ export default function SchemaPanel({
             onNoteClick: openEntityNote,
             onMakeRoot: makeRoot,
             onRecordTypesClick: openRecordTypes,
+            customParentCount: d ? customParentTargets(d).length : 0,
+            customChildCount: d ? customChildTargets(d).length : 0,
+            onPullCustomParents: (target: string) => void pullCustomFamily(target, "parents"),
+            onPullCustomChildren: (target: string) => void pullCustomFamily(target, "children"),
           },
         };
       }),
     };
-  }, [visibleDescribes, describes, labels, rootName, spot, enforced, entityNotes, openEntityNote, makeRoot, openRecordTypes]);
+  }, [visibleDescribes, describes, labels, rootName, spot, enforced, entityNotes, openEntityNote, makeRoot, openRecordTypes, pullCustomFamily]);
 
   // Graph default = FULL 1-level neighborhood (parents left, children right),
   // lite previews included - this is the intent of graph view. Family

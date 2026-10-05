@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectJunction, buildEdges, buildErdElements, buildGraphElements, rootNeighbors, bubbleInitials, assignBubbleTags, systemReason, isSystemObject, isNeuralExcluded } from "./graph";
+import { detectJunction, buildEdges, buildErdElements, buildGraphElements, rootNeighbors, bubbleInitials, assignBubbleTags, systemReason, isSystemObject, isNeuralExcluded, customParentTargets, customChildTargets } from "./graph";
 import type { SalesforceDescribeResult } from "@/lib/salesforce/types";
 
 const desc = (
@@ -46,6 +46,42 @@ const desc = (
     soapType: "xsd:string",
   })),
   childRelationships,
+});
+
+describe("custom relationship targets", () => {
+  const pricing = () =>
+    desc(
+      "Pricing_Request__c",
+      [
+        { name: "Opportunity__c", type: "reference", referenceTo: ["Opportunity"] },
+        { name: "Account__c", type: "reference", referenceTo: ["Account", "Account"] },
+        { name: "OwnerId", type: "reference", referenceTo: ["User"] },
+        { name: "CreatedById", type: "reference", referenceTo: ["User"] },
+        { name: "Name", type: "string" },
+      ],
+      [
+        { childSObject: "Pricing_Line__c", field: "Pricing_Request__c", relationshipName: "Pricing_Lines__r", cascadeDelete: true },
+        { childSObject: "Task", field: "WhatId", relationshipName: "Tasks", cascadeDelete: false },
+        { childSObject: "Pricing_Request__c", field: "Parent__c", relationshipName: "Children__r", cascadeDelete: false },
+        { childSObject: "Note", field: "", relationshipName: null, cascadeDelete: false },
+      ]
+    );
+
+  it("pulls parents through custom lookups only", () => {
+    expect(customParentTargets(pricing())).toEqual(["Opportunity", "Account"]);
+  });
+
+  it("pulls children attached through custom fields only", () => {
+    expect(customChildTargets(pricing())).toEqual(["Pricing_Line__c"]);
+  });
+
+  it("skips self links, dupes, and unnamed relationships", () => {
+    const d = desc("A__c", [{ name: "Self__c", type: "reference", referenceTo: ["A__c"] }], [
+      { childSObject: "B__c", field: "A__c", relationshipName: null, cascadeDelete: false },
+    ]);
+    expect(customParentTargets(d)).toEqual([]);
+    expect(customChildTargets(d)).toEqual([]);
+  });
 });
 
 describe("detectJunction", () => {

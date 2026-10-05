@@ -347,6 +347,40 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
           >
             {copied ? <CheckIcon /> : <CopyIcon />}
           </button>
+          {(data.customParentCount ?? 0) > 0 && data.onPullCustomParents && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                data.onPullCustomParents?.(data.apiName);
+              }}
+              title={`Pull ${data.customParentCount} custom parent${data.customParentCount === 1 ? "" : "s"} of ${data.apiName} - custom lookups only, one shot`}
+              aria-label={`Pull custom parents of ${data.apiName}`}
+              className={`nodrag shrink-0 rounded p-1 transition-colors cursor-pointer ${data.isRoot ? "text-ivory-300 hover:text-white hover:bg-ivory-800" : "text-ivory-950 hover:text-bronze-600 hover:bg-ivory-200"}`}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                <path d="M12 15V4m0 0 4 4m-4-4L8 8" />
+                <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+              </svg>
+            </button>
+          )}
+          {(data.customChildCount ?? 0) > 0 && data.onPullCustomChildren && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                data.onPullCustomChildren?.(data.apiName);
+              }}
+              title={`Pull ${data.customChildCount} custom direct child${data.customChildCount === 1 ? "" : "ren"} of ${data.apiName} - custom lookups only, one shot`}
+              aria-label={`Pull custom children of ${data.apiName}`}
+              className={`nodrag shrink-0 rounded p-1 transition-colors cursor-pointer ${data.isRoot ? "text-ivory-300 hover:text-white hover:bg-ivory-800" : "text-ivory-950 hover:text-bronze-600 hover:bg-ivory-200"}`}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                <path d="M12 4v11m0 0 4-4m-4 4-4-4" />
+                <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+              </svg>
+            </button>
+          )}
           {data.onRecordClick && (
             <button
               type="button"
