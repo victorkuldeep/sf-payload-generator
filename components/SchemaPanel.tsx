@@ -24,12 +24,24 @@ import {
   saveSnapshot as persistSnapshot,
   deleteSnapshot as deleteSnapshotFromDb,
   renameSnapshot as renameSnapshotInDb,
+  snapshotNotesToNote,
+  noteToSnapshotNotes,
   type ErdSnapshot,
 } from "@/lib/erd/snapshotDb";
 import { newItemId } from "@/lib/collection/types";
 import { loadAutosave, queueAutosave, clearAutosave } from "@/lib/workspace/autosave";
 import { renderMarkdownLite, toggleTaskLine } from "./erd/notesMd";
 import { CanvasTodoCard } from "./notes/CanvasTodoCard";
+import { NoteEditor } from "./notes/NoteEditor";
+import {
+  appendNoteLine,
+  commitNoteBody,
+  emptyNoteBody,
+  noteBodyFromMd,
+  noteBodyEmpty,
+  type NoteBody,
+  type NoteFormat,
+} from "@/lib/notes/notebody";
 import { RecordPopover, type RecordPopData, type RecordFieldMeta } from "./erd/RecordPopover";
 import {
   isValidRecordId,
@@ -60,6 +72,7 @@ import { ArchitectureInbox } from "./inbox/ArchitectureInbox";
 import { normalizeLiveNotes, normalizeSnapshotNotes, resolveStale, countInbox } from "@/lib/inbox/normalize";
 import { fingerprintEntity, fingerprintField, diffFieldFacts, diffEntityFacts, type EntityFacts, type FieldFacts } from "@/lib/inbox/schemaReview";
 import type { ArchitectureInboxItem, CanvasTodo, InboxAnchor, InboxFingerprint, InboxHistoryEntry, InboxMeta, AnchorFacts } from "@/lib/inbox/types";
+import { noteToTodoBody } from "@/lib/inbox/types";
 import { EmptyState } from "./EmptyState";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
@@ -735,41 +748,29 @@ function GraphDetailCardInner({  detail,
   );
 }
 
-// Canvas markdown editor shared by the notes panel and the fullscreen zen
+// Canvas notes editor shared by the notes panel and the fullscreen zen
 // overlay. `fill` stretches it to the overlay height instead of a fixed min.
 function CanvasNotesField({
-  tab,
-  text,
-  onText,
+  note,
+  onNote,
   onToggleTask,
   fill,
 }: {
-  tab: "write" | "preview";
-  text: string;
-  onText: (text: string) => void;
+  note: NoteBody;
+  onNote: (b: NoteBody) => void;
   onToggleTask: (lineIndex: number) => void;
   fill?: boolean;
 }) {
-  if (tab === "write") {
-    return (
-      <textarea
-        value={text}
-        onChange={(e) => onText(e.target.value)}
-        placeholder={"# Design log\n- [ ] Confirm junction on Quote_Line__c\n- 14:32 — Lead conversion mapping…"}
-        spellCheck={false}
-        aria-label="Canvas design notes (markdown)"
-        className={`${fill ? "min-h-0 flex-1 resize-none" : "min-h-[320px] max-h-[50vh] flex-1 resize-y"} w-full rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-3 font-mono text-xs leading-relaxed text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none`}
-      />
-    );
-  }
   return (
-    <div className={`${fill ? "min-h-0 flex-1 overflow-y-auto" : "min-h-[320px] max-h-[50vh] flex-1 overflow-y-auto"} break-words overflow-x-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-3`}>
-      {text.trim() ? (
-        renderMarkdownLite(text, onToggleTask)
-      ) : (
-        <p className="text-xs text-ivory-500">Nothing to preview yet - write some markdown.</p>
-      )}
-    </div>
+    <NoteEditor
+      draft={note}
+      onDraft={onNote}
+      label="Canvas notes"
+      placeholder={"# Design log\n- [ ] Confirm junction on Quote_Line__c\n- 14:32 — Lead conversion mapping…"}
+      textareaRows={14}
+      fill={fill}
+      renderPreview={(md) => renderMarkdownLite(md, onToggleTask)}
+    />
   );
 }
 
@@ -783,7 +784,6 @@ const GraphDetailCard = memo(GraphDetailCardInner);
 function EntityNoteEditor({
   apiName,
   note,
-  tab,
   fields,
   onText,
   onToggleTask,
@@ -793,10 +793,9 @@ function EntityNoteEditor({
   onClear,
 }: {
   apiName: string;
-  note: { text: string; todo: boolean; done: boolean; meta?: InboxMeta } | null;
-  tab: "write" | "preview";
+  note: { text: string; textFormat?: NoteFormat; textHtml?: string; todo: boolean; done: boolean; meta?: InboxMeta } | null;
   fields: { name: string; label: string; type: string; referenceTo: string[] }[];
-  onText: (text: string) => void;
+  onText: (b: NoteBody) => void;
   onToggleTask: (lineIndex: number) => void;
   onMeta: (patch: Partial<InboxMeta>, what: string) => void;
   onAnchor: (anchor: InboxAnchor | null) => void;
@@ -804,6 +803,14 @@ function EntityNoteEditor({
   onClear: () => void;
 }) {
   const text = note?.text ?? "";
+  const draft = useMemo<NoteBody>(
+    () =>
+      note?.textFormat === "rich" && note?.textHtml?.trim()
+        ? { format: "rich", md: note.text, html: note.textHtml }
+        : noteBodyFromMd(note?.text ?? ""),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [note?.text, note?.textFormat, note?.textHtml],
+  );
   const todo = note?.todo ?? false;
   const done = note?.done ?? false;
   const meta = note?.meta;
@@ -863,24 +870,14 @@ function EntityNoteEditor({
           </select>
         </label>
       </div>
-      {tab === "write" ? (
-        <textarea
-          value={text}
-          onChange={(e) => onText(e.target.value)}
-          placeholder={`Note on ${apiName}…\n- [ ] Verify lookup before demo`}
-          spellCheck={false}
-          aria-label={`Design note for ${apiName}`}
-          className="min-h-[220px] w-full resize-y rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-3 font-mono text-xs leading-relaxed text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
-        />
-      ) : (
-        <div className="min-h-[220px] max-h-[40vh] overflow-y-auto break-words overflow-x-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-3">
-          {text.trim() ? (
-            renderMarkdownLite(text, onToggleTask)
-          ) : (
-            <p className="text-xs text-ivory-500">Nothing to preview yet.</p>
-          )}
-        </div>
-      )}
+      <NoteEditor
+        draft={draft}
+        onDraft={onText}
+        label={`Note · ${apiName}`}
+        placeholder={`Note on ${apiName}…\n- [ ] Verify lookup before demo`}
+        textareaRows={10}
+        renderPreview={(md) => renderMarkdownLite(md, onToggleTask)}
+      />
       <div className="mt-2.5 space-y-2">
         <div className="grid grid-cols-2 gap-1.5">
           <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
@@ -1058,7 +1055,7 @@ export default function SchemaPanel({
   const [showShare, setShowShare] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [snapNotesId, setSnapNotesId] = useState<string | null>(null);
-  const [snapNotesDraft, setSnapNotesDraft] = useState("");
+  const [snapNotesDraft, setSnapNotesDraft] = useState<NoteBody>(() => emptyNoteBody());
   const [renameValue, setRenameValue] = useState("");
 
   // Graph view + filters + detail
@@ -1150,6 +1147,8 @@ export default function SchemaPanel({
   // Lives up here so the element memos below can inject note flags.
   interface EntityNote {
     text: string;
+    textFormat?: NoteFormat;
+    textHtml?: string;
     todo: boolean;
     done: boolean;
     updatedAt: number;
@@ -1158,14 +1157,15 @@ export default function SchemaPanel({
   }
   interface CanvasNotesData {
     text: string;
+    textFormat?: NoteFormat;
+    textHtml?: string;
     updatedAt: number;
     entities: Record<string, EntityNote>;
     todos: CanvasTodo[];
   }
   const [notesOpen, setNotesOpen] = useState(false);
   const [notesZen, setNotesZen] = useState(false);
-  const [notesTab, setNotesTab] = useState<"write" | "preview">("write");
-  const [notesText, setNotesText] = useState("");
+  const [canvasNote, setCanvasNote] = useState<NoteBody>(() => emptyNoteBody());
   const [notesSavedAt, setNotesSavedAt] = useState<number | null>(null);
   const [canvasTodos, setCanvasTodos] = useState<CanvasTodo[]>([]);
   const [entityNotes, setEntityNotes] = useState<Record<string, EntityNote>>({});
@@ -1177,12 +1177,14 @@ export default function SchemaPanel({
     // Always persist once restored - including the empty state, so deleting
     // the last note truly wipes the record instead of resurrecting it.
     queueAutosave(orgKey, "notes", {
-      text: notesText,
+      text: canvasNote.md,
+      textFormat: canvasNote.format === "rich" ? "rich" : undefined,
+      textHtml: canvasNote.html || undefined,
       updatedAt: notesSavedAt ?? Date.now(),
       entities: entityNotes,
       todos: canvasTodos,
     } satisfies CanvasNotesData, tabId);
-  }, [orgKey, tabId, notesText, notesSavedAt, entityNotes, canvasTodos]);
+  }, [orgKey, tabId, canvasNote, notesSavedAt, entityNotes, canvasTodos]);
 
   useEffect(() => {
     if (!orgKey || notesRestoredRef.current === orgKey) return;
@@ -1192,7 +1194,11 @@ export default function SchemaPanel({
       const d = snap?.data;
       if (!d) return;
       if (d.text) {
-        setNotesText(d.text);
+        setCanvasNote(
+          d.textFormat === "rich" && d.textHtml?.trim()
+            ? { format: "rich", md: d.text, html: d.textHtml }
+            : noteBodyFromMd(d.text),
+        );
         setNotesSavedAt(d.updatedAt ?? snap.savedAt);
       }
       if (d.entities) setEntityNotes(d.entities);
@@ -1216,16 +1222,24 @@ export default function SchemaPanel({
     setNotesZen(false);
   }, []);
 
-  const setEntityNoteText = useCallback((api: string, text: string) => {
+  const setEntityNoteBody = useCallback((api: string, b: NoteBody) => {
     setEntityNotes((prev) => {
-      if (!text.trim() && !prev[api]?.todo) {
+      if (noteBodyEmpty(b) && !prev[api]?.todo) {
         const next = { ...prev };
         delete next[api];
         return next;
       }
       return {
         ...prev,
-        [api]: { text, todo: prev[api]?.todo ?? false, done: prev[api]?.done ?? false, updatedAt: Date.now() },
+        [api]: {
+          text: b.md,
+          textFormat: b.format === "rich" ? "rich" : undefined,
+          textHtml: b.html || undefined,
+          todo: prev[api]?.todo ?? false,
+          done: prev[api]?.done ?? false,
+          meta: prev[api]?.meta,
+          updatedAt: Date.now(),
+        },
       };
     });
     touchNotes();
@@ -2881,7 +2895,7 @@ export default function SchemaPanel({
           viewports: viewports.current,
         }, null);
         if (s.notes) {
-          setNotesText(s.notes);
+          setCanvasNote(noteBodyFromMd(s.notes));
           touchNotes();
         }
         if (s.entityNotes) {
@@ -3245,7 +3259,7 @@ export default function SchemaPanel({
       nodes: [...describes.keys()],
       positions,
       // Design notes travel with the canvas they describe.
-      notes: notesText.trim() ? notesText : undefined,
+      ...noteToSnapshotNotes(canvasNote),
     };
     try {
       await persistSnapshot(snap);
@@ -3254,7 +3268,7 @@ export default function SchemaPanel({
     } catch {
       setError("Couldn't save snapshot (IndexedDB unavailable).");
     }
-  }, [busy, describes, orgDomain, rootName, focusName, labels, notesText]);
+  }, [busy, describes, orgDomain, rootName, focusName, labels, canvasNote]);
 
   const restoreSnapshot = useCallback(
     async (snap: ErdSnapshot) => {
@@ -3297,7 +3311,7 @@ export default function SchemaPanel({
         setLayoutRev((r) => r + 1);
         // Snapshot notes travel back into the live editor (agreed behavior).
         if (snap.notes) {
-          setNotesText(snap.notes);
+          setCanvasNote(snapshotNotesToNote(snap));
           touchNotes();
         }
         const skipped = snap.nodes.length - fresh.length;
@@ -3363,6 +3377,8 @@ export default function SchemaPanel({
           describes: fresh,
           positions: s.positions,
           notes: s.notes,
+          notesFormat: s.notesFormat,
+          notesHtml: s.notesHtml,
         },
         entityNotes: Object.keys(en).length > 0 ? en : undefined,
       };
@@ -3413,7 +3429,7 @@ export default function SchemaPanel({
       setEnforced(new Map(Object.entries(s.positions)));
       setLayoutRev((r) => r + 1);
       if (s.notes) {
-        setNotesText(s.notes);
+        setCanvasNote(snapshotNotesToNote(s));
         touchNotes();
       }
       if (p.entityNotes) {
@@ -3450,7 +3466,9 @@ export default function SchemaPanel({
     if (!orgKey) return [];
     const live = normalizeLiveNotes({
       orgScopeId: orgKey,
-      text: notesText,
+      text: canvasNote.md,
+      textFormat: canvasNote.format,
+      textHtml: canvasNote.html || undefined,
       updatedAt: notesSavedAt,
       todos: canvasTodos,
       entities: entityNotes,
@@ -3482,7 +3500,7 @@ export default function SchemaPanel({
       // Tab-scoped canvas identity: this tab's live items group under its tab.
       item.canvasId === "live" ? { ...item, canvasId: tabId, canvasName: tabName } : item
     );
-  }, [orgKey, tabId, tabName, notesText, notesSavedAt, canvasTodos, entityNotes, labels, snapshots, describes, objects]);
+  }, [orgKey, tabId, tabName, canvasNote, notesSavedAt, canvasTodos, entityNotes, labels, snapshots, describes, objects]);
   const inboxCounts = useMemo(() => countInbox(inboxItems), [inboxItems]);
   const inboxCanvases = useMemo(() => {
     const out = [{ id: tabId, name: tabName }];
@@ -3492,14 +3510,18 @@ export default function SchemaPanel({
     return out;
   }, [tabId, tabName, snapshots]);
 
-  const inboxEditBody = useCallback((id: string, body: string) => {
+  const inboxEditBody = useCallback((id: string, b: NoteBody) => {
     if (id === "live-canvas") {
-      setNotesText(body);
+      setCanvasNote(b);
       touchNotes();
       return;
     }
+    if (id.startsWith("live-canvas-todo-")) {
+      patchCanvasTodo(id.slice("live-canvas-todo-".length), noteToTodoBody(b));
+      return;
+    }
     if (id.startsWith("live-entity-")) {
-      setEntityNoteText(id.slice("live-entity-".length), body);
+      setEntityNoteBody(id.slice("live-entity-".length), b);
       return;
     }
     if (id.startsWith("snap-")) {
@@ -3507,14 +3529,14 @@ export default function SchemaPanel({
       if (!s) return;
       void (async () => {
         try {
-          await persistSnapshot({ ...s, notes: body.trim() ? body : undefined });
+          await persistSnapshot({ ...s, ...noteToSnapshotNotes(b) });
           setSnapshots(await listSnapshotsByOrg(orgDomain));
         } catch {
           setError("Couldn't save notes (IndexedDB unavailable).");
         }
       })();
     }
-  }, [snapshots, orgDomain, touchNotes, setEntityNoteText]);
+  }, [snapshots, orgDomain, touchNotes, setEntityNoteBody, patchCanvasTodo]);
 
   const inboxSetTaskDone = useCallback((id: string, done: boolean) => {
     if (id.startsWith("live-canvas-todo-")) {
@@ -3550,7 +3572,7 @@ export default function SchemaPanel({
 
   const inboxDelete = useCallback((id: string) => {
     if (id === "live-canvas") {
-      setNotesText("");
+      setCanvasNote(emptyNoteBody());
       touchNotes();
       return;
     }
@@ -4492,12 +4514,12 @@ export default function SchemaPanel({
       positions,
       view,
     };
-    if (includeNotes && notesText.trim()) out.notes = notesText;
+    if (includeNotes && canvasNote.md.trim()) out.notes = canvasNote.md;
     const picked: NonNullable<ShareStructure["entityNotes"]> = {};
     if (includeNotes) {
       for (const api of nodes) {
         const note = entityNotes[api];
-        if (note?.text) picked[api] = note;
+        if (note?.text) picked[api] = { text: note.text, todo: note.todo, done: note.done, updatedAt: note.updatedAt };
       }
       if (Object.keys(picked).length > 0) out.entityNotes = picked;
       if (canvasTodos.length > 0) {
@@ -4514,7 +4536,7 @@ export default function SchemaPanel({
       }
     }
     return out;
-  }, [baseElements, describes, rootName, view, notesText, entityNotes, canvasTodos, labels]);
+  }, [baseElements, describes, rootName, view, canvasNote, entityNotes, canvasTodos, labels]);
 
   return (
     <div
@@ -4590,7 +4612,7 @@ export default function SchemaPanel({
                 <path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3Z" />
                 <path d="m13.5 6.5 3 3" />
               </svg>
-              {(openTodoCount > 0 || notesText) && (
+              {(openTodoCount > 0 || !noteBodyEmpty(canvasNote)) && (
                 <span className={`absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full border border-white ${openTodoCount > 0 ? "bg-red-500" : "bg-bronze-500"}`} aria-hidden="true" />
               )}
             </button>
@@ -5551,31 +5573,21 @@ export default function SchemaPanel({
                 {noteEntity ? noteEntity : notesSavedAt ? `Auto-saved ${timeAgo(notesSavedAt)}` : "Autosaves per org"}
               </p>
             </div>
-            <div className="flex rounded-lg border border-[var(--color-line)] overflow-hidden" role="tablist" aria-label="Notes mode">
-              {(["write", "preview"] as const).map((t) => (
-                <button
-                  key={t}
-                  role="tab"
-                  aria-selected={notesTab === t}
-                  onClick={() => setNotesTab(t)}
-                  className={`px-2.5 py-1 text-[11px] font-semibold capitalize transition-colors cursor-pointer ${notesTab === t ? "bg-ivory-950 text-ivory-100" : "text-ivory-600 hover:text-ivory-950"}`}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
             <button
               type="button"
               onClick={() => {
-                const stamp = `\n- ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} — `;
+                const line = `- ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} — `;
                 if (noteEntity) {
-                  const cur = entityNotes[noteEntity]?.text ?? "";
-                  setEntityNoteText(noteEntity, `${cur}${stamp}`);
+                  const cur = entityNotes[noteEntity];
+                  const draft =
+                    cur?.textFormat === "rich" && cur?.textHtml?.trim()
+                      ? { format: "rich" as const, md: cur.text, html: cur.textHtml }
+                      : noteBodyFromMd(cur?.text ?? "");
+                  setEntityNoteBody(noteEntity, appendNoteLine(draft, line));
                 } else {
-                  setNotesText((p) => `${p}${stamp}`);
+                  setCanvasNote((p) => appendNoteLine(p, line));
                 }
                 touchNotes();
-                setNotesTab("write");
               }}
               title="Insert timestamp bullet"
               aria-label="Insert timestamp bullet"
@@ -5621,12 +5633,15 @@ export default function SchemaPanel({
               <EntityNoteEditor
                 apiName={noteEntity}
                 note={entityNotes[noteEntity] ?? null}
-                tab={notesTab}
                 fields={(describes.get(noteEntity)?.fields ?? []).map((f) => ({ name: f.name, label: f.label, type: f.type, referenceTo: f.referenceTo ?? [] }))}
-                onText={(text) => setEntityNoteText(noteEntity, text)}
+                onText={(b) => setEntityNoteBody(noteEntity, b)}
                 onToggleTask={(idx) => {
-                  const cur = entityNotes[noteEntity]?.text ?? "";
-                  setEntityNoteText(noteEntity, toggleTaskLine(cur, idx));
+                  const cur = entityNotes[noteEntity];
+                  const draft =
+                    cur?.textFormat === "rich" && cur?.textHtml?.trim()
+                      ? { format: "rich" as const, md: cur.text, html: cur.textHtml }
+                      : noteBodyFromMd(cur?.text ?? "");
+                  setEntityNoteBody(noteEntity, commitNoteBody(draft, "md", toggleTaskLine(draft.md, idx)));
                 }}
                 onMeta={(patch, what) => setEntityMeta(noteEntity, patch, what)}
                 onAnchor={(anchor) => {
@@ -5716,27 +5731,26 @@ export default function SchemaPanel({
                   )}
                 </div>
                 <CanvasNotesField
-                  tab={notesTab}
-                  text={notesText}
-                  onText={(v) => {
-                    setNotesText(v);
+                  note={canvasNote}
+                  onNote={(b) => {
+                    setCanvasNote(b);
                     touchNotes();
                   }}
                   onToggleTask={(idx) => {
-                    setNotesText((p) => toggleTaskLine(p, idx));
+                    setCanvasNote((p) => commitNoteBody(p, "md", toggleTaskLine(p.md, idx)));
                     touchNotes();
                   }}
                 />
                 <div className="mt-2 flex items-center justify-between gap-2">
                   <p className="text-[10px] text-ivory-500">
-                    {notesText.trim().split(/\s+/).filter(Boolean).length} words · markdown-lite · attaches to snapshots
+                    {canvasNote.md.trim().split(/\s+/).filter(Boolean).length} words · {canvasNote.format === "rich" ? "rich text" : "markdown"} · attaches to snapshots
                   </p>
                   <div className="flex shrink-0 items-center gap-2">
-                    {notesText && (
+                    {!noteBodyEmpty(canvasNote) && (
                       <button
                         type="button"
                         onClick={() => {
-                          setNotesText("");
+                          setCanvasNote(emptyNoteBody());
                           touchNotes();
                         }}
                         className="text-[10px] text-ivory-500 hover:text-red-700 underline cursor-pointer"
@@ -5744,7 +5758,7 @@ export default function SchemaPanel({
                         Delete note
                       </button>
                     )}
-                    {notesText.trim() && (
+                    {canvasNote.md.trim() && (
                       <button
                         type="button"
                         onClick={() => {
@@ -5752,7 +5766,7 @@ export default function SchemaPanel({
                           const pad = (v: number) => String(v).padStart(2, "0");
                           const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
                           const slug = (rootName || "canvas").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "canvas";
-                          const blob = new Blob([notesText], { type: "text/markdown" });
+                          const blob = new Blob([canvasNote.md], { type: "text/markdown" });
                           const url = URL.createObjectURL(blob);
                           const a = document.createElement("a");
                           a.href = url;
@@ -5787,21 +5801,8 @@ export default function SchemaPanel({
               <div className="min-w-0 flex-1">
                 <h2 className="truncate text-sm font-bold text-ivory-950">Design Notes</h2>
                 <p className="truncate font-mono text-[10px] text-ivory-600">
-                  {notesText.trim().split(/\s+/).filter(Boolean).length} words · {notesSavedAt ? `Auto-saved ${timeAgo(notesSavedAt)}` : "Autosaves per org"}
+                  {canvasNote.md.trim().split(/\s+/).filter(Boolean).length} words · {notesSavedAt ? `Auto-saved ${timeAgo(notesSavedAt)}` : "Autosaves per org"}
                 </p>
-              </div>
-              <div className="flex rounded-lg border border-[var(--color-line)] overflow-hidden" role="tablist" aria-label="Notes mode">
-                {(["write", "preview"] as const).map((t) => (
-                  <button
-                    key={t}
-                    role="tab"
-                    aria-selected={notesTab === t}
-                    onClick={() => setNotesTab(t)}
-                    className={`px-2.5 py-1 text-[11px] font-semibold capitalize transition-colors cursor-pointer ${notesTab === t ? "bg-ivory-950 text-ivory-100" : "text-ivory-600 hover:text-ivory-950"}`}
-                  >
-                    {t}
-                  </button>
-                ))}
               </div>
               <button
                 type="button"
@@ -5815,14 +5816,13 @@ export default function SchemaPanel({
             </div>
             <div className="flex min-h-0 flex-1 flex-col p-4">
               <CanvasNotesField
-                tab={notesTab}
-                text={notesText}
-                onText={(v) => {
-                  setNotesText(v);
+                note={canvasNote}
+                onNote={(b) => {
+                  setCanvasNote(b);
                   touchNotes();
                 }}
                 onToggleTask={(idx) => {
-                  setNotesText((p) => toggleTaskLine(p, idx));
+                  setCanvasNote((p) => commitNoteBody(p, "md", toggleTaskLine(p.md, idx)));
                   touchNotes();
                 }}
                 fill
@@ -6260,7 +6260,7 @@ export default function SchemaPanel({
                                   type="button"
                                   onClick={() => {
                                     setSnapNotesId((cur) => (cur === s.id ? null : s.id));
-                                    setSnapNotesDraft(s.notes ?? "");
+                                    setSnapNotesDraft(snapshotNotesToNote(s));
                                   }}
                                   title="View attached design notes"
                                   className="rounded-full border border-bronze-300 bg-bronze-100 px-1.5 py-px text-[9px] font-bold text-bronze-700 hover:border-bronze-500 cursor-pointer"
@@ -6316,19 +6316,19 @@ export default function SchemaPanel({
                       )}
                       {snapNotesId === s.id && (
                         <div className="mt-2 rounded-lg border border-[var(--color-line)] bg-white p-2">
-                          <textarea
-                            value={snapNotesDraft}
-                            onChange={(e) => setSnapNotesDraft(e.target.value)}
-                            spellCheck={false}
-                            aria-label={`Design notes for snapshot ${s.name}`}
-                            className="min-h-[90px] w-full resize-y rounded-md border border-[var(--color-line)] bg-[var(--color-canvas)] p-2 font-mono text-[11px] leading-relaxed text-ivory-950 focus:border-bronze-500 focus:outline-none"
+                          <NoteEditor
+                            draft={snapNotesDraft}
+                            onDraft={setSnapNotesDraft}
+                            label="Snapshot notes"
+                            textareaRows={3}
+                            renderPreview={(md) => renderMarkdownLite(md)}
                           />
                           <div className="mt-1.5 flex gap-2">
                             <Button
                               size="sm"
                               onClick={() => void (async () => {
                                 try {
-                                  await persistSnapshot({ ...s, notes: snapNotesDraft.trim() ? snapNotesDraft : undefined });
+                                  await persistSnapshot({ ...s, ...noteToSnapshotNotes(snapNotesDraft) });
                                   setSnapshots(await listSnapshotsByOrg(orgDomain));
                                   setSnapNotesId(null);
                                   setNotice(`Notes updated on “${s.name}”.`);

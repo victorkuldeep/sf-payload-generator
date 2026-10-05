@@ -22,6 +22,8 @@ import { fingerprintEntity, fingerprintField, type EntityFacts, type FieldFacts 
 
 export interface EntityNoteInput {
   text: string;
+  textFormat?: "md" | "rich";
+  textHtml?: string;
   todo: boolean;
   done: boolean;
   updatedAt: number;
@@ -31,6 +33,8 @@ export interface EntityNoteInput {
 export interface LiveNotesInput {
   orgScopeId: string;
   text: string;
+  textFormat?: "md" | "rich";
+  textHtml?: string;
   updatedAt: number | null;
   todos?: CanvasTodo[];
   entities: Record<string, EntityNoteInput>;
@@ -62,7 +66,7 @@ function firstLine(text: string, max = 90): string {
 
 export function normalizeLiveNotes(input: LiveNotesInput): ArchitectureInboxItem[] {
   const items: ArchitectureInboxItem[] = [];
-  const { orgScopeId, text, updatedAt, entities, labels } = input;
+  const { orgScopeId, text, textFormat, textHtml, updatedAt, entities, labels } = input;
   if (text.trim()) {
     items.push({
       id: "live-canvas",
@@ -73,6 +77,8 @@ export function normalizeLiveNotes(input: LiveNotesInput): ArchitectureInboxItem
       status: "open",
       title: "Canvas design notes",
       body: text,
+      bodyFormat: textFormat,
+      bodyHtml: textHtml,
       anchor: { type: "canvas", id: "live" },
       createdAt: updatedAt ?? Date.now(),
       updatedAt: updatedAt ?? Date.now(),
@@ -91,6 +97,8 @@ export function normalizeLiveNotes(input: LiveNotesInput): ArchitectureInboxItem
       status: t.status === "done" ? "resolved" : t.status,
       title: t.title.trim() || "Untitled TODO",
       body: t.body ?? "",
+      bodyFormat: t.bodyFormat,
+      bodyHtml: t.bodyHtml,
       anchor: { type: "canvas", id: "live" },
       createdAt: t.createdAt,
       updatedAt: t.updatedAt,
@@ -114,6 +122,8 @@ export function normalizeLiveNotes(input: LiveNotesInput): ArchitectureInboxItem
       status: n.done ? "resolved" : (meta.status ?? "open"),
       title: labels.get(api) ?? api,
       body: n.text,
+      bodyFormat: n.textFormat,
+      bodyHtml: n.textHtml,
       anchor: meta.anchor ?? { type: "entity", id: api, labelAtCreation: labels.get(api) },
       createdAt: n.updatedAt,
       updatedAt: n.updatedAt,
@@ -147,6 +157,8 @@ export function normalizeSnapshotNotes(input: SnapshotInput): ArchitectureInboxI
       status: meta.status ?? "open",
       title: `Snapshot notes - ${snapshot.name}`,
       body: snapshot.notes,
+      bodyFormat: snapshot.notesFormat,
+      bodyHtml: snapshot.notesHtml,
       anchor: meta.anchor ?? { type: "canvas", id: snapshot.id, labelAtCreation: snapshot.name },
       createdAt: snapshot.createdAt,
       updatedAt: snapshot.createdAt,

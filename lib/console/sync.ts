@@ -1,4 +1,5 @@
-import type { CanvasTodo, CanvasTodoStatus } from "@/lib/inbox/types";
+import { noteToTodoBody, todoBodyToNote, type CanvasTodo, type CanvasTodoStatus } from "@/lib/inbox/types";
+import { appendNoteLine } from "@/lib/notes/notebody";
 import type { SystemProject } from "@/lib/system-design/model";
 import { listSystemProjects, loadSystemProject, saveSystemProject } from "@/lib/system-design/store";
 import type { ConsoleStatus } from "./model";
@@ -127,8 +128,8 @@ export async function pushTodoNote(
   const current = todos[i];
   if ((current.updatedAt ?? 0) > knownUpdatedAt) return { ok: false, stale: true };
   const stamp = new Date(now).toLocaleString();
-  const body = `${current.body ?? ""}${current.body ? "\n\n" : ""}[Console ${stamp}] ${clean}`.slice(0, 4000);
-  todos[i] = { ...current, body, updatedAt: now };
+  const next = appendNoteLine(todoBodyToNote(current), `[Console ${stamp}] ${clean}`);
+  todos[i] = { ...current, ...noteToTodoBody(next), updatedAt: now };
   await fns.save({ ...project, todos, updatedAt: now });
   return { ok: true };
 }

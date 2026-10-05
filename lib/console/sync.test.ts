@@ -68,4 +68,20 @@ describe("console sync", () => {
     expect(await pushTodoStatus(fns, "nope", "t1", "done", 0)).toMatchObject({ ok: false });
     expect(await pushTodoStatus(fns, "p1", "gone", "done", 0)).toMatchObject({ ok: false });
   });
+
+  it("dual-syncs pushed notes and preserves rich highlights", async () => {
+    const { fns, projects } = seedStore();
+    projects.get("p1")!.todos[0] = {
+      ...projects.get("p1")!.todos[0],
+      body: "Plan",
+      bodyFormat: "rich",
+      bodyHtml: '<p><mark data-color="#C6F6C6">Plan</mark></p>',
+    };
+    expect((await pushTodoNote(fns, "p1", "t1", "TLS verified", 50, 200)).ok).toBe(true);
+    const t = projects.get("p1")!.todos[0];
+    expect(t.body).toContain("TLS verified");
+    expect(t.bodyFormat).toBe("rich");
+    expect(t.bodyHtml).toContain('data-color="#C6F6C6"');
+    expect(t.bodyHtml).toContain("TLS verified");
+  });
 });

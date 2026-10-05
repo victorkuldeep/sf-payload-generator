@@ -166,6 +166,9 @@ button, input, select, textarea, optgroup, option {
 .hero-title em { color: var(--color-accent); font-style: normal; }
 /* Home hero variant - archtools black + burgundy */
 .hero-title--red em { color: #722F37; }
+/* Welcome popup - whole line in deep burgundy */
+.hero-title--burgundy { color: #722F37; }
+.hero-title--burgundy em { color: #722F37; }
 /* Zig-zag capability titles - second half (payloads, reference IDs…) in chocolate */
 .zigzag-title em { color: #4E342E; }
 

@@ -2,17 +2,21 @@
 
 import { useMemo, useState } from "react";
 import Button from "../ui/Button";
-import { renderMarkdownLite } from "../erd/notesMd";
+import { renderMarkdownLite, toggleTaskLine } from "../erd/notesMd";
+import { NoteEditor } from "../notes/NoteEditor";
+import { RichBody } from "../notes/RichBody";
 import { firstLine, queryInbox, countInbox } from "@/lib/inbox/normalize";
 import { compileActionPack } from "@/lib/inbox/actionPack";
 import {
   EMPTY_QUERY,
+  inboxBodyToNote,
   type ArchitectureInboxItem,
   type InboxAnchor,
   type InboxItemKind,
   type InboxMeta,
   type InboxStatus,
 } from "@/lib/inbox/types";
+import { commitNoteBody, emptyNoteBody, type NoteBody } from "@/lib/notes/notebody";
 
 export interface InboxCanvas {
   id: string;
@@ -25,7 +29,7 @@ interface ArchitectureInboxProps {
   orgLabel: string;
   items: ArchitectureInboxItem[];
   canvases: InboxCanvas[];
-  onEditBody: (id: string, body: string) => void;
+  onEditBody: (id: string, b: NoteBody) => void;
   onSetTaskDone: (id: string, done: boolean) => void;
   onDelete: (id: string) => void;
   onNavigate: (item: ArchitectureInboxItem) => void;
@@ -186,7 +190,7 @@ export function ArchitectureInbox({
   const [staleOnly, setStaleOnly] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState<NoteBody>(() => emptyNoteBody());
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [packOpen, setPackOpen] = useState(false);
   const [packScope, setPackScope] = useState<"outstanding" | "all">("outstanding");
@@ -235,7 +239,7 @@ export function ArchitectureInbox({
 
   const startEdit = () => {
     if (!selected) return;
-    setDraft(selected.body);
+    setDraft(inboxBodyToNote(selected));
     setEditing(true);
     setConfirmDelete(false);
   };
@@ -641,16 +645,25 @@ export function ArchitectureInbox({
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto p-3">
                 {editing ? (
-                  <textarea
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    spellCheck={false}
-                    aria-label="Edit note body"
-                    className="min-h-[220px] w-full resize-y rounded-lg border border-[var(--color-line)] bg-white p-2.5 font-mono text-xs leading-relaxed text-ivory-950 focus:border-bronze-500 focus:outline-none"
+                  <NoteEditor
+                    draft={draft}
+                    onDraft={setDraft}
+                    label="Body"
+                    textareaRows={10}
+                    renderPreview={(md) => renderMarkdownLite(md)}
                   />
+                ) : selected.bodyFormat === "rich" && selected.bodyHtml?.trim() ? (
+                  <div className="rounded-lg border border-[var(--color-line)] bg-white p-2.5">
+                    <RichBody html={selected.bodyHtml} compact />
+                  </div>
                 ) : (
                   <div className="rounded-lg border border-[var(--color-line)] bg-white p-2.5">
-                    {renderMarkdownLite(selected.body)}
+                    {renderMarkdownLite(selected.body, (idx) =>
+                      onEditBody(
+                        selected.id,
+                        commitNoteBody(inboxBodyToNote(selected), "md", toggleTaskLine(selected.body, idx)),
+                      ),
+                    )}
                   </div>
                 )}
               </div>

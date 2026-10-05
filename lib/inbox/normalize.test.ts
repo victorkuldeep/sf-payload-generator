@@ -78,6 +78,29 @@ describe("inbox normalization", () => {
     expect(items).toHaveLength(0);
   });
 
+  it("passes the rich triple through from every source", () => {
+    const html = "<p>Hi <strong>there</strong></p>";
+    const items = normalizeLiveNotes({
+      ...liveInput,
+      text: "Hi **there**",
+      textFormat: "rich",
+      textHtml: html,
+      todos: [{ id: "t1", title: "T", body: "Hi", bodyFormat: "rich", bodyHtml: html, status: "open", createdAt: 1, updatedAt: 2 }],
+      entities: { Lead: { text: "Hi", textFormat: "rich", textHtml: html, todo: false, done: false, updatedAt: 1 } },
+    });
+    const byId = new Map(items.map((i) => [i.id, i]));
+    expect(byId.get("live-canvas")).toMatchObject({ bodyFormat: "rich", bodyHtml: html });
+    expect(byId.get("live-canvas-todo-t1")).toMatchObject({ bodyFormat: "rich", bodyHtml: html });
+    expect(byId.get("live-entity-Lead")).toMatchObject({ bodyFormat: "rich", bodyHtml: html });
+    const snapItems = normalizeSnapshotNotes({
+      snapshot: snap({ notes: "Hi", notesFormat: "rich", notesHtml: html }),
+      orgScopeId: "o",
+    });
+    expect(snapItems[0]).toMatchObject({ bodyFormat: "rich", bodyHtml: html });
+    // Vintage records stay markdown-only.
+    expect(normalizeLiveNotes(liveInput)[0].bodyFormat).toBeUndefined();
+  });
+
   it("maps todo flag to task kind and done to resolved - never invents kinds", () => {
     const items = normalizeLiveNotes(liveInput);
     const byId = new Map(items.map((i) => [i.id, i]));

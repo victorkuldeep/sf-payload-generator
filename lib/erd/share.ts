@@ -24,6 +24,8 @@ export interface ErdSharePayload {
     describes: SalesforceDescribeResult[];
     positions: Record<string, { x: number; y: number }>;
     notes?: string;
+    notesFormat?: "md" | "rich";
+    notesHtml?: string;
     removedIds?: string[];
     hiddenIds?: string[];
     dismissedIds?: string[];
@@ -57,6 +59,8 @@ export function validateSharePayload(raw: unknown): ErdSharePayload | null {
       positions:
         s.positions && typeof s.positions === "object" ? s.positions : {},
       notes: typeof s.notes === "string" ? s.notes : undefined,
+      notesFormat: s.notesFormat === "rich" || s.notesFormat === "md" ? s.notesFormat : undefined,
+      notesHtml: typeof s.notesHtml === "string" ? s.notesHtml : undefined,
       removedIds: Array.isArray(s.removedIds) ? s.removedIds.filter((x): x is string => typeof x === "string") : undefined,
       hiddenIds: Array.isArray(s.hiddenIds) ? s.hiddenIds.filter((x): x is string => typeof x === "string") : undefined,
       dismissedIds: Array.isArray(s.dismissedIds) ? s.dismissedIds.filter((x): x is string => typeof x === "string") : undefined,

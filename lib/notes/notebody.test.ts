@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  appendNoteLine,
   commitNoteBody,
   emptyNoteBody,
   htmlToMd,
@@ -137,5 +138,16 @@ describe("note body commits", () => {
     const big = "x".repeat(20000);
     expect(noteBodyFromMd(big).md).toHaveLength(12000);
     expect(noteBodyFromHtml(`<p>${big}</p>`).md.length).toBeLessThanOrEqual(12000);
+  });
+
+  it("appends lines to both sides without regenerating rich html", () => {
+    const prev = noteBodyFromHtml('<p><mark data-color="#F9C9D4">Plan</mark></p>');
+    const next = appendNoteLine(prev, "[Console] TLS verified");
+    expect(next.format).toBe("rich");
+    expect(next.md).toContain("[Console] TLS verified");
+    expect(next.html).toContain('data-color="#F9C9D4"');
+    expect(next.html).toContain("<p>[Console] TLS verified</p>");
+    const mdOnly = appendNoteLine(noteBodyFromMd("Plan"), "[Console] go");
+    expect(mdOnly.html).toContain("[Console] go");
   });
 });

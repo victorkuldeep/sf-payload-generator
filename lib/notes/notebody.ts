@@ -322,3 +322,15 @@ export function commitNoteBody(prev: NoteBody, format: NoteFormat, content: stri
 export function noteBodyEmpty(b: NoteBody): boolean {
   return b.md.trim() === "" && b.html.trim() === "";
 }
+
+/**
+ * Append a line (Console pushes, system stamps) to both sides. The rich
+ * side grows a paragraph instead of regenerating, so highlights survive.
+ */
+export function appendNoteLine(prev: NoteBody, line: string): NoteBody {
+  const md = `${prev.md}${prev.md ? "\n\n" : ""}${line}`.slice(0, NOTE_MD_MAX);
+  const html = prev.html.trim()
+    ? `${prev.html}<p>${escapeHtml(line)}</p>`.slice(0, NOTE_HTML_MAX)
+    : mdToHtml(md).slice(0, NOTE_HTML_MAX);
+  return { format: prev.format, md, html };
+}

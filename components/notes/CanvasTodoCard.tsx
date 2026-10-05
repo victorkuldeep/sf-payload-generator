@@ -1,12 +1,35 @@
 "use client";
 
-import type { CanvasTodo } from "@/lib/inbox/types";
+import { useMemo } from "react";
+import { noteToTodoBody, todoBodyToNote, type CanvasTodo } from "@/lib/inbox/types";
+import { renderMarkdownLite } from "@/components/erd/notesMd";
+import { NoteEditor } from "./NoteEditor";
 
 export function isTodoOverdue(t: { dueDate?: string; status: string }): boolean {
   if (!t.dueDate || t.status === "done") return false;
   const today = new Date();
   const ymd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
   return t.dueDate < ymd;
+}
+
+// Details body: Rich/Markdown/Preview over the dual-format triple. Memoized
+// so vintage Markdown only migrates when its sides actually change.
+function TodoDetails({ todo, onPatch }: { todo: CanvasTodo; onPatch: (patch: Partial<CanvasTodo>) => void }) {
+  const draft = useMemo(
+    () => todoBodyToNote(todo),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [todo.body, todo.bodyFormat, todo.bodyHtml],
+  );
+  return (
+    <NoteEditor
+      draft={draft}
+      onDraft={(b) => onPatch(noteToTodoBody(b))}
+      label="Details"
+      placeholder="Details, acceptance, links…"
+      textareaRows={2}
+      renderPreview={(md) => renderMarkdownLite(md)}
+    />
+  );
 }
 
 // One TODO: checkbox lifecycle, expandable editor (title, details,
@@ -105,15 +128,7 @@ export function CanvasTodoCard({
             spellCheck={false}
             className="w-full rounded-lg border border-[var(--color-line)] bg-white px-2 py-1 text-xs font-semibold text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
           />
-          <textarea
-            value={todo.body ?? ""}
-            onChange={(e) => onPatch({ body: e.target.value })}
-            placeholder="Details, acceptance, links…"
-            spellCheck={false}
-            aria-label="TODO details"
-            rows={2}
-            className="w-full resize-y rounded-lg border border-[var(--color-line)] bg-white p-2 font-mono text-[11px] leading-relaxed text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
-          />
+          <TodoDetails todo={todo} onPatch={onPatch} />
           <div className="grid grid-cols-3 gap-1.5">
             <label className="block text-[9px] font-semibold uppercase tracking-wider text-ivory-600">
               Who

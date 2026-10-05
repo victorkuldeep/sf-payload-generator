@@ -28,6 +28,7 @@ export function NoteEditor({
   emptyPreview,
   textareaRows = 7,
   initialTab,
+  fill,
 }: {
   draft: NoteBody;
   onDraft: (b: NoteBody) => void;
@@ -39,6 +40,8 @@ export function NoteEditor({
   emptyPreview?: ReactNode | ((edit: () => void) => ReactNode);
   textareaRows?: number;
   initialTab?: NoteTab;
+  /** Stretch to the parent flex height (fullscreen zen) instead of fixed rows. */
+  fill?: boolean;
 }) {
   const [tab, setTab] = useState<NoteTab>(initialTab ?? (draft.format === "rich" ? "rich" : "md"));
   // Follow genuine format changes (draft reset, another surface) without
@@ -63,7 +66,7 @@ export function NoteEditor({
   const edit = () => switchTab(draft.format);
 
   return (
-    <div>
+    <div className={fill ? "flex min-h-0 flex-1 flex-col" : undefined}>
       <div className="flex items-center gap-2">
         <h4 className="font-mono text-[9px] uppercase tracking-[2px] text-[#A39B8E]">
           {label} · {tab === "preview" ? "preview" : tab === "rich" ? "rich text" : "markdown"}
@@ -86,7 +89,7 @@ export function NoteEditor({
         </span>
       </div>
 
-      <div className="mt-1.5">
+      <div className={fill ? "mt-1.5 flex min-h-0 flex-1 flex-col" : "mt-1.5"}>
         {tab === "rich" && (
           <RichTextEditor
             value={draft.html}
@@ -103,12 +106,12 @@ export function NoteEditor({
             placeholder={placeholder}
             spellCheck={false}
             aria-label={`${label} markdown`}
-            className="w-full resize-y rounded-xl border border-[#E8E2D8] bg-white px-3 py-2 font-mono text-[12px] leading-relaxed text-[#27241F] placeholder-[#A39B8E] focus:border-[#C9A86A] focus:outline-none"
+            className={`w-full rounded-xl border border-[#E8E2D8] bg-white px-3 py-2 font-mono text-[12px] leading-relaxed text-[#27241F] placeholder-[#A39B8E] focus:border-[#C9A86A] focus:outline-none ${fill ? "min-h-0 flex-1 resize-none" : "resize-y"}`}
           />
         )}
         {tab === "preview" &&
           (draft.md.trim() ? (
-            <div className="rounded-xl border border-[#E8E2D8] bg-[#FBFAF7] px-3 py-2">
+            <div className={`rounded-xl border border-[#E8E2D8] bg-[#FBFAF7] px-3 py-2 ${fill ? "min-h-0 flex-1 overflow-y-auto" : ""}`}>
               {renderPreview(draft.md)}
             </div>
           ) : typeof emptyPreview === "function" ? (
