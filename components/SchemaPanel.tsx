@@ -6,8 +6,9 @@ import type {
   SalesforceObject,
   SalesforceDescribeResult,
 } from "@/lib/salesforce/types";
-import { buildErdElements, buildGraphElements, rootNeighbors, systemReason, isEffectivelyHidden, isSystemObject, AUDIT_REFERENCE_FIELDS, parentExitHandleId, childEntryHandleId, customParentTargets, customChildTargets, type ErdNodeData, type ErdFieldRow, type ErdEdgeData, type GraphNeighbor } from "@/lib/erd/graph";
+import { buildErdElements, buildGraphElements, rootNeighbors, systemReason, isEffectivelyHidden, isSystemObject, AUDIT_REFERENCE_FIELDS, parentExitHandleId, childEntryHandleId, customParentTargets, customChildTargets, customParentLinks, customChildLinks, type ErdNodeData, type ErdFieldRow, type ErdEdgeData, type GraphNeighbor } from "@/lib/erd/graph";
 import { rankObjects } from "@/lib/search/rank";
+import { buildFieldCopyTable } from "@/lib/salesforce/picklistValues";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import { apiFetch } from "@/lib/api";
 import { ErdCanvas, type ErdCanvasHandle } from "./erd/ErdCanvas";
@@ -1020,6 +1021,10 @@ export default function SchemaPanel({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [spot, setSpot] = useState<{ focus: string; related: Set<string>; soft?: boolean } | null>(null);
+  // Clicked ERD link: the edge stays selected through prop syncs (RF's own
+  // selection flag is wiped by setEdges), so the burgundy line + linker
+  // field pill survive the highlight.
+  const [spotEdgeId, setSpotEdgeId] = useState<string | null>(null);
   const [sideOpen, setSideOpen] = useState(true);
   const [staged, setStaged] = useState<Set<string>>(new Set());
   // Refresh + popover + snapshot state
@@ -1108,7 +1113,9 @@ export default function SchemaPanel({
   >(null);
   const [oobLocked, setOobLocked] = useState(false);
   const [picker, setPicker] = useState<{
-    mode: "children" | "parents";
+    mode: "children" | "parents" | "custom-parents" | "custom-children";
+    /** Entity the discovery fans out from (focus node or a box icon). */
+    target: string;
     title: string;
     subtitle: string;
     candidates: DiscoverCandidate[];
@@ -2237,45 +2244,72 @@ export default function SchemaPanel({
     [describes]
   );
 
-  // Per-entity custom pull (ERD box icons): one shot adds every custom
-  // parent or custom direct child of THAT entity - standard relationships
-  // never qualify. Focus stays on the entity so the architect repeats the
-  // sweep box by box; links draw automatically where both ends land.
-  // addNames reads live at click time (defined below with its fetch deps),
-  // so it stays out of this array by design.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const pullCustomFamily = useCallback(async (api: string, dir: "parents" | "children") => {
+  // Per-entity custom pull (ERD box icons): opens the discovery picker
+  // scoped to THAT entity's custom parents or custom direct children -
+  // standard relationships never qualify. The architect ticks one, some,
+  // or all; links draw automatically where both ends land.
+  const showCustomPull = useCallback((api: string, dir: "parents" | "children") => {
     if (busy) return;
     const d = describes.get(api);
     if (!d) return;
-    const targets = (dir === "parents" ? customParentTargets(d) : customChildTargets(d))
-      .filter((n) => !describes.has(n));
-    if (targets.length === 0) {
-      setNotice(`${api} has no custom ${dir} outside the canvas.`);
+    const links = dir === "parents" ? customParentLinks(d) : customChildLinks(d);
+    if (links.length === 0) {
+      setNotice(`${api} has no custom ${dir}.`);
       return;
     }
-    const names = targets.slice(0, MAX_NEW_PER_ACTION);
-    if (describes.size + names.length > MAX_NODES) {
-      setNotice(`Canvas cap is ${MAX_NODES} objects - adding ${names.length} would exceed it. Remove some nodes first.`);
-      return;
-    }
-    setError(null);
-    setNotice(null);
-    setBusy(`Pulling custom ${dir} of ${api}…`);
-    try {
-      const fresh = await addNames(names);
-      setFocusName(api);
+    const candidates: DiscoverCandidate[] = links.map((l) => ({
+      apiName: l.target,
+      label: labels.get(l.target) ?? l.target,
+      custom: isCustomName(l.target),
+      group: dir === "parents" ? "parent" : "child",
+      via: l.via,
+      kind: l.kind,
+      onCanvas: describes.has(l.target),
+      system: isSystemObject(l.target, isCustomName(l.target)),
+    }));
+    if (candidates.every((c) => c.onCanvas)) {
       setNotice(
-        fresh.length === 1
-          ? `${fresh[0].name} joined ${api} - custom ${dir === "parents" ? "parent" : "child"}, links draw automatically.`
-          : `${fresh.length} custom ${dir} pulled for ${api} - links draw automatically where both ends are present.`
+        candidates.length === 1
+          ? `${candidates[0].apiName} is already on canvas - ${api}'s only custom ${dir === "parents" ? "parent" : "child"}.`
+          : `All ${candidates.length} custom ${dir} of ${api} are already on canvas.`
       );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Discovery failed");
-    } finally {
-      setBusy(null);
+      return;
     }
-  }, [busy, describes]);
+    setPicker({
+      mode: dir === "parents" ? "custom-parents" : "custom-children",
+      target: api,
+      title: `Pull custom ${dir} of ${api}`,
+      subtitle: `${links.length} custom ${dir === "parents" ? "lookups" : "children"} - tick one, some, or all`,
+      candidates,
+    });
+  }, [busy, describes, labels, isCustomName]);
+
+  // ERD box table icon: every field of THAT entity as a Label | API Name
+  // table (HTML for Teams/Docs, TSV fallback) - the picklist copy-all,
+  // generalized. Resolves true so the box can flash its check.
+  const copyFieldTable = useCallback(async (api: string): Promise<boolean> => {
+    const d = describes.get(api);
+    if (!d || d.fields.length === 0) {
+      setNotice(`${api} has no fields to copy.`);
+      return false;
+    }
+    const { html, text } = buildFieldCopyTable(d.fields.map((f) => ({ label: f.label, name: f.name })));
+    try {
+      const item = new ClipboardItem({
+        "text/html": new Blob([html], { type: "text/html" }),
+        "text/plain": new Blob([text], { type: "text/plain" }),
+      });
+      await navigator.clipboard.write([item]);
+    } catch {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        return false;
+      }
+    }
+    setNotice(`${d.fields.length} ${d.label} fields copied as a Label | API Name table - paste into Teams.`);
+    return true;
+  }, [describes]);
 
   const baseElements: { nodes: Node<ErdNodeData>[]; edges: Edge[] } = useMemo(() => {    if (visibleDescribes.size === 0 || !rootName) return { nodes: [], edges: [] };
     const built = buildErdElements(visibleDescribes, labels, rootName, spot, enforced);
@@ -2300,13 +2334,14 @@ export default function SchemaPanel({
             onRecordTypesClick: openRecordTypes,
             customParentCount: d ? customParentTargets(d).length : 0,
             customChildCount: d ? customChildTargets(d).length : 0,
-            onPullCustomParents: (target: string) => void pullCustomFamily(target, "parents"),
-            onPullCustomChildren: (target: string) => void pullCustomFamily(target, "children"),
+            onPullCustomParents: (target: string) => showCustomPull(target, "parents"),
+            onPullCustomChildren: (target: string) => showCustomPull(target, "children"),
+            onCopyFieldTable: copyFieldTable,
           },
         };
       }),
     };
-  }, [visibleDescribes, describes, labels, rootName, spot, enforced, entityNotes, openEntityNote, makeRoot, openRecordTypes, pullCustomFamily]);
+  }, [visibleDescribes, describes, labels, rootName, spot, enforced, entityNotes, openEntityNote, makeRoot, openRecordTypes, showCustomPull, copyFieldTable]);
 
   // Graph default = FULL 1-level neighborhood (parents left, children right),
   // lite previews included - this is the intent of graph view. Family
@@ -2601,8 +2636,11 @@ export default function SchemaPanel({
         } as ErdEdgeData,
       });
     }
-    return [...baseElements.edges, ...sketches];
-  }, [authorDeploying, baseElements.edges]);
+    const withSpot = baseElements.edges.map((e) =>
+      e.id === spotEdgeId ? { ...e, selected: true } : e
+    );
+    return [...withSpot, ...sketches];
+  }, [authorDeploying, baseElements.edges, spotEdgeId]);
 
   const openAuthorField = useCallback((apiName: string) => {
     setAuthorDialog({ kind: "field", objectApi: apiName });
@@ -3704,6 +3742,7 @@ export default function SchemaPanel({
     }
     setPicker({
       mode: "children",
+      target,
       title: `Discover children of ${target}`,
       subtitle: `${candidates.length} related objects - tick what joins the canvas`,
       candidates,
@@ -4289,6 +4328,7 @@ export default function SchemaPanel({
     }
     setPicker({
       mode: "parents",
+      target,
       title: `Show parents of ${target}`,
       subtitle: `${candidates.length} lookup targets - tick what joins the canvas, then they spotlight`,
       candidates,
@@ -4299,7 +4339,8 @@ export default function SchemaPanel({
     async (selected: string[]) => {
       if (!picker || busy) return;
       const mode = picker.mode;
-      const target = focusName || rootName;
+      const target = picker.target;
+      const custom = mode === "custom-parents" || mode === "custom-children";
       setPicker(null);
       const names = selected.filter((n) => !describes.has(n)).slice(0, MAX_NEW_PER_ACTION);
       if (names.length === 0) {
@@ -4316,8 +4357,14 @@ export default function SchemaPanel({
       setBusy(`Adding ${names.length} object${names.length === 1 ? "" : "s"}…`);
       try {
         const fresh = await addNames(names);
-        setFocusName(fresh[fresh.length - 1]?.name ?? target);
-        if (fresh.length > 0) focusCanvasOn(fresh[fresh.length - 1].name);
+        if (custom) {
+          // Box-icon pulls stay on the entity: repeat box by box, no
+          // viewport yank, no spotlight - the notice names what landed.
+          setFocusName(target);
+        } else {
+          setFocusName(fresh[fresh.length - 1]?.name ?? target);
+          if (fresh.length > 0) focusCanvasOn(fresh[fresh.length - 1].name);
+        }
         if (mode === "parents" && target) {
           const dd = fresh.find((x) => x.name === target) ?? describes.get(target);
           const allParents = dd
@@ -4335,6 +4382,15 @@ export default function SchemaPanel({
             return;
           }
         }
+        if (custom) {
+          const dir = mode === "custom-parents" ? "parent" : "child";
+          setNotice(
+            fresh.length === 1
+              ? `${fresh[0].name} joined ${target} - custom ${dir}, links draw automatically.`
+              : `${fresh.length} custom ${dir === "parent" ? "parents" : "children"} pulled for ${target} - links draw automatically where both ends are present.`
+          );
+          return;
+        }
         setNotice(
           fresh.length === 1
             ? `${fresh[0].name} added - links draw automatically.`
@@ -4346,7 +4402,7 @@ export default function SchemaPanel({
         setBusy(null);
       }
     },
-    [picker, busy, describes, focusName, rootName, addNames, focusCanvasOn]
+    [picker, busy, describes, addNames, focusCanvasOn]
   );
 
   const removeNode = useCallback(() => {
@@ -4473,6 +4529,7 @@ export default function SchemaPanel({
       const api = id.startsWith("x:") ? (parts[2] ?? id) : parts.length > 1 ? parts.slice(1).join(":") : id;
       setFocusName(api);
       setSpot(null);
+      setSpotEdgeId(null);
       setGraphSelected(api);
       // Selection only - no auto-fetch. Opening the panel to remove/hide a
       // bubble must not fire API calls; Discover + Fetch stay one manual
@@ -4503,6 +4560,7 @@ export default function SchemaPanel({
 
   const handlePaneClick = useCallback(() => {
     setSpot(null);
+    setSpotEdgeId(null);
     setPopover(null);
     setRtPopover(null);
     setGraphSelected(null);
@@ -4517,8 +4575,10 @@ export default function SchemaPanel({
       const apiOf = (id: string) => elements.nodes.find((n) => n.id === id)?.data.apiName ?? id;
       const a = apiOf(edge.source);
       const b = apiOf(edge.target);
+      const via = typeof edge.label === "string" && edge.label ? edge.label : edgeId.split("|")[2] ?? "";
       setSpot({ focus: a, related: new Set([a, b]), soft: true });
-      setNotice(`${a} ↔ ${b} highlighted - click empty canvas to clear.`);
+      setSpotEdgeId(edgeId);
+      setNotice(via ? `${a} ↔ ${b} via ${via} - click empty canvas to clear.` : `${a} ↔ ${b} highlighted - click empty canvas to clear.`);
     },
     [elements]
   );

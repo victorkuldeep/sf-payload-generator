@@ -85,6 +85,7 @@ function dockStyle(author: boolean | undefined, base: CSSProperties): CSSPropert
 function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [tableCopied, setTableCopied] = useState(false);
   const [query, setQuery] = useState("");
   const [sortAZ, setSortAZ] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -354,7 +355,7 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
                 e.stopPropagation();
                 data.onPullCustomParents?.(data.apiName);
               }}
-              title={`Pull ${data.customParentCount} custom parent${data.customParentCount === 1 ? "" : "s"} of ${data.apiName} - custom lookups only, one shot`}
+              title={`Choose custom parents of ${data.apiName} to pull - ${data.customParentCount} custom lookup${data.customParentCount === 1 ? "" : "s"}`}
               aria-label={`Pull custom parents of ${data.apiName}`}
               className={`nodrag shrink-0 rounded p-1 transition-colors cursor-pointer ${data.isRoot ? "text-ivory-300 hover:text-white hover:bg-ivory-800" : "text-ivory-950 hover:text-bronze-600 hover:bg-ivory-200"}`}
             >
@@ -371,7 +372,7 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
                 e.stopPropagation();
                 data.onPullCustomChildren?.(data.apiName);
               }}
-              title={`Pull ${data.customChildCount} custom direct child${data.customChildCount === 1 ? "" : "ren"} of ${data.apiName} - custom lookups only, one shot`}
+              title={`Choose custom children of ${data.apiName} to pull - ${data.customChildCount} custom direct child${data.customChildCount === 1 ? "" : "ren"}`}
               aria-label={`Pull custom children of ${data.apiName}`}
               className={`nodrag shrink-0 rounded p-1 transition-colors cursor-pointer ${data.isRoot ? "text-ivory-300 hover:text-white hover:bg-ivory-800" : "text-ivory-950 hover:text-bronze-600 hover:bg-ivory-200"}`}
             >
@@ -379,6 +380,35 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
                 <path d="M12 4v11m0 0 4-4m-4 4-4-4" />
                 <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
               </svg>
+            </button>
+          )}
+          {data.onCopyFieldTable && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                void (async () => {
+                  const ok = await data.onCopyFieldTable?.(data.apiName);
+                  if (ok) {
+                    setTableCopied(true);
+                    window.setTimeout(() => setTableCopied(false), 1500);
+                  }
+                })();
+              }}
+              title={tableCopied ? "Table copied - paste into Teams" : `Copy all ${data.totalFields} fields as a Label | API Name table`}
+              aria-label={tableCopied ? "Field table copied" : `Copy all fields of ${data.apiName} as a table`}
+              className={`nodrag shrink-0 rounded p-1 transition-colors cursor-pointer ${data.isRoot ? "text-ivory-300 hover:text-white hover:bg-ivory-800" : "text-ivory-950 hover:text-bronze-600 hover:bg-ivory-200"}`}
+            >
+              {tableCopied ? (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true">
+                  <path d="m4 12.5 5 5L20 6.5" />
+                </svg>
+              ) : (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <path d="M3 10h18M9 10v10M15 10v10" />
+                </svg>
+              )}
             </button>
           )}
           {data.onRecordClick && (

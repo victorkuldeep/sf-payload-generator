@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectJunction, buildEdges, buildErdElements, buildGraphElements, rootNeighbors, bubbleInitials, assignBubbleTags, systemReason, isSystemObject, isNeuralExcluded, customParentTargets, customChildTargets } from "./graph";
+import { detectJunction, buildEdges, buildErdElements, buildGraphElements, rootNeighbors, bubbleInitials, assignBubbleTags, systemReason, isSystemObject, isNeuralExcluded, customParentTargets, customChildTargets, customParentLinks, customChildLinks } from "./graph";
 import type { SalesforceDescribeResult } from "@/lib/salesforce/types";
 
 const desc = (
@@ -48,6 +48,27 @@ const desc = (
   childRelationships,
 });
 
+describe("buildEdges linker labels", () => {
+  it("labels every edge with its linker field api name", () => {
+    const map = new Map<string, SalesforceDescribeResult>([
+      ["Account", desc("Account", [], [])],
+      [
+        "Contact",
+        desc("Contact", [
+          { name: "AccountId", type: "reference", referenceTo: ["Account"] },
+          { name: "ReportsToId", type: "reference", referenceTo: ["Contact"] },
+        ]),
+      ],
+    ]);
+    const edges = buildEdges(map);
+    // The click pill reads edge.label: parent|child|field ids, field labels.
+    expect(edges.find((e) => e.id === "Account|Contact|AccountId")?.label).toBe("AccountId");
+    const loop = edges.find((e) => e.id === "Contact|Contact|ReportsToId");
+    expect(loop?.label).toBe("ReportsToId");
+    expect((loop?.data as { loopLane?: number })?.loopLane).toBe(0);
+  });
+});
+
 describe("custom relationship targets", () => {
   const pricing = () =>
     desc(
@@ -73,6 +94,16 @@ describe("custom relationship targets", () => {
 
   it("pulls children attached through custom fields only", () => {
     expect(customChildTargets(pricing())).toEqual(["Pricing_Line__c"]);
+  });
+
+  it("carries the driving field and line kind per link", () => {
+    expect(customParentLinks(pricing())).toEqual([
+      { target: "Opportunity", via: "Opportunity__c", kind: "lookup" },
+      { target: "Account", via: "Account__c", kind: "lookup" },
+    ]);
+    expect(customChildLinks(pricing())).toEqual([
+      { target: "Pricing_Line__c", via: "Pricing_Request__c", kind: "md" },
+    ]);
   });
 
   it("skips self links, dupes, and unnamed relationships", () => {

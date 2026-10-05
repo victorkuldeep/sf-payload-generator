@@ -57,6 +57,8 @@ export interface ErdNodeData extends Record<string, unknown> {
   customChildCount?: number;
   onPullCustomParents?: (apiName: string) => void;
   onPullCustomChildren?: (apiName: string) => void;
+  /** Copy every field as a Label | API Name table (resolves true on success). */
+  onCopyFieldTable?: (apiName: string) => Promise<boolean>;
   /** Record-walk eye state: live data aboard, one-click reachable, or locked. */
   recordState?: "live" | "reachable" | "locked";
   /** Record types on the object - badge + popover on the table node. */
@@ -471,37 +473,55 @@ export function rootNeighbors(
 }
 
 /**
- * Custom-relationship targets of one describe: parents reached through
- * custom (__c) lookup/master-detail fields, children attached through
- * custom (__c) fields. Standard relationships (Owner, audit lookups,
- * platform children) never qualify - this is the per-entity "pull my
- * custom family" sweep. Self links excluded, first-seen order kept.
+ * One custom relationship of an entity: the target object, the driving
+ * custom (__c) field, and the line kind. Standard relationships (Owner,
+ * audit lookups, platform children) never qualify - this is the
+ * per-entity "pull my custom family" sweep. Self links excluded,
+ * first-seen order kept.
  */
-export function customParentTargets(d: SalesforceDescribeResult): string[] {
-  const out: string[] = [];
+export interface CustomLink {
+  target: string;
+  via: string;
+  kind: ErdEdgeKind;
+}
+
+export function customParentLinks(d: SalesforceDescribeResult): CustomLink[] {
+  const out: CustomLink[] = [];
   const seen = new Set<string>();
   for (const f of d.fields ?? []) {
     if (f.type !== "reference" || !f.name.endsWith("__c")) continue;
     for (const t of f.referenceTo ?? []) {
       if (t === d.name || seen.has(t)) continue;
       seen.add(t);
-      out.push(t);
+      out.push({ target: t, via: f.name, kind: "lookup" });
     }
   }
   return out;
 }
 
-export function customChildTargets(d: SalesforceDescribeResult): string[] {
-  const out: string[] = [];
+export function customChildLinks(d: SalesforceDescribeResult): CustomLink[] {
+  const out: CustomLink[] = [];
   const seen = new Set<string>();
   for (const r of d.childRelationships ?? []) {
     if (!r.relationshipName) continue;
     if (!(r.field ?? "").endsWith("__c")) continue;
     if (r.childSObject === d.name || seen.has(r.childSObject)) continue;
     seen.add(r.childSObject);
-    out.push(r.childSObject);
+    out.push({
+      target: r.childSObject,
+      via: r.field,
+      kind: r.cascadeDelete === true ? "md" : "lookup",
+    });
   }
   return out;
+}
+
+export function customParentTargets(d: SalesforceDescribeResult): string[] {
+  return customParentLinks(d).map((l) => l.target);
+}
+
+export function customChildTargets(d: SalesforceDescribeResult): string[] {
+  return customChildLinks(d).map((l) => l.target);
 }
 
 // ── System-noise detection (architect-grade Hide-system) ────────────────

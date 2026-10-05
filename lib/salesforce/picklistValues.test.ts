@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCustomFieldPatch,
+  buildFieldCopyTable,
   buildGlobalValueSetPatch,
   buildPicklistCopyTable,
   buildRecordTypePatch,
@@ -113,5 +114,15 @@ describe("picklist add-values contract", () => {
     expect(html).toContain("High &amp; Dry");
     expect(html).toContain("Low&lt;Value&gt;");
     expect(text).toBe("Label\tAPI Name\nHigh & Dry\tHigh\nLow\tLow<Value>");
+  });
+
+  it("builds the same Label | API Name table for field lists", () => {
+    const { html, text } = buildFieldCopyTable([
+      { label: "Account Name", name: "Name" },
+      { label: "Annual Revenue", name: "AnnualRevenue" },
+    ]);
+    expect(html).toContain("<th>Label</th><th>API Name</th>");
+    expect(html).toContain("<td>Account Name</td><td>Name</td>");
+    expect(text).toBe("Label\tAPI Name\nAccount Name\tName\nAnnual Revenue\tAnnualRevenue");
   });
 });

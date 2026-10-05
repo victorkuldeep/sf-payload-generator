@@ -125,7 +125,7 @@ function ErdEdgeInner({
       {selected && label != null && String(label) !== "" && (
         <EdgeLabelRenderer>
           <div
-            className="rounded border border-[var(--color-line)] bg-white px-1.5 py-px font-mono text-[10px] text-ivory-800 shadow-sm"
+            className="rounded border border-[#722F37] bg-white px-1.5 py-px font-mono text-[10px] font-semibold text-[#722F37] shadow-sm"
             style={{
               position: "absolute",
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,

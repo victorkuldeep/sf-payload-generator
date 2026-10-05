@@ -177,6 +177,14 @@ export function buildPicklistCopyTable(values: { label: string; value: string }[
   return { html, text };
 }
 
+/**
+ * Copy-all table for an object's FIELD list (ERD box icon): same Label |
+ * API Name shape as picklists, so Teams/Excel/Sheets all paste cleanly.
+ */
+export function buildFieldCopyTable(fields: { label: string; name: string }[]): { html: string; text: string } {
+  return buildPicklistCopyTable(fields.map((f) => ({ label: f.label, value: f.name })));
+}
+
 /** Tooling REST paths for the add-values flow. */
 export function toolingQueryPath(apiVersion: string, soql: string): string {
   return `/services/data/${apiVersion}/tooling/query/?q=${encodeURIComponent(soql)}`;
