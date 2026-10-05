@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { normalizeSalesforceUrl, screenTargetHost } from "@/lib/salesforce/url";
 import { sfTimeoutSignal, isAbortError, sfTimeoutMessage } from "@/lib/salesforce/client";
+import { encodePath } from "@/lib/rest/encode";
 
 const headerSchema = z.object({
   key: z.string().min(1).max(64),
@@ -51,13 +52,6 @@ const SAFE_RESPONSE_HEADERS = new Set([
 ]);
 
 const MAX_BODY_CHARS = 1500000;
-
-/** Encode query-string special chars (spaces etc.) while keeping the path intact. */
-function encodePath(path: string): string {
-  const q = path.indexOf("?");
-  if (q === -1) return path;
-  return path.slice(0, q) + "?" + encodeURI(path.slice(q + 1));
-}
 
 export async function POST(req: NextRequest) {
   let body: unknown;
@@ -117,7 +111,9 @@ export async function POST(req: NextRequest) {
     if (blocked) {
       return NextResponse.json({ error: blocked }, { status: 400 });
     }
-    endpoint = encodeURI(target.toString());
+    // WHATWG serialization is already correctly encoded - a second pass
+    // would double-encode pasted input (%20 -> %2520).
+    endpoint = target.toString();
     // Explicit auth wins; otherwise a hand-typed Authorization header passes through
     // (persona testing). The Salesforce session token is NEVER attached here.
     if (auth.type === "bearer" && auth.token) {
