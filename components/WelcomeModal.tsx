@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Button from "./ui/Button";
 
 interface WelcomeModalProps {
@@ -11,8 +11,28 @@ interface WelcomeModalProps {
 
 const CHIPS = ["REST payloads", "ERD + Graph", "Composite batches", "OpenAPI validate"];
 
+/** Rotating hero lines: black lead, burgundy accent. One studio, five promises. */
+const TAGLINES: { lead: string; accent: string }[] = [
+  { lead: "Payloads", accent: "without the grunt work." },
+  { lead: "ERDs drawn", accent: "from live metadata." },
+  { lead: "Simulate integrations", accent: "before they're built." },
+  { lead: "Decisions with", accent: "a paper trail." },
+  { lead: "Wireframes bound", accent: "to real Salesforce schema." },
+];
+
 export function WelcomeModal({ open, onConnect, onExplore }: WelcomeModalProps) {
   const [accepted, setAccepted] = useState(false);
+  const [tagline, setTagline] = useState(0);
+
+  // Rotate the hero line every 3s while the modal is up. Reduced-motion
+  // users (and SSR) stay on the first line.
+  useEffect(() => {
+    if (!open) return;
+    if (typeof window === "undefined") return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const t = window.setInterval(() => setTagline((i) => (i + 1) % TAGLINES.length), 3000);
+    return () => window.clearInterval(t);
+  }, [open ]);
   if (!open) return null;
 
   return (
@@ -22,9 +42,21 @@ export function WelcomeModal({ open, onConnect, onExplore }: WelcomeModalProps) 
           <p className="text-[10px] font-semibold uppercase tracking-[2px] text-[var(--color-accent-dark)]">
             Salesforce Engineering Studio
           </p>
-          <h2 id="welcome-title" className="hero-title hero-title--burgundy mt-2 text-4xl sm:text-5xl">
-            Payloads without <em>the grunt work.</em>
+          <h2
+            key={tagline}
+            id="welcome-title"
+            className="hero-title hero-title--red tagline-rotate mt-2 min-h-[88px] text-4xl sm:min-h-[104px] sm:text-5xl"
+          >
+            {TAGLINES[tagline].lead} <em>{TAGLINES[tagline].accent}</em>
           </h2>
+          <div className="mt-1 flex items-center justify-center gap-1.5" aria-hidden="true">
+            {TAGLINES.map((_, i) => (
+              <span
+                key={i}
+                className={`h-1 w-1 rounded-full transition-colors ${i === tagline ? "bg-[#722F37]" : "bg-[#D8D0C0]"}`}
+              />
+            ))}
+          </div>
           <p className="mx-auto mt-3 text-sm leading-relaxed text-ivory-700 max-w-md">
             Welcome to{" "}
             <strong className="font-bold tracking-tight">

@@ -169,6 +169,15 @@ button, input, select, textarea, optgroup, option {
 /* Welcome popup - whole line in deep burgundy */
 .hero-title--burgundy { color: #722F37; }
 .hero-title--burgundy em { color: #722F37; }
+/* Rotating tagline entrance (separate key so each line replays it) */
+@keyframes tagline-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.tagline-rotate { animation: tagline-in 0.45s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .tagline-rotate { animation: none; }
+}
 /* Zig-zag capability titles - second half (payloads, reference IDs…) in chocolate */
 .zigzag-title em { color: #4E342E; }
 

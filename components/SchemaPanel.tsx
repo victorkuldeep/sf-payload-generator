@@ -1119,6 +1119,8 @@ export default function SchemaPanel({
     title: string;
     subtitle: string;
     candidates: DiscoverCandidate[];
+    /** Shown with empty-state art when there is nothing to list. */
+    emptyMessage?: string;
   } | null>(null);
   // Family-tree expansion: per-node deep discovery. Keys are "fromApi->toApi"
   // so the same object can appear under several parents (Lead>Account and
@@ -2254,7 +2256,16 @@ export default function SchemaPanel({
     if (!d) return;
     const links = dir === "parents" ? customParentLinks(d) : customChildLinks(d);
     if (links.length === 0) {
-      setNotice(`${api} has no custom ${dir}.`);
+      // Empty families still open the picker - a graceful zero state
+      // beats a disappearing icon or a drive-by notice.
+      setPicker({
+        mode: dir === "parents" ? "custom-parents" : "custom-children",
+        target: api,
+        title: `Pull custom ${dir} of ${api}`,
+        subtitle: "Custom relationships only",
+        candidates: [],
+        emptyMessage: `No custom ${dir} linked with ${api} - only custom (__c) lookup fields qualify.`,
+      });
       return;
     }
     const candidates: DiscoverCandidate[] = links.map((l) => ({
@@ -2267,14 +2278,8 @@ export default function SchemaPanel({
       onCanvas: describes.has(l.target),
       system: isSystemObject(l.target, isCustomName(l.target)),
     }));
-    if (candidates.every((c) => c.onCanvas)) {
-      setNotice(
-        candidates.length === 1
-          ? `${candidates[0].apiName} is already on canvas - ${api}'s only custom ${dir === "parents" ? "parent" : "child"}.`
-          : `All ${candidates.length} custom ${dir} of ${api} are already on canvas.`
-      );
-      return;
-    }
+    // Always opens - even fully-pulled families read as a directory,
+    // with on-canvas rows hopping the viewport on ⌖ click.
     setPicker({
       mode: dir === "parents" ? "custom-parents" : "custom-children",
       target: api,
@@ -6240,8 +6245,14 @@ export default function SchemaPanel({
           title={picker.title}
           subtitle={picker.subtitle}
           candidates={picker.candidates}
+          emptyMessage={picker.emptyMessage}
           onApply={applyPicker}
           onClose={() => setPicker(null)}
+          onFocusNode={(api) => {
+            setPicker(null);
+            setFocusName(api);
+            focusCanvasOn(api);
+          }}
         />
       )}
 

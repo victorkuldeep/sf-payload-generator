@@ -31,6 +31,8 @@ export interface ErdNodeData extends Record<string, unknown> {
   label: string;
   apiName: string;
   custom: boolean;
+  /** Object family for the footer tag (standard/custom/setting/metadata/big). */
+  objectKind: ObjectKind;
   rows: ErdFieldRow[];
   totalFields: number;
   shownChildren: number;
@@ -265,6 +267,26 @@ export interface ErdSpotlight {
   soft?: boolean;
 }
 
+/** Object family for the ERD footer tag. Suffixes first, describe flags after. */
+export type ObjectKind = "standard" | "custom" | "custom-setting" | "custom-metadata" | "big-object";
+
+export const OBJECT_KIND_LABEL: Record<ObjectKind, string> = {
+  standard: "Standard",
+  custom: "Custom",
+  "custom-setting": "Custom Setting",
+  "custom-metadata": "Custom Metadata",
+  "big-object": "Big Object",
+};
+
+export function objectKindOf(
+  d: Pick<SalesforceDescribeResult, "name" | "custom"> & { customSetting?: boolean }
+): ObjectKind {
+  if (d.name.endsWith("__mdt")) return "custom-metadata";
+  if (d.name.endsWith("__b")) return "big-object";
+  if (d.customSetting === true) return "custom-setting";
+  return d.custom ? "custom" : "standard";
+}
+
 /**
  * Build ERD nodes + edges from cached describes.
  * Edges are derived from reference fields and only drawn when BOTH ends are described.
@@ -307,6 +329,7 @@ export function buildErdElements(
         label: describe.label,
         apiName: describe.name,
         custom: describe.custom,
+        objectKind: objectKindOf(describe),
         rows,
         totalFields: describe.fields.length,
         shownChildren: 0, // filled by panel

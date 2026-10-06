@@ -82,6 +82,8 @@ export interface SalesforceDescribeResult {
   label: string;
   labelPlural: string;
   custom: boolean;
+  /** True for custom settings (list + hierarchy). Absent on vintage caches. */
+  customSetting?: boolean;
   createable: boolean;
   updateable: boolean;
   fields: SalesforceField[];

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectJunction, buildEdges, buildErdElements, buildGraphElements, rootNeighbors, bubbleInitials, assignBubbleTags, systemReason, isSystemObject, isNeuralExcluded, customParentTargets, customChildTargets, customParentLinks, customChildLinks } from "./graph";
+import { detectJunction, buildEdges, buildErdElements, buildGraphElements, rootNeighbors, bubbleInitials, assignBubbleTags, systemReason, isSystemObject, isNeuralExcluded, customParentTargets, customChildTargets, customParentLinks, customChildLinks, objectKindOf, OBJECT_KIND_LABEL } from "./graph";
 import type { SalesforceDescribeResult } from "@/lib/salesforce/types";
 
 const desc = (
@@ -66,6 +66,25 @@ describe("buildEdges linker labels", () => {
     const loop = edges.find((e) => e.id === "Contact|Contact|ReportsToId");
     expect(loop?.label).toBe("ReportsToId");
     expect((loop?.data as { loopLane?: number })?.loopLane).toBe(0);
+  });
+});
+
+describe("objectKindOf", () => {
+  it("classifies all five object families", () => {
+    expect(objectKindOf({ name: "Account", custom: false })).toBe("standard");
+    expect(objectKindOf({ name: "Pricing_Request__c", custom: true })).toBe("custom");
+    expect(objectKindOf({ name: "Org_Defaults__c", custom: true, customSetting: true })).toBe("custom-setting");
+    expect(objectKindOf({ name: "Routing_Rule__mdt", custom: true })).toBe("custom-metadata");
+    expect(objectKindOf({ name: "Order_Event__b", custom: false })).toBe("big-object");
+  });
+
+  it("prefers suffixes over flags and labels every kind", () => {
+    // A setting-shaped name with the flag off is still just custom.
+    expect(objectKindOf({ name: "Thing__c", custom: true, customSetting: false })).toBe("custom");
+    expect(OBJECT_KIND_LABEL[objectKindOf({ name: "Account", custom: false })]).toBe("Standard");
+    expect(OBJECT_KIND_LABEL[objectKindOf({ name: "R__mdt", custom: true })]).toBe("Custom Metadata");
+    expect(OBJECT_KIND_LABEL[objectKindOf({ name: "E__b", custom: false })]).toBe("Big Object");
+    expect(OBJECT_KIND_LABEL[objectKindOf({ name: "S__c", custom: true, customSetting: true })]).toBe("Custom Setting");
   });
 });
 

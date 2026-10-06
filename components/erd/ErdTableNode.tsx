@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import type { ErdNodeData } from "@/lib/erd/graph";
 import { formatWalkValue } from "@/lib/erd/recordWalk";
-import { ERD_MAX_ROWS, ERD_HEADER_H, ERD_FOOTER_H, parentExitHandleId, childEntryHandleId, loopOutHandleId, loopInHandleId } from "@/lib/erd/graph";
+import { ERD_MAX_ROWS, ERD_HEADER_H, ERD_FOOTER_H, parentExitHandleId, childEntryHandleId, loopOutHandleId, loopInHandleId, OBJECT_KIND_LABEL } from "@/lib/erd/graph";
 
 function KeyIcon() {
   return (
@@ -265,26 +265,6 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
               JUNCTION
             </span>
           )}
-          {data.custom && (
-            <span className={`shrink-0 rounded border px-1 py-px text-[9px] font-semibold ${data.isRoot ? "border-ivory-700 text-ivory-300" : "bg-bronze-100 text-bronze-700 border-bronze-300"}`}>
-              Custom
-            </span>
-          )}
-          {(data.recordTypes?.length ?? 0) > 0 && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                const r = e.currentTarget.getBoundingClientRect();
-                data.onRecordTypesClick?.(data.apiName, { x: r.right + 8, y: r.top, width: r.width, height: r.height });
-              }}
-              title={`${data.recordTypes.length} record types - click to view ids`}
-              aria-label={`${data.recordTypes.length} record types on ${data.apiName}`}
-              className="nodrag shrink-0 cursor-pointer rounded border border-bronze-300 bg-bronze-100 px-1.5 py-px text-[9px] font-bold text-bronze-700 transition-colors hover:bg-bronze-200"
-            >
-              RT · {data.recordTypes.length}
-            </button>
-          )}
           <button
             type="button"
             onClick={(e) => {
@@ -348,14 +328,14 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
           >
             {copied ? <CheckIcon /> : <CopyIcon />}
           </button>
-          {(data.customParentCount ?? 0) > 0 && data.onPullCustomParents && (
+          {data.onPullCustomParents && (
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 data.onPullCustomParents?.(data.apiName);
               }}
-              title={`Choose custom parents of ${data.apiName} to pull - ${data.customParentCount} custom lookup${data.customParentCount === 1 ? "" : "s"}`}
+              title={(data.customParentCount ?? 0) > 0 ? `Choose custom parents of ${data.apiName} to pull - ${data.customParentCount} custom lookup${data.customParentCount === 1 ? "" : "s"}` : `Custom parents of ${data.apiName} - none linked`}
               aria-label={`Pull custom parents of ${data.apiName}`}
               className={`nodrag shrink-0 rounded p-1 transition-colors cursor-pointer ${data.isRoot ? "text-ivory-300 hover:text-white hover:bg-ivory-800" : "text-ivory-950 hover:text-bronze-600 hover:bg-ivory-200"}`}
             >
@@ -365,14 +345,14 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
               </svg>
             </button>
           )}
-          {(data.customChildCount ?? 0) > 0 && data.onPullCustomChildren && (
+          {data.onPullCustomChildren && (
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 data.onPullCustomChildren?.(data.apiName);
               }}
-              title={`Choose custom children of ${data.apiName} to pull - ${data.customChildCount} custom direct child${data.customChildCount === 1 ? "" : "ren"}`}
+              title={(data.customChildCount ?? 0) > 0 ? `Choose custom children of ${data.apiName} to pull - ${data.customChildCount} custom direct child${data.customChildCount === 1 ? "" : "ren"}` : `Custom children of ${data.apiName} - none linked`}
               aria-label={`Pull custom children of ${data.apiName}`}
               className={`nodrag shrink-0 rounded p-1 transition-colors cursor-pointer ${data.isRoot ? "text-ivory-300 hover:text-white hover:bg-ivory-800" : "text-ivory-950 hover:text-bronze-600 hover:bg-ivory-200"}`}
             >
@@ -638,14 +618,38 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
           </button>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-ivory-600" title={data.recordId ? `${data.apiName} · visualizing ${data.recordId}` : data.apiName}>
-            {data.apiName}{data.recordId ? ` · ${data.recordId.slice(0, 8)}…` : ""}
+          <span className="flex min-w-0 flex-1 items-center gap-1 truncate">
+            <span
+              title={`${data.apiName} · ${OBJECT_KIND_LABEL[data.objectKind]}`}
+              className={`shrink-0 rounded border px-1 py-px text-[9px] font-semibold ${data.objectKind === "standard" ? "border-ivory-300 bg-white text-ivory-600" : "border-bronze-300 bg-bronze-100 text-bronze-700"}`}
+            >
+              {OBJECT_KIND_LABEL[data.objectKind]}
+            </span>
+            {data.recordId && (
+              <span className="min-w-0 truncate font-mono text-[10px] text-ivory-600" title={`Visualizing ${data.recordId}`}>
+                {data.recordId.slice(0, 8)}…
+              </span>
+            )}
           </span>
-          <span className="shrink-0 text-[10px] font-medium text-ivory-600">
-            {q
-              ? `${searched!.length} match${searched!.length === 1 ? "" : "es"}${capped ? " (top 100)" : ""}`
-              : `${data.totalChildren} ${data.totalChildren === 1 ? "child" : "children"}`}
-          </span>
+          {q ? (
+            <span className="shrink-0 text-[10px] font-medium text-ivory-600">
+              {`${searched!.length} match${searched!.length === 1 ? "" : "es"}${capped ? " (top 100)" : ""}`}
+            </span>
+          ) : (data.recordTypes?.length ?? 0) > 0 ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                const r = e.currentTarget.getBoundingClientRect();
+                data.onRecordTypesClick?.(data.apiName, { x: r.right + 8, y: r.top, width: r.width, height: r.height });
+              }}
+              title={`${data.recordTypes.length} record types - click to view ids`}
+              aria-label={`${data.recordTypes.length} record types on ${data.apiName}`}
+              className="nodrag shrink-0 cursor-pointer rounded border border-bronze-300 bg-bronze-100 px-1.5 py-px text-[9px] font-bold text-bronze-700 transition-colors hover:bg-bronze-200"
+            >
+              RT · {data.recordTypes.length}
+            </button>
+          ) : null}
         </div>
       </div>
       {peek && createPortal(

@@ -23,8 +23,12 @@ interface DiscoverPickerProps {
   title: string;
   subtitle: string;
   candidates: DiscoverCandidate[];
+  /** Zero-state message (empty families still open the picker). */
+  emptyMessage?: string;
   onApply: (selected: string[]) => void;
   onClose: () => void;
+  /** Hop the viewport to an on-canvas row (directory mode). */
+  onFocusNode?: (apiName: string) => void;
 }
 
 export function DiscoverPicker({
@@ -32,8 +36,10 @@ export function DiscoverPicker({
   title,
   subtitle,
   candidates,
+  emptyMessage,
   onApply,
   onClose,
+  onFocusNode,
 }: DiscoverPickerProps) {
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");
@@ -111,6 +117,25 @@ export function DiscoverPicker({
         {c.kind === "md" ? "M-D" : "LKUP"}
       </span>
       {c.custom && <Badge variant="info">Custom</Badge>}
+      {c.onCanvas && onFocusNode && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onFocusNode(c.apiName);
+          }}
+          title={`Center canvas on ${c.apiName}`}
+          aria-label={`Center canvas on ${c.apiName}`}
+          className="shrink-0 cursor-pointer rounded p-0.5 text-[#722F37] hover:bg-[#F0EBE0]"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+            <circle cx="12" cy="12" r="7" />
+            <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+            <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+          </svg>
+        </button>
+      )}
       {c.system && (
         <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wide text-ivory-500" title="System object">
           sys
@@ -171,6 +196,21 @@ export function DiscoverPicker({
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-3 space-y-3">
+          {candidates.length === 0 ? (
+            <div className="flex flex-col items-center px-6 py-8 text-center">
+              <svg width="120" height="64" viewBox="0 0 120 64" fill="none" aria-hidden="true">
+                <rect x="4" y="14" width="34" height="36" rx="6" fill="#F5F1E8" stroke="#C9A86A" strokeWidth="1.5" />
+                <rect x="82" y="14" width="34" height="36" rx="6" fill="#F5F1E8" stroke="#C9A86A" strokeWidth="1.5" />
+                <path d="M42 32h36" stroke="#A39B8E" strokeWidth="1.5" strokeDasharray="4 4" />
+                <circle cx="60" cy="32" r="7" fill="#fff" stroke="#A39B8E" strokeWidth="1.5" />
+                <path d="M56.5 32h7" stroke="#722F37" strokeWidth="1.5" />
+              </svg>
+              <p className="mt-3 max-w-xs text-xs leading-relaxed text-ivory-700">
+                {emptyMessage ?? "Nothing linked here yet."}
+              </p>
+            </div>
+          ) : (
+            <>
           {parents.length > 0 && (
             <div>
               <p className="mb-1 text-[10px] font-semibold uppercase tracking-[1.6px] text-ivory-600">
@@ -194,18 +234,26 @@ export function DiscoverPicker({
           {visible.length === 0 && (
             <p className="py-6 text-center text-xs text-ivory-600">No candidates match.</p>
           )}
+            </>
+          )}
         </div>
 
         <div className="px-6 py-3.5 border-t border-[var(--color-line-soft)] bg-[var(--color-canvas)] flex items-center gap-2 shrink-0">
           <p className="flex-1 text-[11px] text-ivory-600">
-            {picked.length} selected · solid = master-detail, dotted = lookup
+            {candidates.length === 0
+              ? "Nothing to add"
+              : addable.length === 0
+                ? "Everything is already on canvas - ⌖ hops the viewport"
+                : `${picked.length} selected · solid = master-detail, dotted = lookup`}
           </p>
           <Button variant="ghost" onClick={onClose}>
-            Cancel
+            {candidates.length === 0 ? "Close" : "Cancel"}
           </Button>
-          <Button onClick={() => onApply(picked)} disabled={picked.length === 0}>
-            Add{picked.length > 0 ? ` ${picked.length}` : ""}
-          </Button>
+          {candidates.length > 0 && (
+            <Button onClick={() => onApply(picked)} disabled={picked.length === 0}>
+              Add{picked.length > 0 ? ` ${picked.length}` : ""}
+            </Button>
+          )}
         </div>
       </div>
     </div>

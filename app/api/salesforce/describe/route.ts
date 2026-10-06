@@ -82,6 +82,7 @@ export async function POST(req: NextRequest) {
       label: string;
       labelPlural: string;
       custom: boolean;
+      customSetting?: unknown;
       createable: boolean;
       updateable: boolean;
       fields: SalesforceField[];
@@ -101,6 +102,7 @@ export async function POST(req: NextRequest) {
       label: data.label,
       labelPlural: data.labelPlural,
       custom: data.custom,
+      customSetting: data.customSetting === true,
       createable: data.createable,
       updateable: data.updateable,
       fields: data.fields,
