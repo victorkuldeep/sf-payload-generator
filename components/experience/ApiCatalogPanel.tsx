@@ -6,6 +6,7 @@ import { logChange } from "@/lib/experience/migrate";
 import { checkDependencies, type CrossScope } from "@/lib/experience/bridge";
 import { DependencyPanel } from "./DependencyPanel";
 import { findDuplicateOperations, normalizeOperationKey, operationUsage, orphanOperations } from "@/lib/experience/apiCatalog";
+import { downloadApiInventory } from "@/lib/experience/apiInventory";
 import type { StudioProject } from "@/lib/studio/types";
 import type { ApiCatalog, ApiLayer, ApiLifecycle, APIOperation, HttpMethod } from "@/lib/experience/types";
 
@@ -39,6 +40,7 @@ export function ApiCatalogPanel({
   const [layer, setLayer] = useState("all");
   const [scope, setScope] = useState<"all" | "used" | "orphan">("all");
   const [showAdd, setShowAdd] = useState(false);
+  const [invBusy, setInvBusy] = useState(false);
   const [editing, setEditing] = useState<APIOperation | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
 
@@ -72,6 +74,24 @@ export function ApiCatalogPanel({
           API Catalog · {catalog.operations.length}
         </p>
         <span className="ml-auto" />
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={invBusy || filtered.length === 0}
+          onClick={() => {
+            setInvBusy(true);
+            const ids = new Set(filtered.map((o) => o.id));
+            const safe = project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
+            void downloadApiInventory(
+              project.name,
+              { operations: filtered, dependencies: catalog.dependencies.filter((d) => ids.has(d.operationId)) },
+              `${safe}-api-inventory.xlsx`,
+            ).finally(() => setInvBusy(false));
+          }}
+          title="Download the visible operations as .xlsx (respects filters)"
+        >
+          {invBusy ? "Building…" : "Inventory (.xlsx)"}
+        </Button>
         <Button size="sm" onClick={() => setShowAdd(true)}>
           Add operation
         </Button>

@@ -1,11 +1,12 @@
 /**
  * Experience Mapping - architecture deliverables.
- * Word pack (docx), Excel workbook (xlsx), CSV exports and TSV clipboard.
+ * Word pack (docx), Excel workbook (exceljs), CSV exports and TSV clipboard.
  * Every artifact carries stable IDs and labels proposed vs confirmed.
  */
 
 import { AlignmentType, Document, HeadingLevel, ImageRun, Packer, Paragraph, Table, TableCell, TableRow, TextRun } from "docx";
-import * as XLSX from "xlsx";
+import type ExcelJS from "exceljs";
+import { buildExcelWorkbook, downloadExcelWorkbook, type ExcelSheetDef } from "@/lib/excel/workbook";
 import { analyzeCoverage } from "./coverage";
 import type { WorkspaceScope } from "../studio/types";
 
@@ -238,22 +239,14 @@ export async function buildWordPack(
 
 // ---------- Excel ----------
 
-function styleSheet(ws: XLSX.WorkSheet): void {
-  ws["!cols"] = undefined;
-  ws["!freeze"] = { xSplit: 0, ySplit: 1 };
-  if (ws["!ref"]) ws["!autofilter"] = { ref: ws["!ref"] };
-}
-
-export function buildExperienceWorkbook(scope: DocScope, cross?: DocCross): XLSX.WorkBook {
-  const wb = XLSX.utils.book_new();
+export function buildExperienceWorkbook(scope: DocScope, cross?: DocCross): ExcelJS.Workbook {
+  const sheets: ExcelSheetDef[] = [];
   const exp = scope.experience;
   const ops = new Map((scope.apiCatalog?.operations ?? []).map((o) => [o.id, o]));
   const { counts } = analyzeCoverage(scope);
 
   const add = (name: string, rows: unknown[][]) => {
-    const ws = XLSX.utils.aoa_to_sheet(rows.length > 0 ? rows : [["(empty)"]]);
-    styleSheet(ws);
-    XLSX.utils.book_append_sheet(wb, ws, name);
+    sheets.push({ name, rows: rows.length > 0 ? rows : [["(empty)"]] });
   };
 
   add("Summary", [
@@ -329,12 +322,12 @@ export function buildExperienceWorkbook(scope: DocScope, cross?: DocCross): XLSX
     ["Timestamp", "Entity", "Change", "Summary", "Origin"],
     ...(scope.changeLog ?? []).map((c) => [c.timestamp, `${c.entityType}:${c.entityId}`, c.changeType, c.summary, c.origin]),
   ]);
-  return wb;
+  return buildExcelWorkbook(sheets);
 }
 
-export function downloadExperienceWorkbook(scope: DocScope, cross?: DocCross): void {
+export async function downloadExperienceWorkbook(scope: DocScope, cross?: DocCross): Promise<void> {
   const safe = scope.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
-  XLSX.writeFile(buildExperienceWorkbook(scope, cross), `${safe}-experience.xlsx`);
+  await downloadExcelWorkbook(buildExperienceWorkbook(scope, cross), `${safe}-experience.xlsx`);
 }
 
 // ---------- CSV / TSV ----------

@@ -16,6 +16,7 @@ import {
 } from "@/lib/sequence/model";
 import { deleteSequence, listSequences, saveSequence } from "@/lib/sequence/store";
 import { importSequenceFile } from "@/lib/sequence/packageIo";
+import { downloadSequenceMatrix } from "@/lib/sequence/matrix";
 import { findDeepRecord, useDeepParam } from "@/lib/deep/deep";
 
 const STATUS_STYLE: Record<SeqStatus, string> = {
@@ -37,6 +38,7 @@ const STATUS_LABEL: Record<SeqStatus, string> = {
  */
 export function SequenceRoute() {
   const [items, setItems] = useState<SequenceDocument[]>([]);
+  const [matrixBusy, setMatrixBusy] = useState(false);
   const [name, setName] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -223,6 +225,19 @@ export function SequenceRoute() {
             )}
             <Button size="sm" variant="secondary" onClick={() => setHistoryOpen(true)} title="Snapshots and export">
               History
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={matrixBusy}
+              onClick={() => {
+                setMatrixBusy(true);
+                const safe = active.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "sequence";
+                void downloadSequenceMatrix(active, `${safe}-interaction-matrix.xlsx`).finally(() => setMatrixBusy(false));
+              }}
+              title="Download the interaction matrix as .xlsx"
+            >
+              {matrixBusy ? "Building…" : "Matrix (.xlsx)"}
             </Button>
             <a
               href="/console"

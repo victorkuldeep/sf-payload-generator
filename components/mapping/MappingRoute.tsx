@@ -7,6 +7,7 @@ import { SourceExplorer } from "./SourceExplorer";
 import { SfExplorer } from "./SfExplorer";
 import { FieldInspector } from "./FieldInspector";
 import { MappingTable } from "./MappingTable";
+import { MappingGrid } from "./MappingGrid";
 import { RecordPlans } from "./RecordPlans";
 import { ExportDialog, ImportDialog } from "./ProjectExchange";
 import { DriftReview } from "./DriftReview";
@@ -19,7 +20,9 @@ import { SnapshotsPanel } from "@/components/experience/SnapshotsPanel";
 import { WorkspaceDeliverables } from "@/components/experience/WorkspaceDeliverables";
 import { useMappingMetadata } from "./useMappingMetadata";
 import { buildSnapshot } from "@/lib/mapping/snapshot";
+import { mergePasteRows, type PasteRow } from "@/lib/mapping/grid";
 import { deleteProject, duplicateProject, listProjects, loadProject, saveProject, type ProjectSummary } from "@/lib/mapping/store";
+import { FREE_SOURCE_PATH } from "@/lib/mapping/types";
 import type { MappingProject, MappingRow, RecordPlan, RelationshipDef, SnapshotField, SnapshotObject } from "@/lib/mapping/types";
 import { attachMapping, detachMapping, upgradeToWorkspace } from "@/lib/studio/upgrade";
 import { blankStudio, type StudioProject } from "@/lib/studio/types";
@@ -229,6 +232,42 @@ export function MappingRoute() {
   };
 
   // ---- child mapping actions (integration workspace) ----
+  const [mapMode, setMapMode] = useState<"guide" | "grid">("guide");
+
+  // Grid surface: typed Object.Field targets upsert by source path.
+  const upsertRow = (sourcePath: string, target: { objectName: string; fieldName: string }) => {
+    const now = new Date().toISOString();
+    mutateChild((p) => {
+      const existing = p.mappings.find((m) => m.sourcePath === sourcePath);
+      if (existing) {
+        return {
+          ...p,
+          mappings: p.mappings.map((m) =>
+            m.id === existing.id ? { ...m, ...target, kind: m.kind === "excluded" ? ("direct" as const) : m.kind, updatedAt: now } : m
+          ),
+        };
+      }
+      return {
+        ...p,
+        mappings: [...p.mappings, { id: uid("row"), sourcePath, planId: activePlanId, ...target, kind: "direct" as const, status: "mapped" as const, updatedAt: now }],
+      };
+    });
+  };
+
+  // Grid surface: pasted Excel rows merge last-wins by source.
+  const importPaste = (rows: PasteRow[]) => {
+    const now = new Date().toISOString();
+    mutateChild((p) => ({ ...p, mappings: mergePasteRows(p.mappings, rows, activePlanId, () => uid("row"), now) }));
+  };
+
+  // Grid surface: free constant rows carry no source node.
+  const addFreeRow = () => {
+    mutateChild((p) => ({
+      ...p,
+      mappings: [...p.mappings, { id: uid("row"), sourcePath: FREE_SOURCE_PATH, planId: activePlanId, objectName: "", fieldName: "", kind: "hardcoded" as const, status: "hardcoded" as const, updatedAt: new Date().toISOString() }],
+    }));
+  };
+
   const confirmMap = (sourcePath: string) => {
     if (!picked) return;
     const now = new Date().toISOString();
@@ -592,16 +631,48 @@ export function MappingRoute() {
                 }
               />
             </div>
-            <MappingTable
-              project={child}
-              selectedSource={selectedSource}
-              onSelectSource={setSelectedSource}
-              pendingTarget={picked}
-              planMismatch={planMismatch}
-              onConfirmMap={confirmMap}
-              onUpdateRow={(id, patch) => mutateChild((p) => ({ ...p, mappings: p.mappings.map((m) => (m.id === id ? { ...m, ...patch, updatedAt: new Date().toISOString() } : m)) }))}
-              onRemoveRow={(id) => mutateChild((p) => ({ ...p, mappings: p.mappings.filter((m) => m.id !== id) }))}
-            />
+            <div className="mb-2 flex items-center gap-2">
+              <div className="flex rounded-lg border border-[#E8E2D8] bg-white p-0.5" role="tablist" aria-label="Mapping surface">
+                {(["guide", "grid"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    role="tab"
+                    aria-selected={mapMode === m}
+                    onClick={() => setMapMode(m)}
+                    className={`rounded-md px-3 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
+                      mapMode === m ? "bg-[#211F1B] text-white" : "text-[#777168] hover:text-[#27241F]"
+                    }`}
+                  >
+                    {m === "guide" ? "Guide" : "Grid"}
+                  </button>
+                ))}
+              </div>
+              <p className="font-mono text-[10px] text-[#A39B8E]">
+                {mapMode === "grid" ? "Spreadsheet editing - same rows, click any cell to type." : "Guided mapping - pick a source, then a target field."}
+              </p>
+            </div>
+            {mapMode === "guide" ? (
+              <MappingTable
+                project={child}
+                selectedSource={selectedSource}
+                onSelectSource={setSelectedSource}
+                pendingTarget={picked}
+                planMismatch={planMismatch}
+                onConfirmMap={confirmMap}
+                onUpdateRow={(id, patch) => mutateChild((p) => ({ ...p, mappings: p.mappings.map((m) => (m.id === id ? { ...m, ...patch, updatedAt: new Date().toISOString() } : m)) }))}
+                onRemoveRow={(id) => mutateChild((p) => ({ ...p, mappings: p.mappings.filter((m) => m.id !== id) }))}
+              />
+            ) : (
+              <MappingGrid
+                project={child}
+                onUpdateRow={(id, patch) => mutateChild((p) => ({ ...p, mappings: p.mappings.map((m) => (m.id === id ? { ...m, ...patch, updatedAt: new Date().toISOString() } : m)) }))}
+                onRemoveRow={(id) => mutateChild((p) => ({ ...p, mappings: p.mappings.filter((m) => m.id !== id) }))}
+                onUpsertRow={upsertRow}
+                onImportPaste={importPaste}
+                onAddFreeRow={addFreeRow}
+              />
+            )}
           </div>
 
           <div className="space-y-3 lg:col-span-2 xl:col-span-1">

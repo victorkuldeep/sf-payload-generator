@@ -6,6 +6,7 @@
  */
 
 import { checkLength, checkNumeric, checkType } from "./compatibility";
+import { FREE_SOURCE_PATH } from "./types";
 import type { Diagnostic, MappingRow, MappingProject, SnapshotField, SourcePath } from "./types";
 
 let diagSeq = 0;
@@ -28,6 +29,29 @@ export function analyzeRow(
   if (row.kind === "excluded") return { diagnostics, suggested: "excluded" };
   if (row.kind === "hardcoded" && !row.fieldName)
     return { diagnostics, suggested: "hardcoded" };
+
+  // Free constant rows have no source node by design - the target
+  // check below is the whole story for them, never source-missing.
+  if (row.sourcePath === FREE_SOURCE_PATH) {
+    if (row.fieldName && !fieldOf(project, row.objectName, row.fieldName)) {
+      return {
+        diagnostics: [
+          {
+            id: nid(),
+            severity: "error",
+            category: "target-missing",
+            sourcePath: row.sourcePath,
+            objectName: row.objectName,
+            fieldName: row.fieldName,
+            message: `Target ${row.objectName}.${row.fieldName} is not in the project metadata snapshot.`,
+            action: "Refresh metadata or remap the row.",
+          },
+        ],
+        suggested: "stale-target",
+      };
+    }
+    return { diagnostics, suggested: row.kind === "hardcoded" ? "hardcoded" : "mapped" };
+  }
 
   const field = fieldOf(project, row.objectName, row.fieldName);
   if (!field) {

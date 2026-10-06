@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CopyButton } from "@/components/ui/CopyButton";
 import type { SalesforceRecordTypeInfo } from "@/lib/salesforce/types";
 
@@ -21,11 +21,15 @@ export interface RecordTypePopoverData {
 export function RecordTypePopover({
   pop,
   onClose,
+  onExportMatrix,
 }: {
   pop: RecordTypePopoverData;
   onClose: () => void;
+  /** Picklist x record-type matrix download (parent fetches availability). */
+  onExportMatrix?: (apiName: string) => Promise<void>;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const [matrixBusy, setMatrixBusy] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -108,9 +112,23 @@ export function RecordTypePopover({
           <li className="px-3 py-4 text-center text-xs text-ivory-600">No record types on this object.</li>
         )}
       </ul>
-      <p className="border-t border-[var(--color-line-soft)] px-3 py-1.5 text-[10px] text-ivory-500">
-        Esc or click elsewhere to close
-      </p>
+      <div className="flex items-center gap-2 border-t border-[var(--color-line-soft)] px-3 py-1.5">
+        <p className="flex-1 text-[10px] text-ivory-500">Esc or click elsewhere to close</p>
+        {onExportMatrix && pop.recordTypes.length > 0 && (
+          <button
+            type="button"
+            disabled={matrixBusy}
+            onClick={() => {
+              setMatrixBusy(true);
+              void onExportMatrix(pop.apiName).finally(() => setMatrixBusy(false));
+            }}
+            title="Download every picklist value by record type as .xlsx"
+            className="shrink-0 cursor-pointer rounded-md border border-bronze-300 bg-bronze-100 px-2 py-1 text-[10px] font-bold text-bronze-700 transition-colors hover:bg-bronze-200 disabled:opacity-50"
+          >
+            {matrixBusy ? "Building…" : "Matrix (.xlsx)"}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

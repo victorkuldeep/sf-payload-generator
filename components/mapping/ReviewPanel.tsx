@@ -204,7 +204,7 @@ export function ReviewPanel({
               size="sm"
               onClick={() => {
                 if (authorName.trim() !== (project.authorName ?? "")) onMutate((p) => ({ ...p, authorName: authorName.trim() || undefined }));
-                downloadWorkbook(project, findings);
+                void downloadWorkbook(project, findings);
               }}
             >
               Export Excel (.xlsx)

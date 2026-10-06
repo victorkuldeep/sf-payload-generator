@@ -5,7 +5,7 @@ import Button from "../ui/Button";
 import { analyzeRow } from "@/lib/mapping/diagnostics";
 import type { EnumValueMap, MappingProject, MappingRow, MappingStatus, SnapshotField } from "@/lib/mapping/types";
 
-const STATUS_STYLES: Record<MappingStatus, string> = {
+export const STATUS_STYLES: Record<MappingStatus, string> = {
   unmapped: "bg-[#F5F1E8] text-[#777168] border-[#E8E2D8]",
   mapped: "bg-[#E9F3EC] text-[#2F7D4F] border-[#BFD9C6]",
   hardcoded: "bg-[#F5EEDF] text-[#8A6A2F] border-[#DCC99A]",

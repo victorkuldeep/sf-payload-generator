@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Button from "../ui/Button";
 import { analyzeProject, sequencesForProject, type RiskFinding } from "@/lib/risks/rules";
 import { findingKey, proveFindings, type ProofState } from "@/lib/risks/proof";
+import { downloadRiskRegister } from "@/lib/risks/register";
 import { proposeScenario, type ScenarioDraft } from "@/lib/risks/scenarios";
 import type { SystemProject } from "@/lib/system-design/model";
 import { listSystemRuns, type SystemRunRecord } from "@/lib/system-design/runStore";
@@ -57,6 +58,7 @@ export function RisksDialog({
   const [proposed, setProposed] = useState<Record<string, string>>({});
   const [proved, setProved] = useState<Record<string, string>>({});
   const [tracked, setTracked] = useState<Record<string, string>>({});
+  const [regBusy, setRegBusy] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -150,6 +152,23 @@ export function RisksDialog({
           Deterministic rules over the model - every finding cites its records. Unstated policy reads as
           unchecked, never as safe.
         </p>
+        <div className="mt-2 flex justify-end">
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={regBusy || findings.length === 0}
+            onClick={() => {
+              setRegBusy(true);
+              const states = new Map<string, ProofState>();
+              for (const [k, p] of proofs) states.set(k, p.state);
+              const safe = project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
+              void downloadRiskRegister(project.name, findings, states, `${safe}-risk-register.xlsx`).finally(() => setRegBusy(false));
+            }}
+            title="Download the risk register as .xlsx"
+          >
+            {regBusy ? "Building…" : "Register (.xlsx)"}
+          </Button>
+        </div>
         {findings.length === 0 ? (
           <p className="mt-3 rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-canvas)] px-3 py-4 text-center text-[12px] text-ivory-600">
             No risks stated against this design. Add timeouts, retries and versions - or enjoy the clean sheet.

@@ -66,6 +66,8 @@ interface ErdCanvasProps {
   onConnectNodes?: (sourceApi: string, targetApi: string) => void;
   /** Reports the built-in OOB lock state upward (for mutual exclusion). */
   onOobLockChange?: (locked: boolean) => void;
+  /** Field dictionary export (ERD view) - parent owns describes + download. */
+  onExportDictionary?: () => void | Promise<void>;
 }
 
 interface Stroke {
@@ -89,7 +91,7 @@ function pngFileName(scale: 2 | 3): string {
 }
 
 const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
-  { nodes: propNodes, edges: propEdges, onNodeClick, onEdgeClick, onPaneClick, onViewportMove, onNodeDragStop, layoutRev, enforcedPositions, storedViewport, onViewportChange, nodesLocked = false, onOobLockChange, connectable = false, onConnectNodes },
+  { nodes: propNodes, edges: propEdges, onNodeClick, onEdgeClick, onPaneClick, onViewportMove, onNodeDragStop, layoutRev, enforcedPositions, storedViewport, onViewportChange, nodesLocked = false, onOobLockChange, connectable = false, onConnectNodes, onExportDictionary },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -182,6 +184,7 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
   }, [laser, setViewport, getViewport]);
 
   const [exporting, setExporting] = useState(false);
+  const [dictBusy, setDictBusy] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -507,6 +510,22 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
         >
           3x Hi-Res
         </button>
+        {onExportDictionary && (
+          <button
+            type="button"
+            onClick={() => {
+              setDictBusy(true);
+              void Promise.resolve()
+                .then(() => onExportDictionary())
+                .finally(() => setDictBusy(false));
+            }}
+            disabled={dictBusy || nodes.length === 0}
+            title="Download the field dictionary - one sheet per object plus relationships"
+            className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer disabled:opacity-40"
+          >
+            {dictBusy ? "Building…" : "Dictionary (.xlsx)"}
+          </button>
+        )}
       </div>
     </div>
   );

@@ -8,7 +8,9 @@ import type {
 } from "@/lib/salesforce/types";
 import { buildErdElements, buildGraphElements, rootNeighbors, systemReason, isEffectivelyHidden, isSystemObject, AUDIT_REFERENCE_FIELDS, parentExitHandleId, childEntryHandleId, customParentTargets, customChildTargets, customParentLinks, customChildLinks, standardParentTargets, standardChildTargets, standardParentLinks, standardChildLinks, type ErdNodeData, type ErdFieldRow, type ErdEdgeData, type GraphNeighbor } from "@/lib/erd/graph";
 import { rankObjects } from "@/lib/search/rank";
-import { buildFieldCopyTable } from "@/lib/salesforce/picklistValues";
+import { buildFieldCopyTable, isMasterRecordType, parseAvailability, recordTypeListQuery, toolingQueryPath, uiApiAvailabilityPath, type RecordTypeSummary } from "@/lib/salesforce/picklistValues";
+import { downloadFieldDictionary } from "@/lib/salesforce/fieldDictionary";
+import { downloadPicklistMatrix, type MatrixField, type MatrixRt } from "@/lib/salesforce/picklistMatrix";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import { apiFetch } from "@/lib/api";
 import { ErdCanvas, type ErdCanvasHandle } from "./erd/ErdCanvas";
@@ -2310,6 +2312,98 @@ export default function SchemaPanel({
     setNotice(`${d.fields.length} ${d.label} fields copied as a Label | API Name table - paste into Teams.`);
     return true;
   }, [describes]);
+
+  // ERD toolbar: the whole canvas as a client-ready field dictionary -
+  // one sheet per object plus every relationship on a single sheet.
+  const exportDictionary = useCallback(async () => {
+    if (describes.size === 0) {
+      setNotice("Nothing on canvas to export yet.");
+      return;
+    }
+    try {
+      const org = (orgDomain ?? "").replace(/^https?:\/\//, "").split(".")[0] || "org";
+      await downloadFieldDictionary(describes.values(), `${org}-field-dictionary.xlsx`, { org: orgDomain ?? undefined });
+      setNotice(`Field dictionary downloaded - ${describes.size} objects.`);
+    } catch {
+      setNotice("Dictionary export failed - try again.");
+    }
+  }, [describes, orgDomain]);
+
+  // Record-type popover: picklist x record-type availability matrix.
+  // Tooling lists the record types, UI API resolves per-RT values per
+  // field; unreachable record types are skipped and named, never blank.
+  const exportPicklistMatrix = useCallback(async (api: string) => {
+    const d = describes.get(api);
+    if (!d) return;
+    const fields = d.fields.filter(
+      (f) => (f.type === "picklist" || f.type === "multipicklist") && f.picklistValues.length > 0,
+    );
+    if (fields.length === 0) {
+      setNotice(`${api} has no picklist fields.`);
+      return;
+    }
+    const token = getToken();
+    if (!token) {
+      setNotice("Session token unavailable. Please reconnect.");
+      return;
+    }
+    const get = async <T,>(path: string): Promise<T> => {
+      const response = await apiFetch("/api/salesforce/rest", {
+        instanceUrl, token, scope: "org", method: "GET", path, auth: { type: "bearer", token },
+      });
+      const data = (await response.json()) as { success?: boolean; status?: number; body?: unknown; error?: string };
+      if (!response.ok || data.success === false) {
+        throw new Error(typeof data.error === "string" && data.error ? data.error : `Request failed (${data.status ?? response.status}).`);
+      }
+      return data.body as T;
+    };
+    try {
+      const rtRows = await get<{ records?: RecordTypeSummary[] }>(toolingQueryPath(apiVersion, recordTypeListQuery(api)));
+      const summaries = (rtRows.records ?? []).filter((r) => r && typeof r.id === "string" && r.id);
+      if (summaries.length === 0) {
+        setNotice(`${api} has no record types.`);
+        return;
+      }
+      const rts: MatrixRt[] = [];
+      const skipped: string[] = [];
+      await Promise.all(
+        summaries.map(async (rt) => {
+          if (isMasterRecordType(rt.id)) {
+            rts.push({ id: rt.id, name: rt.name, developerName: rt.developerName, master: true, available: new Map() });
+            return;
+          }
+          try {
+            const payload = await get<unknown>(uiApiAvailabilityPath(apiVersion, api, rt.id));
+            rts.push({
+              id: rt.id, name: rt.name, developerName: rt.developerName, master: false,
+              available: new Map(fields.map((f) => [f.name.toLowerCase(), parseAvailability(payload, f.name)])),
+            });
+          } catch {
+            skipped.push(rt.name);
+          }
+        }),
+      );
+      // Master first, then alphabetical - stable column order.
+      rts.sort((a, b) => Number(b.master) - Number(a.master) || a.name.localeCompare(b.name));
+      if (rts.length === 0) {
+        setNotice("Record type availability is unreachable right now.");
+        return;
+      }
+      const matrixFields: MatrixField[] = fields.map((f) => ({
+        label: f.label,
+        apiName: f.name,
+        values: f.picklistValues.filter((p) => p.active).map((p) => ({ label: p.label, value: p.value })),
+      }));
+      await downloadPicklistMatrix(d.label || api, matrixFields, rts, `${api.toLowerCase()}-picklist-matrix.xlsx`);
+      setNotice(
+        skipped.length > 0
+          ? `Matrix downloaded - skipped ${skipped.length} unreachable record type${skipped.length === 1 ? "" : "s"} (${skipped.join(", ")}).`
+          : `Picklist matrix downloaded for ${api}.`,
+      );
+    } catch {
+      setNotice("Matrix export failed - try again.");
+    }
+  }, [describes, getToken, instanceUrl, apiVersion]);
 
   const baseElements: { nodes: Node<ErdNodeData>[]; edges: Edge[] } = useMemo(() => {    if (visibleDescribes.size === 0 || !rootName) return { nodes: [], edges: [] };
     const built = buildErdElements(visibleDescribes, labels, rootName, spot, enforced);
@@ -5546,6 +5640,7 @@ export default function SchemaPanel({
               }}
               nodesLocked={nodesLocked}
               onOobLockChange={setOobLocked}
+              onExportDictionary={exportDictionary}
               ref={canvasRef}
             />
           ) : (
@@ -5962,7 +6057,7 @@ export default function SchemaPanel({
       />
 
       {/* Picklist inspector */}
-      {rtPopover && <RecordTypePopover pop={rtPopover} onClose={() => setRtPopover(null)} />}
+      {rtPopover && <RecordTypePopover pop={rtPopover} onClose={() => setRtPopover(null)} onExportMatrix={exportPicklistMatrix} />}
       {popover && (
         <PicklistPopover
           pop={popover}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import { blankProject } from "../mapping/types";
 import { apiCatalogCsv, buildExperienceWorkbook, buildWordPack, screenApiMatrixCsv, screenApiMatrixTsv } from "./deliverables";
 import { blankApiCatalog, blankExperienceModule } from "./types";
@@ -26,15 +26,20 @@ describe("deliverables", () => {
     expect(blob.type).toContain("wordprocessingml");
   });
 
-  it("builds the 13-sheet workbook", () => {
-    const wb = buildExperienceWorkbook(project());
-    expect(wb.SheetNames).toEqual([
+  it("builds the 13-sheet workbook", async () => {
+    const names = [
       "Summary", "Screens", "Journeys", "Components", "API Bindings", "API Catalog",
       "Data Requirements", "Backend Dependencies", "Integration References",
       "Decisions", "Assumptions", "Coverage Findings", "Change Log",
-    ]);
-    const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
-    expect((buf as ArrayBuffer).byteLength).toBeGreaterThan(1000);
+    ];
+    const wb = buildExperienceWorkbook(project());
+    expect(wb.worksheets.map((w) => w.name)).toEqual(names);
+    const buf = await wb.xlsx.writeBuffer();
+    expect(buf.byteLength).toBeGreaterThan(1000);
+    // Round-trip: the bytes parse back into the same 13 sheets.
+    const round = new ExcelJS.Workbook();
+    await round.xlsx.load(buf);
+    expect(round.worksheets.map((w) => w.name)).toEqual(names);
   });
 
   it("escapes CSV commas and quotes", () => {

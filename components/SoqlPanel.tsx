@@ -9,6 +9,7 @@ import { rankObjects } from "@/lib/search/rank";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import { apiFetch, ApiTimeoutError } from "@/lib/api";
 import { downloadTextFile } from "@/lib/collection/postman";
+import { downloadQueryResult } from "@/lib/soql/export";
 import { newItemId } from "@/lib/collection/types";
 import {
   listSoqlQueries,
@@ -150,6 +151,7 @@ export default function SoqlPanel({
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
   const [result, setResult] = useState<SoqlRow | null>(null);
+  const [xlsxBusy, setXlsxBusy] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const stoppedRef = useRef(false);
 
@@ -584,6 +586,30 @@ export default function SoqlPanel({
     [exportText]
   );
 
+  const downloadXlsx = useCallback(async () => {
+    if (!result) return;
+    setXlsxBusy(true);
+    try {
+      const d = new Date();
+      const pad = (n: number) => String(n).padStart(2, "0");
+      await downloadQueryResult(
+        {
+          columns: result.columns,
+          rows: result.rows,
+          totalSize: result.totalSize,
+          truncated: result.truncated,
+          timeMs: result.timeMs,
+          query: soql,
+          mode,
+        },
+        `soql-export-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.xlsx`
+      );
+      setNotice(`Downloaded Excel (${result.rows.length} rows).`);
+    } finally {
+      setXlsxBusy(false);
+    }
+  }, [result, soql, mode]);
+
   const [notice, setNotice] = useState<string | null>(null);
 
   const historyItems = useMemo(
@@ -881,6 +907,9 @@ export default function SoqlPanel({
           </Button>
           <Button variant="secondary" size="sm" onClick={() => downloadExport("csv")} disabled={!result}>
             Download
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => void downloadXlsx()} disabled={!result || xlsxBusy} title="Download the full result grid as .xlsx">
+            {xlsxBusy ? "Building…" : "Excel (.xlsx)"}
           </Button>
         </div>
 

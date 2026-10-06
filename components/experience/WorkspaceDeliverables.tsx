@@ -12,6 +12,7 @@ import {
   screenApiMatrixTsv,
   type DocCross,
 } from "@/lib/experience/deliverables";
+import { downloadSignoff } from "@/lib/experience/signoff";
 import {
   downloadBlob,
   exportWorkspaceZip,
@@ -143,8 +144,27 @@ export function WorkspaceDeliverables({
             >
               {docBusy ? "Building…" : "Word pack (.docx)"}
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => downloadExperienceWorkbook(root, cross)}>
+            <Button size="sm" variant="ghost" onClick={() => void downloadExperienceWorkbook(root, cross)}>
               Excel workbook (.xlsx)
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={docBusy || (root.experience?.screens.length ?? 0) === 0}
+              onClick={() =>
+                void (async () => {
+                  if (!root.experience) return;
+                  setDocBusy(true);
+                  try {
+                    await downloadSignoff(root.name, root.experience, `${safe}-screen-signoff.xlsx`);
+                  } finally {
+                    setDocBusy(false);
+                  }
+                })()
+              }
+              title="Screen inventory with blank approval columns for countersignature"
+            >
+              Sign-off (.xlsx)
             </Button>
             <Button size="sm" variant="ghost" onClick={() => downloadText(apiCatalogCsv(root), `${safe}-api-catalog.csv`, "text/csv")}>
               API CSV

@@ -23,7 +23,8 @@ import {
   listRequirements,
   saveRequirement,
 } from "@/lib/requirements/store";
-import { coverageSummary, type RequirementCoverage } from "@/lib/requirements/coverage";
+import { coverageOf, coverageSummary, type RequirementCoverage } from "@/lib/requirements/coverage";
+import { downloadTraceabilityMatrix } from "@/lib/requirements/traceMatrix";
 import { loadGraphIndex } from "@/lib/graph/load";
 import { listSystemProjects } from "@/lib/system-design/store";
 import { listExperiences } from "@/lib/wireframe/store";
@@ -70,6 +71,7 @@ export function RequirementsRoute() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [coverage, setCoverage] = useState<{ covered: number; total: number; uncovered: RequirementCoverage[] } | null>(null);
   const [coverageLoading, setCoverageLoading] = useState(false);
+  const [matrixBusy, setMatrixBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -172,6 +174,20 @@ export function RequirementsRoute() {
       setCoverage({ covered: 0, total: items.length, uncovered: [] });
     } finally {
       setCoverageLoading(false);
+    }
+  };
+
+  const exportMatrix = async () => {
+    if (items.length === 0) return;
+    setMatrixBusy(true);
+    try {
+      const index = await loadGraphIndex();
+      const coverage = new Map(items.map((r) => [r.id, coverageOf(index, r)]));
+      await downloadTraceabilityMatrix(items, coverage, "requirements-traceability.xlsx");
+    } catch {
+      // Download failures surface as a stuck button otherwise; reset quietly.
+    } finally {
+      setMatrixBusy(false);
     }
   };
 
@@ -287,6 +303,9 @@ export function RequirementsRoute() {
             )}
             <Button size="sm" variant="secondary" onClick={() => void checkCoverage()} disabled={coverageLoading} title="Build the architecture graph and compute live coverage" className="ml-auto">
               {coverageLoading ? "Reading…" : coverage ? "Recheck" : "Check coverage"}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => void exportMatrix()} disabled={matrixBusy || items.length === 0} title="Download the traceability matrix as .xlsx">
+              {matrixBusy ? "Building…" : "Matrix (.xlsx)"}
             </Button>
           </div>
 

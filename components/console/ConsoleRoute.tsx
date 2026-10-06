@@ -15,6 +15,7 @@ import {
 } from "@/lib/console/model";
 import { exportConsoleTasks, importConsoleTasks, deleteConsoleTask, listConsoleTasks, saveConsoleTask } from "@/lib/console/store";
 import { countAttachments, deleteTaskAttachments, listAllAttachments, saveAttachment } from "@/lib/console/attachments";
+import { downloadTaskList } from "@/lib/console/taskExport";
 import { findDeepRecord, useDeepParam } from "@/lib/deep/deep";
 import {
   consoleToCanvas,
@@ -62,6 +63,7 @@ function DueBadge({ task }: { task: ConsoleTask }) {
 
 export function ConsoleRoute() {
   const [tasks, setTasks] = useState<ConsoleTask[]>([]);
+  const [xlsBusy, setXlsBusy] = useState(false);
   const [views, setViews] = useState<CanvasLinkView[]>([]);
   const [attachCounts, setAttachCounts] = useState<Record<string, number>>({});
   const [loaded, setLoaded] = useState(false);
@@ -278,6 +280,18 @@ export function ConsoleRoute() {
               className="cursor-pointer rounded-lg border border-[#E8E2D8] px-2.5 py-1.5 text-xs font-semibold text-[#27241F] transition-colors hover:border-[#C9A86A]"
             >
               Export
+            </button>
+            <button
+              type="button"
+              disabled={xlsBusy || filtered.length === 0}
+              onClick={() => {
+                setXlsBusy(true);
+                void downloadTaskList(filtered, attachCounts, "console-tasks.xlsx").finally(() => setXlsBusy(false));
+              }}
+              title="Download the visible queue as .xlsx (respects search + status filter)"
+              className="cursor-pointer rounded-lg border border-[#E8E2D8] px-2.5 py-1.5 text-xs font-semibold text-[#27241F] transition-colors hover:border-[#C9A86A] disabled:opacity-50"
+            >
+              {xlsBusy ? "Building…" : "Excel (.xlsx)"}
             </button>
             <button
               type="button"

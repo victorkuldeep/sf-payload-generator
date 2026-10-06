@@ -121,6 +121,13 @@ export interface RelationshipDef {
 
 export type MappingKind = "direct" | "hardcoded" | "excluded" | "enum";
 
+/**
+ * Source path for free constant rows: grid-only rows with no JSON node.
+ * The guide view never renders them (no leaf matches); diagnostics skips
+ * the source check for them; exports show them as-is.
+ */
+export const FREE_SOURCE_PATH = "(constant)";
+
 export type MappingStatus =
   | "unmapped"
   | "mapped"

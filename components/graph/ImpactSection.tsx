@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { loadGraphIndex } from "@/lib/graph/load";
 import { summarizeForNode, summarizeImpact, whereUsedEither, type ImpactSummary } from "@/lib/graph/impact";
+import { downloadImpactAnalysis } from "@/lib/graph/impactExcel";
 import type { GraphSurface, WhereUsedRef } from "@/lib/graph/index";
 
 /**
@@ -17,6 +18,7 @@ export function ImpactSection({ query, caption }: { query: ImpactQuery; caption:
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState<ImpactSummary | null>(null);
+  const [xlsBusy, setXlsBusy] = useState(false);
 
   const toggle = async () => {
     if (open) {
@@ -68,6 +70,23 @@ export function ImpactSection({ query, caption }: { query: ImpactQuery; caption:
       {open && (
         <div className="border-t border-[var(--color-line-soft)] px-2 py-1.5">
           {loading && <p className="text-[11px] text-[var(--color-muted)]">Reading the architecture…</p>}
+          {!loading && summary && (summary.groups.length > 0 || summary.dangling.length > 0) && (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                disabled={xlsBusy}
+                onClick={() => {
+                  setXlsBusy(true);
+                  const safe = caption.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "record";
+                  void downloadImpactAnalysis(summary, `impact-${safe}.xlsx`).finally(() => setXlsBusy(false));
+                }}
+                title="Download this impact analysis as .xlsx"
+                className="cursor-pointer rounded px-1 py-0.5 font-mono text-[10px] text-bronze-700 underline decoration-bronze-300 underline-offset-2 hover:text-bronze-800 disabled:opacity-50"
+              >
+                {xlsBusy ? "Building…" : "Excel (.xlsx)"}
+              </button>
+            </div>
+          )}
           {!loading && summary && summary.groups.length === 0 && summary.dangling.length === 0 && (
             <p className="text-[11px] text-[var(--color-muted)]">No references yet across the studio.</p>
           )}

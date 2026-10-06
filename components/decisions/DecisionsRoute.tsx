@@ -21,6 +21,7 @@ import {
   listDecisions,
   saveDecision,
 } from "@/lib/decisions/store";
+import { downloadGovernancePack } from "@/lib/decisions/adrLog";
 import { RichTextEditor } from "../notes/RichTextEditor";
 import { consoleLinkHref } from "@/lib/console/model";
 import { findDeepRecord, useDeepParam } from "@/lib/deep/deep";
@@ -77,6 +78,7 @@ export function DecisionsRoute() {
   const [importError, setImportError] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "failed">("idle");
+  const [packBusy, setPackBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -268,6 +270,17 @@ export function DecisionsRoute() {
             <Button onClick={() => void create()}>New decision</Button>
             <Button variant="secondary" onClick={() => fileRef.current?.click()} title="Import a decisions package JSON from a fellow dev">
               Import
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={packBusy || items.length === 0}
+              onClick={() => {
+                setPackBusy(true);
+                void downloadGovernancePack(items, "governance-pack.xlsx").finally(() => setPackBusy(false));
+              }}
+              title="Download the ADR log plus NFR and deployment checklists as .xlsx"
+            >
+              {packBusy ? "Building…" : "Pack (.xlsx)"}
             </Button>
             <input
               ref={fileRef}
