@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectJunction, buildEdges, buildErdElements, buildGraphElements, rootNeighbors, bubbleInitials, assignBubbleTags, systemReason, isSystemObject, isNeuralExcluded, customParentTargets, customChildTargets, customParentLinks, customChildLinks, objectKindOf, OBJECT_KIND_LABEL } from "./graph";
+import { detectJunction, buildEdges, buildErdElements, buildGraphElements, rootNeighbors, bubbleInitials, assignBubbleTags, systemReason, isSystemObject, isNeuralExcluded, customParentTargets, customChildTargets, customParentLinks, customChildLinks, standardParentTargets, standardChildTargets, standardParentLinks, standardChildLinks, objectKindOf, OBJECT_KIND_LABEL } from "./graph";
 import type { SalesforceDescribeResult } from "@/lib/salesforce/types";
 
 const desc = (
@@ -131,6 +131,45 @@ describe("custom relationship targets", () => {
     ]);
     expect(customParentTargets(d)).toEqual([]);
     expect(customChildTargets(d)).toEqual([]);
+  });
+});
+
+describe("standard relationship targets", () => {
+  const contact = () =>
+    desc(
+      "Contact",
+      [
+        { name: "AccountId", type: "reference", referenceTo: ["Account"] },
+        { name: "ReportsToId", type: "reference", referenceTo: ["Contact"] },
+        { name: "OwnerId", type: "reference", referenceTo: ["User", "Group"] },
+        { name: "CreatedById", type: "reference", referenceTo: ["User"] },
+        { name: "Segment__c", type: "reference", referenceTo: ["Segment__c"] },
+        { name: "LastName", type: "string" },
+      ],
+      [
+        { childSObject: "Case", field: "ContactId", relationshipName: "Cases", cascadeDelete: false },
+        { childSObject: "Task", field: "WhoId", relationshipName: "Tasks", cascadeDelete: false },
+        { childSObject: "ContactShare", field: "ParentId", relationshipName: "Shares", cascadeDelete: false },
+        { childSObject: "Note__c", field: "Contact__c", relationshipName: "Notes__r", cascadeDelete: false },
+        { childSObject: "Contact", field: "ReportsToId", relationshipName: "ReportsTo", cascadeDelete: false },
+      ]
+    );
+
+  it("pulls standard parents minus audit lookups, self, and custom fields", () => {
+    expect(standardParentTargets(contact())).toEqual(["Account"]);
+  });
+
+  it("pulls standard children minus platform plumbing and custom fields", () => {
+    expect(standardChildTargets(contact())).toEqual(["Case"]);
+  });
+
+  it("carries the driving field and line kind per link", () => {
+    expect(standardParentLinks(contact())).toEqual([
+      { target: "Account", via: "AccountId", kind: "lookup" },
+    ]);
+    expect(standardChildLinks(contact())).toEqual([
+      { target: "Case", via: "ContactId", kind: "lookup" },
+    ]);
   });
 });
 

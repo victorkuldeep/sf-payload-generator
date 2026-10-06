@@ -6,7 +6,7 @@ import type {
   SalesforceObject,
   SalesforceDescribeResult,
 } from "@/lib/salesforce/types";
-import { buildErdElements, buildGraphElements, rootNeighbors, systemReason, isEffectivelyHidden, isSystemObject, AUDIT_REFERENCE_FIELDS, parentExitHandleId, childEntryHandleId, customParentTargets, customChildTargets, customParentLinks, customChildLinks, type ErdNodeData, type ErdFieldRow, type ErdEdgeData, type GraphNeighbor } from "@/lib/erd/graph";
+import { buildErdElements, buildGraphElements, rootNeighbors, systemReason, isEffectivelyHidden, isSystemObject, AUDIT_REFERENCE_FIELDS, parentExitHandleId, childEntryHandleId, customParentTargets, customChildTargets, customParentLinks, customChildLinks, standardParentTargets, standardChildTargets, standardParentLinks, standardChildLinks, type ErdNodeData, type ErdFieldRow, type ErdEdgeData, type GraphNeighbor } from "@/lib/erd/graph";
 import { rankObjects } from "@/lib/search/rank";
 import { buildFieldCopyTable } from "@/lib/salesforce/picklistValues";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
@@ -1114,6 +1114,8 @@ export default function SchemaPanel({
   const [oobLocked, setOobLocked] = useState(false);
   const [picker, setPicker] = useState<{
     mode: "children" | "parents" | "custom-parents" | "custom-children";
+    standardCandidates?: DiscoverCandidate[];
+    standardEmptyMessage?: string;
     /** Entity the discovery fans out from (focus node or a box icon). */
     target: string;
     title: string;
@@ -2246,46 +2248,39 @@ export default function SchemaPanel({
     [describes]
   );
 
-  // Per-entity custom pull (ERD box icons): opens the discovery picker
-  // scoped to THAT entity's custom parents or custom direct children -
-  // standard relationships never qualify. The architect ticks one, some,
-  // or all; links draw automatically where both ends land.
+  // Per-entity pull (ERD box icons): opens the discovery picker scoped to
+  // THAT entity's parents or direct children, tabbed Custom vs Standard.
+  // The architect ticks one, some, or all across both tabs; links draw
+  // automatically where both ends land. Always opens - even empty or
+  // fully-pulled families read as a directory, with on-canvas rows
+  // hopping the viewport on ⌖ click.
   const showCustomPull = useCallback((api: string, dir: "parents" | "children") => {
     if (busy) return;
     const d = describes.get(api);
     if (!d) return;
-    const links = dir === "parents" ? customParentLinks(d) : customChildLinks(d);
-    if (links.length === 0) {
-      // Empty families still open the picker - a graceful zero state
-      // beats a disappearing icon or a drive-by notice.
-      setPicker({
-        mode: dir === "parents" ? "custom-parents" : "custom-children",
-        target: api,
-        title: `Pull custom ${dir} of ${api}`,
-        subtitle: "Custom relationships only",
-        candidates: [],
-        emptyMessage: `No custom ${dir} linked with ${api} - only custom (__c) lookup fields qualify.`,
-      });
-      return;
-    }
-    const candidates: DiscoverCandidate[] = links.map((l) => ({
-      apiName: l.target,
-      label: labels.get(l.target) ?? l.target,
-      custom: isCustomName(l.target),
-      group: dir === "parents" ? "parent" : "child",
-      via: l.via,
-      kind: l.kind,
-      onCanvas: describes.has(l.target),
-      system: isSystemObject(l.target, isCustomName(l.target)),
-    }));
-    // Always opens - even fully-pulled families read as a directory,
-    // with on-canvas rows hopping the viewport on ⌖ click.
+    const toCandidates = (links: { target: string; via: string; kind: "lookup" | "md" }[]): DiscoverCandidate[] =>
+      links.map((l) => ({
+        apiName: l.target,
+        label: labels.get(l.target) ?? l.target,
+        custom: isCustomName(l.target),
+        group: dir === "parents" ? "parent" : "child",
+        via: l.via,
+        kind: l.kind,
+        onCanvas: describes.has(l.target),
+        system: isSystemObject(l.target, isCustomName(l.target)),
+      }));
+    const custom = toCandidates(dir === "parents" ? customParentLinks(d) : customChildLinks(d));
+    const standard = toCandidates(dir === "parents" ? standardParentLinks(d) : standardChildLinks(d));
+    const noun = dir === "parents" ? "lookups" : "children";
     setPicker({
       mode: dir === "parents" ? "custom-parents" : "custom-children",
       target: api,
-      title: `Pull custom ${dir} of ${api}`,
-      subtitle: `${links.length} custom ${dir === "parents" ? "lookups" : "children"} - tick one, some, or all`,
-      candidates,
+      title: `Pull ${dir} of ${api}`,
+      subtitle: `${custom.length} custom · ${standard.length} standard ${noun} - tick one, some, or all`,
+      candidates: custom,
+      standardCandidates: standard,
+      emptyMessage: `No custom ${dir} linked with ${api} - only custom (__c) lookup fields qualify.`,
+      standardEmptyMessage: `No standard ${dir} linked with ${api} - audit lookups and platform plumbing never qualify.`,
     });
   }, [busy, describes, labels, isCustomName]);
 
@@ -2339,6 +2334,8 @@ export default function SchemaPanel({
             onRecordTypesClick: openRecordTypes,
             customParentCount: d ? customParentTargets(d).length : 0,
             customChildCount: d ? customChildTargets(d).length : 0,
+            standardParentCount: d ? standardParentTargets(d).length : 0,
+            standardChildCount: d ? standardChildTargets(d).length : 0,
             onPullCustomParents: (target: string) => showCustomPull(target, "parents"),
             onPullCustomChildren: (target: string) => showCustomPull(target, "children"),
             onCopyFieldTable: copyFieldTable,
@@ -6246,6 +6243,8 @@ export default function SchemaPanel({
           subtitle={picker.subtitle}
           candidates={picker.candidates}
           emptyMessage={picker.emptyMessage}
+          standardCandidates={picker.standardCandidates}
+          standardEmptyMessage={picker.standardEmptyMessage}
           onApply={applyPicker}
           onClose={() => setPicker(null)}
           onFocusNode={(api) => {

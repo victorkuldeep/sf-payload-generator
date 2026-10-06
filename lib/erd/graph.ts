@@ -54,9 +54,11 @@ export interface ErdNodeData extends Record<string, unknown> {
   onNoteClick?: (apiName: string) => void;
   /** Promote this table to canvas root (shared re-root, both views follow). */
   onMakeRoot?: (apiName: string) => void;
-  /** Per-entity custom pulls: custom parents / custom children in one shot. */
+  /** Per-entity pulls: parents / children in one shot, tabbed Custom vs Standard. */
   customParentCount?: number;
   customChildCount?: number;
+  standardParentCount?: number;
+  standardChildCount?: number;
   onPullCustomParents?: (apiName: string) => void;
   onPullCustomChildren?: (apiName: string) => void;
   /** Copy every field as a Label | API Name table (resolves true on success). */
@@ -496,20 +498,22 @@ export function rootNeighbors(
 }
 
 /**
- * One custom relationship of an entity: the target object, the driving
- * custom (__c) field, and the line kind. Standard relationships (Owner,
- * audit lookups, platform children) never qualify - this is the
- * per-entity "pull my custom family" sweep. Self links excluded,
- * first-seen order kept.
+ * One family relationship of an entity: the target object, the driving
+ * field, and the line kind. Custom sweeps admit custom (__c) fields only;
+ * standard sweeps admit real domain-model standard links (audit lookups,
+ * Share/Feed/History and platform plumbing never qualify). Self links
+ * excluded, first-seen order kept.
  */
-export interface CustomLink {
+export interface FamilyLink {
   target: string;
   via: string;
   kind: ErdEdgeKind;
 }
+/** Pre-tabs name for FamilyLink. */
+export type CustomLink = FamilyLink;
 
-export function customParentLinks(d: SalesforceDescribeResult): CustomLink[] {
-  const out: CustomLink[] = [];
+export function customParentLinks(d: SalesforceDescribeResult): FamilyLink[] {
+  const out: FamilyLink[] = [];
   const seen = new Set<string>();
   for (const f of d.fields ?? []) {
     if (f.type !== "reference" || !f.name.endsWith("__c")) continue;
@@ -522,8 +526,8 @@ export function customParentLinks(d: SalesforceDescribeResult): CustomLink[] {
   return out;
 }
 
-export function customChildLinks(d: SalesforceDescribeResult): CustomLink[] {
-  const out: CustomLink[] = [];
+export function customChildLinks(d: SalesforceDescribeResult): FamilyLink[] {
+  const out: FamilyLink[] = [];
   const seen = new Set<string>();
   for (const r of d.childRelationships ?? []) {
     if (!r.relationshipName) continue;
@@ -545,6 +549,69 @@ export function customParentTargets(d: SalesforceDescribeResult): string[] {
 
 export function customChildTargets(d: SalesforceDescribeResult): string[] {
   return customChildLinks(d).map((l) => l.target);
+}
+
+/**
+ * Standard parents: reference fields NOT ending __c, minus audit lookups
+ * (CreatedBy, Owner, RecordType…). Contact → Account survives; Contact →
+ * User via OwnerId does not. Same dedupe/order contract as the custom
+ * sweep. Powers the Standard tab of the per-entity pull picker.
+ */
+export function standardParentLinks(d: SalesforceDescribeResult): FamilyLink[] {
+  const out: FamilyLink[] = [];
+  const seen = new Set<string>();
+  for (const f of d.fields ?? []) {
+    if (f.type !== "reference" || f.name.endsWith("__c")) continue;
+    if (AUDIT_REFERENCE_FIELDS.has(f.name)) continue;
+    for (const t of f.referenceTo ?? []) {
+      if (t === d.name || seen.has(t)) continue;
+      if (SYSTEM_OBJECTS.has(t)) continue;
+      seen.add(t);
+      out.push({ target: t, via: f.name, kind: "lookup" });
+    }
+  }
+  return out;
+}
+
+/**
+ * Standard children: childRelationships driven by a standard (non-__c)
+ * field, minus platform plumbing (Share/Feed/History, Task/Event, notes,
+ * files…) via the same systemReason rule the graph uses. Account →
+ * Contact/Opportunity/Case survive; Account → Task does not.
+ */
+export function standardChildLinks(d: SalesforceDescribeResult): FamilyLink[] {
+  const out: FamilyLink[] = [];
+  const seen = new Set<string>();
+  for (const r of d.childRelationships ?? []) {
+    if (!r.relationshipName) continue;
+    if ((r.field ?? "").endsWith("__c")) continue;
+    if (r.childSObject === d.name || seen.has(r.childSObject)) continue;
+    if (
+      systemReason({
+        apiName: r.childSObject,
+        role: "child",
+        via: r.field,
+        custom: /__c$/i.test(r.childSObject),
+      }) !== null
+    ) {
+      continue;
+    }
+    seen.add(r.childSObject);
+    out.push({
+      target: r.childSObject,
+      via: r.field,
+      kind: r.cascadeDelete === true ? "md" : "lookup",
+    });
+  }
+  return out;
+}
+
+export function standardParentTargets(d: SalesforceDescribeResult): string[] {
+  return standardParentLinks(d).map((l) => l.target);
+}
+
+export function standardChildTargets(d: SalesforceDescribeResult): string[] {
+  return standardChildLinks(d).map((l) => l.target);
 }
 
 // ── System-noise detection (architect-grade Hide-system) ────────────────

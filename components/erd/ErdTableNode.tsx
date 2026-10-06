@@ -335,8 +335,8 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
                 e.stopPropagation();
                 data.onPullCustomParents?.(data.apiName);
               }}
-              title={(data.customParentCount ?? 0) > 0 ? `Choose custom parents of ${data.apiName} to pull - ${data.customParentCount} custom lookup${data.customParentCount === 1 ? "" : "s"}` : `Custom parents of ${data.apiName} - none linked`}
-              aria-label={`Pull custom parents of ${data.apiName}`}
+              title={`Choose parents of ${data.apiName} to pull - ${data.customParentCount ?? 0} custom · ${data.standardParentCount ?? 0} standard`}
+              aria-label={`Pull parents of ${data.apiName}`}
               className={`nodrag shrink-0 rounded p-1 transition-colors cursor-pointer ${data.isRoot ? "text-ivory-300 hover:text-white hover:bg-ivory-800" : "text-ivory-950 hover:text-bronze-600 hover:bg-ivory-200"}`}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
@@ -352,8 +352,8 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
                 e.stopPropagation();
                 data.onPullCustomChildren?.(data.apiName);
               }}
-              title={(data.customChildCount ?? 0) > 0 ? `Choose custom children of ${data.apiName} to pull - ${data.customChildCount} custom direct child${data.customChildCount === 1 ? "" : "ren"}` : `Custom children of ${data.apiName} - none linked`}
-              aria-label={`Pull custom children of ${data.apiName}`}
+              title={`Choose children of ${data.apiName} to pull - ${data.customChildCount ?? 0} custom · ${data.standardChildCount ?? 0} standard`}
+              aria-label={`Pull children of ${data.apiName}`}
               className={`nodrag shrink-0 rounded p-1 transition-colors cursor-pointer ${data.isRoot ? "text-ivory-300 hover:text-white hover:bg-ivory-800" : "text-ivory-950 hover:text-bronze-600 hover:bg-ivory-200"}`}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
@@ -621,7 +621,7 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
           <span className="flex min-w-0 flex-1 items-center gap-1 truncate">
             <span
               title={`${data.apiName} · ${OBJECT_KIND_LABEL[data.objectKind]}`}
-              className={`shrink-0 rounded border px-1 py-px text-[9px] font-semibold ${data.objectKind === "standard" ? "border-ivory-300 bg-white text-ivory-600" : "border-bronze-300 bg-bronze-100 text-bronze-700"}`}
+              className="shrink-0 text-[10px] font-bold text-ivory-700"
             >
               {OBJECT_KIND_LABEL[data.objectKind]}
             </span>
@@ -645,7 +645,7 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
               }}
               title={`${data.recordTypes.length} record types - click to view ids`}
               aria-label={`${data.recordTypes.length} record types on ${data.apiName}`}
-              className="nodrag shrink-0 cursor-pointer rounded border border-bronze-300 bg-bronze-100 px-1.5 py-px text-[9px] font-bold text-bronze-700 transition-colors hover:bg-bronze-200"
+              className="nodrag shrink-0 cursor-pointer bg-transparent p-0 text-[10px] font-semibold text-bronze-700 underline decoration-bronze-300 underline-offset-2 transition-colors hover:text-bronze-800 hover:decoration-bronze-600"
             >
               RT · {data.recordTypes.length}
             </button>

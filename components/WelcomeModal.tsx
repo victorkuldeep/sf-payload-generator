@@ -24,13 +24,13 @@ export function WelcomeModal({ open, onConnect, onExplore }: WelcomeModalProps) 
   const [accepted, setAccepted] = useState(false);
   const [tagline, setTagline] = useState(0);
 
-  // Rotate the hero line every 3s while the modal is up. Reduced-motion
+  // Rotate the hero line every 10s while the modal is up. Reduced-motion
   // users (and SSR) stay on the first line.
   useEffect(() => {
     if (!open) return;
     if (typeof window === "undefined") return;
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
-    const t = window.setInterval(() => setTagline((i) => (i + 1) % TAGLINES.length), 3000);
+    const t = window.setInterval(() => setTagline((i) => (i + 1) % TAGLINES.length), 10000);
     return () => window.clearInterval(t);
   }, [open ]);
   if (!open) return null;
@@ -45,7 +45,7 @@ export function WelcomeModal({ open, onConnect, onExplore }: WelcomeModalProps) 
           <h2
             key={tagline}
             id="welcome-title"
-            className="hero-title hero-title--red tagline-rotate mt-2 min-h-[88px] text-4xl sm:min-h-[104px] sm:text-5xl"
+            className="hero-title hero-title--red tagline-rotate mt-2 min-h-[132px] text-4xl sm:min-h-[156px] sm:text-5xl"
           >
             {TAGLINES[tagline].lead} <em>{TAGLINES[tagline].accent}</em>
           </h2>
