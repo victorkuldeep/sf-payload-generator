@@ -17,6 +17,7 @@ export const GRAPH_SURFACE_LABELS: Record<string, string> = {
   decision: "Decisions",
   console: "Console",
   requirement: "Requirements",
+  mapping: "Mapping",
 };
 
 const RECORD_ROUTES: Record<string, (id: string) => string> = {
@@ -26,6 +27,7 @@ const RECORD_ROUTES: Record<string, (id: string) => string> = {
   decision: (id) => `/decisions?id=${encodeURIComponent(id)}`,
   requirement: (id) => `/requirements?id=${encodeURIComponent(id)}`,
   console: (id) => `/console?task=${encodeURIComponent(id)}`,
+  mapping: (id) => `/mapping?project=${encodeURIComponent(id)}`,
 };
 
 const SURFACE_ROOTS: Record<string, string> = {
@@ -35,6 +37,7 @@ const SURFACE_ROOTS: Record<string, string> = {
   decision: "/decisions",
   requirement: "/requirements",
   console: "/console",
+  mapping: "/mapping",
   draw: "/draw",
   schema: "/?tab=schema",
 };
@@ -46,6 +49,9 @@ const RECORD_KINDS: ReadonlySet<string> = new Set([
   "decision",
   "requirement",
   "console-task",
+  "mapping-project",
+  // Plans carry the owning project id - they land on it, not the root.
+  "mapping-plan",
   "snapshot",
   "draw-board",
 ]);

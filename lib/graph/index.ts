@@ -5,6 +5,8 @@ import type { Decision } from "@/lib/decisions/model";
 import type { Requirement } from "@/lib/requirements/model";
 import type { ConsoleTask } from "@/lib/console/model";
 import type { ErdSnapshot } from "@/lib/erd/snapshotDb";
+import type { MappingProject } from "@/lib/mapping/types";
+import { validateTarget } from "@/lib/mapping/grid";
 
 /**
  * Architecture graph index (Epic 2) - a derived, headless map of how
@@ -18,13 +20,15 @@ import type { ErdSnapshot } from "@/lib/erd/snapshotDb";
  * Anything else is "unresolved" - listed visibly, never dropped silently.
  */
 
-export type GraphSurface = "system" | "wireframe" | "sequence" | "draw" | "schema" | "decision" | "console" | "requirement";
+export type GraphSurface = "system" | "wireframe" | "sequence" | "draw" | "schema" | "decision" | "console" | "requirement" | "mapping";
 
 export type GraphNodeKind =
   | "project"
   | "system"
   | "interface"
   | "operation"
+  | "mapping-project"
+  | "mapping-plan"
   | "experience"
   | "screen"
   | "component"
@@ -99,6 +103,7 @@ export interface GraphInput {
   requirements?: Requirement[];
   tasks?: ConsoleTask[];
   snapshots?: ErdSnapshot[];
+  mappings?: MappingProject[];
   /** The Draw canvas is single-slot - include it as one board node. */
   drawBoard?: boolean;
 }
@@ -357,10 +362,55 @@ function indexSnapshot(b: Builder, s: ErdSnapshot): void {
   }
 }
 
+/**
+ * Field-level mapping cover: projects and plans become nodes; every mapped
+ * leaf row becomes a plan → schema-field edge labeled with its source path,
+ * so "what breaks if I remove Account.X" resolves to exact rows. Untargeted
+ * rows (unmapped/ignored) are skipped; mistyped targets surface unresolved.
+ */
+function indexMapping(b: Builder, m: MappingProject): void {
+  const mk = b.add({
+    key: key("mapping", m.id),
+    kind: "mapping-project",
+    surface: "mapping",
+    recordId: m.id,
+    name: m.name,
+  });
+  for (const plan of m.recordPlans ?? []) {
+    const pk = b.add({
+      key: `mapping:plan:${plan.id}`,
+      kind: "mapping-plan",
+      surface: "mapping",
+      recordId: m.id,
+      name: `${plan.name} → ${plan.objectName}`,
+    });
+    b.edge(mk, pk, "contains", "id", plan.objectName);
+    const ohit = b.resolve(pk, "schema", "schema-object", { name: plan.objectName });
+    if (ohit.resolution === "unresolved") b.unresolved.push({ from: pk, surface: "mapping", raw: plan.objectName });
+    b.edge(pk, ohit.to, "maps-to", ohit.resolution === "unresolved" ? "unresolved" : "id", `${plan.intent} · ${plan.cardinality}`);
+    for (const row of m.mappings ?? []) {
+      if (row.planId !== plan.id || row.status === "excluded") continue;
+      if (!row.objectName || !row.fieldName) continue;
+      const target = `${row.objectName}.${row.fieldName}`;
+      const check = validateTarget(m, target);
+      const label = row.sourcePath || "(constant)";
+      if (check.ok) {
+        const hit = b.resolve(pk, "schema", "schema-field", { name: target });
+        b.edge(pk, hit.to, "maps-to", "id", label);
+      } else {
+        b.unresolved.push({ from: pk, surface: "mapping", raw: target });
+        const hit = b.resolve(pk, "schema", "schema-field", { name: target });
+        b.edge(pk, hit.to, "maps-to", "unresolved", label);
+      }
+    }
+  }
+}
+
 /** Build the full index. Two phases: real nodes first, then link resolution. */
 export function buildIndex(input: GraphInput): GraphIndex {
   const b = new Builder();
   for (const p of input.systems ?? []) indexSystem(b, p);
+  for (const m of input.mappings ?? []) indexMapping(b, m);
   // Snapshots before experiences: bindings resolve to real object nodes.
   for (const s of input.snapshots ?? []) indexSnapshot(b, s);
   for (const e of input.experiences ?? []) indexExperience(b, e);

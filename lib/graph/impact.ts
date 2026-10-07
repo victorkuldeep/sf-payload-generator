@@ -44,9 +44,10 @@ const SURFACE_META: Record<GraphSurface, { label: string; href: string }> = {
   decision: { label: "Decisions", href: "/decisions" },
   console: { label: "Console", href: "/console" },
   requirement: { label: "Requirements", href: "/requirements" },
+  mapping: { label: "Mapping", href: "/mapping" },
 };
 
-const GROUP_ORDER: GraphSurface[] = ["system", "wireframe", "sequence", "decision", "requirement", "console", "schema", "draw"];
+const GROUP_ORDER: GraphSurface[] = ["system", "wireframe", "sequence", "decision", "requirement", "console", "mapping", "schema", "draw"];
 
 /** Impact for an already-resolved node: groups + dangling refs naming it. */
 export function summarizeForNode(index: GraphIndex, node: GraphNode): ImpactSummary {

@@ -13,7 +13,7 @@ import { GRAPH_SURFACE_LABELS } from "@/lib/graph/links";
 const describeArgs = z.object({
   query: z.string().max(120).optional().describe("Name fragment to find, e.g. Middleware, ACME-7"),
   surface: z
-    .enum(["system", "wireframe", "sequence", "decision", "requirement", "console", "schema", "draw"])
+    .enum(["system", "wireframe", "sequence", "decision", "requirement", "console", "mapping", "schema", "draw"])
     .optional()
     .describe("Narrow matches to one surface"),
 });

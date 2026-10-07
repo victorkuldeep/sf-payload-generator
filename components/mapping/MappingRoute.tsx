@@ -76,6 +76,14 @@ export function MappingRoute() {
 
   useEffect(() => {
     refreshAll();
+    // Deep link: /mapping?project=<id> opens the child straight into its
+    // workspace (Knowledge jump links land here).
+    try {
+      const id = new URLSearchParams(window.location.search).get("project");
+      if (id) void openChildStandalone(id);
+    } catch {
+      /* share links stay on the library */
+    }
   }, [refreshAll]);
 
   // ---- studio persistence ----

@@ -11,6 +11,8 @@ describe("graph jump links", () => {
       "/requirements?id=r1",
     );
     expect(graphNodeHref({ kind: "console-task", surface: "console", recordId: "t1" })).toBe("/console?task=t1");
+    expect(graphNodeHref({ kind: "mapping-project", surface: "mapping", recordId: "mp1" })).toBe("/mapping?project=mp1");
+    expect(graphNodeHref({ kind: "mapping-plan", surface: "mapping", recordId: "mp1" })).toBe("/mapping?project=mp1");
   });
 
   it("lands node-level rows on the surface root, stubs nowhere", () => {

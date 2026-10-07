@@ -12,7 +12,7 @@ import { graphKindLabel, graphNodeHref, GRAPH_SURFACE_LABELS } from "@/lib/graph
  * Read-only - every jump link lands where the record is edited.
  */
 
-const SURFACES = ["system", "wireframe", "sequence", "decision", "requirement", "console", "schema", "draw"] as const;
+const SURFACES = ["system", "wireframe", "sequence", "decision", "requirement", "console", "mapping", "schema", "draw"] as const;
 
 function isRecord(n: GraphNode): boolean {
   return !!n.recordId || n.kind === "external-issue";

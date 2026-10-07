@@ -6,6 +6,7 @@ import type { SequenceDocument } from "@/lib/sequence/model";
 import { linkDecision, newDecision } from "@/lib/decisions/model";
 import { newConsoleTask } from "@/lib/console/model";
 import type { ErdSnapshot } from "@/lib/erd/snapshotDb";
+import { blankProject } from "@/lib/mapping/types";
 
 const project = {
   id: "p1",
@@ -129,6 +130,47 @@ describe("graph index", () => {
     const proposes = g.edges.filter((e) => e.kind === "proposes");
     expect(proposes).toHaveLength(1);
     expect(g.nodes.find((n) => n.key === proposes[0].to)?.name).toBe("Account.Segment__c");
+  });
+
+  it("indexes mapping projects field-deep: plans, rows, unresolved", () => {
+    const f = (name: string) => ({
+      name, label: name, type: "string", length: 255, precision: 0, scale: 0,
+      nillable: true, createable: true, updateable: true, calculated: false,
+      defaultedOnCreate: false, unique: false, externalId: false, referenceTo: [],
+      relationshipName: null, restrictedPicklist: false, defaultValue: null,
+      picklistValues: [],
+    });
+    const proj = {
+      ...blankProject({ id: "mp1", name: "Order sync", now: "t" }),
+      sfSnapshot: {
+        id: "snap1", capturedAt: "t", fingerprint: "fp",
+        objects: [{ name: "Account", label: "Account", custom: false, fields: [f("Name"), f("Industry")] }],
+      },
+      recordPlans: [
+        { id: "pl1", name: "Acct", objectName: "Account", intent: "create" as const, sourcePath: "", cardinality: "one" as const, parentPlanId: null },
+      ],
+      mappings: [
+        { id: "r1", sourcePath: "$.order.name", planId: "pl1", objectName: "Account", fieldName: "Name", kind: "direct" as const, status: "mapped" as const, updatedAt: "t" },
+        { id: "r2", sourcePath: "$.order.nope", planId: "pl1", objectName: "Account", fieldName: "Nope__c", kind: "direct" as const, status: "mapped" as const, updatedAt: "t" },
+        { id: "r3", sourcePath: "", planId: null, objectName: "", fieldName: "", kind: "direct" as const, status: "unmapped" as const, updatedAt: "t" },
+        { id: "r4", sourcePath: "$.x", planId: "pl1", objectName: "Account", fieldName: "Industry", kind: "direct" as const, status: "excluded" as const, updatedAt: "t" },
+      ],
+    };
+    const g = buildIndex({ mappings: [proj] });
+    // Project + plan records exist; plan lands back on the project.
+    expect(g.nodes.filter((n) => n.kind === "mapping-project").map((n) => n.name)).toEqual(["Order sync"]);
+    expect(g.nodes.filter((n) => n.kind === "mapping-plan").map((n) => n.name)).toEqual(["Acct → Account"]);
+    // Clean row r1: plan → Account.Name labeled with its source path.
+    const rowEdge = g.edges.find((e) => e.kind === "maps-to" && e.label === "$.order.name");
+    expect(rowEdge?.resolution).toBe("id");
+    expect(g.nodes.find((n) => n.key === rowEdge?.to)?.name).toBe("Account.Name");
+    // Mistyped r2 surfaces unresolved; r3 (untargeted) and r4 (ignored) stay out.
+    expect(g.unresolved.map((u) => u.raw)).toContain("Account.Nope__c");
+    expect(g.edges.some((e) => e.label === "$.order.nope" && e.resolution === "unresolved")).toBe(true);
+    expect(g.unresolved.some((u) => u.raw === "")).toBe(false);
+    // Where-used on the field walks back to the plan.
+    const used = whereUsed(g, { object: "Account", field: "Name" });
+    expect(used.inbound.some((e) => e.kind === "maps-to" && e.label === "$.order.name")).toBe(true);
   });
 
   it("indexes pushed JIRA/SNOW backlinks as external issue nodes", () => {
