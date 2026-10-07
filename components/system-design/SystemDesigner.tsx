@@ -865,6 +865,9 @@ export function SystemDesigner() {
   const handleSelect = useCallback((nodeId: string | null, edgeId: string | null) => {
     setSelNodeId(nodeId);
     setSelEdgeId(edgeId);
+    // A collapsed inspector must never swallow selection: picking a canvas
+    // node or edge reopens it so APIs stay one click away.
+    if (nodeId || edgeId) setInspectorOpen(true);
   }, []);
 
   const addSystem = useCallback((t: SystemTemplate, at?: { x: number; y: number }) => {
