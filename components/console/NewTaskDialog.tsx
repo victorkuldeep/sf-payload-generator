@@ -10,7 +10,7 @@ import {
   type ConsolePriority,
   type ConsoleStatus,
 } from "@/lib/console/model";
-import type { InboxItemKind } from "@/lib/inbox/types";
+import { todayIso, type InboxItemKind } from "@/lib/inbox/types";
 import { emptyNoteBody, noteBodyEmpty, type NoteBody } from "@/lib/notes/notebody";
 
 const DRAFT_KINDS: { id: InboxItemKind; label: string }[] = [
@@ -149,6 +149,7 @@ export function NewTaskDialog({ onClose, onCreate }: { onClose: () => void; onCr
               <input
                 type="date"
                 value={dueDate}
+                min={todayIso()}
                 onChange={(e) => setDueDate(e.target.value)}
                 className="cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-2 py-1.5 text-[12px] font-normal text-[#27241F] focus:border-[#C9A86A] focus:outline-none"
               />

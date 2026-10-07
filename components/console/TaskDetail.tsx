@@ -23,7 +23,7 @@ import {
 } from "@/lib/console/model";
 import { consoleLinkHref } from "@/lib/console/model";
 import { NoteEditor } from "@/components/notes/NoteEditor";
-import type { InboxItemKind } from "@/lib/inbox/types";
+import { todayIso, type InboxItemKind } from "@/lib/inbox/types";
 import type { CanvasLinkView } from "@/lib/console/sync";
 
 const TASK_KINDS: { id: InboxItemKind; label: string }[] = [
@@ -182,7 +182,7 @@ export function TaskDetail({
               <input
                 value={task.owner ?? ""}
                 onChange={(e) => onPatch({ owner: e.target.value.trim().slice(0, 120) || undefined })}
-                placeholder="—"
+                placeholder="Enter owner…"
                 spellCheck={false}
                 aria-label="Task owner"
                 className="w-28 rounded-lg border border-[#E8E2D8] bg-white px-2 py-1 text-[12px] text-[#27241F] placeholder-[#C9BFAE] focus:border-[#C9A86A] focus:outline-none"
@@ -220,6 +220,7 @@ export function TaskDetail({
               <input
                 type="date"
                 value={task.dueDate ?? ""}
+                min={todayIso()}
                 onChange={(e) => onPatch({ dueDate: e.target.value || undefined })}
                 aria-label="Due date"
                 className="cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-2 py-1 text-[12px] text-[#27241F] focus:border-[#C9A86A] focus:outline-none"
