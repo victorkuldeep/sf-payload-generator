@@ -897,7 +897,7 @@ export default function SchemaPanel({
   >(null);
   const [oobLocked, setOobLocked] = useState(false);
   const [picker, setPicker] = useState<{
-    mode: "children" | "parents" | "custom-parents" | "custom-children";
+    mode: "children" | "parents" | "custom-parents" | "custom-children" | "custom-sweep";
     standardCandidates?: DiscoverCandidate[];
     standardEmptyMessage?: string;
     /** Entity the discovery fans out from (focus node or a box icon). */
@@ -3892,7 +3892,25 @@ export default function SchemaPanel({
         next.set(key, [...(next.get(key) ?? []), ...rows.filter((r) => !have.has(r.apiName))]);
         return next;
       });
-      setNotice(`${rows.length} custom-linked objects fanned out in the left tree as dashed previews - canvas untouched. Open the ones you want, then Add visible to ERD to put them on canvas.`);
+      // The sweep also opens a picker: tick what joins the canvas now; the
+      // left tree keeps the full sweep as dashed previews either way.
+      setPicker({
+        mode: "custom-sweep",
+        target: rootName,
+        title: `Custom links of the ${rootName} neighborhood`,
+        subtitle: `${rows.length} custom objects one ring out - tick what joins the canvas now, or close and browse the dashed previews in the left tree`,
+        candidates: rows.map((r) => ({
+          apiName: r.apiName,
+          label: r.label,
+          custom: true,
+          group: "child" as const,
+          via: "custom-link",
+          kind: "lookup" as const,
+          onCanvas: describes.has(r.apiName),
+          system: isSystemObject(r.apiName, true),
+        })),
+      });
+      setNotice(`${rows.length} custom-linked objects fanned out in the left tree as dashed previews - tick in the picker to add now, or close it and use Add visible to ERD later.`);
     } finally {
       setBusy(null);
     }
