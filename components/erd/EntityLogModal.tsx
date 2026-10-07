@@ -165,7 +165,7 @@ function EntryTop({
           </label>
         )}
       </div>
-      <div className="mb-2 grid grid-cols-4 gap-1.5">
+      <div className="mb-2 grid grid-cols-3 gap-1.5">
         <label className={labelCls}>
           Status
           <select
@@ -178,22 +178,6 @@ function EntryTop({
                 {s.label}
               </option>
             ))}
-          </select>
-        </label>
-        <label className={labelCls}>
-          Priority
-          <select
-            value={entry.priority ?? ""}
-            onChange={(e) =>
-              onPatch({ priority: (e.target.value || undefined) as CanvasTodo["priority"] }, e.target.value ? `Priority set to ${e.target.value}` : "Priority cleared")
-            }
-            className={selectCls}
-          >
-            <option value="">—</option>
-            <option value="low">Low</option>
-            <option value="normal">Normal</option>
-            <option value="high">High</option>
-            <option value="critical">Critical</option>
           </select>
         </label>
         <label className={labelCls}>
