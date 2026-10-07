@@ -70,12 +70,14 @@ describe("buildEdges linker labels", () => {
 });
 
 describe("objectKindOf", () => {
-  it("classifies all five object families", () => {
+  it("classifies all six object families", () => {
     expect(objectKindOf({ name: "Account", custom: false })).toBe("standard");
     expect(objectKindOf({ name: "Pricing_Request__c", custom: true })).toBe("custom");
     expect(objectKindOf({ name: "Org_Defaults__c", custom: true, customSetting: true })).toBe("custom-setting");
     expect(objectKindOf({ name: "Routing_Rule__mdt", custom: true })).toBe("custom-metadata");
     expect(objectKindOf({ name: "Order_Event__b", custom: false })).toBe("big-object");
+    // External objects report custom:true - the __x suffix wins.
+    expect(objectKindOf({ name: "Lead__x", custom: true })).toBe("external");
   });
 
   it("prefers suffixes over flags and labels every kind", () => {
@@ -85,6 +87,7 @@ describe("objectKindOf", () => {
     expect(OBJECT_KIND_LABEL[objectKindOf({ name: "R__mdt", custom: true })]).toBe("Custom Metadata");
     expect(OBJECT_KIND_LABEL[objectKindOf({ name: "E__b", custom: false })]).toBe("Big Object");
     expect(OBJECT_KIND_LABEL[objectKindOf({ name: "S__c", custom: true, customSetting: true })]).toBe("Custom Setting");
+    expect(OBJECT_KIND_LABEL[objectKindOf({ name: "Lead__x", custom: true })]).toBe("External");
   });
 });
 

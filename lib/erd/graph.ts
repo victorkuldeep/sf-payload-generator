@@ -31,7 +31,7 @@ export interface ErdNodeData extends Record<string, unknown> {
   label: string;
   apiName: string;
   custom: boolean;
-  /** Object family for the footer tag (standard/custom/setting/metadata/big). */
+  /** Object family for the footer tag (standard/custom/setting/metadata/big/external). */
   objectKind: ObjectKind;
   rows: ErdFieldRow[];
   totalFields: number;
@@ -273,7 +273,7 @@ export interface ErdSpotlight {
 }
 
 /** Object family for the ERD footer tag. Suffixes first, describe flags after. */
-export type ObjectKind = "standard" | "custom" | "custom-setting" | "custom-metadata" | "big-object";
+export type ObjectKind = "standard" | "custom" | "custom-setting" | "custom-metadata" | "big-object" | "external";
 
 export const OBJECT_KIND_LABEL: Record<ObjectKind, string> = {
   standard: "Standard",
@@ -281,6 +281,7 @@ export const OBJECT_KIND_LABEL: Record<ObjectKind, string> = {
   "custom-setting": "Custom Setting",
   "custom-metadata": "Custom Metadata",
   "big-object": "Big Object",
+  external: "External",
 };
 
 export function objectKindOf(
@@ -288,6 +289,7 @@ export function objectKindOf(
 ): ObjectKind {
   if (d.name.endsWith("__mdt")) return "custom-metadata";
   if (d.name.endsWith("__b")) return "big-object";
+  if (d.name.endsWith("__x")) return "external";
   if (d.customSetting === true) return "custom-setting";
   return d.custom ? "custom" : "standard";
 }
