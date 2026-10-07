@@ -35,7 +35,6 @@ import {
 import { newItemId } from "@/lib/collection/types";
 import { loadAutosave, queueAutosave, clearAutosave } from "@/lib/workspace/autosave";
 import { renderMarkdownLite, toggleTaskLine } from "./erd/notesMd";
-import { CanvasTodoCard } from "./notes/CanvasTodoCard";
 import { NoteEditor } from "./notes/NoteEditor";
 import {
   appendNoteLine,
@@ -77,7 +76,7 @@ import { ArchitectureInbox } from "./inbox/ArchitectureInbox";
 import { normalizeLiveNotes, normalizeSnapshotNotes, resolveStale, countInbox } from "@/lib/inbox/normalize";
 import { fingerprintEntity, fingerprintField, diffFieldFacts, diffEntityFacts, type EntityFacts, type FieldFacts } from "@/lib/inbox/schemaReview";
 import type { AnchorFacts, ArchitectureInboxItem, CanvasTodo, InboxAnchor, InboxFingerprint, InboxHistoryEntry, InboxItemKind, InboxMeta } from "@/lib/inbox/types";
-import { migrateEntityLogValue, noteToTodoBody, shareRowsToEntries, todoBodyToNote } from "@/lib/inbox/types";
+import { CANVAS_LOG_API, foldCanvasTodosIntoLog, migrateEntityLogValue, noteToTodoBody, shareRowsToEntries, todoBodyToNote } from "@/lib/inbox/types";
 import { EmptyState } from "./EmptyState";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
@@ -954,13 +953,14 @@ export default function SchemaPanel({
   const [notesZen, setNotesZen] = useState(false);
   const [canvasNote, setCanvasNote] = useState<NoteBody>(() => emptyNoteBody());
   const [notesSavedAt, setNotesSavedAt] = useState<number | null>(null);
-  const [canvasTodos, setCanvasTodos] = useState<CanvasTodo[]>([]);
   /** Per-entity log: many entries (note/task/question/decision) under one object. */
   const [entityLog, setEntityLog] = useState<Record<string, CanvasTodo[]>>({});
   const [noteEntryId, setNoteEntryId] = useState<string | null>(null);
   const [noteEntity, setNoteEntity] = useState<string | null>(null);
   /** Entity log lives in one large modal - no side-panel editing surface. */
   const [logModalOpen, setLogModalOpen] = useState(false);
+  /** Open-items compiled list in the notes panel (icon + count when shut). */
+  const [openItemsOpen, setOpenItemsOpen] = useState(false);
   const notesRestoredRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -973,9 +973,11 @@ export default function SchemaPanel({
       textHtml: canvasNote.html || undefined,
       updatedAt: notesSavedAt ?? Date.now(),
       entities: entityLog,
-      todos: canvasTodos,
+      // Canvas TODOs converge into the canvas log scope; nothing listable
+      // lives here anymore, and [] heals records written before the fold.
+      todos: [],
     } satisfies CanvasNotesData, tabId);
-  }, [orgKey, tabId, canvasNote, notesSavedAt, entityLog, canvasTodos]);
+  }, [orgKey, tabId, canvasNote, notesSavedAt, entityLog]);
 
   useEffect(() => {
     if (!orgKey || notesRestoredRef.current === orgKey) return;
@@ -992,22 +994,28 @@ export default function SchemaPanel({
         );
         setNotesSavedAt(d.updatedAt ?? snap.savedAt);
       }
+      // Legacy single notes migrate into one-row logs on load, and legacy
+      // canvas TODOs fold into the canvas log scope (ids intact).
+      const logs: Record<string, CanvasTodo[]> = {};
       if (d.entities && typeof d.entities === "object") {
-        // Legacy single notes migrate into one-row logs on load.
-        const logs: Record<string, CanvasTodo[]> = {};
         for (const [api, value] of Object.entries(d.entities)) {
           const rows = migrateEntityLogValue(api, value as unknown);
           if (rows.length > 0) logs[api] = rows;
         }
-        setEntityLog(logs);
       }
       if (Array.isArray(d.todos)) {
-        setCanvasTodos(d.todos);
-      } else if (d.todo && d.text?.trim()) {
-        // One-time migration from the legacy single canvas TODO flag.
-        const title = d.text.split("\n").map((l) => l.trim()).find((l) => l.length > 0)?.slice(0, 80) ?? "Canvas TODO";
-        const now = Date.now();
-        setCanvasTodos([{ id: newItemId(), title, status: d.done ? "done" : "open", createdAt: now, updatedAt: now }]);
+        setEntityLog(foldCanvasTodosIntoLog(logs, d.todos));
+      } else {
+        if (d.todo && d.text?.trim()) {
+          // One-time migration from the legacy single canvas TODO flag.
+          const title = d.text.split("\n").map((l) => l.trim()).find((l) => l.length > 0)?.slice(0, 80) ?? "Canvas TODO";
+          const now = Date.now();
+          logs[CANVAS_LOG_API] = [
+            ...(logs[CANVAS_LOG_API] ?? []),
+            { id: newItemId(), title, kind: "task", status: d.done ? "done" : "open", entityApi: CANVAS_LOG_API, createdAt: now, updatedAt: now },
+          ];
+        }
+        setEntityLog(logs);
       }
     })();
   }, [orgKey]);
@@ -1786,21 +1794,19 @@ export default function SchemaPanel({
     return { fingerprint: { value: fingerprintEntity({ apiName: a.id, fieldCount: d.fields.length, fieldNames: facts.fieldNames, childNames: facts.childNames }), at: Date.now() }, anchorFacts: facts };
   }, [describes]);
 
-  /** Locate one entry across canvas TODOs and every entity log. */
+  /** Locate one entry across every log scope (entities + canvas). */
   const locateEntry = useCallback(
-    (entryId: string): { scope: "todo"; entry: CanvasTodo } | { scope: "log"; api: string; entry: CanvasTodo } | null => {
-      const todo = canvasTodos.find((x) => x.id === entryId);
-      if (todo) return { scope: "todo", entry: todo };
+    (entryId: string): { scope: "log"; api: string; entry: CanvasTodo } | null => {
       for (const [api, rows] of Object.entries(entityLog)) {
         const entry = rows.find((x) => x.id === entryId);
         if (entry) return { scope: "log", api, entry };
       }
       return null;
     },
-    [canvasTodos, entityLog]
+    [entityLog]
   );
 
-  /** Patch one entry (canvas TODO or log row), appending history when noted. */
+  /** Patch one log row, appending history when noted. */
   const patchEntryById = useCallback((entryId: string, patch: Partial<CanvasTodo>, what?: string) => {
     const stamp = Date.now();
     const apply = (e: CanvasTodo): CanvasTodo => ({
@@ -1809,20 +1815,15 @@ export default function SchemaPanel({
       ...(what ? { history: appendHistory(e.history, what) } : {}),
       updatedAt: stamp,
     });
-    if (canvasTodos.some((x) => x.id === entryId)) {
-      setCanvasTodos((prev) => prev.map((x) => (x.id === entryId ? apply(x) : x)));
-    } else {
-      setEntityLog((prev) => {
-        const next = { ...prev };
-        for (const api of Object.keys(next)) next[api] = next[api].map((r) => (r.id === entryId ? apply(r) : r));
-        return next;
-      });
-    }
+    setEntityLog((prev) => {
+      const next = { ...prev };
+      for (const api of Object.keys(next)) next[api] = next[api].map((r) => (r.id === entryId ? apply(r) : r));
+      return next;
+    });
     touchNotes();
-  }, [canvasTodos, touchNotes]);
+  }, [touchNotes]);
 
   const deleteEntryById = useCallback((entryId: string) => {
-    setCanvasTodos((prev) => prev.filter((x) => x.id !== entryId));
     setEntityLog((prev) => {
       const next: Record<string, CanvasTodo[]> = {};
       for (const [api, rows] of Object.entries(prev)) {
@@ -1832,8 +1833,6 @@ export default function SchemaPanel({
       return next;
     });
     setNoteEntryId((cur) => (cur === entryId ? null : cur));
-    setExpandedTodoId((cur) => (cur === entryId ? null : cur));
-    setTodoZenId((cur) => (cur === entryId ? null : cur));
     touchNotes();
   }, [touchNotes]);
 
@@ -1869,7 +1868,7 @@ export default function SchemaPanel({
     patchEntryById(entryId, noteToTodoBody(b));
   }, [locateEntry, deleteEntryById, patchEntryById]);
 
-  /** Log a fresh entry under one entity and select it. */
+  /** Log a fresh entry under one scope (entity or canvas) and select it. */
   const addEntityEntry = useCallback((api: string, kind: InboxItemKind) => {
     const now = Date.now();
     const id = `ent-${api}-${now.toString(36)}`;
@@ -1880,7 +1879,8 @@ export default function SchemaPanel({
       status: "open",
       priority: "normal",
       entityApi: api,
-      anchor: { type: "entity", id: api, labelAtCreation: labels.get(api) },
+      // Canvas scope stays unanchored - there is no Salesforce object here.
+      anchor: api === CANVAS_LOG_API ? undefined : { type: "entity", id: api, labelAtCreation: labels.get(api) },
       createdAt: now,
       updatedAt: now,
     };
@@ -2010,49 +2010,18 @@ export default function SchemaPanel({
     }
   }, [locateEntry, snapshots, baselineFor, setEntryMetaById, setSnapshotNoteMeta]);
 
+  // Every open row everywhere (any kind, every scope): the one count
+  // behind the panel badge, the pencil dots and the header indicator.
   const openTodos = useMemo(
     () =>
       Object.entries(entityLog)
         .flatMap(([api, rows]) =>
-          rows
-            .filter((r) => (r.kind ?? "task") === "task" && r.status !== "done")
-            .map((entry) => ({ api, entry }) as const)
+          rows.filter((r) => r.status !== "done").map((entry) => ({ api, entry }) as const)
         )
         .sort((a, b) => b.entry.updatedAt - a.entry.updatedAt),
     [entityLog]
   );
-
-  // Canvas TODO engine: full lifecycle list, tracked individually.
-  const [expandedTodoId, setExpandedTodoId] = useState<string | null>(null);
-  /** Canvas TODO open in the fullscreen editor (proper capture surface). */
-  const [todoZenId, setTodoZenId] = useState<string | null>(null);
-
-  const addCanvasTodo = useCallback(() => {
-    const now = Date.now();
-    const id = newItemId();
-    setCanvasTodos((prev) => [{ id, title: "", body: "", status: "open", createdAt: now, updatedAt: now }, ...prev]);
-    setExpandedTodoId(null);
-    setTodoZenId(id);
-    touchNotes();
-  }, [touchNotes]);
-
-  const patchCanvasTodo = useCallback((id: string, patch: Partial<CanvasTodo>) => {
-    setCanvasTodos((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch, updatedAt: Date.now() } : t)));
-    touchNotes();
-  }, [touchNotes]);
-
-  const deleteCanvasTodo = useCallback((id: string) => {
-    setCanvasTodos((prev) => prev.filter((t) => t.id !== id));
-    setExpandedTodoId((cur) => (cur === id ? null : cur));
-    touchNotes();
-  }, [touchNotes]);
-
-  const canvasOpenTodos = useMemo(
-    () => canvasTodos.filter((t) => t.status !== "done").sort((a, b) => b.updatedAt - a.updatedAt),
-    [canvasTodos]
-  );
-  const zenTodo = todoZenId ? (canvasTodos.find((t) => t.id === todoZenId) ?? null) : null;
-  const openTodoCount = openTodos.length + canvasOpenTodos.length;
+  const openTodoCount = openTodos.length;
 
   const customSet = useMemo(() => {
     const s = new Set<string>();
@@ -2333,7 +2302,9 @@ export default function SchemaPanel({
           data: {
             ...n.data,
             shownChildren: shown,
-            hasNote: rows.some((r) => (r.body ?? "").trim().length > 0),
+            // Any logged row lights the pencil - title-only tasks count,
+            // red when an open task waits, bronze for notes/decisions.
+            hasNote: rows.length > 0,
             hasTodo: rows.some((r) => (r.kind ?? "task") === "task" && r.status !== "done"),
             onNoteClick: openEntityNote,
             onMakeRoot: makeRoot,
@@ -3004,7 +2975,7 @@ export default function SchemaPanel({
           touchNotes();
         }
         if (s.todos && s.todos.length > 0) {
-          setCanvasTodos(s.todos.map((t) => ({ ...t })));
+          setEntityLog((prev) => foldCanvasTodosIntoLog(prev, s.todos!.map((t) => ({ ...t }))));
           touchNotes();
         }
         setNotice(
@@ -3590,7 +3561,7 @@ export default function SchemaPanel({
       textFormat: canvasNote.format,
       textHtml: canvasNote.html || undefined,
       updatedAt: notesSavedAt,
-      entries: [...canvasTodos, ...Object.values(entityLog).flat()],
+      entries: Object.values(entityLog).flat(),
       labels,
     });
     const fromSnaps = snapshots.flatMap((s) => normalizeSnapshotNotes({ snapshot: s, orgScopeId: orgKey }));
@@ -3619,7 +3590,7 @@ export default function SchemaPanel({
       // Tab-scoped canvas identity: this tab's live items group under its tab.
       item.canvasId === "live" ? { ...item, canvasId: tabId, canvasName: tabName } : item
     );
-  }, [orgKey, tabId, tabName, canvasNote, notesSavedAt, canvasTodos, entityLog, labels, snapshots, describes, objects]);
+  }, [orgKey, tabId, tabName, canvasNote, notesSavedAt, entityLog, labels, snapshots, describes, objects]);
   const inboxCounts = useMemo(() => countInbox(inboxItems), [inboxItems]);
   const inboxCanvases = useMemo(() => {
     const out = [{ id: tabId, name: tabName }];
@@ -3633,10 +3604,6 @@ export default function SchemaPanel({
     if (id === "live-canvas") {
       setCanvasNote(b);
       touchNotes();
-      return;
-    }
-    if (id.startsWith("live-canvas-todo-")) {
-      patchCanvasTodo(id.slice("live-canvas-todo-".length), noteToTodoBody(b));
       return;
     }
     if (id.startsWith("live-entry-")) {
@@ -3655,40 +3622,17 @@ export default function SchemaPanel({
         }
       })();
     }
-  }, [snapshots, orgDomain, touchNotes, setEntryBodyById, patchCanvasTodo]);
+  }, [snapshots, orgDomain, touchNotes, setEntryBodyById]);
 
   const inboxSetTaskDone = useCallback((id: string, done: boolean) => {
-    if (id.startsWith("live-canvas-todo-")) {
-      patchCanvasTodo(id.slice("live-canvas-todo-".length), { status: done ? "done" : "open" });
-      return;
-    }
     if (id.startsWith("live-entry-")) {
       patchEntryById(id.slice("live-entry-".length), { status: done ? "done" : "open" }, done ? "Resolved from Inbox" : "Reopened from Inbox");
     }
-  }, [patchEntryById, patchCanvasTodo]);
+  }, [patchEntryById]);
 
   /** Unified lifecycle writer: routes kind/status/owner metadata to the
-   * canonical entity, canvas TODO or snapshot record with history. */
+   * canonical log row or snapshot record with history. */
   const inboxUpdateMeta = useCallback((id: string, patch: Partial<InboxMeta>, what: string) => {
-    if (id.startsWith("live-canvas-todo-")) {
-      const todoId = id.slice("live-canvas-todo-".length);
-      const todoPatch: Partial<CanvasTodo> = {};
-      if (patch.status === "resolved") todoPatch.status = "done";
-      else if (patch.status === "open" || patch.status === "in-progress" || patch.status === "blocked" || patch.status === "awaiting-feedback") {
-        todoPatch.status = patch.status;
-      }
-      if (patch.kind) todoPatch.kind = patch.kind;
-      if (typeof patch.owner === "string" || patch.owner === undefined) {
-        todoPatch.owner = patch.owner;
-        todoPatch.assignee = patch.owner;
-      }
-      if (patch.team !== undefined) todoPatch.team = patch.team;
-      if (patch.priority !== undefined) todoPatch.priority = patch.priority;
-      if (patch.resolution !== undefined) todoPatch.resolution = patch.resolution;
-      if (typeof patch.dueDate === "string" || patch.dueDate === undefined) todoPatch.dueDate = patch.dueDate;
-      if (Object.keys(todoPatch).length > 0) patchCanvasTodo(todoId, todoPatch);
-      return;
-    }
     if (id.startsWith("live-entry-")) {
       setEntryMetaById(id.slice("live-entry-".length), patch, what);
       return;
@@ -3696,16 +3640,12 @@ export default function SchemaPanel({
     if (id.startsWith("snap-")) {
       setSnapshotNoteMeta(id.slice(5), patch, what);
     }
-  }, [setEntryMetaById, setSnapshotNoteMeta, patchCanvasTodo]);
+  }, [setEntryMetaById, setSnapshotNoteMeta]);
 
   const inboxDelete = useCallback((id: string) => {
     if (id === "live-canvas") {
       setCanvasNote(emptyNoteBody());
       touchNotes();
-      return;
-    }
-    if (id.startsWith("live-canvas-todo-")) {
-      deleteCanvasTodo(id.slice("live-canvas-todo-".length));
       return;
     }
     if (id.startsWith("live-entry-")) {
@@ -3725,7 +3665,7 @@ export default function SchemaPanel({
         }
       })();
     }
-  }, [snapshots, orgDomain, touchNotes, deleteEntryById, deleteCanvasTodo]);
+  }, [snapshots, orgDomain, touchNotes, deleteEntryById]);
 
   const inboxNavigate = useCallback((item: ArchitectureInboxItem) => {
     setInboxOpen(false);
@@ -3739,11 +3679,6 @@ export default function SchemaPanel({
           return;
         }
       }
-    }
-    if (item.id.startsWith("live-canvas-todo-")) {
-      setNotesOpen(true);
-      setExpandedTodoId(item.id.slice("live-canvas-todo-".length));
-      return;
     }
     if (item.provenance.source === "snapshot" && item.provenance.snapshotId) {
       const s = snapshots.find((x) => x.id === item.provenance.snapshotId);
@@ -4696,8 +4631,9 @@ export default function SchemaPanel({
         }
       }
       if (Object.keys(picked).length > 0) out.entityNotes = picked;
-      if (canvasTodos.length > 0) {
-        out.todos = canvasTodos.map((t) => ({
+      const canvasRows = entityLog[CANVAS_LOG_API] ?? [];
+      if (canvasRows.length > 0) {
+        out.todos = canvasRows.map((t) => ({
           id: t.id,
           title: t.title,
           body: t.body,
@@ -4714,7 +4650,7 @@ export default function SchemaPanel({
       }
     }
     return out;
-  }, [baseElements, describes, rootName, view, canvasNote, entityLog, canvasTodos, labels]);
+  }, [baseElements, describes, rootName, view, canvasNote, entityLog, labels]);
 
   return (
     <div
@@ -5691,7 +5627,7 @@ export default function SchemaPanel({
               noteFlags={(() => {
                 const api = detail.kind === "loaded" ? detail.d.name : detail.n.apiName;
                 const rows = entityLog[api] ?? [];
-                return rows.some((r) => (r.body ?? "").trim())
+                return rows.length > 0
                   ? { hasNote: true, hasTodo: rows.some((r) => (r.kind ?? "task") === "task" && r.status !== "done") }
                   : null;
               })()}
@@ -5800,86 +5736,82 @@ export default function SchemaPanel({
 
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3.5">
               <div className="flex min-h-0 flex-1 flex-col">
-                {(openTodos.length > 0 || canvasOpenTodos.length > 0) && (
-                  <div className="mb-3 rounded-xl border border-red-200 bg-red-50/50 p-2.5">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-red-700">
-                      Open TODOs ({openTodoCount})
-                    </p>
-                    <ul className="mt-1.5 space-y-1">
-                      {canvasOpenTodos.map((t) => (
-                        <li key={`canvas-${t.id}`}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setNoteEntity(null);
-                              setExpandedTodoId(t.id);
-                            }}
-                            className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left hover:bg-white/70 transition-colors cursor-pointer"
-                          >
-                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" aria-hidden="true" />
-                            <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-ivory-950">
-                              {t.title.trim() || "Untitled TODO"}
-                            </span>
-                            <span className="shrink-0 text-[10px] text-ivory-500">{timeAgo(t.updatedAt)}</span>
-                          </button>
-                        </li>
-                      ))}
-                      {openTodos.map(({ api, entry }) => (
-                        <li key={entry.id}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setNoteEntity(api);
-                              setNoteEntryId(entry.id);
-                              setLogModalOpen(true);
-                            }}
-                            className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left hover:bg-white/70 transition-colors cursor-pointer"
-                          >
-                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" aria-hidden="true" />
-                            <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-ivory-950">
-                              {entry.title.trim() || api}
-                            </span>
-                            <span className="shrink-0 font-mono text-[10px] text-ivory-500">
-                              {entry.owner ?? entry.assignee ? `${entry.owner ?? entry.assignee} · ` : ""}{timeAgo(entry.updatedAt)}
-                            </span>
-                          </button>
-                        </li>
-                      ))}
+                {openTodos.length > 0 && (
+                  <div className="mb-3 rounded-xl border border-[var(--color-line)] bg-white/60 p-2">
+                    <button
+                      type="button"
+                      onClick={() => setOpenItemsOpen((v) => !v)}
+                      aria-expanded={openItemsOpen}
+                      title={openItemsOpen ? "Hide open items" : "Show every open item"}
+                      className="flex w-full cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-left hover:bg-ivory-200/60 transition-colors"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true" className="shrink-0 text-ivory-500">
+                        <path d="M9 6h11M9 12h11M9 18h11" />
+                        <path d="M4 6h.01M4 12h.01M4 18h.01" />
+                      </svg>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-ivory-700">
+                        Open items <sup className="font-mono text-[10px] text-bronze-600">{openTodoCount}</sup>
+                      </span>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true" className={`ml-auto shrink-0 text-ivory-500 transition-transform ${openItemsOpen ? "" : "-rotate-90"}`}>
+                        <path d="m6 9 6 6 6-6" />
+                      </svg>
+                    </button>
+                    {openItemsOpen && (
+                    <ul className="mt-1 space-y-1">
+                      {openTodos.map(({ api, entry }) => {
+                        const scopeLabel = api === CANVAS_LOG_API ? "Canvas" : (labels.get(api) ?? api);
+                        return (
+                          <li key={entry.id}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNoteEntity(api);
+                                setNoteEntryId(entry.id);
+                                setLogModalOpen(true);
+                              }}
+                              className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left hover:bg-white/70 transition-colors cursor-pointer"
+                            >
+                              <span className="shrink-0 font-mono text-[9px] font-bold uppercase text-ivory-500">
+                                {(entry.kind ?? "task").slice(0, 4)}
+                              </span>
+                              <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-ivory-950">
+                                {entry.title.trim() || scopeLabel}
+                              </span>
+                              <span className="shrink-0 font-mono text-[10px] text-ivory-500">
+                                {scopeLabel} · {timeAgo(entry.updatedAt)}
+                              </span>
+                            </button>
+                          </li>
+                        );
+                      })}
                     </ul>
+                    )}
                   </div>
                 )}
                 <div className="mb-3">
-                  <div className="mb-1.5 flex items-center justify-between">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-ivory-700">
-                      Canvas TODOs ({canvasTodos.length})
-                    </p>
-                    <button
-                      type="button"
-                      onClick={addCanvasTodo}
-                      className="rounded-lg bg-ivory-950 px-2.5 py-1 text-[11px] font-semibold text-ivory-100 hover:bg-bronze-600 transition-colors cursor-pointer"
-                    >
-                      + TODO
-                    </button>
-                  </div>
-                  {canvasTodos.length === 0 ? (
-                    <p className="rounded-xl border border-dashed border-[var(--color-line)] px-3 py-2.5 text-[11px] text-ivory-500">
-                      No TODOs yet - Add one to track design work with due dates and assignees.
-                    </p>
-                  ) : (
-                    <ul className="space-y-1.5">
-                      {canvasTodos.map((t) => (
-                        <CanvasTodoCard
-                          key={t.id}
-                          todo={t}
-                          expanded={expandedTodoId === t.id}
-                          onToggleExpand={() => setExpandedTodoId((cur) => (cur === t.id ? null : t.id))}
-                          onPatch={(patch) => patchCanvasTodo(t.id, patch)}
-                          onDelete={() => deleteCanvasTodo(t.id)}
-                          onExpand={() => setTodoZenId(t.id)}
-                        />
-                      ))}
-                    </ul>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const rows = (entityLog[CANVAS_LOG_API] ?? []).slice().sort((a, b) => b.updatedAt - a.updatedAt);
+                      setNoteEntity(CANVAS_LOG_API);
+                      setNoteEntryId(rows[0]?.id ?? null);
+                      setLogModalOpen(true);
+                    }}
+                    title="Open the canvas log - tasks, notes, questions and decisions for this canvas"
+                    className="flex w-full cursor-pointer items-center gap-2 rounded-xl border border-[var(--color-line)] bg-white/60 px-2.5 py-2 text-left hover:border-[#C9A86A] transition-colors"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[11px] font-bold text-ivory-950">
+                        Canvas log <sup className="font-mono text-[10px] text-bronze-600">{(entityLog[CANVAS_LOG_API] ?? []).length}</sup>
+                      </span>
+                      <span className="block truncate text-[10px] text-ivory-500">
+                        Tasks, notes, questions and decisions for this canvas
+                      </span>
+                    </span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true" className="shrink-0 text-ivory-500">
+                      <path d="m9 6 6 6-6 6" />
+                    </svg>
+                  </button>
                 </div>
                 <CanvasNotesField
                   note={canvasNote}
@@ -5949,9 +5881,9 @@ export default function SchemaPanel({
           <div className="flex h-full w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] shadow-2xl">
             <div className="flex items-center gap-2 border-b border-[var(--color-line-soft)] px-4 py-2.5">
               <div className="min-w-0 flex-1">
-                <h2 className="truncate text-sm font-bold text-ivory-950">{zenTodo ? zenTodo.title.trim() || "Untitled TODO" : "Design Notes"}</h2>
+                <h2 className="truncate text-sm font-bold text-ivory-950">Design Notes</h2>
                 <p className="truncate font-mono text-[10px] text-ivory-600">
-                  {zenTodo ? `Canvas TODO · ${zenTodo.status}${zenTodo.dueDate ? ` · due ${zenTodo.dueDate}` : ""}` : (<>{canvasNote.md.trim().split(/\s+/).filter(Boolean).length} words · {notesSavedAt ? `Auto-saved ${timeAgo(notesSavedAt)}` : "Autosaves per org"}</>)}
+                  {canvasNote.md.trim().split(/\s+/).filter(Boolean).length} words · {notesSavedAt ? `Auto-saved ${timeAgo(notesSavedAt)}` : "Autosaves per org"}
                 </p>
               </div>
               <button
@@ -5965,33 +5897,18 @@ export default function SchemaPanel({
               </button>
             </div>
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
-              {zenTodo ? (
-                <ul className="mx-auto w-full max-w-2xl">
-                  <CanvasTodoCard
-                    todo={zenTodo}
-                    expanded
-                    onToggleExpand={() => setTodoZenId(null)}
-                    onPatch={(patch) => patchCanvasTodo(zenTodo.id, patch)}
-                    onDelete={() => {
-                      deleteCanvasTodo(zenTodo.id);
-                      setTodoZenId(null);
-                    }}
-                  />
-                </ul>
-              ) : (
-                <CanvasNotesField
-                  note={canvasNote}
-                  onNote={(b) => {
-                    setCanvasNote(b);
-                    touchNotes();
-                  }}
-                  onToggleTask={(idx) => {
-                    setCanvasNote((p) => commitNoteBody(p, "md", toggleTaskLine(p.md, idx)));
-                    touchNotes();
-                  }}
-                  fill
-                />
-              )}
+              <CanvasNotesField
+                note={canvasNote}
+                onNote={(b) => {
+                  setCanvasNote(b);
+                  touchNotes();
+                }}
+                onToggleTask={(idx) => {
+                  setCanvasNote((p) => commitNoteBody(p, "md", toggleTaskLine(p.md, idx)));
+                  touchNotes();
+                }}
+                fill
+              />
             </div>
           </div>
         </div>
@@ -6002,9 +5919,10 @@ export default function SchemaPanel({
         <EntityLogModal
           key={noteEntity}
           apiName={noteEntity}
-          label={labels.get(noteEntity) ?? noteEntity}
+          label={noteEntity === CANVAS_LOG_API ? "Canvas" : (labels.get(noteEntity) ?? noteEntity)}
           rows={entityLog[noteEntity] ?? []}
           fields={(describes.get(noteEntity)?.fields ?? []).map((f) => ({ name: f.name, label: f.label, type: f.type, referenceTo: f.referenceTo ?? [] }))}
+          hideAnchor={noteEntity === CANVAS_LOG_API}
           initialSelectedId={noteEntryId}
           onClose={() => setLogModalOpen(false)}
           onNew={(kind) => addEntityEntry(noteEntity, kind)}

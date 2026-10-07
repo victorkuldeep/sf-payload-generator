@@ -61,6 +61,7 @@ function EntryTop({
   onPatch,
   onAnchor,
   onDelete,
+  hideAnchor,
 }: {
   apiName: string;
   entry: CanvasTodo;
@@ -68,6 +69,8 @@ function EntryTop({
   onPatch: (patch: Partial<CanvasTodo>, what: string) => void;
   onAnchor: (anchor: InboxAnchor | null) => void;
   onDelete: () => void;
+  /** Canvas scope has no Salesforce object - the Anchor control hides. */
+  hideAnchor?: boolean;
 }) {
   const kind = entry.kind ?? "task";
   const anchorId = entry.anchor?.id ?? apiName;
@@ -96,7 +99,7 @@ function EntryTop({
         </button>
       </div>
       <div className={`mb-2 grid gap-1.5 ${kind === "decision" ? "grid-cols-4" : "grid-cols-3"}`}>
-        <label className={labelCls}>
+        <label className={hideAnchor ? `${labelCls} col-span-2` : labelCls}>
           Kind
           <select
             value={kind}
@@ -110,6 +113,7 @@ function EntryTop({
             ))}
           </select>
         </label>
+        {!hideAnchor && (
         <label className={labelCls}>
           Anchor
           <select
@@ -139,6 +143,7 @@ function EntryTop({
             ))}
           </select>
         </label>
+        )}
         <label className={labelCls}>
           Team
           <input
@@ -240,11 +245,13 @@ export function EntityLogModal({
   onToggleTask,
   onPatch,
   onAnchor,
+  hideAnchor,
 }: {
   apiName: string;
   label: string;
   rows: CanvasTodo[];
   fields: { name: string; label: string; type: string; referenceTo: string[] }[];
+  hideAnchor?: boolean;
   initialSelectedId: string | null;
   onClose: () => void;
   onNew: (kind: InboxItemKind) => string;
@@ -570,6 +577,7 @@ export function EntityLogModal({
                     apiName={apiName}
                     entry={selected}
                     fields={fields}
+                    hideAnchor={hideAnchor}
                     onPatch={(patch, what) => onPatch(selected.id, patch, what)}
                     onAnchor={(anchor) => onAnchor(selected.id, anchor)}
                     onDelete={() => onDelete(selected.id)}

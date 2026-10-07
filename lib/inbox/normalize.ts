@@ -17,6 +17,7 @@ import type {
   InboxQuery,
   StaleState,
 } from "./types";
+import { isCanvasScope } from "./types";
 import type { ErdSnapshot } from "@/lib/erd/snapshotDb";
 import { fingerprintEntity, fingerprintField, type EntityFacts, type FieldFacts } from "./schemaReview";
 
@@ -26,7 +27,7 @@ export interface LiveNotesInput {
   textFormat?: "md" | "rich";
   textHtml?: string;
   updatedAt: number | null;
-  /** Unified log: canvas TODOs (no entityApi) + entity entries. */
+  /** Unified log: entity entries + canvas-scope rows (one map now). */
   entries: CanvasTodo[];
   labels: Map<string, string>;
 }
@@ -82,15 +83,17 @@ export function normalizeLiveNotes(input: LiveNotesInput): ArchitectureInboxItem
     const body = t.body ?? "";
     // Empty prose notes carry nothing; actionable kinds always list.
     if (!body.trim() && !t.title.trim() && kind === "note") continue;
-    const api = t.entityApi;
+    // Canvas-scope rows unify onto live-entry ids; the scope (not the id)
+    // keeps them canvas-anchored and stale-clean below.
+    const api = t.entityApi && !isCanvasScope(t.entityApi) ? t.entityApi : undefined;
     items.push({
-      id: api ? `live-entry-${t.id}` : `live-canvas-todo-${t.id}`,
+      id: `live-entry-${t.id}`,
       orgScopeId,
       canvasId: "live",
       canvasName: "Live canvas",
       kind,
       status: t.status === "done" ? "resolved" : t.status,
-      title: t.title.trim() || (api ? (labels.get(api) ?? api) : "Untitled TODO"),
+      title: t.title.trim() || (api ? (labels.get(api) ?? api) : "Untitled entry"),
       body,
       bodyFormat: t.bodyFormat,
       bodyHtml: t.bodyHtml,

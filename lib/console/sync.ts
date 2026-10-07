@@ -1,4 +1,4 @@
-import { noteToTodoBody, todoBodyToNote, type CanvasTodo, type CanvasTodoStatus, type InboxItemKind } from "@/lib/inbox/types";
+import { isCanvasScope, noteToTodoBody, todoBodyToNote, type CanvasTodo, type CanvasTodoStatus, type InboxItemKind } from "@/lib/inbox/types";
 import { appendNoteLine } from "@/lib/notes/notebody";
 import type { SystemProject } from "@/lib/system-design/model";
 import { listSystemProjects, loadSystemProject, saveSystemProject } from "@/lib/system-design/store";
@@ -161,13 +161,13 @@ function schemaView(
   entry: CanvasTodo,
   labels: Map<string, string>
 ): CanvasLinkView {
-  const api = entry.entityApi;
+  const api = entry.entityApi && !isCanvasScope(entry.entityApi) ? entry.entityApi : undefined;
   return {
     surface: "schema",
     recordId: tabId,
     recordName: tabName,
     todoId: entry.id,
-    title: entry.title.trim() || (api ? (labels.get(api) ?? api) : "Untitled TODO"),
+    title: entry.title.trim() || (api ? (labels.get(api) ?? api) : "Untitled entry"),
     kind: entry.kind ?? "task",
     owner: entry.owner ?? entry.assignee,
     dueDate: entry.dueDate,
@@ -278,15 +278,18 @@ export const liveSchemaFns: SchemaNotesStoreFns = {
   },
   loadNotes: async (orgKey: string, tabId: string) => {
     const { loadAutosave } = await import("@/lib/workspace/autosave");
-    const { migrateEntityLogValue } = await import("@/lib/inbox/types");
+    const { foldCanvasTodosIntoLog, migrateEntityLogValue } = await import("@/lib/inbox/types");
     const rec = await loadAutosave<{ todos?: CanvasTodo[]; entities?: Record<string, unknown> }>(orgKey, "notes", tabId).catch(() => null);
     if (!rec) return null;
-    const entities: Record<string, CanvasTodo[]> = {};
+    const raw: Record<string, CanvasTodo[]> = {};
     for (const [api, value] of Object.entries(rec.data.entities ?? {})) {
       const rows = migrateEntityLogValue(api, value);
-      if (rows.length > 0) entities[api] = rows;
+      if (rows.length > 0) raw[api] = rows;
     }
-    return { todos: Array.isArray(rec.data.todos) ? rec.data.todos : [], entities };
+    // Legacy canvas TODOs converge into the canvas scope; todos stays empty
+    // going forward so Console and Schema never double-list a row.
+    const entities = foldCanvasTodosIntoLog(raw, rec.data.todos);
+    return { todos: [], entities };
   },
   saveNotes: async (orgKey: string, tabId: string, doc: SchemaNotesDoc) => {
     const { loadAutosave, writeAutosave } = await import("@/lib/workspace/autosave");

@@ -8,7 +8,7 @@ import {
   queryInbox,
   countInbox,
 } from "./normalize";
-import { EMPTY_QUERY, type CanvasTodo } from "./types";
+import { CANVAS_LOG_API, EMPTY_QUERY, type CanvasTodo } from "./types";
 import type { ErdSnapshot } from "@/lib/erd/snapshotDb";
 
 const labels = new Map([
@@ -49,25 +49,27 @@ describe("inbox normalization", () => {
     expect(items[0].status).toBe("open");
   });
 
-  it("maps canvas TODOs to individual task items with lifecycle", () => {
+  it("maps canvas-scope rows to entry items with lifecycle", () => {
     const items = normalizeLiveNotes({
       ...liveInput,
       text: "",
       entries: [
-        { id: "t1", title: "Verify junction", body: "Checkea", assignee: "Asha", dueDate: "2026-10-05", status: "in-progress", createdAt: 100, updatedAt: 200 },
-        { id: "t2", title: "Old thing", status: "done", createdAt: 50, updatedAt: 60 },
+        { id: "t1", title: "Verify junction", body: "Checkea", assignee: "Asha", dueDate: "2026-10-05", status: "in-progress", entityApi: CANVAS_LOG_API, createdAt: 100, updatedAt: 200 },
+        { id: "t2", title: "Old thing", status: "done", entityApi: CANVAS_LOG_API, createdAt: 50, updatedAt: 60 },
       ] as CanvasTodo[],
     });
     expect(items).toHaveLength(2);
     const byId = new Map(items.map((i) => [i.id, i]));
-    const t1 = byId.get("live-canvas-todo-t1")!;
+    const t1 = byId.get("live-entry-t1")!;
     expect(t1.kind).toBe("task");
     expect(t1.status).toBe("in-progress");
     expect(t1.owner).toBe("Asha");
     expect(t1.dueDate).toBe("2026-10-05");
     expect(t1.body).toBe("Checkea");
-    expect(byId.get("live-canvas-todo-t2")?.status).toBe("resolved");
-    expect(byId.get("live-canvas-todo-t2")?.title).toBe("Old thing");
+    expect(t1.anchor).toMatchObject({ type: "canvas" });
+    expect(t1.stale).toBe("ok");
+    expect(byId.get("live-entry-t2")?.status).toBe("resolved");
+    expect(byId.get("live-entry-t2")?.title).toBe("Old thing");
   });
 
   it("skips blank canvas text and empty prose notes, keeps actionable kinds", () => {
@@ -97,7 +99,7 @@ describe("inbox normalization", () => {
     });
     const byId = new Map(items.map((i) => [i.id, i]));
     expect(byId.get("live-canvas")).toMatchObject({ bodyFormat: "rich", bodyHtml: html });
-    expect(byId.get("live-canvas-todo-t1")).toMatchObject({ bodyFormat: "rich", bodyHtml: html });
+    expect(byId.get("live-entry-t1")).toMatchObject({ bodyFormat: "rich", bodyHtml: html });
     expect(byId.get("live-entry-e1")).toMatchObject({ bodyFormat: "rich", bodyHtml: html });
     const snapItems = normalizeSnapshotNotes({
       snapshot: snap({ notes: "Hi", notesFormat: "rich", notesHtml: html }),
