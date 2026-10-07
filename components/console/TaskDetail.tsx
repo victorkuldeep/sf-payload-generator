@@ -28,6 +28,7 @@ import { NoteEditor } from "@/components/notes/NoteEditor";
 import { AgentDropPanel } from "@/components/console/AgentDropPanel";
 import { JiraPushPanel } from "@/components/console/JiraPushPanel";
 import { SnowPushPanel } from "@/components/console/SnowPushPanel";
+import { RecordWhereUsed } from "@/components/graph/WhereUsedStrip";
 import { todayIso, type InboxItemKind } from "@/lib/inbox/types";
 import type { CanvasLinkView } from "@/lib/console/sync";
 
@@ -392,7 +393,14 @@ export function TaskDetail({
             </div>
           </section>
 
-          <section>
+                    <section>
+            <h4 className="font-mono text-[9px] uppercase tracking-[2px] text-[#A39B8E]">Where used</h4>
+            <div className="mt-1">
+              <RecordWhereUsed surface="console" recordId={task.id} />
+            </div>
+          </section>
+
+<section>
             <h4 className="font-mono text-[9px] uppercase tracking-[2px] text-[#A39B8E]">Links · two-way with canvas</h4>
             <ul className="mt-1 space-y-1">
               {task.links.map((l, i) => (

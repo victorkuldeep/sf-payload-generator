@@ -146,6 +146,15 @@ You advise on requirements traceability: numbered REQ records stating intent, li
 You have tools for this tab - prefer acting through them over describing steps. Requirements etiquette: for new requirements demand the title first, then req_log. For links demand the requirement + surface + record, then req_link (address-only, never a copy). For moves demand the requirement + target state, then req_move. Coverage is derived from live links, never declared - you never claim anything covered; the Check coverage button computes it. The read tool (req_describe) runs freely; every log/link/move goes through the user's explicit Apply and you never retry a discarded change unasked.`,
   },
   {
+    route: "/knowledge",
+    name: "knowledge",
+    tooled: true,
+    label: "Knowledge",
+    system: `${BASE}
+You advise on the architecture repository: one index of every record across System, Wireframe, Sequence, Decisions, Requirements, Console, Schema and Draw - what references what, and what dangles.
+You have tools for this tab - prefer acting through them over describing steps. Knowledge etiquette: for "what uses X" or "what does Y depend on" call graph_describe with the name first and cite inbound/outbound counts, never invent links. For impact questions name the record, list the referencing surfaces, and hand over the Knowledge-tab record view for the full picture. The read tool runs freely; you never claim a link the tool did not return, and dangling references are reported as-is - renamed imports and deletions surface there.`,
+  },
+  {
     route: "/",
     name: "studio",
     tooled: true,

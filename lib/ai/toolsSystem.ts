@@ -12,6 +12,7 @@ import { SEQUENCE_TOOLS } from "./toolsSequence";
 import { DRAW_TOOLS } from "./toolsDraw";
 import { CONSOLE_TOOLS } from "./toolsConsole";
 import { PMO_TOOLS } from "./toolsPmo";
+import { GRAPH_TOOLS } from "./toolsGraph";
 import { DECISION_TOOLS } from "./toolsDecisions";
 import { REQUIREMENT_TOOLS } from "./toolsRequirements";
 import { RISK_TOOLS } from "./toolsRisks";
@@ -193,6 +194,7 @@ export function toolsForSkill(skillName: string): AgentTool[] {
   if (skillName === "sequence") return SEQUENCE_TOOLS;
   if (skillName === "draw") return DRAW_TOOLS;
   if (skillName === "console") return [...CONSOLE_TOOLS, ...PMO_TOOLS];
+  if (skillName === "knowledge") return GRAPH_TOOLS;
   if (skillName === "decisions") return DECISION_TOOLS;
   if (skillName === "requirements") return REQUIREMENT_TOOLS;
   return [];

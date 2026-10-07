@@ -3,6 +3,7 @@ import { listSystemProjects, loadSystemProject } from "@/lib/system-design/store
 import { listExperiences } from "@/lib/wireframe/store";
 import { listSequences } from "@/lib/sequence/store";
 import { listDecisions } from "@/lib/decisions/store";
+import { listRequirements } from "@/lib/requirements/store";
 import { listConsoleTasks } from "@/lib/console/store";
 import { listSnapshotsByOrg } from "@/lib/erd/snapshotDb";
 import { aiHistoryKey } from "@/lib/ai/gate";
@@ -15,11 +16,12 @@ import { readStoredScene } from "@/lib/draw/storage";
  * still resolve as stubs, honestly marked unresolved).
  */
 export async function loadGraphInput(): Promise<GraphInput> {
-  const [summaries, experiences, sequences, decisions, tasks] = await Promise.all([
+  const [summaries, experiences, sequences, decisions, requirements, tasks] = await Promise.all([
     listSystemProjects().catch(() => []),
     listExperiences().catch(() => []),
     listSequences().catch(() => []),
     listDecisions().catch(() => []),
+    listRequirements().catch(() => []),
     listConsoleTasks().catch(() => []),
   ]);
   const systems = (
@@ -38,7 +40,7 @@ export async function loadGraphInput(): Promise<GraphInput> {
   } catch {
     drawBoard = false;
   }
-  return { systems, experiences, sequences, decisions, tasks, snapshots, drawBoard };
+  return { systems, experiences, sequences, decisions, requirements, tasks, snapshots, drawBoard };
 }
 
 /** Build the index straight from the live stores. */

@@ -291,7 +291,7 @@ export function AppHeader(props: AppHeaderProps) {
   };
 
   // Grouped product navigation. Build / Design / Govern / Deliver open
-  // full-width mega-panels; JSON, Draw+ and Console stand alone at the end.
+  // full-width mega-panels; JSON, Draw+, Console and Knowledge stand alone.
   // The same structures drive desktop panels and the mobile scroll row so
   // they cannot drift apart.
   const navGroups: NavGroup[] = [
@@ -348,11 +348,12 @@ export function AppHeader(props: AppHeaderProps) {
     },
   ];
 
-  /** Standalone tabs after the groups: JSON, Draw+, Console. */
+  /** Standalone tabs after the groups: JSON, Draw+, Console, Knowledge. */
   const standaloneRoutes: RouteEntry[] = [
     { kind: "route", href: "/json", label: "JSON", desc: "Editor and A/B payload comparator" },
     { kind: "route", href: "/draw", label: "Draw", plus: true, desc: "Engineering whiteboard" },
     { kind: "route", href: "/console", label: "Console", desc: "Architect task manager, two-way sync with canvas TODOs" },
+    { kind: "route", href: "/knowledge", label: "Knowledge", desc: "Architecture repository - every record, what uses it, what it uses" },
   ];
 
   const pathname = usePathname();

@@ -130,4 +130,26 @@ describe("graph index", () => {
     expect(proposes).toHaveLength(1);
     expect(g.nodes.find((n) => n.key === proposes[0].to)?.name).toBe("Account.Segment__c");
   });
+
+  it("indexes pushed JIRA/SNOW backlinks as external issue nodes", () => {
+    const jira = {
+      ...newConsoleTask("Ship it", 5),
+      links: [],
+      pmo: { system: "jira" as const, key: "ACME-7", url: "https://acme.atlassian.net/browse/ACME-7", at: 6 },
+    };
+    const snow = {
+      ...newConsoleTask("Page it", 7),
+      links: [],
+      pmo: { system: "snow" as const, key: "INC0010007", url: "https://acme.service-now.com/nav_to.do", at: 8 },
+    };
+    const g = buildIndex({ tasks: [jira, snow] });
+    const issues = g.nodes.filter((n) => n.kind === "external-issue");
+    expect(issues.map((n) => n.name).sort()).toEqual(["ACME-7 (JIRA)", "INC0010007 (ServiceNow)"]);
+    expect(issues.find((n) => n.name.startsWith("ACME-7"))?.url).toBe("https://acme.atlassian.net/browse/ACME-7");
+    const refs = g.edges.filter((e) => e.kind === "references" && e.resolution === "id");
+    expect(refs).toHaveLength(2);
+    // Where-used on the issue walks back to the owning task.
+    const used = whereUsed(g, { surface: "console", name: "ACME-7 (JIRA)" });
+    expect(used.inbound).toHaveLength(1);
+  });
 });

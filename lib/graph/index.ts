@@ -37,6 +37,7 @@ export type GraphNodeKind =
   | "schema-object"
   | "schema-field"
   | "external-system"
+  | "external-issue"
   | "event"
   | "draw-board";
 
@@ -63,6 +64,8 @@ export interface GraphNode {
   name: string;
   /** True when referenced but not present in the input records. */
   stub?: boolean;
+  /** Remote URL for external nodes (pushed JIRA issues / SNOW records). */
+  url?: string;
 }
 
 export interface GraphEdge {
@@ -398,6 +401,18 @@ export function buildIndex(input: GraphInput): GraphIndex {
       name: t.title,
     });
     indexRecordLinks(b, tk, t.links);
+    // Pushed work stays visible: JIRA issues / SNOW records become
+    // external nodes carrying the browse URL back out.
+    if (t.pmo) {
+      const ik = b.add({
+        key: `pmo:${t.pmo.system}:${t.pmo.key}`,
+        kind: "external-issue",
+        surface: "console",
+        name: `${t.pmo.key} (${t.pmo.system === "jira" ? "JIRA" : "ServiceNow"})`,
+        url: t.pmo.url,
+      });
+      b.edge(tk, ik, "references", "id", t.pmo.key);
+    }
   }
   return { nodes: [...b.nodes.values()], edges: b.edges, unresolved: b.unresolved };
 }

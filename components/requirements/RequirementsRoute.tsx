@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Button from "../ui/Button";
 import { ConfirmDialog } from "../wireframe/ConfirmDialog";
 import { consoleLinkHref } from "@/lib/console/model";
+import { RecordWhereUsed } from "@/components/graph/WhereUsedStrip";
 import { findDeepRecord, useDeepParam } from "@/lib/deep/deep";
 import {
   canTransition,
@@ -502,6 +503,8 @@ function RequirementEditor({
             </p>
           )}
         </div>
+
+        <RecordWhereUsed surface="requirement" recordId={r.id} />
 
         <div className="flex flex-wrap gap-1.5">
           <Button size="sm" variant="secondary" onClick={onClone} title="Duplicate this requirement and open the copy">

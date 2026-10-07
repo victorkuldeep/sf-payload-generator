@@ -8,6 +8,8 @@ describe("skill routing", () => {
     expect(skillForPath("/system/flows?x=1").name).toBe("system");
     expect(skillForPath("/json").name).toBe("json");
     expect(skillForPath("/wireframe").name).toBe("wireframe");
+    expect(skillForPath("/knowledge").name).toBe("knowledge");
+    expect(skillForPath("/knowledge").tooled).toBe(true);
     expect(skillForPath("/sequence").name).toBe("sequence");
     expect(skillForPath("/systemdesign").name).toBe("studio");
     expect(skillForPath("/").name).toBe("studio");

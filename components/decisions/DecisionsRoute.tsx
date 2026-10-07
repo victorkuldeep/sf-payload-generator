@@ -24,6 +24,7 @@ import {
 import { downloadGovernancePack } from "@/lib/decisions/adrLog";
 import { RichTextEditor } from "../notes/RichTextEditor";
 import { consoleLinkHref } from "@/lib/console/model";
+import { RecordWhereUsed } from "@/components/graph/WhereUsedStrip";
 import { findDeepRecord, useDeepParam } from "@/lib/deep/deep";
 import { listSystemProjects } from "@/lib/system-design/store";
 import { listExperiences } from "@/lib/wireframe/store";
@@ -662,6 +663,8 @@ function DecisionEditor({
             </p>
           )}
         </div>
+
+        <RecordWhereUsed surface="decision" recordId={d.id} />
 
         <div className="flex flex-wrap gap-1.5">
           <Button size="sm" variant="secondary" onClick={onClone} title="Duplicate this decision and open the copy">
