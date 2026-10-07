@@ -95,7 +95,7 @@ function EntryTop({
           </svg>
         </button>
       </div>
-      <div className="mb-2 grid grid-cols-2 gap-1.5">
+      <div className={`mb-2 grid gap-1.5 ${kind === "decision" ? "grid-cols-4" : "grid-cols-3"}`}>
         <label className={labelCls}>
           Kind
           <select
@@ -139,6 +139,31 @@ function EntryTop({
             ))}
           </select>
         </label>
+        <label className={labelCls}>
+          Team
+          <input
+            value={entry.team ?? ""}
+            onChange={(e) => onPatch({ team: e.target.value.trim() || undefined }, e.target.value.trim() ? `Team set to ${e.target.value.trim()}` : "Team cleared")}
+            placeholder="—"
+            spellCheck={false}
+            className={inputCls}
+          />
+        </label>
+        {kind === "decision" && (
+          <label className={labelCls}>
+            Decision
+            <select
+              value={entry.decisionState ?? "proposed"}
+              onChange={(e) => onPatch({ decisionState: e.target.value as CanvasTodo["decisionState"] }, `Decision ${e.target.value}`)}
+              className={selectCls}
+            >
+              <option value="proposed">Proposed</option>
+              <option value="confirmed">Confirmed</option>
+              <option value="rejected">Rejected</option>
+              <option value="superseded">Superseded</option>
+            </select>
+          </label>
+        )}
       </div>
       <div className="mb-2 grid grid-cols-4 gap-1.5">
         <label className={labelCls}>
@@ -193,33 +218,6 @@ function EntryTop({
             className={`${selectCls} cursor-pointer`}
           />
         </label>
-      </div>
-      <div className="mb-2 grid grid-cols-4 gap-1.5">
-        <label className={kind === "decision" ? `${labelCls} col-span-2` : `${labelCls} col-span-4`}>
-          Team
-          <input
-            value={entry.team ?? ""}
-            onChange={(e) => onPatch({ team: e.target.value.trim() || undefined }, e.target.value.trim() ? `Team set to ${e.target.value.trim()}` : "Team cleared")}
-            placeholder="—"
-            spellCheck={false}
-            className={inputCls}
-          />
-        </label>
-        {kind === "decision" && (
-          <label className={`${labelCls} col-span-2`}>
-            Decision
-            <select
-              value={entry.decisionState ?? "proposed"}
-              onChange={(e) => onPatch({ decisionState: e.target.value as CanvasTodo["decisionState"] }, `Decision ${e.target.value}`)}
-              className={selectCls}
-            >
-              <option value="proposed">Proposed</option>
-              <option value="confirmed">Confirmed</option>
-              <option value="rejected">Rejected</option>
-              <option value="superseded">Superseded</option>
-            </select>
-          </label>
-        )}
       </div>
       {(entry.status === "done" || kind === "question" || kind === "decision") && (
         <label className={`${labelCls} mb-2`}>
