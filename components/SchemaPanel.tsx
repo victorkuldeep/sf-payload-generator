@@ -3892,7 +3892,7 @@ export default function SchemaPanel({
         next.set(key, [...(next.get(key) ?? []), ...rows.filter((r) => !have.has(r.apiName))]);
         return next;
       });
-      setNotice(`${rows.length} custom-linked objects fanned out from the root neighborhood - dashed until expanded.`);
+      setNotice(`${rows.length} custom-linked objects fanned out in the left tree as dashed previews - canvas untouched. Open the ones you want, then Add visible to ERD to put them on canvas.`);
     } finally {
       setBusy(null);
     }
@@ -4956,7 +4956,7 @@ export default function SchemaPanel({
                   <Button size="sm" variant="secondary" onClick={showParents} disabled={!!busy} title="Ring the focused node and highlight its lookup parents">
                     Show parents
                   </Button>
-                  <Button size="sm" onClick={discoverCustomLinked} disabled={!!busy} loading={!!busy} title="Fan out every custom object linked to the root neighborhood - previews stay dashed until expanded">
+                  <Button size="sm" onClick={discoverCustomLinked} disabled={!!busy} loading={!!busy} title="Scout only: fans every custom object linked to the root neighborhood into the left tree as dashed previews. Nothing lands on canvas until you open rows and hit Add visible to ERD.">
                     Custom links
                   </Button>
                   <Button size="sm" variant="secondary" onClick={refreshAll} disabled={!!busy || describes.size === 0} title="Re-fetch metadata for every object on canvas and report what changed">
