@@ -11,6 +11,7 @@ import {
   type JiraProject,
 } from "@/lib/pmo/jira";
 import { clearPmoConnection, getPmoConnection, hasPmoCredentials, setPmoConnection } from "@/lib/pmo/jiraVault";
+import { getPmoDefaults, setPmoDefaults } from "@/lib/pmo/defaults";
 
 /**
  * JIRA push: connect once per tab (email + API token, session-only), pick a
@@ -31,7 +32,17 @@ export function JiraPushPanel({
   attachments: ConsoleAttachment[];
   onPatch: (patch: Partial<ConsoleTask>) => void;
 }) {
-  const [conn, setConn] = useState(getPmoConnection);
+  // Session vault first, sticky per-org defaults fill the blanks - the
+  // next tab on this org starts where the architect left off.
+  const [conn, setConn] = useState(() => {
+    const v = getPmoConnection();
+    const d = getPmoDefaults();
+    return {
+      ...v,
+      projectKey: v.projectKey || d.projectKey || "",
+      issueTypeId: v.issueTypeId || d.issueTypeId || "",
+    };
+  });
   const [projects, setProjects] = useState<JiraProject[] | null>(null);
   const [busy, setBusy] = useState<"projects" | "push" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -80,11 +91,13 @@ export function JiraPushPanel({
   const pickProject = (key: string) => {
     const next = setPmoConnection({ projectKey: key, issueTypeId: "" });
     setConn(next);
+    setPmoDefaults({ provider: "jira", projectKey: key });
   };
 
   const pickIssueType = (id: string) => {
     const next = setPmoConnection({ issueTypeId: id });
     setConn(next);
+    setPmoDefaults({ provider: "jira", issueTypeId: id });
   };
 
   const push = async () => {
@@ -110,6 +123,7 @@ export function JiraPushPanel({
         pmo: { system: "jira", key: ref.key, url: ref.url, at },
         history: [...task.history, { at, what: `Pushed to JIRA as ${ref.key}.` }].slice(-500),
       });
+      setPmoDefaults({ provider: "jira", projectKey: project.key, issueTypeId: issueType.id });
       setDone(
         attached > 0
           ? `Created ${ref.key} with ${attached} screenshot${attached === 1 ? "" : "s"}.`
@@ -132,7 +146,7 @@ export function JiraPushPanel({
 
   return (
     <div className="mt-1.5 rounded-xl border border-[#E8E2D8] bg-[#FBFAF7] p-2.5">
-      {task.pmo && (
+      {task.pmo?.system === "jira" && (
         <p className="mb-1.5 text-[12px] text-[#777168]">
           Pushed as{" "}
           <a href={task.pmo.url} target="_blank" rel="noreferrer" className="font-semibold text-[#8A6A2F] hover:underline">
@@ -235,7 +249,7 @@ export function JiraPushPanel({
             onClick={() => void push()}
             className="cursor-pointer rounded-lg bg-[#27241F] px-2.5 py-1.5 text-xs font-semibold text-[#F5F1E8] hover:bg-[#3A352D] disabled:cursor-default disabled:opacity-40"
           >
-            {busy === "push" ? "Pushing…" : task.pmo ? "Push as new issue" : `Push as ${issueType?.name ?? "issue"}`}
+            {busy === "push" ? "Pushing…" : task.pmo?.system === "jira" ? "Push as new issue" : `Push as ${issueType?.name ?? "issue"}`}
           </button>
           <p className="text-[11px] text-[#A39B8E]">
             Pushes the saved description{attachments.length > 0 ? ` + ${attachments.length} screenshot${attachments.length === 1 ? "" : "s"}` : ""}. Save the description first if you just edited it.

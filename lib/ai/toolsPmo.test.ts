@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { newConsoleTask, type ConsoleAttachment, type ConsoleTask } from "@/lib/console/model";
 import { clearPmoConnection, setPmoConnection } from "@/lib/pmo/jiraVault";
+import { clearSnowConnection, setSnowConnection } from "@/lib/pmo/snowVault";
 import { PMO_TOOLS, setPmoBackend } from "./toolsPmo";
 
 let tasks: ConsoleTask[];
@@ -39,6 +40,12 @@ function mockFetch() {
         action = String(body.get("action") ?? null);
       }
       fetchCalls.push({ url: u, action });
+      if (u === "/api/pmo/snow") {
+        if (action === "probe") return Response.json({ ok: true, table: "incident", sampleFields: ["number", "short_description"] });
+        if (action === "create")
+          return Response.json({ ok: true, number: "INC0010007", url: "https://acme.service-now.com/nav_to.do?uri=incident.do?sys_id=abc" });
+        return Response.json({ ok: false, error: "Unexpected action." }, { status: 400 });
+      }
       if (action === "createmeta") return Response.json({ ok: true, meta: META });
       if (action === "create")
         return Response.json({ ok: true, key: "ACME-7", url: "https://acme.atlassian.net/browse/ACME-7" });
@@ -92,9 +99,14 @@ function connect(defaults = true) {
   });
 }
 
+function connectSnow() {
+  setSnowConnection({ instance: "acme.service-now.com", user: "arch", pass: "pw", table: "incident" });
+}
+
 beforeEach(() => {
   sessionStorage.clear();
   clearPmoConnection();
+  clearSnowConnection();
   mockFetch();
 });
 
@@ -104,11 +116,21 @@ afterEach(() => {
 });
 
 describe("pmo tool set", () => {
-  it("registers three jira tools, push approval-gated", () => {
-    expect(PMO_TOOLS.map((t) => t.name)).toEqual(["jira_status", "jira_projects", "jira_push"]);
+  it("registers jira + snow tools, pushes approval-gated", () => {
+    expect(PMO_TOOLS.map((t) => t.name)).toEqual([
+      "jira_status",
+      "jira_projects",
+      "jira_push",
+      "snow_status",
+      "snow_probe",
+      "snow_push",
+    ]);
     expect(tool("jira_status").needsApproval).toBe(false);
     expect(tool("jira_projects").needsApproval).toBe(false);
     expect(tool("jira_push").needsApproval).toBe(true);
+    expect(tool("snow_status").needsApproval).toBe(false);
+    expect(tool("snow_probe").needsApproval).toBe(false);
+    expect(tool("snow_push").needsApproval).toBe(true);
   });
 
   it("status is honest about disconnected vs connected", async () => {
@@ -180,6 +202,36 @@ describe("pmo tool set", () => {
     seed(false);
     const r = await run("jira_push", { task: "retry policy" });
     expect(r.ok).toBe(false);
+    expect(fetchCalls).toHaveLength(0);
+  });
+
+  it("snow status is honest, probe samples fields, push stores the record number", async () => {
+    seed(false);
+    expect((await run("snow_status")).result).toMatchObject({ connected: false });
+    expect((await run("snow_probe")).ok).toBe(false);
+    connectSnow();
+    expect((await run("snow_status")).result).toMatchObject({
+      connected: true,
+      instance: "https://acme.service-now.com",
+      table: "incident",
+    });
+    const probed = await run("snow_probe", { table: "incident" });
+    expect(probed.ok).toBe(true);
+    expect(probed.result).toMatchObject({ table: "incident", sampleFields: ["number", "short_description"] });
+    const pushed = await run("snow_push", { task: "retry policy" });
+    expect(pushed.ok).toBe(true);
+    expect(String(pushed.result)).toContain("INC0010007");
+    expect(tasks[0].pmo).toMatchObject({ system: "snow", key: "INC0010007" });
+    expect(tasks[0].history.at(-1)?.what).toContain("INC0010007");
+  });
+
+  it("snow refuses bad tables and missing tasks without touching the network", async () => {
+    seed(false);
+    connectSnow();
+    const bad = await run("snow_push", { task: "retry policy", table: "incident; DROP" });
+    expect(bad.ok).toBe(false);
+    const miss = await run("snow_push", { task: "nope" });
+    expect(miss.ok).toBe(false);
     expect(fetchCalls).toHaveLength(0);
   });
 });

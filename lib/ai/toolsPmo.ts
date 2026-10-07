@@ -10,6 +10,8 @@ import {
   fetchCreateMeta,
 } from "@/lib/pmo/jira";
 import { getPmoConnection, hasPmoCredentials } from "@/lib/pmo/jiraVault";
+import { buildSnowRecord, createSnowRecord, normalizeSnowTable, probeSnowTable, SNOW_TABLES } from "@/lib/pmo/snow";
+import { getSnowConnection, hasSnowCredentials } from "@/lib/pmo/snowVault";
 
 /**
  * PMO tool pack - JIRA behind the agent loop.
@@ -174,4 +176,113 @@ const jiraPush: AgentTool = {
   },
 };
 
-export const PMO_TOOLS: AgentTool[] = [jiraStatus, jiraProjects, jiraPush];
+const SNOW_NOT_CONNECTED =
+  "ServiceNow is not connected in this tab. Tell the user: open any Console task → Deliver → connect with instance + user + password (session-only), then ask again. Never ask for credentials or accept pasted ones.";
+
+const snowStatus: AgentTool = {
+  name: "snow_status",
+  description: "ServiceNow connection state: whether push is available, instance and saved table.",
+  parameters: { type: "object", properties: {}, additionalProperties: false },
+  needsApproval: false,
+  label: () => "Check ServiceNow status",
+  schema: z.object({}),
+  execute: async () => {
+    const c = getSnowConnection();
+    if (!hasSnowCredentials(c)) return { ok: true, result: { connected: false, hint: SNOW_NOT_CONNECTED } };
+    return {
+      ok: true,
+      result: { connected: true, instance: c.instance, user: c.user, table: c.table },
+    };
+  },
+};
+
+const snowProbeArgs = z.object({
+  table: z.string().min(1).max(80).optional().describe("Table to check - defaults to the saved one"),
+});
+
+const snowProbe: AgentTool = {
+  name: "snow_probe",
+  description:
+    "Check a ServiceNow table is real and sample its fields before snow_push. Lists the first-class tables when no table is given.",
+  parameters: {
+    type: "object",
+    properties: { table: { type: "string" } },
+    additionalProperties: false,
+  },
+  needsApproval: false,
+  label: (a) => `Probe ServiceNow table "${((a as { table?: string }).table ?? "").slice(0, 40)}"`,
+  schema: snowProbeArgs,
+  execute: async (raw) => {
+    const args = raw as z.infer<typeof snowProbeArgs>;
+    const c = getSnowConnection();
+    if (!hasSnowCredentials(c)) return { ok: false, error: SNOW_NOT_CONNECTED };
+    const table = (args.table?.trim() || c.table || "incident").toLowerCase();
+    const norm = normalizeSnowTable(table);
+    if (!norm.ok) return { ok: false, error: norm.error };
+    try {
+      const p = await probeSnowTable({ instance: c.instance, user: c.user, pass: c.pass }, norm.table);
+      return {
+        ok: true,
+        result: {
+          table: p.table,
+          sampleFields: p.sampleFields,
+          firstClass: SNOW_TABLES.map((t) => `${t.label} (${t.name})`),
+        },
+      };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Could not reach ServiceNow." };
+    }
+  },
+};
+
+const snowPushArgs = z.object({
+  task: z.string().min(1).describe("Console task id or title fragment"),
+  table: z.string().min(1).max(80).optional().describe("Target table - defaults to the saved one"),
+});
+
+const snowPush: AgentTool = {
+  name: "snow_push",
+  description:
+    "Push a Console task to ServiceNow as a record (title + saved description). Validates the table with a live probe first, stores the record number back on the task. Push-only - never syncs status back.",
+  parameters: {
+    type: "object",
+    properties: { task: { type: "string" }, table: { type: "string" } },
+    required: ["task"],
+    additionalProperties: false,
+  },
+  needsApproval: true,
+  label: (a) => `Push "${((a as { task?: string }).task ?? "").slice(0, 50)}" to ServiceNow`,
+  schema: snowPushArgs,
+  execute: async (raw) => {
+    const args = raw as z.infer<typeof snowPushArgs>;
+    const c = getSnowConnection();
+    if (!hasSnowCredentials(c)) return { ok: false, error: SNOW_NOT_CONNECTED };
+    const found = await findTask(args.task);
+    if (!found) return { ok: false, error: `No task matches "${args.task}". See console_describe.` };
+    if ("candidates" in found) return { ok: false, error: `Ambiguous - did you mean: ${found.candidates.join(" | ")}?` };
+    const table = (args.table?.trim() || c.table || "incident").toLowerCase();
+    const norm = normalizeSnowTable(table);
+    if (!norm.ok) return { ok: false, error: norm.error };
+    const creds = { instance: c.instance, user: c.user, pass: c.pass };
+    try {
+      await probeSnowTable(creds, norm.table);
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Could not reach ServiceNow." };
+    }
+    let ref;
+    try {
+      ref = await createSnowRecord(creds, norm.table, buildSnowRecord(found.task));
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Push failed." };
+    }
+    const at = Date.now();
+    await backend.saveTask({
+      ...found.task,
+      pmo: { system: "snow", key: ref.number, url: ref.url, at },
+      history: [...found.task.history, { at, what: `Pushed to ServiceNow as ${ref.number} via agent.` }].slice(-500),
+    });
+    return { ok: true, result: `Created ${ref.number} in ${norm.table}. Open: ${ref.url}` };
+  },
+};
+
+export const PMO_TOOLS: AgentTool[] = [jiraStatus, jiraProjects, jiraPush, snowStatus, snowProbe, snowPush];

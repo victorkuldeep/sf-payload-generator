@@ -109,7 +109,7 @@ export interface ConsoleHistoryEntry {
 
 /** Push-only PMO backlink: where this entry was pushed, for the ↗ chip. */
 export interface ConsolePmoLink {
-  system: "jira";
+  system: "jira" | "snow";
   key: string;
   url: string;
   at: number;
@@ -192,7 +192,7 @@ export const consoleTaskSchema: z.ZodType<ConsoleTask> = z.object({
   dueDate: z.string().max(32).optional(),
   pmo: z
     .object({
-      system: z.literal("jira"),
+      system: z.enum(["jira", "snow"]),
       key: z.string().min(1).max(32),
       url: z.string().min(1).max(500),
       at: z.number(),

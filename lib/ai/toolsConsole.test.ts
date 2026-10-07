@@ -34,9 +34,9 @@ describe("console skill + tool set", () => {
   it("routes /console to a tooled console pack", () => {
     expect(skillForPath("/console").name).toBe("console");
     expect(skillForPath("/console").tooled).toBe(true);
-    // 4 console tools + 3 PMO (jira) tools.
-    expect(toolsForSkill("console")).toHaveLength(7);
-    expect(toolsForSkill("console").every((t) => t.name.startsWith("console_") || t.name.startsWith("jira_"))).toBe(true);
+    // 4 console tools + 6 PMO (jira + snow) tools.
+    expect(toolsForSkill("console")).toHaveLength(10);
+    expect(toolsForSkill("console").every((t) => t.name.startsWith("console_") || t.name.startsWith("jira_") || t.name.startsWith("snow_"))).toBe(true);
   });
 
   it("marks mutates approval-gated", () => {

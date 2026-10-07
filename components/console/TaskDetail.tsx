@@ -27,6 +27,7 @@ import { consoleLinkHref } from "@/lib/console/model";
 import { NoteEditor } from "@/components/notes/NoteEditor";
 import { AgentDropPanel } from "@/components/console/AgentDropPanel";
 import { JiraPushPanel } from "@/components/console/JiraPushPanel";
+import { SnowPushPanel } from "@/components/console/SnowPushPanel";
 import { todayIso, type InboxItemKind } from "@/lib/inbox/types";
 import type { CanvasLinkView } from "@/lib/console/sync";
 
@@ -182,7 +183,7 @@ export function TaskDetail({
                 href={task.pmo.url}
                 target="_blank"
                 rel="noreferrer"
-                title={`Open ${task.pmo.key} in JIRA`}
+                title={`Open ${task.pmo.key} in ${task.pmo.system === "jira" ? "JIRA" : "ServiceNow"}`}
                 className="shrink-0 rounded-md border border-[#C9A86A] bg-[#F5EEDF] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[#8A6A2F] hover:underline"
               >
                 {task.pmo.key} ↗
@@ -387,6 +388,7 @@ export function TaskDetail({
             <div className="mt-1 space-y-1.5">
               <AgentDropPanel task={task} attachments={attachments} />
               <JiraPushPanel task={task} attachments={attachments} onPatch={onPatch} />
+              <SnowPushPanel task={task} onPatch={onPatch} />
             </div>
           </section>
 
