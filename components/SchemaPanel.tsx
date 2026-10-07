@@ -1858,16 +1858,6 @@ export default function SchemaPanel({
     patchEntryById(id, next, what);
   }, [locateEntry, baselineFor, patchEntryById]);
 
-  const clearEntityLog = useCallback((api: string) => {
-    setEntityLog((prev) => {
-      const next = { ...prev };
-      delete next[api];
-      return next;
-    });
-    setNoteEntryId(null);
-    touchNotes();
-  }, [touchNotes]);
-
   /** Replace one entry body triple; empties (no title, no text) drop the row. */
   const setEntryBodyById = useCallback((entryId: string, b: NoteBody) => {
     const found = locateEntry(entryId);
@@ -6018,7 +6008,6 @@ export default function SchemaPanel({
           onClose={() => setLogModalOpen(false)}
           onNew={(kind) => addEntityEntry(noteEntity, kind)}
           onDelete={(id) => deleteEntryById(id)}
-          onClear={() => clearEntityLog(noteEntity)}
           onBody={(id, b) => setEntryBodyById(id, b)}
           onToggleTask={(id, idx) => {
             const found = locateEntry(id);

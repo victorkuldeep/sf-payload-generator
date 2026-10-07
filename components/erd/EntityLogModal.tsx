@@ -53,34 +53,49 @@ const inputCls =
   "mt-0.5 w-full rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-1.5 py-1 text-xs normal-case tracking-normal text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none";
 const labelCls = "block text-[10px] font-semibold uppercase tracking-wider text-ivory-600";
 
-/** Title + kind/anchor identity row - what the entry is. */
-function EntryHead({
+/** Identity + lifecycle in one compact top block - the editor owns the rest. */
+function EntryTop({
   apiName,
   entry,
   fields,
   onPatch,
   onAnchor,
+  onDelete,
 }: {
   apiName: string;
   entry: CanvasTodo;
   fields: { name: string; label: string; type: string; referenceTo: string[] }[];
   onPatch: (patch: Partial<CanvasTodo>, what: string) => void;
   onAnchor: (anchor: InboxAnchor | null) => void;
+  onDelete: () => void;
 }) {
   const kind = entry.kind ?? "task";
   const anchorId = entry.anchor?.id ?? apiName;
   const fieldOf = (name: string) => fields.find((f) => f.name === name);
   return (
-    <>
-      <input
-        value={entry.title}
-        onChange={(e) => onPatch({ title: e.target.value.slice(0, 160) }, "Title updated")}
-        placeholder={`${kind === "task" ? "Task" : kind === "question" ? "Question" : kind === "decision" ? "Decision" : "Note"} title…`}
-        aria-label="Entry title"
-        spellCheck={false}
-        className="mb-2 w-full shrink-0 rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-2.5 py-1.5 text-[14px] font-semibold text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
-      />
-      <div className="mb-2 grid shrink-0 grid-cols-2 gap-1.5">
+    <div className="shrink-0">
+      <div className="mb-2 flex items-center gap-2">
+        <input
+          value={entry.title}
+          onChange={(e) => onPatch({ title: e.target.value.slice(0, 160) }, "Title updated")}
+          placeholder={`${kind === "task" ? "Task" : kind === "question" ? "Question" : kind === "decision" ? "Decision" : "Note"} title…`}
+          aria-label="Entry title"
+          spellCheck={false}
+          className="w-full min-w-0 flex-1 rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-2.5 py-1.5 text-[14px] font-semibold text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+        />
+        <button
+          type="button"
+          onClick={onDelete}
+          title="Delete entry"
+          aria-label="Delete entry"
+          className="shrink-0 cursor-pointer rounded-md p-1.5 text-ivory-500 hover:bg-red-500/10 hover:text-red-700 transition-colors"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+            <path d="M6 6l12 12M18 6 6 18" />
+          </svg>
+        </button>
+      </div>
+      <div className="mb-2 grid grid-cols-2 gap-1.5">
         <label className={labelCls}>
           Kind
           <select
@@ -125,24 +140,7 @@ function EntryHead({
           </select>
         </label>
       </div>
-    </>
-  );
-}
-
-/** Lifecycle metadata - collapsible sidebar, never competing with the editor. */
-function EntryMeta({
-  entry,
-  onPatch,
-  onDelete,
-}: {
-  entry: CanvasTodo;
-  onPatch: (patch: Partial<CanvasTodo>, what: string) => void;
-  onDelete: () => void;
-}) {
-  const kind = entry.kind ?? "task";
-  return (
-    <div className="space-y-1.5">
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="mb-2 grid grid-cols-4 gap-1.5">
         <label className={labelCls}>
           Status
           <select
@@ -173,8 +171,6 @@ function EntryMeta({
             <option value="critical">Critical</option>
           </select>
         </label>
-      </div>
-      <div className="grid grid-cols-2 gap-1.5">
         <label className={labelCls}>
           Owner
           <input
@@ -198,8 +194,8 @@ function EntryMeta({
           />
         </label>
       </div>
-      <div className="grid grid-cols-2 gap-1.5">
-        <label className={kind === "decision" ? labelCls : `${labelCls} col-span-2`}>
+      <div className="mb-2 grid grid-cols-4 gap-1.5">
+        <label className={kind === "decision" ? `${labelCls} col-span-2` : `${labelCls} col-span-4`}>
           Team
           <input
             value={entry.team ?? ""}
@@ -210,7 +206,7 @@ function EntryMeta({
           />
         </label>
         {kind === "decision" && (
-          <label className={labelCls}>
+          <label className={`${labelCls} col-span-2`}>
             Decision
             <select
               value={entry.decisionState ?? "proposed"}
@@ -226,7 +222,7 @@ function EntryMeta({
         )}
       </div>
       {(entry.status === "done" || kind === "question" || kind === "decision") && (
-        <label className={labelCls}>
+        <label className={`${labelCls} mb-2`}>
           {kind === "question" ? "Answer / resolution" : "Resolution"}
           <textarea
             value={entry.resolution ?? ""}
@@ -238,16 +234,10 @@ function EntryMeta({
           />
         </label>
       )}
-      <button
-        type="button"
-        onClick={onDelete}
-        className="text-[11px] text-ivory-500 hover:text-red-700 underline cursor-pointer"
-      >
-        Delete entry
-      </button>
     </div>
   );
 }
+
 
 /**
  * Per-entity log as one large standard modal: entries list left, editor
@@ -263,7 +253,6 @@ export function EntityLogModal({
   onClose,
   onNew,
   onDelete,
-  onClear,
   onBody,
   onToggleTask,
   onPatch,
@@ -277,7 +266,6 @@ export function EntityLogModal({
   onClose: () => void;
   onNew: (kind: InboxItemKind) => string;
   onDelete: (id: string) => void;
-  onClear: () => void;
   onBody: (id: string, b: NoteBody) => void;
   onToggleTask: (id: string, lineIndex: number) => void;
   onPatch: (id: string, patch: Partial<CanvasTodo>, what: string) => void;
@@ -293,8 +281,9 @@ export function EntityLogModal({
   const [selectedId, setSelectedId] = useState<string | null>(
     () => (initialSelectedId && rows.some((r) => r.id === initialSelectedId) ? initialSelectedId : (sorted[0]?.id ?? null)),
   );
-  const [metaOpen, setMetaOpen] = useState(true);
-  const [confirmClear, setConfirmClear] = useState(false);
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<"newest" | "oldest" | "title">("newest");
+  const [listOpen, setListOpen] = useState(true);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -311,7 +300,21 @@ export function EntityLogModal({
     }
   }, [rows, selectedId, sorted]);
 
-  const visible = kindFilter === "all" ? sorted : sorted.filter((r) => (r.kind ?? "task") === kindFilter);
+  const ordered = useMemo(() => {
+    const list = [...sorted];
+    if (sort === "oldest") list.sort((a, b) => a.updatedAt - b.updatedAt);
+    else if (sort === "title") list.sort((a, b) => rowTitle(a, apiName).localeCompare(rowTitle(b, apiName)));
+    return list;
+  }, [sorted, sort, apiName]);
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return ordered.filter((r) => {
+      if (kindFilter !== "all" && (r.kind ?? "task") !== kindFilter) return false;
+      if (!q) return true;
+      const hay = `${rowTitle(r, apiName)} ${r.body ?? ""} ${r.status} ${r.owner ?? r.assignee ?? ""} ${r.kind ?? "task"}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [ordered, kindFilter, query, apiName]);
   const selected = rows.find((r) => r.id === selectedId) ?? null;
   const draft = useMemo<NoteBody | null>(
     () => (selected ? todoBodyToNote({ body: selected.body, bodyFormat: selected.bodyFormat, bodyHtml: selected.bodyHtml }) : null),
@@ -344,23 +347,6 @@ export function EntityLogModal({
               {apiName} · {rows.length} {rows.length === 1 ? "entry" : "entries"}
             </p>
           </div>
-          <label className="sr-only" htmlFor="entity-log-filter">
-            Filter entries by kind
-          </label>
-          <select
-            id="entity-log-filter"
-            value={kindFilter}
-            onChange={(e) => setKindFilter(e.target.value as InboxItemKind | "all")}
-            title="Filter entries by kind"
-            className="cursor-pointer rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-2 py-1 text-xs font-medium text-ivory-950"
-          >
-            <option value="all">All · {rows.length}</option>
-            {kindsPresent.map((k) => (
-              <option key={k.id} value={k.id}>
-                {k.label} · {rows.filter((r) => (r.kind ?? "task") === k.id).length}
-              </option>
-            ))}
-          </select>
           <label className="sr-only" htmlFor="entity-log-new">
             Log a new entry
           </label>
@@ -380,26 +366,6 @@ export function EntityLogModal({
               </option>
             ))}
           </select>
-          {rows.length > 0 &&
-            (confirmClear ? (
-              <span className="inline-flex items-center gap-1 text-[11px]">
-                <span className="font-semibold text-[#B3261E]">Clear log?</span>
-                <button type="button" onClick={() => { onClear(); setConfirmClear(false); }} className="cursor-pointer rounded px-1 font-semibold text-[#B3261E] hover:bg-[#F9E8E6]">
-                  Yes
-                </button>
-                <button type="button" onClick={() => setConfirmClear(false)} className="cursor-pointer rounded px-1 text-[#777168]">
-                  No
-                </button>
-              </span>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setConfirmClear(true)}
-                className="cursor-pointer text-[11px] text-ivory-500 hover:text-red-700 underline"
-              >
-                Clear
-              </button>
-            ))}
           <button
             type="button"
             onClick={onClose}
@@ -421,13 +387,71 @@ export function EntityLogModal({
         </div>
 
         <div className="flex min-h-0 flex-1">
-          <aside className="w-72 shrink-0 overflow-y-auto border-r border-[var(--color-line-soft)] p-3" aria-label="Log entries">
-            {visible.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-[var(--color-line)] px-3 py-4 text-center text-[12px] text-ivory-500">
-                No entries yet — pick a kind from + Log… above.
-              </p>
-            ) : (
-              <ul className="space-y-1">
+          {listOpen ? (
+            <aside className="flex w-72 shrink-0 flex-col border-r border-[var(--color-line-soft)]" aria-label="Log entries">
+              <div className="shrink-0 space-y-1.5 border-b border-[var(--color-line-soft)] p-2.5">
+                <div className="flex items-center gap-1.5">
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search entries…"
+                    aria-label="Search entries"
+                    spellCheck={false}
+                    className="w-full min-w-0 flex-1 rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-2 py-1 text-xs text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setListOpen(false)}
+                    aria-label="Collapse entries list"
+                    title="Collapse entries list"
+                    className="shrink-0 cursor-pointer rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                      <path d="m14 6-6 6 6 6" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <label className="sr-only" htmlFor="entity-log-filter">
+                    Filter entries by kind
+                  </label>
+                  <select
+                    id="entity-log-filter"
+                    value={kindFilter}
+                    onChange={(e) => setKindFilter(e.target.value as InboxItemKind | "all")}
+                    title="Filter entries by kind"
+                    className="w-full min-w-0 flex-1 cursor-pointer rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-1.5 py-1 text-xs font-medium text-ivory-950"
+                  >
+                    <option value="all">All · {rows.length}</option>
+                    {kindsPresent.map((k) => (
+                      <option key={k.id} value={k.id}>
+                        {k.label} · {rows.filter((r) => (r.kind ?? "task") === k.id).length}
+                      </option>
+                    ))}
+                  </select>
+                  <label className="sr-only" htmlFor="entity-log-sort">
+                    Sort entries
+                  </label>
+                  <select
+                    id="entity-log-sort"
+                    value={sort}
+                    onChange={(e) => setSort(e.target.value as "newest" | "oldest" | "title")}
+                    title="Sort entries"
+                    className="shrink-0 cursor-pointer rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-1.5 py-1 text-xs font-medium text-ivory-950"
+                  >
+                    <option value="newest">Newest</option>
+                    <option value="oldest">Oldest</option>
+                    <option value="title">Title</option>
+                  </select>
+                </div>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
+                {visible.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-[var(--color-line)] px-3 py-4 text-center text-[12px] text-ivory-500">
+                    {rows.length === 0 ? "No entries yet — pick a kind from + Log… above." : "Nothing matches — clear the search or filter."}
+                  </p>
+                ) : (
+                  <ul className="space-y-1">
                 {visible.map((r) => {
                   const active = r.id === selected?.id;
                   return (
@@ -473,19 +497,36 @@ export function EntityLogModal({
                     </li>
                   );
                 })}
-              </ul>
-            )}
-          </aside>
+                  </ul>
+                )}
+              </div>
+            </aside>
+          ) : (
+            <div className="flex w-9 shrink-0 items-start justify-center border-r border-[var(--color-line-soft)] pt-3">
+              <button
+                type="button"
+                onClick={() => setListOpen(true)}
+                aria-label="Expand entries list"
+                title="Show entries list"
+                className="cursor-pointer rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors"
+              >
+                <span className="[writing-mode:vertical-rl] text-[10px] font-bold uppercase tracking-wider">
+                  Entries · {rows.length}
+                </span>
+              </button>
+            </div>
+          )}
 
           <div className="flex min-h-0 min-w-0 flex-1 flex-col p-4">
             {selected && draft ? (
               <>
-                <EntryHead
+                <EntryTop
                   apiName={apiName}
                   entry={selected}
                   fields={fields}
                   onPatch={(patch, what) => onPatch(selected.id, patch, what)}
                   onAnchor={(anchor) => onAnchor(selected.id, anchor)}
+                  onDelete={() => onDelete(selected.id)}
                 />
                 <div className="flex min-h-0 flex-1 flex-col">
                   <NoteEditor
@@ -507,43 +548,6 @@ export function EntityLogModal({
               </p>
             )}
           </div>
-
-          {selected &&
-            (metaOpen ? (
-              <aside className="w-64 shrink-0 overflow-y-auto border-l border-[var(--color-line-soft)] p-3" aria-label="Entry details">
-                <div className="mb-1.5 flex items-center justify-between">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-ivory-700">Details</p>
-                  <button
-                    type="button"
-                    onClick={() => setMetaOpen(false)}
-                    aria-label="Collapse details sidebar"
-                    title="Collapse details sidebar"
-                    className="cursor-pointer rounded p-1 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-                      <path d="m9 6 6 6-6 6" />
-                    </svg>
-                  </button>
-                </div>
-                <EntryMeta
-                  entry={selected}
-                  onPatch={(patch, what) => onPatch(selected.id, patch, what)}
-                  onDelete={() => onDelete(selected.id)}
-                />
-              </aside>
-            ) : (
-              <div className="flex w-9 shrink-0 items-start justify-center border-l border-[var(--color-line-soft)] pt-3">
-                <button
-                  type="button"
-                  onClick={() => setMetaOpen(true)}
-                  aria-label="Expand details sidebar"
-                  title="Show details sidebar"
-                  className="cursor-pointer rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors"
-                >
-                  <span className="[writing-mode:vertical-rl] text-[10px] font-bold uppercase tracking-wider">Details</span>
-                </button>
-              </div>
-            ))}
         </div>
       </div>
     </div>
