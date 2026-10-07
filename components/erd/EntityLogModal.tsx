@@ -469,9 +469,9 @@ export function EntityLogModal({
                       <div
                         role="button"
                         tabIndex={0}
-                        onClick={() => setSelectedId(active ? null : r.id)}
+                        onClick={() => setSelectedId(r.id)}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter") setSelectedId(active ? null : r.id);
+                          if (e.key === "Enter" || e.key === " ") setSelectedId(r.id);
                         }}
                         aria-pressed={active}
                         className={`flex w-full cursor-pointer items-center gap-1.5 rounded-xl border px-2 py-1.5 text-left transition-colors ${
