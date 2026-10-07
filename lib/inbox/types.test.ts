@@ -6,6 +6,7 @@ import {
   noteToTodoBody,
   shareRowsToEntries,
   todoBodyToNote,
+  todayIso,
 } from "./types";
 import { noteBodyFromHtml, noteBodyFromMd } from "@/lib/notes/notebody";
 
@@ -23,6 +24,14 @@ describe("inbox note triples", () => {
       bodyFormat: undefined,
       bodyHtml: undefined,
     });
+  });
+
+  it("floors Due at the local today so past dates are not pickable", () => {
+    const d = new Date();
+    const pad = (v: number) => String(v).padStart(2, "0");
+    const expected = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    expect(todayIso()).toBe(expected);
+    expect(todayIso()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it("reads inbox item triples with the same rule", () => {

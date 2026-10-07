@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { NoteEditor } from "../notes/NoteEditor";
 import { renderMarkdownLite } from "./notesMd";
-import { todoBodyToNote, type CanvasTodo, type CanvasTodoStatus, type InboxAnchor, type InboxItemKind } from "@/lib/inbox/types";
+import { todoBodyToNote, todayIso, type CanvasTodo, type CanvasTodoStatus, type InboxAnchor, type InboxItemKind } from "@/lib/inbox/types";
 import type { NoteBody } from "@/lib/notes/notebody";
 
 export const ENTRY_KINDS: { id: InboxItemKind; label: string }[] = [
@@ -198,6 +198,7 @@ function EntryTop({
           <input
             type="date"
             value={entry.dueDate ?? ""}
+            min={todayIso()}
             onChange={(e) => onPatch({ dueDate: e.target.value || undefined }, e.target.value ? `Due date set to ${e.target.value}` : "Due date cleared")}
             className={`${selectCls} cursor-pointer`}
           />

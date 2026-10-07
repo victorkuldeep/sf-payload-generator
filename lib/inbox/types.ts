@@ -167,6 +167,13 @@ export function todoBodyToNote(t: Pick<CanvasTodo, "body" | "bodyFormat" | "body
   return noteBodyFromMd(t.body ?? "");
 }
 
+/** Local YYYY-MM-DD for Due floors - past dates are not pickable. */
+export function todayIso(): string {
+  const d = new Date();
+  const pad = (v: number) => String(v).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 /** Editor draft → storable triple. Empty drafts clear all three sides. */
 export function noteToTodoBody(b: NoteBody): Pick<CanvasTodo, "body" | "bodyFormat" | "bodyHtml"> {
   if (!b.md.trim() && !b.html.trim()) return { body: undefined, bodyFormat: undefined, bodyHtml: undefined };
