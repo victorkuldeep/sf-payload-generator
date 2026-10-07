@@ -267,6 +267,7 @@ export function EntityLogModal({
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<"newest" | "oldest" | "title">("newest");
   const [listOpen, setListOpen] = useState(true);
+  const [topOpen, setTopOpen] = useState(true);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -309,6 +310,7 @@ export function EntityLogModal({
     const id = onNew(kind);
     setKindFilter("all");
     setSelectedId(id);
+    setTopOpen(true);
   };
 
   return (
@@ -503,14 +505,43 @@ export function EntityLogModal({
           <div className="flex min-h-0 min-w-0 flex-1 flex-col p-4">
             {selected && draft ? (
               <>
-                <EntryTop
-                  apiName={apiName}
-                  entry={selected}
-                  fields={fields}
-                  onPatch={(patch, what) => onPatch(selected.id, patch, what)}
-                  onAnchor={(anchor) => onAnchor(selected.id, anchor)}
-                  onDelete={() => onDelete(selected.id)}
-                />
+                <button
+                  type="button"
+                  onClick={() => setTopOpen((v) => !v)}
+                  aria-expanded={topOpen}
+                  title={topOpen ? "Collapse title and details" : "Expand title and details"}
+                  className="mb-1.5 flex w-full shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-1 py-0.5 text-left hover:bg-ivory-300/60 transition-colors"
+                >
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    aria-hidden="true"
+                    className={`shrink-0 text-ivory-500 transition-transform ${topOpen ? "" : "-rotate-90"}`}
+                  >
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                  <span className={`shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase ${KIND_PILL[selected.kind ?? "task"]}`}>
+                    {(selected.kind ?? "task").slice(0, 4)}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-[#27241F]">
+                    {selected.title.trim() || "Untitled entry"}
+                  </span>
+                  <span className="shrink-0 font-mono text-[10px] text-[#A39B8E]">{selected.status}</span>
+                </button>
+                {topOpen && (
+                  <EntryTop
+                    apiName={apiName}
+                    entry={selected}
+                    fields={fields}
+                    onPatch={(patch, what) => onPatch(selected.id, patch, what)}
+                    onAnchor={(anchor) => onAnchor(selected.id, anchor)}
+                    onDelete={() => onDelete(selected.id)}
+                  />
+                )}
                 <div className="flex min-h-0 flex-1 flex-col">
                   <NoteEditor
                     draft={draft}
