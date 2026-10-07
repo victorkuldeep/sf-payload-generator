@@ -268,6 +268,7 @@ export function EntityLogModal({
   const [sort, setSort] = useState<"newest" | "oldest" | "title">("newest");
   const [listOpen, setListOpen] = useState(true);
   const [topOpen, setTopOpen] = useState(true);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -311,6 +312,23 @@ export function EntityLogModal({
     setKindFilter("all");
     setSelectedId(id);
     setTopOpen(true);
+  };
+
+  const exportSelected = async () => {
+    if (!selected || exporting) return;
+    setExporting(true);
+    try {
+      const { entryToDocxBlob, entryDocxFilename } = await import("@/lib/notes/docxExport");
+      const blob = await entryToDocxBlob(apiName, label, selected);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = entryDocxFilename(apiName, selected);
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -505,13 +523,14 @@ export function EntityLogModal({
           <div className="flex min-h-0 min-w-0 flex-1 flex-col p-4">
             {selected && draft ? (
               <>
-                <button
-                  type="button"
-                  onClick={() => setTopOpen((v) => !v)}
-                  aria-expanded={topOpen}
-                  title={topOpen ? "Collapse title and details" : "Expand title and details"}
-                  className="mb-1.5 flex w-full shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-1 py-0.5 text-left hover:bg-ivory-300/60 transition-colors"
-                >
+                <div className="mb-1.5 flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setTopOpen((v) => !v)}
+                    aria-expanded={topOpen}
+                    title={topOpen ? "Collapse title and details" : "Expand title and details"}
+                    className="flex w-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-lg px-1 py-0.5 text-left hover:bg-ivory-300/60 transition-colors"
+                  >
                   <svg
                     width="12"
                     height="12"
@@ -527,11 +546,25 @@ export function EntityLogModal({
                   <span className={`shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase ${KIND_PILL[selected.kind ?? "task"]}`}>
                     {(selected.kind ?? "task").slice(0, 4)}
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-[#27241F]">
-                    {selected.title.trim() || "Untitled entry"}
-                  </span>
-                  <span className="shrink-0 font-mono text-[10px] text-[#A39B8E]">{selected.status}</span>
-                </button>
+                    <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-[#27241F]">
+                      {selected.title.trim() || "Untitled entry"}
+                    </span>
+                    <span className="shrink-0 font-mono text-[10px] text-[#A39B8E]">{selected.status}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={exportSelected}
+                    disabled={exporting}
+                    title="Export this entry as a Word document (.docx)"
+                    aria-label="Export entry as Word document"
+                    className="shrink-0 cursor-pointer rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors disabled:opacity-50"
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                      <path d="M12 4v11m0 0 4-4m-4 4-4-4" />
+                      <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+                    </svg>
+                  </button>
+                </div>
                 {topOpen && (
                   <EntryTop
                     apiName={apiName}
