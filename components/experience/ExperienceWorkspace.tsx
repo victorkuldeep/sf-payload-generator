@@ -131,7 +131,9 @@ export function ExperienceWorkspace({
 
   return (
     <div className="space-y-3">
-    <div className="grid items-start gap-3 lg:grid-cols-[300px_minmax(0,1fr)]">
+    <div className="grid items-start gap-3 lg:grid-cols-[320px_minmax(0,1fr)]">
+      {/* Left rail: inventory, journeys, coverage stacked */}
+      <div className="space-y-3">
       {/* Screen inventory */}
       <div className="rounded-xl border border-[#E8E2D8] bg-white p-3">
         <div className="mb-2 flex items-center justify-between">
@@ -221,6 +223,10 @@ export function ExperienceWorkspace({
         </ul>
       </div>
 
+        <JourneyPanel project={project} onMutate={onMutate} onOpenScreen={setSelectedId} />
+        <CoveragePanel project={project} onOpenScreen={setSelectedId} onOpenApis={onOpenApis} />
+      </div>
+
       {/* Screen detail (canvas arrives Sprint 3) */}
       <div className="rounded-xl border border-[#E8E2D8] bg-white p-4">
         {!selected ? (
@@ -236,10 +242,6 @@ export function ExperienceWorkspace({
         )}
       </div>
 
-      <div className="grid items-start gap-3 lg:grid-cols-2">
-        <JourneyPanel project={project} onMutate={onMutate} onOpenScreen={setSelectedId} />
-        <CoveragePanel project={project} onOpenScreen={setSelectedId} onOpenApis={onOpenApis} />
-      </div>
 
       {showAdd && (
         <AddScreenDialog

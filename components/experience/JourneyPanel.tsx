@@ -54,7 +54,7 @@ export function JourneyPanel({
         <p className="text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">
           Journeys · {exp.journeys.length}
         </p>
-        <Button size="sm" variant="ghost" onClick={() => setShowAdd((v) => !v)}>
+        <Button size="sm" variant="ghost" className="shrink-0" onClick={() => setShowAdd((v) => !v)}>
           {showAdd ? "Cancel" : "Add journey"}
         </Button>
       </div>

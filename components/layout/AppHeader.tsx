@@ -307,6 +307,7 @@ export function AppHeader(props: AppHeaderProps) {
         { kind: "mode", id: "soql", label: "Query", desc: "SOQL + SOSL query builder" },
         { kind: "mode", id: "graphql", label: "GraphQL", desc: "GraphQL query builder" },
         { kind: "mode", id: "rest", label: "Rest", desc: "REST explorer" },
+        { kind: "route", href: "/mapping", label: "Mapping", desc: "Payload-to-object integration mapping" },
       ],
     },
     {
@@ -341,6 +342,7 @@ export function AppHeader(props: AppHeaderProps) {
       punch: "Contracts and custom APIs - the handoff engineers trust.",
       items: [
         { kind: "route", href: "/contracts", label: "Contracts", desc: "OpenAPI profiles" },
+        { kind: "route", href: "/validate", label: "Validate", desc: "OpenAPI spec vs payload findings" },
         { kind: "route", href: "/architect", label: "Architect", desc: "Design custom APIs" },
       ],
     },

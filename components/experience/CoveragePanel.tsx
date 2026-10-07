@@ -66,9 +66,9 @@ export function CoveragePanel({
           <option value="info">info ({findings.filter((f) => f.severity === "info").length})</option>
         </select>
       </div>
-      <dl className="mb-2 grid grid-cols-2 gap-1 sm:grid-cols-5">
+      <dl className="mb-2 grid grid-cols-3 gap-1">
         {stats.map(([label, value]) => (
-          <div key={label} className="rounded-lg border border-[#F0EBE0] bg-[#FAF8F2] px-2 py-1 text-center">
+          <div key={label} className="rounded-lg border border-[#F0EBE0] bg-[#FAF8F2] px-1 py-1 text-center">
             <dt className="font-mono text-[9px] uppercase tracking-wider text-[#A39B8E]">{label}</dt>
             <dd className="font-mono text-[14px] font-bold text-[#27241F]">{value}</dd>
           </div>

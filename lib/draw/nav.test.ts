@@ -83,6 +83,30 @@ describe("draw navigation", () => {
     expect(app).toContain("On this tab");
   });
 
+  it("every studio page is reachable from the header nav - no orphaned tabs", () => {
+    // Legal/about pages live in the footer; api/ has route handlers, not
+    // pages. Everything else must appear in the header nav data so a page
+    // can never again ship without a tab (e.g. /mapping, /validate).
+    const FOOTER_ONLY = new Set(["about", "privacy", "terms", "security"]);
+    const dirs = readdirSync(join(ROOT, "app"), { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name)
+      .filter((n) => !n.startsWith("_") && !n.startsWith("(") && !FOOTER_ONLY.has(n));
+    const app = read("components/layout/AppHeader.tsx");
+    const missing: string[] = [];
+    for (const dir of dirs) {
+      try {
+        read(`app/${dir}/page.tsx`);
+      } catch {
+        continue;
+      }
+      if (!app.includes(`href: "/${dir}"`) && !app.includes(`href="/${dir}"`)) {
+        missing.push(`/${dir}`);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
   it("panels are controlled: hover intent, close on pick and route change", () => {
     const app = read("components/layout/AppHeader.tsx");
     // Grace timer so sub-pixel gaps never slam the panel; Escape closes.
