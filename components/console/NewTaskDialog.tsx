@@ -10,11 +10,21 @@ import {
   type ConsolePriority,
   type ConsoleStatus,
 } from "@/lib/console/model";
+import type { InboxItemKind } from "@/lib/inbox/types";
 import { emptyNoteBody, noteBodyEmpty, type NoteBody } from "@/lib/notes/notebody";
+
+const DRAFT_KINDS: { id: InboxItemKind; label: string }[] = [
+  { id: "task", label: "Task" },
+  { id: "note", label: "Note" },
+  { id: "question", label: "Question" },
+  { id: "decision", label: "Decision" },
+];
 
 export interface NewTaskDraft {
   title: string;
   body?: NoteBody;
+  kind: InboxItemKind;
+  owner?: string;
   status: ConsoleStatus;
   priority: ConsolePriority;
   dueDate?: string;
@@ -27,16 +37,21 @@ export interface NewTaskDraft {
 export function NewTaskDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (d: NewTaskDraft) => void }) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState<NoteBody>(() => emptyNoteBody());
+  const [kind, setKind] = useState<InboxItemKind>("task");
+  const [owner, setOwner] = useState("");
   const [status, setStatus] = useState<ConsoleStatus>("open");
   const [priority, setPriority] = useState<ConsolePriority>("normal");
   const [dueDate, setDueDate] = useState("");
 
   const clean = title.trim();
+  const cleanOwner = owner.trim().slice(0, 120);
   const submit = () => {
     if (!clean) return;
     onCreate({
       title: clean.slice(0, 160),
       ...(noteBodyEmpty(body) ? {} : { body }),
+      kind,
+      ...(cleanOwner ? { owner: cleanOwner } : {}),
       status,
       priority,
       ...(dueDate ? { dueDate } : {}),
@@ -83,6 +98,28 @@ export function NewTaskDialog({ onClose, onCreate }: { onClose: () => void; onCr
             />
           </div>
           <div className="flex flex-wrap gap-3 border-t border-[#E8E2D8] pt-3">
+            <label className="flex items-center gap-1.5 text-[12px] font-semibold text-[#3A352D]">
+              Kind
+              <select
+                value={kind}
+                onChange={(e) => setKind(e.target.value as InboxItemKind)}
+                className="cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-2 py-1.5 text-[12px] font-normal text-[#27241F] focus:border-[#C9A86A] focus:outline-none"
+              >
+                {DRAFT_KINDS.map((k) => (
+                  <option key={k.id} value={k.id}>{k.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-1.5 text-[12px] font-semibold text-[#3A352D]">
+              Owner
+              <input
+                value={owner}
+                onChange={(e) => setOwner(e.target.value.slice(0, 120))}
+                placeholder="Who owns it"
+                spellCheck={false}
+                className="w-32 rounded-lg border border-[#E8E2D8] bg-white px-2 py-1.5 text-[12px] font-normal text-[#27241F] placeholder-[#A39B8E] focus:border-[#C9A86A] focus:outline-none"
+              />
+            </label>
             <label className="flex items-center gap-1.5 text-[12px] font-semibold text-[#3A352D]">
               Status
               <select

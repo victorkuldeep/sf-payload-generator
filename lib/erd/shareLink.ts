@@ -7,9 +7,29 @@
  * Transport-agnostic: same shape rides URL-hash links and the KV backend.
  */
 
+import type { CanvasTodoStatus, InboxItemKind, InboxPriority } from "@/lib/inbox/types";
+import type { LegacyShareEntityNote, ShareEntityRow } from "./share";
+
 export const SHARE_LINK_VERSION = 1;
 export const SHARE_MAX_NODES = 2000;
 export const SHARE_MAX_BODY_BYTES = 256 * 1024;
+
+export type { LegacyShareEntityNote, ShareEntityRow } from "./share";
+
+const SHARE_KINDS = ["note", "task", "question", "decision"] as const;
+const SHARE_PRIORITIES = ["low", "normal", "high", "critical"] as const;
+
+function cleanKind(v: unknown): InboxItemKind | undefined {
+  return typeof v === "string" && (SHARE_KINDS as readonly string[]).includes(v) ? (v as InboxItemKind) : undefined;
+}
+
+function cleanPriority(v: unknown): InboxPriority | undefined {
+  return typeof v === "string" && (SHARE_PRIORITIES as readonly string[]).includes(v) ? (v as InboxPriority) : undefined;
+}
+
+function cleanStatus(v: unknown): CanvasTodoStatus {
+  return v === "done" || v === "in-progress" || v === "blocked" || v === "awaiting-feedback" ? v : "open";
+}
 
 export interface ShareStructure {
   v: number;
@@ -19,13 +39,18 @@ export interface ShareStructure {
   positions: Record<string, { x: number; y: number }>;
   view?: "erd" | "graph";
   notes?: string;
-  entityNotes?: Record<string, { text: string; todo: boolean; done: boolean; updatedAt: number }>;
+  entityNotes?: Record<string, ShareEntityRow[] | LegacyShareEntityNote>;
+
   todos?: {
     id: string;
     title: string;
     body?: string;
     assignee?: string;
     dueDate?: string;
+    kind?: InboxItemKind;
+    owner?: string;
+    team?: string;
+    priority?: InboxPriority;
     status: "open" | "in-progress" | "blocked" | "awaiting-feedback" | "done";
     createdAt: number;
     updatedAt: number;
@@ -48,11 +73,37 @@ export function validateShareStructure(raw: unknown): ShareStructure | null {
   }
   if (p.view !== undefined && p.view !== "erd" && p.view !== "graph") return null;
   if (p.notes !== undefined && typeof p.notes !== "string") return null;
+  let entityNotes: ShareStructure["entityNotes"];
   if (p.entityNotes !== undefined) {
     if (!p.entityNotes || typeof p.entityNotes !== "object") return null;
-    for (const en of Object.values(p.entityNotes as Record<string, unknown>)) {
-      const e = en as { text?: unknown };
-      if (!e || typeof e.text !== "string") return null;
+    entityNotes = {};
+    for (const [api, en] of Object.entries(p.entityNotes as Record<string, unknown>)) {
+      if (Array.isArray(en)) {
+        // New log shape: Markdown-only rows, sanitized field by field.
+        const rows: ShareEntityRow[] = [];
+        for (const r of en) {
+          const row = r as Record<string, unknown>;
+          if (!row || typeof row.text !== "string") continue;
+          rows.push({
+            ...(typeof row.title === "string" ? { title: row.title.slice(0, 160) } : {}),
+            text: row.text.slice(0, 50_000),
+            ...(cleanKind(row.kind) ? { kind: cleanKind(row.kind) } : {}),
+            ...(typeof row.status === "string" ? { status: cleanStatus(row.status) } : {}),
+            ...(typeof row.updatedAt === "number" ? { updatedAt: row.updatedAt } : {}),
+          });
+        }
+        if (rows.length > 0) entityNotes[api] = rows;
+      } else {
+        // Legacy single-note shape - receivers migrate on touch.
+        const e = en as { text?: unknown; todo?: unknown; done?: unknown; updatedAt?: unknown };
+        if (!e || typeof e.text !== "string") return null;
+        entityNotes[api] = {
+          text: e.text,
+          ...(typeof e.todo === "boolean" ? { todo: e.todo } : {}),
+          ...(typeof e.done === "boolean" ? { done: e.done } : {}),
+          ...(typeof e.updatedAt === "number" ? { updatedAt: e.updatedAt } : {}),
+        };
+      }
     }
   }
   let todos: ShareStructure["todos"];
@@ -62,20 +113,17 @@ export function validateShareStructure(raw: unknown): ShareStructure | null {
     for (const t of p.todos) {
       const todo = t as Record<string, unknown>;
       if (!todo || typeof todo.id !== "string" || !todo.id || typeof todo.title !== "string") return null;
-      const status =
-        todo.status === "done" ||
-        todo.status === "in-progress" ||
-        todo.status === "blocked" ||
-        todo.status === "awaiting-feedback"
-          ? todo.status
-          : "open";
       todos.push({
         id: todo.id,
         title: todo.title,
         body: typeof todo.body === "string" ? todo.body : undefined,
         assignee: typeof todo.assignee === "string" ? todo.assignee : undefined,
         dueDate: typeof todo.dueDate === "string" ? todo.dueDate : undefined,
-        status,
+        ...(cleanKind(todo.kind) ? { kind: cleanKind(todo.kind) } : {}),
+        ...(typeof todo.owner === "string" ? { owner: todo.owner.slice(0, 120) } : {}),
+        ...(typeof todo.team === "string" ? { team: todo.team.slice(0, 120) } : {}),
+        ...(cleanPriority(todo.priority) ? { priority: cleanPriority(todo.priority) } : {}),
+        status: cleanStatus(todo.status),
         createdAt: typeof todo.createdAt === "number" ? todo.createdAt : Date.now(),
         updatedAt: typeof todo.updatedAt === "number" ? todo.updatedAt : Date.now(),
       });
@@ -89,7 +137,7 @@ export function validateShareStructure(raw: unknown): ShareStructure | null {
     positions: p.positions as ShareStructure["positions"],
     view: p.view as ShareStructure["view"],
     notes: p.notes as string | undefined,
-    entityNotes: p.entityNotes as ShareStructure["entityNotes"],
+    entityNotes,
     todos,
   };
 }

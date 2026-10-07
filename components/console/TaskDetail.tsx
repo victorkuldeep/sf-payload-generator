@@ -23,7 +23,15 @@ import {
 } from "@/lib/console/model";
 import { consoleLinkHref } from "@/lib/console/model";
 import { NoteEditor } from "@/components/notes/NoteEditor";
+import type { InboxItemKind } from "@/lib/inbox/types";
 import type { CanvasLinkView } from "@/lib/console/sync";
+
+const TASK_KINDS: { id: InboxItemKind; label: string }[] = [
+  { id: "task", label: "Task" },
+  { id: "note", label: "Note" },
+  { id: "question", label: "Question" },
+  { id: "decision", label: "Decision" },
+];
 
 const STATUS_PILL: Record<ConsoleStatus, string> = {
   open: "border-[#D8D0C0] bg-white text-[#777168]",
@@ -156,6 +164,30 @@ export function TaskDetail({
             </button>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1.5 text-[11px] text-[#777168]">
+              Kind
+              <select
+                value={task.kind ?? "task"}
+                onChange={(e) => onPatch({ kind: e.target.value as InboxItemKind })}
+                aria-label="Task kind"
+                className="cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-2 py-1 text-[12px] font-semibold text-[#27241F] focus:border-[#C9A86A] focus:outline-none"
+              >
+                {TASK_KINDS.map((k) => (
+                  <option key={k.id} value={k.id}>{k.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-1.5 text-[11px] text-[#777168]">
+              Owner
+              <input
+                value={task.owner ?? ""}
+                onChange={(e) => onPatch({ owner: e.target.value.trim().slice(0, 120) || undefined })}
+                placeholder="—"
+                spellCheck={false}
+                aria-label="Task owner"
+                className="w-28 rounded-lg border border-[#E8E2D8] bg-white px-2 py-1 text-[12px] text-[#27241F] placeholder-[#C9BFAE] focus:border-[#C9A86A] focus:outline-none"
+              />
+            </label>
             <label className="flex items-center gap-1.5 text-[11px] text-[#777168]">
               Status
               <select
@@ -321,9 +353,9 @@ export function TaskDetail({
             {showLinker && (
               <ul className="mt-1 max-h-48 space-y-1 overflow-y-auto rounded-xl border border-[#E8E2D8] bg-[#FBFAF7] p-1.5">
                 {views.map((v) => {
-                  const linked = task.links.some((l) => l.recordId === v.recordId && (l.todoId ?? "") === (v.todoId ?? ""));
+                  const linked = task.links.some((l) => l.surface === v.surface && l.recordId === v.recordId && (l.todoId ?? "") === (v.todoId ?? ""));
                   return (
-                    <li key={`${v.recordId}-${v.todoId ?? "notes"}`}>
+                    <li key={`${v.surface}-${v.recordId}-${v.todoId ?? "notes"}`}>
                       <button
                         type="button"
                         disabled={linked}
@@ -334,13 +366,14 @@ export function TaskDetail({
                           {v.todoId ? `${v.recordName} · ${v.title}` : v.title}
                         </span>
                         <span className="block truncate font-mono text-[10px] text-[#A39B8E]">
-                          {v.status ? CONSOLE_STATUS_LABELS[v.status] : "Note"} · {v.recordName}
+                          {v.kind ?? "task"} · {v.status ? CONSOLE_STATUS_LABELS[v.status] : "Note"} · {v.surface}
+                          {v.owner ? ` · ${v.owner}` : ""}
                         </span>
                       </button>
                     </li>
                   );
                 })}
-                {views.length === 0 && <li className="px-2 py-2 text-[12px] text-[#A39B8E]">No canvas TODOs yet — add some on a System project.</li>}
+                {views.length === 0 && <li className="px-2 py-2 text-[12px] text-[#A39B8E]">No canvas items yet — add TODOs on a System project or log notes on the Schema canvas while connected.</li>}
               </ul>
             )}
           </section>

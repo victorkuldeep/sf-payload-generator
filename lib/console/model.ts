@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { noteBodyFromMd, type NoteBody, type NoteFormat } from "@/lib/notes/notebody";
+import type { InboxItemKind } from "@/lib/inbox/types";
 
 /**
  * Console domain model - the architect's personal task console.
@@ -109,6 +110,10 @@ export interface ConsoleHistoryEntry {
 export interface ConsoleTask {
   id: string;
   title: string;
+  /** Work kind synced from canvas entries - note, task, question, decision. Absent reads as task. */
+  kind?: InboxItemKind;
+  /** Work owner synced from canvas entries (entry owner, else assignee). */
+  owner?: string;
   /** Markdown side of the description (previews, search, queue, AI). */
   body?: string;
   /** Rich side of the description + the editor last used. Absent on
@@ -167,6 +172,8 @@ const linkSchema = z.object({
 export const consoleTaskSchema: z.ZodType<ConsoleTask> = z.object({
   id: z.string().min(1).max(160),
   title: z.string().min(1).max(160),
+  kind: z.enum(["note", "task", "question", "decision"]).optional(),
+  owner: z.string().max(120).optional(),
   body: z.string().max(12000).optional(),
   bodyFormat: z.enum(["md", "rich"]).optional(),
   bodyHtml: z.string().max(30000).optional(),

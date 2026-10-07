@@ -41,12 +41,15 @@ export function CanvasTodoCard({
   onToggleExpand,
   onPatch,
   onDelete,
+  onExpand,
 }: {
   todo: CanvasTodo;
   expanded: boolean;
   onToggleExpand: () => void;
   onPatch: (patch: Partial<CanvasTodo>) => void;
   onDelete: () => void;
+  /** Open this TODO in the fullscreen editor (proper capture surface). */
+  onExpand?: () => void;
 }) {
   const done = todo.status === "done";
   const overdue = isTodoOverdue(todo);
@@ -106,6 +109,19 @@ export function CanvasTodoCard({
             <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-9 0 1 13h10l1-13" />
           </svg>
         </button>
+        {onExpand && (
+          <button
+            type="button"
+            onClick={onExpand}
+            aria-label={`Edit ${todo.title || "TODO"} fullscreen`}
+            title="Edit fullscreen - state, owner, due and description with room"
+            className="shrink-0 rounded p-1 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer"
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+              <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+            </svg>
+          </button>
+        )}
         <button
           type="button"
           onClick={onToggleExpand}

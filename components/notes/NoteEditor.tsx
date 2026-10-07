@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { RichTextEditor } from "./RichTextEditor";
-import { commitNoteBody, type NoteBody } from "@/lib/notes/notebody";
+import { commitNoteBody, noteTabCommit, type NoteBody } from "@/lib/notes/notebody";
 
 type NoteTab = "rich" | "md" | "preview";
 
@@ -56,12 +56,12 @@ export function NoteEditor({
 
   const switchTab = (t: NoteTab) => {
     if (t === tab) return;
-    if (t === "preview") {
-      setTab(t);
-      return;
-    }
     setTab(t);
-    onDraft(commitNoteBody(draft, t, t === "rich" ? draft.html : draft.md));
+    if (t === "preview") return;
+    // Untouched (empty both sides): stay local, commit nothing - an empty
+    // commit reads as "cleared" downstream and drops an untitled entry.
+    const committed = noteTabCommit(draft, t);
+    if (committed) onDraft(committed);
   };
   const edit = () => switchTab(draft.format);
 
@@ -96,6 +96,7 @@ export function NoteEditor({
             label={label}
             hint={hint}
             onDone={(html) => onDraft(commitNoteBody(draft, "rich", html))}
+            fill={fill}
           />
         )}
         {tab === "md" && (

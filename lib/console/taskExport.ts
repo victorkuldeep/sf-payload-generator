@@ -26,12 +26,14 @@ export function buildTaskSheets(tasks: ConsoleTask[], attachCounts: Record<strin
     {
       name: "Tasks",
       header: [
-        "Key", "Title", "Status", "Priority", "Due", "Description",
+        "Key", "Title", "Kind", "Owner", "Status", "Priority", "Due", "Description",
         "Links", "Notes", "Screenshots", "Created", "Updated",
       ],
       rows: tasks.map((t) => [
         consoleTaskKey(t),
         t.title,
+        t.kind ?? "task",
+        t.owner ?? "",
         CONSOLE_STATUS_LABELS[t.status],
         t.priority,
         t.dueDate ?? "",
@@ -42,7 +44,7 @@ export function buildTaskSheets(tasks: ConsoleTask[], attachCounts: Record<strin
         new Date(t.createdAt).toISOString(),
         new Date(t.updatedAt).toISOString(),
       ]),
-      widths: [10, 44, 16, 12, 14, 80, 40, 60, 12, 14, 14],
+      widths: [10, 44, 12, 16, 16, 12, 14, 80, 40, 60, 12, 14, 14],
     },
   ];
 }

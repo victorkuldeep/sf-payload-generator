@@ -62,6 +62,36 @@ describe("share link structure", () => {
     expect(validateShareStructure(shape({ todos: [{ title: "no id" }] as unknown as ShareStructure["todos"] }))).toBeNull();
   });
 
+  it("preserves entry kind/owner metadata on shared todos", () => {
+    const p = validateShareStructure(shape({
+      todos: [
+        { id: "t1", title: "Why?", kind: "question", owner: "kul", team: "core", priority: "high", status: "open", createdAt: 1, updatedAt: 2 },
+        { id: "t2", title: "Plain", kind: "epic", status: "open", createdAt: 1, updatedAt: 2 } as unknown as { id: string; title: string; status: "open"; createdAt: number; updatedAt: number },
+      ],
+    }));
+    expect(p?.todos?.[0]).toMatchObject({ kind: "question", owner: "kul", team: "core", priority: "high" });
+    expect(p?.todos?.[1].kind).toBeUndefined();
+  });
+
+  it("accepts log-row arrays and legacy singles for entity notes", () => {
+    const p = validateShareStructure(shape({
+      entityNotes: {
+        Account: [
+          { title: "Verify", text: "Checkea", kind: "task", status: "in-progress", updatedAt: 5 },
+          { text: "x", kind: "epic" } as unknown as { text: string },
+          { nope: 1 } as unknown as { text: string },
+        ],
+        Lead: { text: "Old note", todo: true, done: false, updatedAt: 6 },
+      },
+    }));
+    const rows = p?.entityNotes?.Account;
+    expect(Array.isArray(rows) && rows).toHaveLength(2);
+    expect(Array.isArray(rows) && rows[0]).toMatchObject({ kind: "task", status: "in-progress" });
+    expect(Array.isArray(rows) && rows[1].kind).toBeUndefined();
+    expect(p?.entityNotes?.Lead).toMatchObject({ text: "Old note", todo: true });
+    expect(validateShareStructure(shape({ entityNotes: { Bad: { nope: 1 } } as unknown as ShareStructure["entityNotes"] }))).toBeNull();
+  });
+
   it("fills sane defaults for optional fields", () => {
     const p = validateShareStructure({ v: 1, root: "Lead", nodes: ["Lead"], positions: {} });
     expect(p?.name).toBe("Shared canvas");

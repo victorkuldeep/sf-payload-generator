@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { newProject, type SystemProject } from "@/lib/system-design/model";
-import { canvasToConsole, consoleToCanvas, pullSystem, pushTodoNote, pushTodoStatus, type SystemStoreFns } from "./sync";
+import {
+  canvasToConsole,
+  consoleToCanvas,
+  pullSchema,
+  pullSystem,
+  pushSchemaEntryNote,
+  pushSchemaEntryStatus,
+  pushTodoNote,
+  pushTodoStatus,
+  type SchemaNotesDoc,
+  type SchemaNotesStoreFns,
+  type SystemStoreFns,
+} from "./sync";
 
 function seedStore(): { fns: SystemStoreFns; projects: Map<string, SystemProject> } {
   const projects = new Map<string, SystemProject>();
@@ -83,5 +95,61 @@ describe("console sync", () => {
     expect(t.bodyFormat).toBe("rich");
     expect(t.bodyHtml).toContain('data-color="#C6F6C6"');
     expect(t.bodyHtml).toContain("TLS verified");
+  });
+});
+
+function seedSchema(): { fns: SchemaNotesStoreFns; docs: Map<string, SchemaNotesDoc> } {
+  const docs = new Map<string, SchemaNotesDoc>();
+  docs.set("tab1", {
+    todos: [{ id: "t1", title: "Canvas fix", status: "open", createdAt: 1, updatedAt: 50 }],
+    entities: {
+      Account: [
+        { id: "e1", title: "Verify lookup", body: "Check it", kind: "task", status: "in-progress", entityApi: "Account", owner: "kul", dueDate: "2026-10-01", createdAt: 1, updatedAt: 60 },
+        { id: "e2", title: "Why junction?", body: "Ask", kind: "question", status: "open", entityApi: "Account", createdAt: 1, updatedAt: 70 },
+      ],
+    },
+  });
+  return {
+    docs,
+    fns: {
+      listTabs: async () => [{ tabId: "tab1", name: "Canvas 1" }],
+      loadNotes: async (_org, tabId) => docs.get(tabId) ?? null,
+      saveNotes: async (_org, tabId, doc) => {
+        docs.set(tabId, doc);
+      },
+    },
+  };
+}
+
+describe("schema console sync", () => {
+  it("pulls canvas TODOs and every entity-log kind as views", async () => {
+    const { fns } = seedSchema();
+    const views = await pullSchema("org1", fns, new Map([["Account", "Account"]]));
+    expect(views).toHaveLength(3);
+    expect(views.every((v) => v.surface === "schema" && v.recordId === "tab1")).toBe(true);
+    const byId = new Map(views.map((v) => [v.todoId, v]));
+    expect(byId.get("t1")).toMatchObject({ kind: "task", status: "open", title: "Canvas fix" });
+    expect(byId.get("e1")).toMatchObject({ kind: "task", status: "in-progress", owner: "kul", dueDate: "2026-10-01" });
+    expect(byId.get("e2")).toMatchObject({ kind: "question", status: "open" });
+    expect(await pullSchema("", fns)).toEqual([]);
+  });
+
+  it("pushes entry status with the same stale guard", async () => {
+    const { fns, docs } = seedSchema();
+    expect((await pushSchemaEntryStatus(fns, "org1", "tab1", "e1", "blocked", 60, 200)).ok).toBe(true);
+    expect(docs.get("tab1")!.entities.Account[0].status).toBe("blocked");
+    const stale = await pushSchemaEntryStatus(fns, "org1", "tab1", "e1", "done", 60, 300);
+    expect(stale).toMatchObject({ ok: false, stale: true });
+    expect(await pushSchemaEntryStatus(fns, "org1", "tab1", "gone", "done", 0)).toMatchObject({ ok: false });
+    expect(await pushSchemaEntryStatus(fns, "org1", "nope", "e1", "done", 0)).toMatchObject({ ok: false });
+  });
+
+  it("appends console notes to canvas TODOs and entity rows alike", async () => {
+    const { fns, docs } = seedSchema();
+    expect((await pushSchemaEntryNote(fns, "org1", "tab1", "t1", "TLS verified", 50, 200)).ok).toBe(true);
+    expect(docs.get("tab1")!.todos[0].body).toContain("[Console");
+    expect((await pushSchemaEntryNote(fns, "org1", "tab1", "e2", "Asked in review", 70, 200)).ok).toBe(true);
+    expect(docs.get("tab1")!.entities.Account[1].body).toContain("Asked in review");
+    expect(await pushSchemaEntryNote(fns, "org1", "tab1", "e2", "   ", 200)).toMatchObject({ ok: false });
   });
 });

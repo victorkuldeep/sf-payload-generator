@@ -4,10 +4,10 @@
  * Normalization adapters: existing records (autosave notes slice, manual
  * snapshots) become ArchitectureInboxItems without changing their storage.
  * Mapping preserves existing semantics:
- * - entity note without TODO flag -> kind "note"
- * - entity note with TODO flag   -> kind "task"
- * - done === true  -> status "resolved", else "open"
+ * - entry kind absent (vintage canvas TODO) -> kind "task"
+ * - status "done" -> "resolved", else verbatim
  * - canvas markdown / snapshot notes -> kind "note" (never inferred as task)
+ * - empty prose notes are skipped; actionable kinds always list
  */
 
 import type {
@@ -20,24 +20,14 @@ import type {
 import type { ErdSnapshot } from "@/lib/erd/snapshotDb";
 import { fingerprintEntity, fingerprintField, type EntityFacts, type FieldFacts } from "./schemaReview";
 
-export interface EntityNoteInput {
-  text: string;
-  textFormat?: "md" | "rich";
-  textHtml?: string;
-  todo: boolean;
-  done: boolean;
-  updatedAt: number;
-  meta?: InboxMeta;
-}
-
 export interface LiveNotesInput {
   orgScopeId: string;
   text: string;
   textFormat?: "md" | "rich";
   textHtml?: string;
   updatedAt: number | null;
-  todos?: CanvasTodo[];
-  entities: Record<string, EntityNoteInput>;
+  /** Unified log: canvas TODOs (no entityApi) + entity entries. */
+  entries: CanvasTodo[];
   labels: Map<string, string>;
 }
 
@@ -66,7 +56,7 @@ function firstLine(text: string, max = 90): string {
 
 export function normalizeLiveNotes(input: LiveNotesInput): ArchitectureInboxItem[] {
   const items: ArchitectureInboxItem[] = [];
-  const { orgScopeId, text, textFormat, textHtml, updatedAt, entities, labels } = input;
+  const { orgScopeId, text, textFormat, textHtml, updatedAt, entries, labels } = input;
   if (text.trim()) {
     items.push({
       id: "live-canvas",
@@ -87,57 +77,37 @@ export function normalizeLiveNotes(input: LiveNotesInput): ArchitectureInboxItem
       provenance: { source: "live-canvas" },
     });
   }
-  for (const t of input.todos ?? []) {
+  for (const t of entries) {
+    const kind = t.kind ?? "task";
+    const body = t.body ?? "";
+    // Empty prose notes carry nothing; actionable kinds always list.
+    if (!body.trim() && !t.title.trim() && kind === "note") continue;
+    const api = t.entityApi;
     items.push({
-      id: `live-canvas-todo-${t.id}`,
-      orgScopeId,
-      canvasId: "live",
-      canvasName: "Live canvas",
-      kind: "task",
-      status: t.status === "done" ? "resolved" : t.status,
-      title: t.title.trim() || "Untitled TODO",
-      body: t.body ?? "",
-      bodyFormat: t.bodyFormat,
-      bodyHtml: t.bodyHtml,
-      anchor: { type: "canvas", id: "live" },
-      createdAt: t.createdAt,
-      updatedAt: t.updatedAt,
-      stale: "ok",
-      owner: t.assignee,
-      dueDate: t.dueDate,
-      history: [],
-      provenance: { source: "live-canvas" },
-    });
-  }
-  for (const [api, n] of Object.entries(entities)) {
-    if (!n.text.trim() && !n.todo && !n.meta) continue;
-    const meta = n.meta ?? {};
-    const kind = meta.kind ?? (n.todo ? "task" : "note");
-    items.push({
-      id: `live-entity-${api}`,
+      id: api ? `live-entry-${t.id}` : `live-canvas-todo-${t.id}`,
       orgScopeId,
       canvasId: "live",
       canvasName: "Live canvas",
       kind,
-      status: n.done ? "resolved" : (meta.status ?? "open"),
-      title: labels.get(api) ?? api,
-      body: n.text,
-      bodyFormat: n.textFormat,
-      bodyHtml: n.textHtml,
-      anchor: meta.anchor ?? { type: "entity", id: api, labelAtCreation: labels.get(api) },
-      createdAt: n.updatedAt,
-      updatedAt: n.updatedAt,
-      stale: "unknown",
-      owner: meta.owner,
-      team: meta.team,
-      priority: meta.priority,
-      dueDate: meta.dueDate,
-      resolution: meta.resolution,
-      decisionState: meta.decisionState,
-      fingerprint: meta.fingerprint,
-      anchorFacts: meta.anchorFacts,
-      history: meta.history ?? [],
-      provenance: { source: "live-entity" },
+      status: t.status === "done" ? "resolved" : t.status,
+      title: t.title.trim() || (api ? (labels.get(api) ?? api) : "Untitled TODO"),
+      body,
+      bodyFormat: t.bodyFormat,
+      bodyHtml: t.bodyHtml,
+      anchor: t.anchor ?? (api ? { type: "entity", id: api, labelAtCreation: labels.get(api) } : { type: "canvas", id: "live" }),
+      createdAt: t.createdAt,
+      updatedAt: t.updatedAt,
+      stale: api ? "unknown" : "ok",
+      owner: t.owner ?? t.assignee,
+      team: t.team,
+      priority: t.priority,
+      dueDate: t.dueDate,
+      resolution: t.resolution,
+      decisionState: t.decisionState,
+      fingerprint: t.fingerprint,
+      anchorFacts: t.anchorFacts,
+      history: t.history ?? [],
+      provenance: { source: api ? "live-entry" : "live-canvas" },
     });
   }
   return items;

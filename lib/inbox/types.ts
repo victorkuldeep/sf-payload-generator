@@ -21,7 +21,13 @@ export type DecisionState = "proposed" | "confirmed" | "rejected" | "superseded"
 /** Canvas-level TODO status. Maps to InboxStatus (done → resolved); the working states are identical. */
 export type CanvasTodoStatus = "open" | "in-progress" | "blocked" | "awaiting-feedback" | "done";
 
-/** One canvas TODO: title + lifecycle, tracked individually. */
+/**
+ * One log entry: a canvas TODO or one row of an entity's log. Entity-level
+ * entries carry entityApi (+ optional anchor); canvas-level entries leave it
+ * absent. One type, two views: the entity log filters by api, the canvas
+ * view shows everything grouped by entity. Canvas TODOs predate kinds and
+ * read as tasks.
+ */
 export interface CanvasTodo {
   id: string;
   title: string;
@@ -36,6 +42,19 @@ export interface CanvasTodo {
   status: CanvasTodoStatus;
   createdAt: number;
   updatedAt: number;
+  /** Entry kind - note, task, question or decision. Absent reads as task. */
+  kind?: InboxItemKind;
+  /** Entity API name when this entry belongs to an entity log. */
+  entityApi?: string;
+  owner?: string;
+  team?: string;
+  priority?: InboxPriority;
+  resolution?: string;
+  decisionState?: DecisionState;
+  anchor?: InboxAnchor;
+  fingerprint?: InboxFingerprint;
+  anchorFacts?: AnchorFacts;
+  history?: InboxHistoryEntry[];
 }
 
 export type AnchorType = "canvas" | "entity" | "field" | "relationship";
@@ -86,7 +105,7 @@ export interface InboxMeta {
 }
 
 export interface ArchitectureInboxItem {
-  /** Stable canonical id: live-canvas | live-entity-<api> | snap-<snapshotId>. */
+  /** Stable canonical id: live-canvas | live-canvas-todo-<id> | live-entry-<id> | snap-<snapshotId>. */
   id: string;
   orgScopeId: string;
   /** Source canvas: "live" or the snapshot id. Display name resolved by UI. */
@@ -115,7 +134,7 @@ export interface ArchitectureInboxItem {
   anchorFacts?: AnchorFacts;
   history: InboxHistoryEntry[];
   provenance: {
-    source: "live-canvas" | "live-entity" | "snapshot";
+    source: "live-canvas" | "live-entity" | "live-entry" | "snapshot";
     snapshotId?: string;
   };
 }
@@ -160,4 +179,137 @@ export function inboxBodyToNote(t: Pick<ArchitectureInboxItem, "body" | "bodyFor
     return { format: "rich", md: t.body ?? "", html: t.bodyHtml };
   }
   return noteBodyFromMd(t.body ?? "");
+}
+
+/** Legacy single-note-per-entity shape (pre-log). */
+export interface LegacyEntityNoteInput {
+  text: string;
+  textFormat?: NoteFormat;
+  textHtml?: string;
+  todo: boolean;
+  done: boolean;
+  updatedAt: number;
+  meta?: InboxMeta;
+}
+
+function entryTitleFromText(text: string, fallback: string, max = 80): string {
+  const line = text
+    .split("\n")
+    .map((l) => l.trim().replace(/^#{1,3}\s+|^[-*]\s+(\[[ xX]\]\s+)?|^\d+[.)]\s+/, ""))
+    .find((l) => l.length > 0) ?? "";
+  if (!line) return fallback;
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+}
+
+/**
+ * One-time migration: a legacy single entity note becomes a one-row log.
+ * Empty notes (no text, no TODO, no meta) migrate to zero rows. Legacy
+ * todo/done flags map onto kind/status; assignee mirrors owner so both the
+ * TODO card ("Who") and the entity meta ("Owner") keep working.
+ */
+export function entityNoteToEntries(
+  api: string,
+  note: LegacyEntityNoteInput,
+  label?: string,
+  now = Date.now()
+): CanvasTodo[] {
+  if (!note.text.trim() && !note.todo && !note.meta) return [];
+  const meta = note.meta ?? {};
+  const kind: InboxItemKind = meta.kind ?? (note.todo ? "task" : "note");
+  const status: CanvasTodoStatus =
+    note.done || meta.status === "resolved" ? "done" : (meta.status ?? "open");
+  const createdAt = meta.history?.[0]?.at ?? note.updatedAt;
+  return [
+    {
+      id: `ent-${api}-${now.toString(36)}`,
+      title: entryTitleFromText(note.text, label ?? api),
+      body: note.text || undefined,
+      bodyFormat: note.textFormat,
+      bodyHtml: note.textHtml,
+      assignee: meta.owner,
+      dueDate: meta.dueDate,
+      status,
+      createdAt,
+      updatedAt: note.updatedAt,
+      kind,
+      entityApi: api,
+      owner: meta.owner,
+      team: meta.team,
+      priority: meta.priority,
+      resolution: meta.resolution,
+      decisionState: meta.decisionState,
+      anchor: meta.anchor,
+      fingerprint: meta.fingerprint,
+      anchorFacts: meta.anchorFacts,
+      history: meta.history,
+    },
+  ];
+}
+
+const SHARE_KINDS: InboxItemKind[] = ["note", "task", "question", "decision"];
+const SHARE_STATUSES: CanvasTodoStatus[] = ["open", "in-progress", "blocked", "awaiting-feedback", "done"];
+
+/**
+ * Shared entity-log rows (Markdown-only) become entries with fresh ids.
+ * Junk rows are dropped; an empty result means nothing to import.
+ */
+export function shareRowsToEntries(
+  api: string,
+  rows: { title?: unknown; text?: unknown; kind?: unknown; status?: unknown; updatedAt?: unknown }[],
+  now = Date.now()
+): CanvasTodo[] {
+  const out: CanvasTodo[] = [];
+  rows.forEach((row, i) => {
+    if (!row || typeof row.text !== "string" || !row.text.trim()) return;
+    const kind: InboxItemKind =
+      typeof row.kind === "string" && (SHARE_KINDS as string[]).includes(row.kind) ? (row.kind as InboxItemKind) : "note";
+    const status: CanvasTodoStatus =
+      typeof row.status === "string" && (SHARE_STATUSES as string[]).includes(row.status)
+        ? (row.status as CanvasTodoStatus)
+        : "open";
+    const at = typeof row.updatedAt === "number" ? row.updatedAt : now;
+    out.push({
+      id: `shr-${api}-${i.toString(36)}-${now.toString(36)}`,
+      title: (typeof row.title === "string" && row.title.trim() ? row.title.trim() : entryTitleFromText(row.text, api)).slice(0, 160),
+      body: row.text,
+      kind,
+      status,
+      entityApi: api,
+      createdAt: at,
+      updatedAt: at,
+    });
+  });
+  return out;
+}
+
+/**
+ * Accept one persisted entity-log value in any known shape: the current
+ * entry array, a legacy single note object, or junk (→ []). Never throws.
+ */
+export function migrateEntityLogValue(api: string, value: unknown, label?: string, now = Date.now()): CanvasTodo[] {
+  if (Array.isArray(value)) {
+    return (value as CanvasTodo[]).filter(
+      (e) => e && typeof e.id === "string" && typeof e.updatedAt === "number"
+    );
+  }
+  if (value && typeof value === "object") {
+    const v = value as Partial<LegacyEntityNoteInput>;
+    if (typeof v.text === "string" && typeof v.todo === "boolean") {
+      return entityNoteToEntries(
+        api,
+        {
+          text: v.text,
+          textFormat: v.textFormat,
+          textHtml: v.textHtml,
+          todo: v.todo,
+          done: v.done === true,
+          updatedAt: typeof v.updatedAt === "number" ? v.updatedAt : now,
+          meta: v.meta,
+        },
+        label,
+        now
+      );
+    }
+  }
+  return [];
 }

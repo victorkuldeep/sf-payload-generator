@@ -19,6 +19,21 @@ export async function GET() {
   return NextResponse.json({ ok: true, kv: kv !== null, now: Date.now() });
 }
 
+const shareEntityRowSchema = z.object({
+  title: z.string().max(160).optional(),
+  text: z.string().max(50_000),
+  kind: z.enum(["note", "task", "question", "decision"]).optional(),
+  status: z.enum(["open", "in-progress", "blocked", "awaiting-feedback", "done"]).optional(),
+  updatedAt: z.number().optional(),
+});
+
+const legacyEntityNoteSchema = z.object({
+  text: z.string().max(50_000),
+  todo: z.boolean().optional(),
+  done: z.boolean().optional(),
+  updatedAt: z.number().optional(),
+});
+
 const shareBodySchema = z.object({
   v: z.number(),
   name: z.string().max(200).optional(),
@@ -27,12 +42,21 @@ const shareBodySchema = z.object({
   positions: z.record(z.string(), z.object({ x: z.number(), y: z.number() })),
   view: z.enum(["erd", "graph"]).optional(),
   notes: z.string().max(100_000).optional(),
-  entityNotes: z.record(z.string(), z.object({
-    text: z.string().max(50_000),
-    todo: z.boolean().optional(),
-    done: z.boolean().optional(),
+  entityNotes: z.record(z.string(), z.union([z.array(shareEntityRowSchema), legacyEntityNoteSchema])).optional(),
+  todos: z.array(z.object({
+    id: z.string().min(1).max(160),
+    title: z.string().min(1).max(200),
+    body: z.string().max(12_000).optional(),
+    assignee: z.string().max(120).optional(),
+    dueDate: z.string().max(32).optional(),
+    kind: z.enum(["note", "task", "question", "decision"]).optional(),
+    owner: z.string().max(120).optional(),
+    team: z.string().max(120).optional(),
+    priority: z.enum(["low", "normal", "high", "critical"]).optional(),
+    status: z.enum(["open", "in-progress", "blocked", "awaiting-feedback", "done"]).optional(),
+    createdAt: z.number().optional(),
     updatedAt: z.number().optional(),
-  })).optional(),
+  })).max(500).optional(),
 });
 
 export async function POST(req: NextRequest) {

@@ -3,11 +3,13 @@ import {
   appendNoteLine,
   commitNoteBody,
   emptyNoteBody,
+  entryBodyVacant,
   htmlToMd,
   mdToHtml,
   noteBodyEmpty,
   noteBodyFromHtml,
   noteBodyFromMd,
+  noteTabCommit,
 } from "./notebody";
 
 const MD_SAMPLE = [
@@ -149,5 +151,30 @@ describe("note body commits", () => {
     expect(next.html).toContain("<p>[Console] TLS verified</p>");
     const mdOnly = appendNoteLine(noteBodyFromMd("Plan"), "[Console] go");
     expect(mdOnly.html).toContain("[Console] go");
+  });
+});
+
+describe("tab-switch commits and vacant entries", () => {
+  it("stays silent on an untouched draft so a fresh entry survives a tab peek", () => {
+    expect(noteTabCommit(emptyNoteBody(), "rich")).toBeNull();
+    expect(noteTabCommit(emptyNoteBody(), "md")).toBeNull();
+  });
+
+  it("converts a written draft without losing either side", () => {
+    const md = noteBodyFromMd("Ship **Friday**");
+    const asRich = noteTabCommit(md, "rich");
+    expect(asRich?.format).toBe("rich");
+    expect(asRich?.html).toContain("<strong>Friday</strong>");
+    const rich = noteBodyFromHtml("<p>Ship <strong>Friday</strong></p>");
+    const asMd = noteTabCommit(rich, "md");
+    expect(asMd?.format).toBe("md");
+    expect(asMd?.md).toContain("Friday");
+  });
+
+  it("drops only untitled empty rows, never a titled one", () => {
+    expect(entryBodyVacant("", emptyNoteBody())).toBe(true);
+    expect(entryBodyVacant("  ", emptyNoteBody())).toBe(true);
+    expect(entryBodyVacant("Verify lookup", emptyNoteBody())).toBe(false);
+    expect(entryBodyVacant("", noteBodyFromMd("drafting"))).toBe(false);
   });
 });

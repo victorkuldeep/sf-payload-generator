@@ -55,16 +55,20 @@ export function RichTextEditor({
   hint,
   label = "Rich text",
   onDone,
+  fill,
 }: {
   value: string;
   hint?: string;
   label?: string;
   onDone: (html: string) => void;
+  /** Stretch to the parent flex height (fullscreen zen) instead of capped rows. */
+  fill?: boolean;
 }) {
   const [, setTick] = useState(0);
   const committed = useRef<string | null>(null);
   const doneRef = useRef(onDone);
   doneRef.current = onDone;
+  const editorRef = useRef<Editor | null>(null);
   const bump = () => setTick((t) => t + 1);
 
   const editor = useEditor({
@@ -89,6 +93,33 @@ export function RichTextEditor({
     },
   });
 
+  // Seed the baseline from the initial content so a pristine blur (focus
+  // then click away without typing) stays silent instead of emitting an
+  // empty commit that reads as "cleared" downstream.
+  useEffect(() => {
+    if (editor && committed.current === null) {
+      committed.current = htmlToText(editor.getHTML()) ? editor.getHTML() : "";
+    }
+    editorRef.current = editor;
+  }, [editor]);
+
+  // Flush in-progress keystrokes when the editor unmounts (e.g. switching
+  // to the Markdown tab without blurring first) so typed content is never
+  // stranded in the destroyed Tiptap instance.
+  useEffect(
+    () => () => {
+      const inst = editorRef.current;
+      if (!inst || committed.current === null) return;
+      const clean = sanitizeDecisionHtml(inst.getHTML());
+      const next = htmlToText(clean) ? clean : "";
+      if (committed.current !== next) {
+        committed.current = next;
+        doneRef.current(next);
+      }
+    },
+    [],
+  );
+
   // External edits (AI propose, import, undo elsewhere) land without
   // clobbering an in-progress keystroke: only when the doc truly differs.
   useEffect(() => {
@@ -108,8 +139,14 @@ export function RichTextEditor({
     );
   }
 
+  const sizeCls = fill
+    ? "[&_.tiptap]:min-h-[180px] [&_.tiptap]:flex-1"
+    : "[&_.tiptap]:min-h-[220px] [&_.tiptap]:max-h-[420px] [&_.tiptap]:overflow-y-auto";
+
   return (
-    <div className="overflow-hidden rounded-xl border border-[#E8E2D8] bg-white transition-colors focus-within:border-[#C9A86A]">
+    <div
+      className={`${fill ? "flex min-h-0 flex-1 flex-col" : ""} overflow-hidden rounded-xl border border-[#E8E2D8] bg-white transition-colors focus-within:border-[#C9A86A]`}
+    >
       <div className="flex flex-wrap items-center gap-0.5 border-b border-[#EFE9DB] bg-[#FBFAF7] px-2 py-1.5" role="toolbar" aria-label="Formatting">
         <ToolButton editor={editor} title="Bold" active={editor.isActive("bold")} onRun={() => editor.chain().toggleBold().run()}>
           <span className="font-bold">B</span>
@@ -180,7 +217,7 @@ export function RichTextEditor({
       </div>
       <EditorContent
         editor={editor}
-        className="[&_.tiptap]:min-h-[220px] [&_.tiptap]:max-h-[420px] [&_.tiptap]:overflow-y-auto [&_.tiptap]:px-4 [&_.tiptap]:py-3 [&_.tiptap]:text-[14px] [&_.tiptap]:leading-relaxed [&_.tiptap]:text-[#27241F] [&_.tiptap]:outline-none [&_.tiptap_p]:my-2 [&_.tiptap_h2]:mb-1 [&_.tiptap_h2]:mt-4 [&_.tiptap_h2]:text-[17px] [&_.tiptap_h2]:font-bold [&_.tiptap_h2]:text-[#27241F] [&_.tiptap_ul]:my-2 [&_.tiptap_ul]:list-disc [&_.tiptap_ul]:pl-6 [&_.tiptap_ol]:my-2 [&_.tiptap_ol]:list-decimal [&_.tiptap_ol]:pl-6 [&_.tiptap_li]:my-0.5 [&_.tiptap_blockquote]:my-2 [&_.tiptap_blockquote]:border-l-2 [&_.tiptap_blockquote]:border-[#C9A86A] [&_.tiptap_blockquote]:pl-3 [&_.tiptap_blockquote]:italic [&_.tiptap_blockquote]:text-[#3A352D] [&_.tiptap_code]:rounded [&_.tiptap_code]:bg-[#F5F1E8] [&_.tiptap_code]:px-1 [&_.tiptap_code]:font-mono [&_.tiptap_code]:text-[13px] [&_.tiptap_pre]:my-2 [&_.tiptap_pre]:overflow-x-auto [&_.tiptap_pre]:rounded-lg [&_.tiptap_pre]:bg-[#27241F] [&_.tiptap_pre]:p-3 [&_.tiptap_pre]:font-mono [&_.tiptap_pre]:text-[13px] [&_.tiptap_pre]:text-[#F5F1E8] [&_.tiptap_pre_code]:bg-transparent [&_.tiptap_pre_code]:p-0"
+        className={`${fill ? "flex min-h-0 flex-1 flex-col overflow-y-auto" : ""} ${sizeCls} [&_.tiptap]:px-4 [&_.tiptap]:py-3 [&_.tiptap]:text-[14px] [&_.tiptap]:leading-relaxed [&_.tiptap]:text-[#27241F] [&_.tiptap]:outline-none [&_.tiptap_p]:my-2 [&_.tiptap_h2]:mb-1 [&_.tiptap_h2]:mt-4 [&_.tiptap_h2]:text-[17px] [&_.tiptap_h2]:font-bold [&_.tiptap_h2]:text-[#27241F] [&_.tiptap_ul]:my-2 [&_.tiptap_ul]:list-disc [&_.tiptap_ul]:pl-6 [&_.tiptap_ol]:my-2 [&_.tiptap_ol]:list-decimal [&_.tiptap_ol]:pl-6 [&_.tiptap_li]:my-0.5 [&_.tiptap_blockquote]:my-2 [&_.tiptap_blockquote]:border-l-2 [&_.tiptap_blockquote]:border-[#C9A86A] [&_.tiptap_blockquote]:pl-3 [&_.tiptap_blockquote]:italic [&_.tiptap_blockquote]:text-[#3A352D] [&_.tiptap_code]:rounded [&_.tiptap_code]:bg-[#F5F1E8] [&_.tiptap_code]:px-1 [&_.tiptap_code]:font-mono [&_.tiptap_code]:text-[13px] [&_.tiptap_pre]:my-2 [&_.tiptap_pre]:overflow-x-auto [&_.tiptap_pre]:rounded-lg [&_.tiptap_pre]:bg-[#27241F] [&_.tiptap_pre]:p-3 [&_.tiptap_pre]:font-mono [&_.tiptap_pre]:text-[13px] [&_.tiptap_pre]:text-[#F5F1E8] [&_.tiptap_pre_code]:bg-transparent [&_.tiptap_pre_code]:p-0`}
       />
       {hint && <p className="border-t border-[#EFE9DB] bg-[#FBFAF7] px-4 py-1.5 text-[11px] text-[#A39B8E]">{hint}</p>}
     </div>

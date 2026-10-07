@@ -8,7 +8,7 @@ import {
   queryInbox,
   countInbox,
 } from "./normalize";
-import { EMPTY_QUERY } from "./types";
+import { EMPTY_QUERY, type CanvasTodo } from "./types";
 import type { ErdSnapshot } from "@/lib/erd/snapshotDb";
 
 const labels = new Map([
@@ -20,13 +20,11 @@ const liveInput = {
   orgScopeId: "org:00Dxx",
   text: "# Plan\n- [ ] Verify junction",
   updatedAt: 1000,
-  todo: false,
-  done: false,
-  entities: {
-    Lead: { text: "Check conversion", todo: true, done: false, updatedAt: 2000 },
-    Quote__c: { text: "Pricing review", todo: true, done: true, updatedAt: 3000 },
-    Account: { text: "Just observing", todo: false, done: false, updatedAt: 4000 },
-  },
+  entries: [
+    { id: "e1", title: "Check conversion", body: "Check conversion", kind: "task", status: "open", entityApi: "Lead", createdAt: 100, updatedAt: 2000 },
+    { id: "e2", title: "Pricing review", body: "Pricing review", kind: "task", status: "done", entityApi: "Quote__c", createdAt: 100, updatedAt: 3000 },
+    { id: "e3", title: "Just observing", body: "Just observing", kind: "note", status: "open", entityApi: "Account", createdAt: 100, updatedAt: 4000 },
+  ] as CanvasTodo[],
   labels,
 };
 
@@ -44,7 +42,7 @@ const snap = (over: Partial<ErdSnapshot> = {}): ErdSnapshot => ({
 
 describe("inbox normalization", () => {
   it("maps canvas markdown to a single open note", () => {
-    const items = normalizeLiveNotes({ ...liveInput, text: "hello", entities: {} });
+    const items = normalizeLiveNotes({ ...liveInput, text: "hello", entries: [] });
     expect(items).toHaveLength(1);
     expect(items[0].id).toBe("live-canvas");
     expect(items[0].kind).toBe("note");
@@ -55,11 +53,10 @@ describe("inbox normalization", () => {
     const items = normalizeLiveNotes({
       ...liveInput,
       text: "",
-      entities: {},
-      todos: [
+      entries: [
         { id: "t1", title: "Verify junction", body: "Checkea", assignee: "Asha", dueDate: "2026-10-05", status: "in-progress", createdAt: 100, updatedAt: 200 },
         { id: "t2", title: "Old thing", status: "done", createdAt: 50, updatedAt: 60 },
-      ],
+      ] as CanvasTodo[],
     });
     expect(items).toHaveLength(2);
     const byId = new Map(items.map((i) => [i.id, i]));
@@ -73,9 +70,17 @@ describe("inbox normalization", () => {
     expect(byId.get("live-canvas-todo-t2")?.title).toBe("Old thing");
   });
 
-  it("skips blank canvas text and empty non-todo entities", () => {
-    const items = normalizeLiveNotes({ ...liveInput, text: "  ", entities: { X: { text: "", todo: false, done: false, updatedAt: 1 } } });
-    expect(items).toHaveLength(0);
+  it("skips blank canvas text and empty prose notes, keeps actionable kinds", () => {
+    const items = normalizeLiveNotes({
+      ...liveInput,
+      text: "  ",
+      entries: [
+        { id: "x1", title: "", body: "  ", kind: "note", status: "open", entityApi: "X", createdAt: 1, updatedAt: 1 },
+        { id: "x2", title: "", body: "", kind: "task", status: "open", entityApi: "X", createdAt: 1, updatedAt: 1 },
+      ] as CanvasTodo[],
+    });
+    expect(items).toHaveLength(1);
+    expect(items[0].id).toBe("live-entry-x2");
   });
 
   it("passes the rich triple through from every source", () => {
@@ -85,13 +90,15 @@ describe("inbox normalization", () => {
       text: "Hi **there**",
       textFormat: "rich",
       textHtml: html,
-      todos: [{ id: "t1", title: "T", body: "Hi", bodyFormat: "rich", bodyHtml: html, status: "open", createdAt: 1, updatedAt: 2 }],
-      entities: { Lead: { text: "Hi", textFormat: "rich", textHtml: html, todo: false, done: false, updatedAt: 1 } },
+      entries: [
+        { id: "t1", title: "T", body: "Hi", bodyFormat: "rich", bodyHtml: html, status: "open", createdAt: 1, updatedAt: 2 },
+        { id: "e1", title: "E", body: "Hi", bodyFormat: "rich", bodyHtml: html, kind: "note", status: "open", entityApi: "Lead", createdAt: 1, updatedAt: 1 },
+      ] as CanvasTodo[],
     });
     const byId = new Map(items.map((i) => [i.id, i]));
     expect(byId.get("live-canvas")).toMatchObject({ bodyFormat: "rich", bodyHtml: html });
     expect(byId.get("live-canvas-todo-t1")).toMatchObject({ bodyFormat: "rich", bodyHtml: html });
-    expect(byId.get("live-entity-Lead")).toMatchObject({ bodyFormat: "rich", bodyHtml: html });
+    expect(byId.get("live-entry-e1")).toMatchObject({ bodyFormat: "rich", bodyHtml: html });
     const snapItems = normalizeSnapshotNotes({
       snapshot: snap({ notes: "Hi", notesFormat: "rich", notesHtml: html }),
       orgScopeId: "o",
@@ -101,22 +108,22 @@ describe("inbox normalization", () => {
     expect(normalizeLiveNotes(liveInput)[0].bodyFormat).toBeUndefined();
   });
 
-  it("maps todo flag to task kind and done to resolved - never invents kinds", () => {
+  it("maps entry kind and done to resolved - never invents kinds", () => {
     const items = normalizeLiveNotes(liveInput);
     const byId = new Map(items.map((i) => [i.id, i]));
-    expect(byId.get("live-entity-Lead")?.kind).toBe("task");
-    expect(byId.get("live-entity-Lead")?.status).toBe("open");
-    expect(byId.get("live-entity-Quote__c")?.kind).toBe("task");
-    expect(byId.get("live-entity-Quote__c")?.status).toBe("resolved");
-    expect(byId.get("live-entity-Account")?.kind).toBe("note");
-    expect(byId.get("live-entity-Account")?.status).toBe("open");
+    expect(byId.get("live-entry-e1")?.kind).toBe("task");
+    expect(byId.get("live-entry-e1")?.status).toBe("open");
+    expect(byId.get("live-entry-e2")?.kind).toBe("task");
+    expect(byId.get("live-entry-e2")?.status).toBe("resolved");
+    expect(byId.get("live-entry-e3")?.kind).toBe("note");
+    expect(byId.get("live-entry-e3")?.status).toBe("open");
   });
 
   it("keeps stable deterministic ids", () => {
     const a = normalizeLiveNotes(liveInput).map((i) => i.id).sort();
     const b = normalizeLiveNotes(liveInput).map((i) => i.id).sort();
     expect(a).toEqual(b);
-    expect(a).toContain("live-entity-Lead");
+    expect(a).toContain("live-entry-e1");
   });
 
   it("adapts snapshot notes with provenance, skips snapshots without notes", () => {
@@ -132,8 +139,8 @@ describe("inbox normalization", () => {
     const ctx = { knownApis: new Set(["Lead"]), entities: new Map(), fields: new Map() };
     const items = resolveStale(normalizeLiveNotes(liveInput), ctx);
     const byId = new Map(items.map((i) => [i.id, i]));
-    expect(byId.get("live-entity-Lead")?.stale).toBe("ok");
-    expect(byId.get("live-entity-Quote__c")?.stale).toBe("missing");
+    expect(byId.get("live-entry-e1")?.stale).toBe("ok");
+    expect(byId.get("live-entry-e2")?.stale).toBe("missing");
     // canvas items stay as-is
     expect(byId.get("live-canvas")?.stale).toBe("ok");
   });
@@ -142,9 +149,9 @@ describe("inbox normalization", () => {
     const withFp = {
       ...liveInput,
       text: "",
-      entities: {
-        Lead: { text: "x", todo: false, done: false, updatedAt: 1, meta: { fingerprint: { value: "e:stale", at: 1 } } },
-      },
+      entries: [
+        { id: "f1", title: "x", body: "x", kind: "note", status: "open", entityApi: "Lead", fingerprint: { value: "e:stale", at: 1 }, createdAt: 1, updatedAt: 1 },
+      ] as CanvasTodo[],
     };
     const ctx = {
       knownApis: new Set(["Lead"]),
@@ -155,16 +162,13 @@ describe("inbox normalization", () => {
     expect(items[0].stale).toBe("changed");
   });
 
-  it("honors explicit kind/status/owner metadata without rewriting legacy flags", () => {
+  it("honors explicit kind/status/owner metadata on entries", () => {
     const withMeta = {
       ...liveInput,
       text: "",
-      entities: {
-        Lead: {
-          text: "Should we?", todo: false, done: false, updatedAt: 1,
-          meta: { kind: "question" as const, owner: "Asha", team: "Integ", priority: "high" as const },
-        },
-      },
+      entries: [
+        { id: "q1", title: "Should we?", body: "Should we?", kind: "question", status: "open", entityApi: "Lead", owner: "Asha", team: "Integ", priority: "high", createdAt: 1, updatedAt: 1 },
+      ] as CanvasTodo[],
     };
     const items = normalizeLiveNotes(withMeta);
     expect(items[0].kind).toBe("question");
@@ -196,8 +200,8 @@ describe("inbox normalization", () => {
     const items = resolveStale(normalizeLiveNotes(liveInput), ctx);
     const sorted = queryInbox(items, EMPTY_QUERY).map((i) => i.id);
     // open task first, then open notes (canvas note updatedAt 1000 < Account 4000)
-    expect(sorted[0]).toBe("live-entity-Lead");
-    expect(sorted).toContain("live-entity-Quote__c"); // resolved sorts last among its group
+    expect(sorted[0]).toBe("live-entry-e1");
+    expect(sorted).toContain("live-entry-e2"); // resolved sorts last among its group
   });
 
   it("counts with the same semantics as the list", () => {

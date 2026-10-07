@@ -51,6 +51,15 @@ async function putAutosave<T>(orgKey: string, slice: AutosaveSlice, data: T, tab
   }
 }
 
+/**
+ * Direct write for cross-surface sync (Console pushes into schema notes
+ * slices). Same record, same best-effort semantics as the debounced path.
+ */
+export function writeAutosave<T>(orgKey: string, slice: AutosaveSlice, data: T, tabId?: string): Promise<void> {
+  if (typeof window === "undefined" || !orgKey) return Promise.resolve();
+  return putAutosave(orgKey, slice, data, tabId);
+}
+
 export async function clearAutosave(orgKey: string, slice: AutosaveSlice, tabId?: string): Promise<void> {
   try {
     await withStore(STORES.workspaces, "readwrite", (store) => store.delete(recordId(orgKey, slice, tabId)));

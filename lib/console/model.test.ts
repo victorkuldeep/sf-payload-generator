@@ -21,6 +21,16 @@ describe("console model", () => {
     expect(consoleTaskSchema.safeParse(t).success).toBe(true);
   });
 
+  it("carries synced kind and owner from canvas entries", () => {
+    const t = { ...newConsoleTask("Verify lookup", 1), kind: "question" as const, owner: "kul" };
+    expect(consoleTaskSchema.safeParse(t).success).toBe(true);
+    expect(consoleTaskSchema.safeParse({ ...t, kind: "epic" }).success).toBe(false);
+    const bare = newConsoleTask("Plain", 2);
+    expect(bare.kind).toBeUndefined();
+    expect(bare.owner).toBeUndefined();
+    expect(consoleTaskSchema.safeParse(bare).success).toBe(true);
+  });
+
   it("walks the lifecycle and rejects jumps", () => {
     expect(canTransition("open", "in-progress")).toBe(true);
     expect(canTransition("open", "blocked")).toBe(true);

@@ -324,6 +324,26 @@ export function noteBodyEmpty(b: NoteBody): boolean {
 }
 
 /**
+ * Tab-switch commit for Rich | Markdown | Preview. Returns null when the
+ * draft holds nothing on either side: switching tabs on an untouched entry
+ * must stay a purely local view change and never emit an empty body, or the
+ * caller reads it as "cleared" and drops a still-untitled entry.
+ */
+export function noteTabCommit(prev: NoteBody, tab: NoteFormat): NoteBody | null {
+  if (noteBodyEmpty(prev)) return null;
+  return commitNoteBody(prev, tab, tab === "rich" ? prev.html : prev.md);
+}
+
+/**
+ * Vacant-entry rule: an entry with no body text and no title holds nothing,
+ * so an empty body commit may drop it (abandoned fresh row). A titled entry
+ * is never vacant - clearing its description keeps the row.
+ */
+export function entryBodyVacant(title: string, body: NoteBody): boolean {
+  return noteBodyEmpty(body) && title.trim() === "";
+}
+
+/**
  * Append a line (Console pushes, system stamps) to both sides. The rich
  * side grows a paragraph instead of regenerating, so highlights survive.
  */

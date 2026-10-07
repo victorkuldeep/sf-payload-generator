@@ -8,9 +8,27 @@
  */
 
 import type { SalesforceDescribeResult } from "@/lib/salesforce/types";
+import type { CanvasTodoStatus, InboxItemKind } from "@/lib/inbox/types";
 
 export const ERD_SHARE_KIND = "gravenx-erd";
 export const ERD_SHARE_VERSION = 1;
+
+/** One Markdown-only entity-log row in a share payload. */
+export interface ShareEntityRow {
+  title?: string;
+  text: string;
+  kind?: InboxItemKind;
+  status?: CanvasTodoStatus;
+  updatedAt?: number;
+}
+
+/** Legacy single-note shape (pre-log shares) - receivers migrate on touch. */
+export interface LegacyShareEntityNote {
+  text: string;
+  todo?: boolean;
+  done?: boolean;
+  updatedAt?: number;
+}
 
 export interface ErdSharePayload {
   kind: typeof ERD_SHARE_KIND;
@@ -30,7 +48,7 @@ export interface ErdSharePayload {
     hiddenIds?: string[];
     dismissedIds?: string[];
   };
-  entityNotes?: Record<string, { text: string; todo: boolean; done: boolean; updatedAt: number }>;
+  entityNotes?: Record<string, ShareEntityRow[] | LegacyShareEntityNote>;
 }
 
 export function validateSharePayload(raw: unknown): ErdSharePayload | null {
@@ -66,7 +84,20 @@ export function validateSharePayload(raw: unknown): ErdSharePayload | null {
       dismissedIds: Array.isArray(s.dismissedIds) ? s.dismissedIds.filter((x): x is string => typeof x === "string") : undefined,
     },
     entityNotes:
-      p.entityNotes && typeof p.entityNotes === "object" ? p.entityNotes : undefined,
+      p.entityNotes && typeof p.entityNotes === "object"
+        ? Object.fromEntries(
+            Object.entries(p.entityNotes as Record<string, unknown>).flatMap(([api, v]): [string, ShareEntityRow[] | LegacyShareEntityNote][] => {
+              if (Array.isArray(v)) {
+                const rows = v.filter(
+                  (r): r is ShareEntityRow => !!r && typeof (r as ShareEntityRow).text === "string"
+                );
+                return rows.length > 0 ? [[api, rows]] : [];
+              }
+              const legacy = v as LegacyShareEntityNote;
+              return legacy && typeof legacy.text === "string" ? [[api, legacy]] : [];
+            })
+          )
+        : undefined,
   };
 }
 

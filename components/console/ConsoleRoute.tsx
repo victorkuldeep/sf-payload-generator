@@ -19,12 +19,17 @@ import { downloadTaskList } from "@/lib/console/taskExport";
 import { findDeepRecord, useDeepParam } from "@/lib/deep/deep";
 import {
   consoleToCanvas,
+  liveSchemaFns,
   liveSystemFns,
+  pullSchema,
   pullSystem,
+  pushSchemaEntryNote,
+  pushSchemaEntryStatus,
   pushTodoNote,
   pushTodoStatus,
   type CanvasLinkView,
 } from "@/lib/console/sync";
+import { getCachedConnection } from "@/lib/session/cache";
 import { TaskDetail, fmtDate } from "./TaskDetail";
 import { NewTaskDialog, type NewTaskDraft } from "./NewTaskDialog";
 
@@ -46,6 +51,24 @@ const STATUS_PILL: Record<ConsoleStatus, string> = {
 function todayKey(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+const KIND_PILL: Record<string, string> = {
+  note: "bg-[#F0EBE0] text-[#777168]",
+  task: "bg-[#F5EEDF] text-[#8A6A2F]",
+  question: "bg-[#EBF2E6] text-[#3E6B34]",
+  decision: "bg-[#ECEAF6] text-[#4E4494]",
+};
+
+function KindPill({ kind }: { kind: ConsoleTask["kind"] }) {
+  return (
+    <span
+      title={`Kind: ${kind ?? "task"}`}
+      className={`shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase ${KIND_PILL[kind ?? "task"]}`}
+    >
+      {(kind ?? "task").slice(0, 4)}
+    </span>
+  );
 }
 
 function DueBadge({ task }: { task: ConsoleTask }) {
@@ -78,11 +101,19 @@ export function ConsoleRoute() {
   const knownRef = useRef(new Map<string, number>());
 
   const refresh = useCallback(async () => {
-    const [t, v] = await Promise.all([listConsoleTasks(), pullSystem(liveSystemFns)]);
+    // Schema views need the connected org (notes slices are per-org); the
+    // System surface is global. Offline simply yields no schema views.
+    const orgKey = getCachedConnection()?.orgKey ?? "";
+    const [t, sys, sch] = await Promise.all([
+      listConsoleTasks(),
+      pullSystem(liveSystemFns),
+      orgKey ? pullSchema(orgKey, liveSchemaFns) : Promise.resolve([] as CanvasLinkView[]),
+    ]);
+    const v = [...sys, ...sch];
     setTasks(t);
     setViews(v);
     for (const item of v) {
-      if (item.todoId) knownRef.current.set(`${item.recordId}:${item.todoId}`, item.updatedAt);
+      if (item.todoId) knownRef.current.set(`${item.surface}:${item.recordId}:${item.todoId}`, item.updatedAt);
     }
     setAttachCounts(await countAttachments(t.map((x) => x.id)));
     setLoaded(true);
@@ -115,6 +146,8 @@ export function ConsoleRoute() {
       ...(draft.body ? noteToConsoleBody(draft.body) : {}),
       status: draft.status,
       priority: draft.priority,
+      ...(draft.kind && draft.kind !== "task" ? { kind: draft.kind } : {}),
+      ...(draft.owner ? { owner: draft.owner } : {}),
       ...(draft.dueDate ? { dueDate: draft.dueDate } : {}),
     };
     setTasks((prev) => [task, ...prev]);
@@ -123,20 +156,31 @@ export function ConsoleRoute() {
     setSelectedId(task.id);
   }, []);
 
-  /** Push a Console status move back onto every linked canvas TODO. */
+  /** Push a Console status move back onto every linked canvas entry. */
   const moveWithSync = useCallback(
     async (task: ConsoleTask, to: ConsoleStatus) => {
       const next = moveTask(task, to);
       if (next === task) return;
       const canvas = consoleToCanvas(to);
       let stale = false;
+      let gone: string | null = null;
       for (const link of task.links) {
-        if (link.surface !== "system" || !link.todoId) continue;
-        const key = `${link.recordId}:${link.todoId}`;
-        const r = await pushTodoStatus(liveSystemFns, link.recordId, link.todoId, canvas, knownRef.current.get(key) ?? 0);
-        if (!r.ok && r.stale) stale = true;
+        if (!link.todoId) continue;
+        const key = `${link.surface}:${link.recordId}:${link.todoId}`;
+        const known = knownRef.current.get(key) ?? 0;
+        if (link.surface === "system") {
+          const r = await pushTodoStatus(liveSystemFns, link.recordId, link.todoId, canvas, known);
+          if (!r.ok && r.stale) stale = true;
+        } else if (link.surface === "schema") {
+          const orgKey = getCachedConnection()?.orgKey ?? "";
+          if (!orgKey) continue;
+          const r = await pushSchemaEntryStatus(liveSchemaFns, orgKey, link.recordId, link.todoId, canvas, known);
+          if (!r.ok && r.stale) stale = true;
+          else if (!r.ok && r.error) gone = r.error;
+        }
       }
       await persist(next);
+      if (gone) setNotice(gone);
       if (stale) {
         setNotice("A linked canvas moved on — its side kept the newer state. Pull refreshed below.");
         void refresh();
@@ -150,9 +194,16 @@ export function ConsoleRoute() {
       const next = addNote(task, text);
       if (next === task) return;
       for (const link of task.links) {
-        if (link.surface !== "system" || !link.todoId) continue;
-        const key = `${link.recordId}:${link.todoId}`;
-        await pushTodoNote(liveSystemFns, link.recordId, link.todoId, text, knownRef.current.get(key) ?? 0);
+        if (!link.todoId) continue;
+        const key = `${link.surface}:${link.recordId}:${link.todoId}`;
+        const known = knownRef.current.get(key) ?? 0;
+        if (link.surface === "system") {
+          await pushTodoNote(liveSystemFns, link.recordId, link.todoId, text, known);
+        } else if (link.surface === "schema") {
+          const orgKey = getCachedConnection()?.orgKey ?? "";
+          if (!orgKey) continue;
+          await pushSchemaEntryNote(liveSchemaFns, orgKey, link.recordId, link.todoId, text, known);
+        }
       }
       await persist(next);
     },
@@ -161,21 +212,31 @@ export function ConsoleRoute() {
 
   const linkView = useCallback(
     async (task: ConsoleTask, item: CanvasLinkView) => {
-      if (task.links.some((l) => l.recordId === item.recordId && (l.todoId ?? "") === (item.todoId ?? ""))) return;
+      if (task.links.some((l) => l.surface === item.surface && l.recordId === item.recordId && (l.todoId ?? "") === (item.todoId ?? ""))) return;
       const link: ConsoleLink = {
-        surface: "system",
+        surface: item.surface,
         recordId: item.recordId,
         ...(item.todoId ? { todoId: item.todoId } : {}),
         label: item.todoId ? `${item.recordName} · ${item.title}` : item.title,
       };
+      // Adopt kind/owner/due from the canvas entry when the task has none.
+      const adopted: Partial<ConsoleTask> =
+        item.todoId
+          ? {
+              ...(task.kind || !item.kind ? {} : { kind: item.kind }),
+              ...(task.owner || !item.owner ? {} : { owner: item.owner }),
+              ...(task.dueDate || !item.dueDate ? {} : { dueDate: item.dueDate }),
+            }
+          : {};
       const next: ConsoleTask = {
         ...task,
+        ...adopted,
         links: [...task.links, link],
         updatedAt: Date.now(),
         history: [...task.history, { at: Date.now(), what: `Linked canvas item: ${link.label}.` }],
       };
       if (item.todoId) {
-        knownRef.current.set(`${item.recordId}:${item.todoId}`, item.updatedAt);
+        knownRef.current.set(`${item.surface}:${item.recordId}:${item.todoId}`, item.updatedAt);
         // Adopt the canvas status so both sides start agreed.
         if (item.status && item.status !== next.status) {
           await persist({ ...next, status: item.status });
@@ -238,7 +299,12 @@ export function ConsoleRoute() {
     return tasks.filter(
       (t) =>
         (statusFilter === "all" || t.status === statusFilter) &&
-        (q === "" || t.title.toLowerCase().includes(q) || (t.body ?? "").toLowerCase().includes(q) || consoleTaskKey(t).toLowerCase() === q),
+        (q === "" ||
+          t.title.toLowerCase().includes(q) ||
+          (t.body ?? "").toLowerCase().includes(q) ||
+          (t.owner ?? "").toLowerCase().includes(q) ||
+          (t.kind ?? "task").includes(q) ||
+          consoleTaskKey(t).toLowerCase() === q),
     );
   }, [tasks, query, statusFilter]);
 
@@ -371,9 +437,11 @@ export function ConsoleRoute() {
                 <span className="min-w-0">
                   <span className="flex items-center gap-1.5">
                     <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${PRIORITY_DOT[t.priority]}`} />
+                    <KindPill kind={t.kind} />
                     <span className="truncate text-[13px] font-semibold text-[#27241F]">{t.title}</span>
                   </span>
                   <span className="mt-0.5 block truncate font-mono text-[10px] text-[#A39B8E]">
+                    {t.owner ? `${t.owner} · ` : ""}
                     {t.links.length > 0 ? `${t.links.length} link${t.links.length === 1 ? "" : "s"} · ` : ""}
                     {t.notes.length} note{t.notes.length === 1 ? "" : "s"} · {attachCounts[t.id] ?? 0} shot{(attachCounts[t.id] ?? 0) === 1 ? "" : "s"}
                   </span>
@@ -421,10 +489,12 @@ export function ConsoleRoute() {
                     >
                       <span className="flex items-center gap-1.5">
                         <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${PRIORITY_DOT[t.priority]}`} />
+                        <KindPill kind={t.kind} />
                         <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-[#27241F]">{t.title}</span>
                       </span>
                       <span className="mt-1 flex items-center gap-1.5 font-mono text-[10px] text-[#A39B8E]">
                         <span>{consoleTaskKey(t)}</span>
+                        {t.owner ? <span>· {t.owner}</span> : null}
                         {t.dueDate ? <span>· {t.dueDate}</span> : null}
                         <span className="ml-auto">{attachCounts[t.id] ?? 0}⧉ {t.notes.length}✎</span>
                       </span>
