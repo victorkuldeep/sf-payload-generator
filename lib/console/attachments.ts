@@ -49,30 +49,42 @@ export function needsDownscale(file: PickedFile): boolean {
 }
 
 /**
- * Browser-only: shrink oversized screenshots to MAX_DIM longest side.
+ * Browser-only: shrink oversized screenshots until they fit the size gate.
  * JPEG stays JPEG, everything else becomes WebP (crisp text, small bytes).
+ * Passes walk dimensions then quality down, and return the smallest output -
+ * even pathologically noisy captures land under the cap instead of bouncing.
  * GIFs pass through untouched - downscaling would kill animation.
  */
 export async function downscaleImageFile(file: File): Promise<File> {
   if (file.type === "image/gif") return file;
   const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, CONSOLE_ATTACHMENT_MAX_DIM / Math.max(bitmap.width, bitmap.height));
-  if (scale >= 1) {
-    bitmap.close();
-    return file;
-  }
   try {
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return file;
-    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     const type = file.type === "image/jpeg" ? "image/jpeg" : "image/webp";
-    const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, type, 0.92));
-    if (!blob) return file;
+    const ext = type === "image/jpeg" ? "jpg" : "webp";
     const base = file.name.replace(/\.[a-z0-9]+$/i, "").slice(0, 180) || "screenshot";
-    return new File([blob], `${base}.${type === "image/jpeg" ? "jpg" : "webp"}`, { type });
+    const attempts = [
+      { dim: CONSOLE_ATTACHMENT_MAX_DIM, q: 0.92 },
+      { dim: CONSOLE_ATTACHMENT_MAX_DIM, q: 0.8 },
+      { dim: CONSOLE_ATTACHMENT_MAX_DIM, q: 0.65 },
+      { dim: 1280, q: 0.8 },
+      { dim: 1280, q: 0.65 },
+    ];
+    let best: File = file;
+    for (const { dim, q } of attempts) {
+      const scale = Math.min(1, dim / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      const ctx = canvas.getContext("2d");
+      if (!ctx) break;
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, type, q));
+      if (!blob) break;
+      const out = new File([blob], `${base}.${ext}`, { type });
+      if (out.size < best.size) best = out;
+      if (best.size <= CONSOLE_ATTACHMENT_MAX_BYTES) break;
+    }
+    return best;
   } finally {
     bitmap.close();
   }
