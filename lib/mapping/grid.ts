@@ -132,3 +132,177 @@ export function mergePasteRows(
 export function snapshotTargets(project: MappingProject): string[] {
   return (project.sfSnapshot?.objects ?? []).flatMap((o) => o.fields.map((f) => `${o.name}.${f.name}`));
 }
+
+export interface KeyValuePair {
+  key: string;
+  value: string;
+  line: number;
+}
+
+/**
+ * Postman-style K:V input. One pair per line on the first separator found:
+ * arrows (→, ->, =>), then =, tab, pipe - and a colon that is not part of
+ * a URL (so pasted endpoints survive). A whole JSON object also parses:
+ * {"$.order.id": "Order.Id", ...} - the agent's native tongue.
+ */
+export function splitKeyValue(line: string): { key: string; value: string } | null {
+  const t = line.trim();
+  if (!t) return null;
+  for (const sep of ["→", "->", "=>", "="]) {
+    const at = t.indexOf(sep);
+    if (at > 0) return { key: t.slice(0, at).trim(), value: t.slice(at + sep.length).trim() };
+  }
+  for (const sep of ["\t", "|"]) {
+    const at = t.indexOf(sep);
+    if (at > 0) return { key: t.slice(0, at).trim(), value: t.slice(at + sep.length).trim() };
+  }
+  // First colon not followed by / - "orderId: Account.Name" splits, URLs don't.
+  const m = /(.*?):(?!\/)(.*)/.exec(t);
+  if (m && m[1].trim()) return { key: m[1].trim(), value: m[2].trim() };
+  return null;
+}
+
+export function parseKeyValueGrid(text: string): { pairs: KeyValuePair[]; skipped: PasteSkip[] } {
+  const pairs: KeyValuePair[] = [];
+  const skipped: PasteSkip[] = [];
+  const t = text.trim();
+  if (t.startsWith("{")) {
+    try {
+      const obj: unknown = JSON.parse(t);
+      if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+        let line = 0;
+        for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+          line++;
+          if (!k.trim() || typeof v !== "string" || !v.trim()) {
+            skipped.push({ line, reason: "Keys need non-empty string values." });
+            continue;
+          }
+          pairs.push({ key: k.trim(), value: v.trim(), line });
+        }
+        return { pairs, skipped };
+      }
+    } catch {
+      /* fall through to line mode - the brace may be literal text */
+    }
+  }
+  for (const [i, raw] of text.split(/\r?\n/).entries()) {
+    if (!raw.trim()) continue;
+    const split = splitKeyValue(raw);
+    if (!split || !split.key || !split.value) {
+      skipped.push({ line: i + 1, reason: "No K:V separator (→, ->, =, tab, |, :)." });
+      continue;
+    }
+    pairs.push({ key: split.key, value: split.value, line: i + 1 });
+  }
+  return { pairs, skipped };
+}
+
+export type QuickMatchStatus = "ok" | "blind" | "ambiguous" | "unknown-source" | "unknown-target" | "no-plan";
+
+export interface QuickMatch {
+  key: string;
+  value: string;
+  line: number;
+  status: QuickMatchStatus;
+  note: string;
+  row?: PasteRow;
+}
+
+/** Leaf segment of a canonical path: "$.order.id" -> "id". */
+function leafOf(path: string): string {
+  const m = /([^.[\]]+)\]?$/.exec(path.trim());
+  return m ? m[1] : path.trim();
+}
+
+/**
+ * Fast-forward resolution. Sources match exact canonical paths first, then
+ * unique leaf keys against the source snapshot; targets accept Object.Field
+ * or a bare field resolved through the plan's object. Without snapshots both
+ * sides commit blind (diagnostics flags drift later) - the modal never
+ * bricks on metadata. Only "ok"/"blind" rows are importable; everything
+ * else reports why, never half-applies.
+ */
+export function resolveQuickPairs(
+  project: MappingProject,
+  pairs: KeyValuePair[],
+  planId: string | null
+): { rows: PasteRow[]; matches: QuickMatch[] } {
+  const rows: PasteRow[] = [];
+  const matches: QuickMatch[] = [];
+  const plan = planId ? (project.recordPlans.find((p) => p.id === planId) ?? null) : null;
+  const leaves = project.source?.paths ?? [];
+  const byPath = new Map(leaves.map((p) => [p.path, p]));
+  const byId = new Map(leaves.map((p) => [p.id, p]));
+
+  for (const pair of pairs) {
+    const fail = (status: QuickMatchStatus, note: string): void => {
+      matches.push({ key: pair.key, value: pair.value, line: pair.line, status, note });
+    };
+    // ---- source side ----
+    let sourcePath: string | null = null;
+    let blindSource = false;
+    if (leaves.length === 0) {
+      sourcePath = pair.key;
+      blindSource = true;
+    } else {
+      const exact = byPath.get(pair.key) ?? byId.get(pair.key);
+      if (exact) {
+        sourcePath = exact.path;
+      } else {
+        const leaf = leafOf(pair.key).toLowerCase();
+        const hits = leaves.filter(
+          (p) => p.key.toLowerCase() === leaf || leafOf(p.path).toLowerCase() === leaf || p.path.toLowerCase() === pair.key.toLowerCase()
+        );
+        if (hits.length === 1) sourcePath = hits[0].path;
+        else if (hits.length > 1) {
+          fail("ambiguous", `"${pair.key}" matches ${hits.length} source nodes: ${hits.slice(0, 3).map((h) => h.path).join(", ")}${hits.length > 3 ? "…" : ""}. Use the full path.`);
+          continue;
+        } else {
+          fail("unknown-source", `"${pair.key}" is not in the source sample. Use a full $.path.`);
+          continue;
+        }
+      }
+    }
+    // ---- target side ----
+    const strict = parseTargetText(pair.value);
+    if (strict) {
+      const check = validateTarget(project, pair.value);
+      if (!check.ok) {
+        fail("unknown-target", check.reason);
+        continue;
+      }
+      const row: PasteRow = { sourcePath: sourcePath!, objectName: check.target.objectName, fieldName: check.target.fieldName };
+      rows.push(row);
+      matches.push({
+        key: pair.key, value: pair.value, line: pair.line,
+        status: blindSource || !project.sfSnapshot ? "blind" : "ok",
+        note: blindSource ? "No source sample - commits blind." : !project.sfSnapshot ? "No metadata snapshot - commits blind." : `${sourcePath} → ${check.target.objectName}.${check.target.fieldName}`,
+        row,
+      });
+      continue;
+    }
+    // Bare field - resolves through the plan's object.
+    if (/^[A-Za-z_][A-Za-z0-9_]*(__[cC])?$/.test(pair.value)) {
+      if (!plan) {
+        fail("no-plan", `"${pair.value}" needs an object - pick the record plan first, or use Object.Field.`);
+        continue;
+      }
+      const obj = project.sfSnapshot?.objects.find((o) => o.name === plan.objectName);
+      if (obj && !obj.fields.some((f) => f.name === pair.value)) {
+        fail("unknown-target", `${pair.value} is not on ${plan.objectName} in the snapshot.`);
+        continue;
+      }
+      const row: PasteRow = { sourcePath: sourcePath!, objectName: plan.objectName, fieldName: pair.value };
+      rows.push(row);
+      matches.push({
+        key: pair.key, value: pair.value, line: pair.line,
+        status: !project.sfSnapshot || blindSource ? "blind" : "ok",
+        note: `${sourcePath} → ${plan.objectName}.${pair.value}${!project.sfSnapshot ? " (blind - no snapshot)" : ""}`,
+        row,
+      });
+      continue;
+    }
+    fail("unknown-target", `"${pair.value}" must be Object.Field or a bare field with a plan picked.`);
+  }
+  return { rows, matches };
+}

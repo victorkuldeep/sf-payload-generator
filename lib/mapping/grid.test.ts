@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { analyzeRow } from "./diagnostics";
 import { FREE_SOURCE_PATH, blankProject, type MappingRow } from "./types";
-import { mergePasteRows, parsePasteGrid, parseTargetText, snapshotTargets, validateTarget } from "./grid";
+import { mergePasteRows, parseKeyValueGrid, parsePasteGrid, parseTargetText, resolveQuickPairs, snapshotTargets, splitKeyValue, validateTarget } from "./grid";
 
 const snapField = (name: string, over: Record<string, unknown> = {}) => ({
   name, label: name, type: "string", length: 255, precision: 0, scale: 0,
@@ -89,6 +89,93 @@ describe("grid helpers", () => {
   it("lists snapshot targets for autocomplete", () => {
     expect(snapshotTargets(snapshotted())).toEqual(["Account.Name", "Account.Industry"]);
     expect(snapshotTargets(blankProject({ id: "c", name: "c", now: "t" }))).toEqual([]);
+  });
+
+  it("splits K:V lines across arrows, equals, tab, pipe and URL-safe colon", () => {
+    expect(splitKeyValue("$.a → Account.Name")).toEqual({ key: "$.a", value: "Account.Name" });
+    expect(splitKeyValue("$.a -> Account.Name")).toEqual({ key: "$.a", value: "Account.Name" });
+    expect(splitKeyValue("$.a => Account.Name")).toEqual({ key: "$.a", value: "Account.Name" });
+    expect(splitKeyValue("$.a = Account.Name")).toEqual({ key: "$.a", value: "Account.Name" });
+    expect(splitKeyValue("$.a\tAccount.Name")).toEqual({ key: "$.a", value: "Account.Name" });
+    expect(splitKeyValue("$.a | Account.Name")).toEqual({ key: "$.a", value: "Account.Name" });
+    expect(splitKeyValue("orderId: Account.Name")).toEqual({ key: "orderId", value: "Account.Name" });
+    // Colons inside URLs are not separators.
+    expect(splitKeyValue("https://hub.test/hook")).toBeNull();
+    expect(splitKeyValue("no separator here")).toBeNull();
+    expect(splitKeyValue("")).toBeNull();
+  });
+
+  it("parses K:V dumps line by line, and whole JSON objects", () => {
+    const lines = parseKeyValueGrid("$.a = Account.Name\norderId: Industry\n\nbogus");
+    expect(lines.pairs).toEqual([
+      { key: "$.a", value: "Account.Name", line: 1 },
+      { key: "orderId", value: "Industry", line: 2 },
+    ]);
+    expect(lines.skipped).toEqual([{ line: 4, reason: "No K:V separator (→, ->, =, tab, |, :)." }]);
+    const json = parseKeyValueGrid('{"$.a": "Account.Name", "bad": 42}');
+    expect(json.pairs).toEqual([{ key: "$.a", value: "Account.Name", line: 1 }]);
+    expect(json.skipped).toHaveLength(1);
+  });
+
+  it("resolves leaf sources and bare fields through the plan", () => {
+    const p = snapshotted();
+    p.source = {
+      kind: "json-sample", name: "s", originalText: "{}", capturedAt: "t",
+      paths: [
+        { id: "$.order.id", path: "$.order.id", parent: "$.order", key: "id", kind: "scalar", jsonType: "string", depth: 2, inArray: false, required: "unknown" },
+        { id: "$.order.industry", path: "$.order.industry", parent: "$.order", key: "industry", kind: "scalar", jsonType: "string", depth: 2, inArray: false, required: "unknown" },
+      ],
+    };
+    p.recordPlans = [{ id: "pl", name: "Acct", objectName: "Account", intent: "create", sourcePath: "", cardinality: "one", parentPlanId: null }];
+    const { rows, matches } = resolveQuickPairs(
+      p,
+      [
+        { key: "id", value: "Account.Name", line: 1 },
+        { key: "$.order.industry", value: "Industry", line: 2 },
+      ],
+      "pl",
+    );
+    expect(rows).toEqual([
+      { sourcePath: "$.order.id", objectName: "Account", fieldName: "Name" },
+      { sourcePath: "$.order.industry", objectName: "Account", fieldName: "Industry" },
+    ]);
+    expect(matches.map((m) => m.status)).toEqual(["ok", "ok"]);
+  });
+
+  it("reports ambiguity and unknown sides honestly, importing only clean rows", () => {
+    const p = snapshotted();
+    p.source = {
+      kind: "json-sample", name: "s", originalText: "{}", capturedAt: "t",
+      paths: [
+        { id: "$.a.id", path: "$.a.id", parent: "$.a", key: "id", kind: "scalar", jsonType: "string", depth: 2, inArray: false, required: "unknown" },
+        { id: "$.b.id", path: "$.b.id", parent: "$.b", key: "id", kind: "scalar", jsonType: "string", depth: 2, inArray: false, required: "unknown" },
+      ],
+    };
+    p.recordPlans = [{ id: "pl", name: "Acct", objectName: "Account", intent: "create", sourcePath: "", cardinality: "one", parentPlanId: null }];
+    const { rows, matches } = resolveQuickPairs(
+      p,
+      [
+        { key: "id", value: "Account.Name", line: 1 },
+        { key: "$.a.id", value: "Account.Nope", line: 2 },
+        { key: "$.zzz", value: "Account.Name", line: 3 },
+        { key: "$.a.id", value: "Industry", line: 4 },
+        { key: "$.a.id", value: "Bare", line: 5 },
+      ],
+      "pl",
+    );
+    // Line 4 resolves through the plan; line 5's bare field is not on Account.
+    expect(rows).toEqual([{ sourcePath: "$.a.id", objectName: "Account", fieldName: "Industry" }]);
+    expect(matches.map((m) => m.status)).toEqual(["ambiguous", "unknown-target", "unknown-source", "ok", "unknown-target"]);
+  });
+
+  it("commits blind without snapshots instead of bricking", () => {
+    const p = blankProject({ id: "c", name: "c", now: "t" });
+    const { rows, matches } = resolveQuickPairs(p, [{ key: "$.a", value: "Anything.Field", line: 1 }], null);
+    expect(rows).toHaveLength(1);
+    expect(matches[0].status).toBe("blind");
+    const noPlan = resolveQuickPairs(p, [{ key: "$.a", value: "Bare", line: 1 }], null);
+    expect(noPlan.rows).toHaveLength(0);
+    expect(noPlan.matches[0].status).toBe("no-plan");
   });
 
   it("diagnoses free rows without crying source-missing", () => {

@@ -4,7 +4,8 @@ import { useMemo, useState } from "react";
 import Button from "../ui/Button";
 import { analyzeRow } from "@/lib/mapping/diagnostics";
 import { FREE_SOURCE_PATH, type MappingKind, type MappingProject, type MappingRow, type MappingStatus } from "@/lib/mapping/types";
-import { parsePasteGrid, snapshotTargets, validateTarget, type PasteRow } from "@/lib/mapping/grid";
+import { snapshotTargets, validateTarget, type PasteRow } from "@/lib/mapping/grid";
+import { QuickMapModal } from "./QuickMapModal";
 import { STATUS_STYLES } from "./MappingTable";
 
 type ColId = "target" | "kind" | "plan" | "constant" | "notes";
@@ -35,6 +36,8 @@ function rowStatus(project: MappingProject, row: GridRow): MappingStatus {
  */
 export function MappingGrid({
   project,
+  planId,
+  planLabel,
   onUpdateRow,
   onRemoveRow,
   onUpsertRow,
@@ -42,6 +45,9 @@ export function MappingGrid({
   onAddFreeRow,
 }: {
   project: MappingProject;
+  /** Active record plan - resolves bare-field targets in Quick map. */
+  planId: string | null;
+  planLabel: string | null;
   onUpdateRow: (id: string, patch: Partial<MappingRow>) => void;
   onRemoveRow: (id: string) => void;
   /** Create-or-retarget a leaf row from typed Object.Field text. */
@@ -59,8 +65,7 @@ export function MappingGrid({
   const [editing, setEditing] = useState<{ key: string; col: ColId; draft: string; error: string | null } | null>(null);
   const [bulkPlan, setBulkPlan] = useState("");
   const [bulkKind, setBulkKind] = useState("");
-  const [pasteOpen, setPasteOpen] = useState(false);
-  const [pasteText, setPasteText] = useState("");
+  const [quickOpen, setQuickOpen] = useState(false);
 
   const rows = useMemo<GridRow[]>(() => {
     const bySource = new Map(project.mappings.map((m) => [m.sourcePath, m]));
@@ -101,7 +106,6 @@ export function MappingGrid({
   }, [rows, query, statusFilter, project]);
 
   const targets = useMemo(() => snapshotTargets(project), [project]);
-  const pasted = useMemo(() => parsePasteGrid(pasteText), [pasteText]);
 
   const cellText = (row: GridRow, col: ColId): string => {
     const m = row.mapping;
@@ -275,8 +279,8 @@ export function MappingGrid({
         </select>
         <span className="font-mono text-[10px] text-[#A39B8E]">{filtered.length} rows</span>
         <span className="ml-auto flex gap-1.5">
-          <Button size="sm" variant="secondary" onClick={() => { setPasteText(""); setPasteOpen(true); }} title="Paste source → Object.Field lines from Excel">
-            Paste Excel
+          <Button size="sm" variant="secondary" onClick={() => setQuickOpen(true)} title="Fast-forward mapper: dump K:V pairs and auto-map to the template">
+            Quick map
           </Button>
           <Button size="sm" variant="secondary" onClick={onAddFreeRow} title="Append a constant row with no source node">
             Add constant
@@ -576,57 +580,14 @@ export function MappingGrid({
         ))}
       </datalist>
 
-      {pasteOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setPasteOpen(false)}>
-          <div className="modal-card max-w-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="px-6 pt-5 pb-4">
-              <p className="eyebrow">Paste Excel</p>
-              <h2 className="mt-1 text-lg font-bold text-ivory-950">Import mapping rows</h2>
-              <p className="mt-0.5 text-xs text-ivory-600">
-                One per line: source, then Object.Field - separated by tab, arrow, or comma. Same source updates in place.
-              </p>
-              <textarea
-                value={pasteText}
-                onChange={(e) => setPasteText(e.target.value)}
-                rows={8}
-                spellCheck={false}
-                placeholder={"$.order.id\tOrder.Id\n$.order.total -> Order.Amount__c"}
-                aria-label="Pasted mapping rows"
-                className="mt-3 w-full rounded-lg border border-[#E8E2D8] bg-white px-2.5 py-2 font-mono text-[12px] focus:border-[#A98450] focus:outline-none"
-              />
-              <p className="mt-2 text-[11px] text-ivory-600">
-                {pasted.rows.length} row{pasted.rows.length === 1 ? "" : "s"} ready
-                {pasted.skipped.length > 0 && ` · ${pasted.skipped.length} skipped`}
-              </p>
-              {pasted.skipped.length > 0 && (
-                <ul className="mt-1 max-h-20 space-y-0.5 overflow-y-auto text-[11px] text-[#B3261E]">
-                  {pasted.skipped.slice(0, 8).map((s) => (
-                    <li key={s.line} className="font-mono">
-                      line {s.line}: {s.reason}
-                    </li>
-                  ))}
-                  {pasted.skipped.length > 8 && <li>…and {pasted.skipped.length - 8} more</li>}
-                </ul>
-              )}
-            </div>
-            <div className="px-6 py-3.5 border-t border-[var(--color-line-soft)] bg-[var(--color-canvas)] flex items-center gap-2">
-              <p className="flex-1 text-[11px] text-ivory-600">Targets commit as direct mappings on the active plan.</p>
-              <Button variant="ghost" onClick={() => setPasteOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                disabled={pasted.rows.length === 0}
-                onClick={() => {
-                  onImportPaste(pasted.rows);
-                  setPasteOpen(false);
-                  setPasteText("");
-                }}
-              >
-                Import {pasted.rows.length} row{pasted.rows.length === 1 ? "" : "s"}
-              </Button>
-            </div>
-          </div>
-        </div>
+      {quickOpen && (
+        <QuickMapModal
+          project={project}
+          planId={planId}
+          planLabel={planLabel}
+          onImport={onImportPaste}
+          onClose={() => setQuickOpen(false)}
+        />
       )}
     </div>
   );

@@ -107,6 +107,14 @@ export interface ConsoleHistoryEntry {
   what: string;
 }
 
+/** Push-only PMO backlink: where this entry was pushed, for the ↗ chip. */
+export interface ConsolePmoLink {
+  system: "jira";
+  key: string;
+  url: string;
+  at: number;
+}
+
 export interface ConsoleTask {
   id: string;
   title: string;
@@ -123,6 +131,8 @@ export interface ConsoleTask {
   status: ConsoleStatus;
   priority: ConsolePriority;
   dueDate?: string;
+  /** Set on push - the issue key / incident number this entry became. */
+  pmo?: ConsolePmoLink;
   links: ConsoleLink[];
   notes: ConsoleNote[];
   history: ConsoleHistoryEntry[];
@@ -180,6 +190,14 @@ export const consoleTaskSchema: z.ZodType<ConsoleTask> = z.object({
   status: z.enum(CONSOLE_STATUSES),
   priority: z.enum(CONSOLE_PRIORITIES),
   dueDate: z.string().max(32).optional(),
+  pmo: z
+    .object({
+      system: z.literal("jira"),
+      key: z.string().min(1).max(32),
+      url: z.string().min(1).max(500),
+      at: z.number(),
+    })
+    .optional(),
   links: z.array(linkSchema).max(24),
   notes: z
     .array(z.object({ id: z.string().min(1), at: z.number(), text: z.string().min(1).max(4000) }))

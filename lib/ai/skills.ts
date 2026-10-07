@@ -123,7 +123,8 @@ You advise on API contracts and revisions: explicit translations, renames, versi
     label: "Console",
     system: `${BASE}
 You advise the architect's personal console: tasks with open → in-progress → resolved lifecycle, notes, and two-way sync with System canvas TODOs.
-You have tools for this tab - prefer acting through them over describing steps. Console etiquette: for new work demand the task title first, then console_add. For notes demand the task + text, then console_note (it pushes to linked canvas TODOs). For moves demand the task + target state, then console_move. The read tool (console_describe) runs freely; every log/note/move goes through the user's explicit Apply and you never retry a discarded change unasked. Linked canvases sync both ways; a stale canvas keeps its newer state and says so.`,
+You have tools for this tab - prefer acting through them over describing steps. Console etiquette: for new work demand the task title first, then console_add. For notes demand the task + text, then console_note (it pushes to linked canvas TODOs). For moves demand the task + target state, then console_move. The read tool (console_describe) runs freely; every log/note/move goes through the user's explicit Apply and you never retry a discarded change unasked. Linked canvases sync both ways; a stale canvas keeps its newer state and says so.
+JIRA etiquette: for "log it in JIRA" demand the task first, then jira_status. If disconnected, hand over the Deliver-panel connect steps and stop - never ask for tokens and never accept pasted ones. For destinations use jira_projects and pass an explicit project + issue type, or fall back to the saved defaults. Then jira_push through Apply - it carries the saved description plus screenshots, stores the issue key back on the task, and reports the browse URL. Push-only: never claim status syncs back.`,
   },
   {
     route: "/decisions",

@@ -25,6 +25,8 @@ import {
 } from "@/lib/console/model";
 import { consoleLinkHref } from "@/lib/console/model";
 import { NoteEditor } from "@/components/notes/NoteEditor";
+import { AgentDropPanel } from "@/components/console/AgentDropPanel";
+import { JiraPushPanel } from "@/components/console/JiraPushPanel";
 import { todayIso, type InboxItemKind } from "@/lib/inbox/types";
 import type { CanvasLinkView } from "@/lib/console/sync";
 
@@ -175,6 +177,17 @@ export function TaskDetail({
             <span className="shrink-0 rounded-md bg-[#F0EBE0] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[#777168]">
               {consoleTaskKey(task)}
             </span>
+            {task.pmo && (
+              <a
+                href={task.pmo.url}
+                target="_blank"
+                rel="noreferrer"
+                title={`Open ${task.pmo.key} in JIRA`}
+                className="shrink-0 rounded-md border border-[#C9A86A] bg-[#F5EEDF] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[#8A6A2F] hover:underline"
+              >
+                {task.pmo.key} ↗
+              </a>
+            )}
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -367,6 +380,14 @@ export function TaskDetail({
             ) : (
               <p className="mt-1.5 text-[12px] text-[#A39B8E]">No screenshots yet — paste, drop or + Attach error states, ERDs, review markups. They travel with export.</p>
             )}
+          </section>
+
+          <section>
+            <h4 className="font-mono text-[9px] uppercase tracking-[2px] text-[#A39B8E]">Deliver · agent & PMO</h4>
+            <div className="mt-1 space-y-1.5">
+              <AgentDropPanel task={task} attachments={attachments} />
+              <JiraPushPanel task={task} attachments={attachments} onPatch={onPatch} />
+            </div>
           </section>
 
           <section>

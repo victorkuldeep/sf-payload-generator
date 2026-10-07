@@ -666,6 +666,8 @@ export function MappingRoute() {
             ) : (
               <MappingGrid
                 project={child}
+                planId={activePlanId}
+                planLabel={activePlan ? `${activePlan.name} → ${activePlan.objectName}` : null}
                 onUpdateRow={(id, patch) => mutateChild((p) => ({ ...p, mappings: p.mappings.map((m) => (m.id === id ? { ...m, ...patch, updatedAt: new Date().toISOString() } : m)) }))}
                 onRemoveRow={(id) => mutateChild((p) => ({ ...p, mappings: p.mappings.filter((m) => m.id !== id) }))}
                 onUpsertRow={upsertRow}

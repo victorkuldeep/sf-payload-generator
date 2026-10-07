@@ -39,6 +39,7 @@ function summarize(t: ConsoleTask) {
     status: t.status,
     priority: t.priority,
     ...(t.dueDate ? { dueDate: t.dueDate } : {}),
+    ...(t.pmo ? { jira: t.pmo.key } : {}),
     links: t.links.map((l) => l.label),
     notes: t.notes.length,
     updatedAt: t.updatedAt,
