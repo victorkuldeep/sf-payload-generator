@@ -185,6 +185,32 @@ export function buildFieldCopyTable(fields: { label: string; name: string }[]): 
   return buildPicklistCopyTable(fields.map((f) => ({ label: f.label, value: f.name })));
 }
 
+/** Cell text for a live record value inside a copy table. */
+export function formatCopyCellValue(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "string" || typeof v === "number" || typeof v === "boolean" || typeof v === "bigint") return String(v);
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Copy-all table for an object's fields PLUS the visualized record's values
+ * (ERD box icon, live-data only): Label | API Name | Value, so a walked
+ * record pastes field-by-field into Teams/Excel/Sheets.
+ */
+export function buildFieldDataCopyTable(rows: { label: string; name: string; value: unknown }[]): { html: string; text: string } {
+  const body = rows.map(
+    (r) =>
+      `<tr><td>${escapeHtmlCell(r.label)}</td><td>${escapeHtmlCell(r.name)}</td><td>${escapeHtmlCell(formatCopyCellValue(r.value))}</td></tr>`,
+  );
+  const html = `<table><thead><tr><th>Label</th><th>API Name</th><th>Value</th></tr></thead><tbody>${body.join("")}</tbody></table>`;
+  const text = ["Label\tAPI Name\tValue", ...rows.map((r) => `${r.label}\t${r.name}\t${formatCopyCellValue(r.value)}`)].join("\n");
+  return { html, text };
+}
+
 /** Tooling REST paths for the add-values flow. */
 export function toolingQueryPath(apiVersion: string, soql: string): string {
   return `/services/data/${apiVersion}/tooling/query/?q=${encodeURIComponent(soql)}`;

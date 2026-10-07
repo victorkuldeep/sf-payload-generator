@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCustomFieldPatch,
   buildFieldCopyTable,
+  buildFieldDataCopyTable,
   buildGlobalValueSetPatch,
   buildPicklistCopyTable,
   buildRecordTypePatch,
@@ -124,5 +125,21 @@ describe("picklist add-values contract", () => {
     expect(html).toContain("<th>Label</th><th>API Name</th>");
     expect(html).toContain("<td>Account Name</td><td>Name</td>");
     expect(text).toBe("Label\tAPI Name\nAccount Name\tName\nAnnual Revenue\tAnnualRevenue");
+  });
+
+  it("builds a Label | API Name | Value table with live record data", () => {
+    const { html, text } = buildFieldDataCopyTable([
+      { label: "Account Name", name: "Name", value: "Acme & Sons" },
+      { label: "Annual Revenue", name: "AnnualRevenue", value: 1200000 },
+      { label: "Active", name: "Active__c", value: true },
+      { label: "Missing", name: "Missing__c", value: null },
+      { label: "Address", name: "BillingAddress", value: { city: "Austin" } },
+    ]);
+    expect(html).toContain("<th>Label</th><th>API Name</th><th>Value</th>");
+    expect(html).toContain("<td>Acme &amp; Sons</td>");
+    expect(html).toContain("<td>{&quot;city&quot;:&quot;Austin&quot;}</td>");
+    expect(text).toBe(
+      "Label\tAPI Name\tValue\nAccount Name\tName\tAcme & Sons\nAnnual Revenue\tAnnualRevenue\t1200000\nActive\tActive__c\ttrue\nMissing\tMissing__c\t\nAddress\tBillingAddress\t{\"city\":\"Austin\"}",
+    );
   });
 });

@@ -63,6 +63,9 @@ export interface ErdNodeData extends Record<string, unknown> {
   onPullCustomChildren?: (apiName: string) => void;
   /** Copy every field as a Label | API Name table (resolves true on success). */
   onCopyFieldTable?: (apiName: string) => Promise<boolean>;
+  /** Copy every field PLUS the visualized record's values as a
+   * Label | API Name | Value table - offered only when live data is aboard. */
+  onCopyFieldDataTable?: (apiName: string) => Promise<boolean>;
   /** Record-walk eye state: live data aboard, one-click reachable, or locked. */
   recordState?: "live" | "reachable" | "locked";
   /** Record types on the object - badge + popover on the table node. */

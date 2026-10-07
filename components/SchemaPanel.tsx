@@ -8,7 +8,7 @@ import type {
 } from "@/lib/salesforce/types";
 import { buildErdElements, buildGraphElements, rootNeighbors, systemReason, isEffectivelyHidden, isSystemObject, AUDIT_REFERENCE_FIELDS, parentExitHandleId, childEntryHandleId, customParentTargets, customChildTargets, customParentLinks, customChildLinks, standardParentTargets, standardChildTargets, standardParentLinks, standardChildLinks, type ErdNodeData, type ErdFieldRow, type ErdEdgeData, type GraphNeighbor } from "@/lib/erd/graph";
 import { rankObjects } from "@/lib/search/rank";
-import { buildFieldCopyTable, isMasterRecordType, parseAvailability, recordTypeListQuery, toolingQueryPath, uiApiAvailabilityPath, type RecordTypeSummary } from "@/lib/salesforce/picklistValues";
+import { buildFieldCopyTable, buildFieldDataCopyTable, isMasterRecordType, parseAvailability, recordTypeListQuery, toolingQueryPath, uiApiAvailabilityPath, type RecordTypeSummary } from "@/lib/salesforce/picklistValues";
 import { downloadFieldDictionary } from "@/lib/salesforce/fieldDictionary";
 import { downloadPicklistMatrix, type MatrixField, type MatrixRt } from "@/lib/salesforce/picklistMatrix";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
@@ -2313,6 +2313,38 @@ export default function SchemaPanel({
     return true;
   }, [describes]);
 
+  // Sibling icon, live-data only: every field PLUS the visualized record's
+  // values as a Label | API Name | Value table. Refuses with a notice when
+  // no record is aboard, so the node only offers it at recordState live.
+  const copyFieldDataTable = useCallback(async (api: string): Promise<boolean> => {
+    const d = describes.get(api);
+    if (!d || d.fields.length === 0) {
+      setNotice(`${api} has no fields to copy.`);
+      return false;
+    }
+    const values = recordNodeData(api).recordValues;
+    if (!values) {
+      setNotice(`${api} has no record data aboard - walk a record first.`);
+      return false;
+    }
+    const { html, text } = buildFieldDataCopyTable(d.fields.map((f) => ({ label: f.label, name: f.name, value: values[f.name] })));
+    try {
+      const item = new ClipboardItem({
+        "text/html": new Blob([html], { type: "text/html" }),
+        "text/plain": new Blob([text], { type: "text/plain" }),
+      });
+      await navigator.clipboard.write([item]);
+    } catch {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        return false;
+      }
+    }
+    setNotice(`${d.fields.length} ${d.label} fields + record values copied as a Label | API Name | Value table - paste into Teams.`);
+    return true;
+  }, [describes, recordNodeData]);
+
   // ERD toolbar: the whole canvas as a client-ready field dictionary -
   // one sheet per object plus every relationship on a single sheet.
   const exportDictionary = useCallback(async () => {
@@ -2433,11 +2465,12 @@ export default function SchemaPanel({
             onPullCustomParents: (target: string) => showCustomPull(target, "parents"),
             onPullCustomChildren: (target: string) => showCustomPull(target, "children"),
             onCopyFieldTable: copyFieldTable,
+            onCopyFieldDataTable: copyFieldDataTable,
           },
         };
       }),
     };
-  }, [visibleDescribes, describes, labels, rootName, spot, enforced, entityNotes, openEntityNote, makeRoot, openRecordTypes, showCustomPull, copyFieldTable]);
+  }, [visibleDescribes, describes, labels, rootName, spot, enforced, entityNotes, openEntityNote, makeRoot, openRecordTypes, showCustomPull, copyFieldTable, copyFieldDataTable]);
 
   // Graph default = FULL 1-level neighborhood (parents left, children right),
   // lite previews included - this is the intent of graph view. Family

@@ -86,6 +86,7 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const [tableCopied, setTableCopied] = useState(false);
+  const [dataCopied, setDataCopied] = useState(false);
   const [query, setQuery] = useState("");
   const [sortAZ, setSortAZ] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -387,6 +388,36 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                   <rect x="3" y="4" width="18" height="16" rx="2" />
                   <path d="M3 10h18M9 10v10M15 10v10" />
+                </svg>
+              )}
+            </button>
+          )}
+          {data.onCopyFieldDataTable && data.recordState === "live" && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                void (async () => {
+                  const ok = await data.onCopyFieldDataTable?.(data.apiName);
+                  if (ok) {
+                    setDataCopied(true);
+                    window.setTimeout(() => setDataCopied(false), 1500);
+                  }
+                })();
+              }}
+              title={dataCopied ? "Record table copied - paste into Teams" : `Copy all ${data.totalFields} fields + live record values as a Label | API Name | Value table`}
+              aria-label={dataCopied ? "Field data table copied" : `Copy all fields of ${data.apiName} with record values as a table`}
+              className={`nodrag shrink-0 rounded p-1 transition-colors cursor-pointer ${data.isRoot ? "text-ivory-300 hover:text-white hover:bg-ivory-800" : "text-ivory-950 hover:text-bronze-600 hover:bg-ivory-200"}`}
+            >
+              {dataCopied ? (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true">
+                  <path d="m4 12.5 5 5L20 6.5" />
+                </svg>
+              ) : (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                  <ellipse cx="12" cy="5" rx="8" ry="3" />
+                  <path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5" />
+                  <path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" />
                 </svg>
               )}
             </button>
