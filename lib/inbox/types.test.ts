@@ -1,15 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  CANVAS_LOG_API,
   entityNoteToEntries,
-  foldCanvasTodosIntoLog,
   inboxBodyToNote,
   migrateEntityLogValue,
   noteToTodoBody,
   shareRowsToEntries,
   todoBodyToNote,
   todayIso,
-  type CanvasTodo,
 } from "./types";
 import { noteBodyFromHtml, noteBodyFromMd } from "@/lib/notes/notebody";
 
@@ -124,33 +121,5 @@ describe("entity log migration", () => {
     ).toHaveLength(1);
     expect(migrateEntityLogValue("Account", { nope: 1 })).toEqual([]);
     expect(migrateEntityLogValue("Account", null)).toEqual([]);
-  });
-});
-
-describe("canvas log fold", () => {
-  it("folds legacy canvas TODOs into the canvas scope with ids intact", () => {
-    const todos = [
-      { id: "c1", title: "Verify", status: "open", createdAt: 1, updatedAt: 2 },
-      { id: "c2", title: "", body: "Loose thought", kind: "note", status: "open", createdAt: 1, updatedAt: 3 },
-    ] as CanvasTodo[];
-    const out = foldCanvasTodosIntoLog({}, todos);
-    expect(Object.keys(out)).toEqual([CANVAS_LOG_API]);
-    expect(out[CANVAS_LOG_API]).toHaveLength(2);
-    expect(out[CANVAS_LOG_API][0]).toMatchObject({ id: "c1", kind: "task", entityApi: CANVAS_LOG_API });
-    expect(out[CANVAS_LOG_API][1]).toMatchObject({ id: "c2", kind: "note", entityApi: CANVAS_LOG_API });
-  });
-
-  it("dedupes re-folds and leaves entity scopes untouched", () => {
-    const acc = [{ id: "a1", title: "A", status: "open", createdAt: 1, updatedAt: 1 }] as CanvasTodo[];
-    const once = foldCanvasTodosIntoLog({ Account: acc }, [
-      { id: "c1", title: "C", status: "open", createdAt: 1, updatedAt: 2 },
-    ] as CanvasTodo[]);
-    const twice = foldCanvasTodosIntoLog(once, [
-      { id: "c1", title: "C", status: "open", createdAt: 1, updatedAt: 2 },
-    ] as CanvasTodo[]);
-    expect(twice[CANVAS_LOG_API]).toHaveLength(1);
-    expect(twice.Account).toBe(acc);
-    expect(foldCanvasTodosIntoLog({}, [])).toEqual({});
-    expect(foldCanvasTodosIntoLog({}, undefined)).toEqual({});
   });
 });

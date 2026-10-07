@@ -278,18 +278,15 @@ export const liveSchemaFns: SchemaNotesStoreFns = {
   },
   loadNotes: async (orgKey: string, tabId: string) => {
     const { loadAutosave } = await import("@/lib/workspace/autosave");
-    const { foldCanvasTodosIntoLog, migrateEntityLogValue } = await import("@/lib/inbox/types");
+    const { migrateEntityLogValue } = await import("@/lib/inbox/types");
     const rec = await loadAutosave<{ todos?: CanvasTodo[]; entities?: Record<string, unknown> }>(orgKey, "notes", tabId).catch(() => null);
     if (!rec) return null;
-    const raw: Record<string, CanvasTodo[]> = {};
+    const entities: Record<string, CanvasTodo[]> = {};
     for (const [api, value] of Object.entries(rec.data.entities ?? {})) {
       const rows = migrateEntityLogValue(api, value);
-      if (rows.length > 0) raw[api] = rows;
+      if (rows.length > 0) entities[api] = rows;
     }
-    // Legacy canvas TODOs converge into the canvas scope; todos stays empty
-    // going forward so Console and Schema never double-list a row.
-    const entities = foldCanvasTodosIntoLog(raw, rec.data.todos);
-    return { todos: [], entities };
+    return { todos: Array.isArray(rec.data.todos) ? rec.data.todos : [], entities };
   },
   saveNotes: async (orgKey: string, tabId: string, doc: SchemaNotesDoc) => {
     const { loadAutosave, writeAutosave } = await import("@/lib/workspace/autosave");

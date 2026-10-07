@@ -76,7 +76,7 @@ import { ArchitectureInbox } from "./inbox/ArchitectureInbox";
 import { normalizeLiveNotes, normalizeSnapshotNotes, resolveStale, countInbox } from "@/lib/inbox/normalize";
 import { fingerprintEntity, fingerprintField, diffFieldFacts, diffEntityFacts, type EntityFacts, type FieldFacts } from "@/lib/inbox/schemaReview";
 import type { AnchorFacts, ArchitectureInboxItem, CanvasTodo, InboxAnchor, InboxFingerprint, InboxHistoryEntry, InboxItemKind, InboxMeta } from "@/lib/inbox/types";
-import { CANVAS_LOG_API, foldCanvasTodosIntoLog, migrateEntityLogValue, noteToTodoBody, shareRowsToEntries, todoBodyToNote } from "@/lib/inbox/types";
+import { CANVAS_LOG_API, migrateEntityLogValue, noteToTodoBody, shareRowsToEntries, todoBodyToNote } from "@/lib/inbox/types";
 import { EmptyState } from "./EmptyState";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
@@ -947,7 +947,6 @@ export default function SchemaPanel({
     updatedAt: number;
     /** Per-entity log rows - legacy single notes migrate on load. */
     entities: Record<string, CanvasTodo[]>;
-    todos: CanvasTodo[];
   }
   const [notesOpen, setNotesOpen] = useState(false);
   const [notesZen, setNotesZen] = useState(false);
@@ -973,9 +972,6 @@ export default function SchemaPanel({
       textHtml: canvasNote.html || undefined,
       updatedAt: notesSavedAt ?? Date.now(),
       entities: entityLog,
-      // Canvas TODOs converge into the canvas log scope; nothing listable
-      // lives here anymore, and [] heals records written before the fold.
-      todos: [],
     } satisfies CanvasNotesData, tabId);
   }, [orgKey, tabId, canvasNote, notesSavedAt, entityLog]);
 
@@ -983,7 +979,7 @@ export default function SchemaPanel({
     if (!orgKey || notesRestoredRef.current === orgKey) return;
     notesRestoredRef.current = orgKey;
     void (async () => {
-      const snap = await loadAutosave<CanvasNotesData & { todo?: boolean; done?: boolean }>(orgKey, "notes", tabId);
+      const snap = await loadAutosave<CanvasNotesData>(orgKey, "notes", tabId);
       const d = snap?.data;
       if (!d) return;
       if (d.text) {
@@ -994,8 +990,7 @@ export default function SchemaPanel({
         );
         setNotesSavedAt(d.updatedAt ?? snap.savedAt);
       }
-      // Legacy single notes migrate into one-row logs on load, and legacy
-      // canvas TODOs fold into the canvas log scope (ids intact).
+      // Legacy single notes migrate into one-row logs on load.
       const logs: Record<string, CanvasTodo[]> = {};
       if (d.entities && typeof d.entities === "object") {
         for (const [api, value] of Object.entries(d.entities)) {
@@ -1003,20 +998,7 @@ export default function SchemaPanel({
           if (rows.length > 0) logs[api] = rows;
         }
       }
-      if (Array.isArray(d.todos)) {
-        setEntityLog(foldCanvasTodosIntoLog(logs, d.todos));
-      } else {
-        if (d.todo && d.text?.trim()) {
-          // One-time migration from the legacy single canvas TODO flag.
-          const title = d.text.split("\n").map((l) => l.trim()).find((l) => l.length > 0)?.slice(0, 80) ?? "Canvas TODO";
-          const now = Date.now();
-          logs[CANVAS_LOG_API] = [
-            ...(logs[CANVAS_LOG_API] ?? []),
-            { id: newItemId(), title, kind: "task", status: d.done ? "done" : "open", entityApi: CANVAS_LOG_API, createdAt: now, updatedAt: now },
-          ];
-        }
-        setEntityLog(logs);
-      }
+      setEntityLog(logs);
     })();
   }, [orgKey]);
 
@@ -2975,7 +2957,15 @@ export default function SchemaPanel({
           touchNotes();
         }
         if (s.todos && s.todos.length > 0) {
-          setEntityLog((prev) => foldCanvasTodosIntoLog(prev, s.todos!.map((t) => ({ ...t }))));
+          // Shares carry canvas rows in the todos field - land them in the
+          // canvas scope with the same shape the modal writes.
+          setEntityLog((prev) => ({
+            ...prev,
+            [CANVAS_LOG_API]: [
+              ...(prev[CANVAS_LOG_API] ?? []),
+              ...s.todos!.map((t) => ({ ...t, kind: t.kind ?? ("task" as const), entityApi: CANVAS_LOG_API })),
+            ],
+          }));
           touchNotes();
         }
         setNotice(

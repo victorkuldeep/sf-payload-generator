@@ -179,26 +179,6 @@ export function isCanvasScope(api: string | undefined): boolean {
   return api === CANVAS_LOG_API;
 }
 
-/**
- * One-time fold of legacy canvas TODOs into the canvas log scope. Ids are
- * preserved (Console links keep resolving) and re-folds dedupe by id, so
- * Schema restore and Console reads converge instead of duplicating.
- */
-export function foldCanvasTodosIntoLog(
-  entities: Record<string, CanvasTodo[]>,
-  todos: CanvasTodo[] | undefined,
-): Record<string, CanvasTodo[]> {
-  if (!Array.isArray(todos) || todos.length === 0) return entities;
-  const next: Record<string, CanvasTodo[]> = { ...entities };
-  const seen = new Set((next[CANVAS_LOG_API] ?? []).map((r) => r.id));
-  const folded = todos
-    .filter((t) => t && typeof t.id === "string" && !seen.has(t.id))
-    .map((t) => ({ ...t, kind: t.kind ?? ("task" as const), entityApi: CANVAS_LOG_API }));
-  if (folded.length === 0) return entities;
-  next[CANVAS_LOG_API] = [...(next[CANVAS_LOG_API] ?? []), ...folded];
-  return next;
-}
-
 /** Local YYYY-MM-DD for Due floors - past dates are not pickable. */
 export function todayIso(): string {
   const d = new Date();
