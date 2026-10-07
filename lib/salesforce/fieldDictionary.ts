@@ -39,7 +39,7 @@ function fieldRow(f: SalesforceField): unknown[] {
     f.name,
     f.type,
     f.length || "",
-    !f.nillable && !f.defaultedOnCreate ? "yes" : "no",
+    !f.nillable && !f.defaultedOnCreate ? "Y" : "N",
     f.unique ? "yes" : "no",
     f.externalId ? "yes" : "no",
     f.referenceTo.join(", "),

@@ -376,7 +376,7 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
                   }
                 })();
               }}
-              title={tableCopied ? "Table copied - paste into Teams" : `Copy all ${data.totalFields} fields as a Label | API Name table`}
+              title={tableCopied ? "Table copied - paste into Teams" : `Copy all ${data.totalFields} fields as a table - label, API name, type, description, required`}
               aria-label={tableCopied ? "Field table copied" : `Copy all fields of ${data.apiName} as a table`}
               className={`nodrag shrink-0 rounded p-1 transition-colors cursor-pointer ${data.isRoot ? "text-ivory-300 hover:text-white hover:bg-ivory-800" : "text-ivory-950 hover:text-bronze-600 hover:bg-ivory-200"}`}
             >

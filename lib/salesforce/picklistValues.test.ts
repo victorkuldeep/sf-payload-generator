@@ -117,14 +117,17 @@ describe("picklist add-values contract", () => {
     expect(text).toBe("Label\tAPI Name\nHigh & Dry\tHigh\nLow\tLow<Value>");
   });
 
-  it("builds the same Label | API Name table for field lists", () => {
+  it("builds a DB-level field table: type, description, Required Y/N", () => {
     const { html, text } = buildFieldCopyTable([
-      { label: "Account Name", name: "Name" },
-      { label: "Annual Revenue", name: "AnnualRevenue" },
+      { label: "Account Name", name: "Name", type: "string", description: "Legal & name", required: true },
+      { label: "Annual Revenue", name: "AnnualRevenue", type: "currency", description: "Line1\nLine2\tTabbed", required: false },
     ]);
-    expect(html).toContain("<th>Label</th><th>API Name</th>");
-    expect(html).toContain("<td>Account Name</td><td>Name</td>");
-    expect(text).toBe("Label\tAPI Name\nAccount Name\tName\nAnnual Revenue\tAnnualRevenue");
+    expect(html).toContain("<th>Label</th><th>API Name</th><th>Data Type</th><th>Description</th><th>Required</th>");
+    expect(html).toContain("<td>Account Name</td><td>Name</td><td>string</td><td>Legal &amp; name</td><td>Y</td>");
+    expect(html).toContain("<td>Line1 Line2 Tabbed</td><td>N</td>");
+    expect(text).toBe(
+      "Label\tAPI Name\tData Type\tDescription\tRequired\nAccount Name\tName\tstring\tLegal & name\tY\nAnnual Revenue\tAnnualRevenue\tcurrency\tLine1 Line2 Tabbed\tN",
+    );
   });
 
   it("builds a Label | API Name | Value table with live record data", () => {

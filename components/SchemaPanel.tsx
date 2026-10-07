@@ -2117,16 +2117,24 @@ export default function SchemaPanel({
     });
   }, [busy, describes, labels, isCustomName]);
 
-  // ERD box table icon: every field of THAT entity as a Label | API Name
-  // table (HTML for Teams/Docs, TSV fallback) - the picklist copy-all,
-  // generalized. Resolves true so the box can flash its check.
+  // ERD box table icon: every field of THAT entity as a DB-level table
+  // (Label | API Name | Data Type | Description | Required Y/N) - HTML for
+  // Teams/Docs, TSV fallback. Resolves true so the box can flash its check.
   const copyFieldTable = useCallback(async (api: string): Promise<boolean> => {
     const d = describes.get(api);
     if (!d || d.fields.length === 0) {
       setNotice(`${api} has no fields to copy.`);
       return false;
     }
-    const { html, text } = buildFieldCopyTable(d.fields.map((f) => ({ label: f.label, name: f.name })));
+    const { html, text } = buildFieldCopyTable(
+      d.fields.map((f) => ({
+        label: f.label,
+        name: f.name,
+        type: f.type,
+        description: f.inlineHelpText ?? "",
+        required: !f.nillable && !f.defaultedOnCreate,
+      })),
+    );
     try {
       const item = new ClipboardItem({
         "text/html": new Blob([html], { type: "text/html" }),
@@ -2140,7 +2148,7 @@ export default function SchemaPanel({
         return false;
       }
     }
-    setNotice(`${d.fields.length} ${d.label} fields copied as a Label | API Name table - paste into Teams.`);
+    setNotice(`${d.fields.length} ${d.label} fields copied as a Label | API Name | Type | Description | Required table - paste into Teams.`);
     return true;
   }, [describes]);
 

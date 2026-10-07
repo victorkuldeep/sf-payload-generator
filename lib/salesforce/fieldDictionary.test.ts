@@ -88,7 +88,7 @@ describe("field dictionary", () => {
       "External ID", "Reference To", "Picklist Values", "Default Value", "Help Text",
     ]);
     expect(acc.getRow(2).values).toEqual([
-      undefined, "Account Name", "Name", "string", 255, "yes", "no", "no", "", "", "", "",
+      undefined, "Account Name", "Name", "string", 255, "Y", "no", "no", "", "", "", "",
     ]);
     expect(acc.getRow(3).getCell(9).value).toBe("Technology; Banking [+1 inactive]");
     const con = wb.getWorksheet("Contact")!;

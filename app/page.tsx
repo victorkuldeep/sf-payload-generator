@@ -896,6 +896,13 @@ export default function Home() {
           token: "", // never put token in state
         }));
 
+        // Re-auth while connected leaves connected true, so the dismiss
+        // effect never refires - close the connect + expired modals here on
+        // every success (harmless on boot/fresh connect, which also close).
+        setShowConnect(false);
+        setSessionExpired(false);
+        clearSessionExpired();
+
         // Load objects immediately (returns them so the caller can cache the connection)
         const objs = await loadObjects(instanceUrl, token, apiVersion);
         const key = await resolveOrgKey(instanceUrl, token, apiVersion);

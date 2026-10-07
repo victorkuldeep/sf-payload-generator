@@ -177,12 +177,38 @@ export function buildPicklistCopyTable(values: { label: string; value: string }[
   return { html, text };
 }
 
+export interface FieldCopyEntry {
+  label: string;
+  name: string;
+  type: string;
+  /** Help text - newlines/tabs flatten so the TSV stays one row per field. */
+  description: string;
+  /** DB-style flag: true renders Y, false renders N. */
+  required: boolean;
+}
+
+/** Single-line a TSV cell: tabs/newlines become spaces, runs collapse. */
+function flatCell(v: string): string {
+  return v.replace(/[\t\r\n]+/g, " ").replace(/ {2,}/g, " ").trim();
+}
+
 /**
- * Copy-all table for an object's FIELD list (ERD box icon): same Label |
- * API Name shape as picklists, so Teams/Excel/Sheets all paste cleanly.
+ * Copy-all table for an object's FIELD list (ERD box icon): DB-level
+ * artifact - Label | API Name | Data Type | Description | Required (Y/N),
+ * as HTML (pastes as a real table in Teams/Docs) plus TSV fallback.
  */
-export function buildFieldCopyTable(fields: { label: string; name: string }[]): { html: string; text: string } {
-  return buildPicklistCopyTable(fields.map((f) => ({ label: f.label, value: f.name })));
+export function buildFieldCopyTable(fields: FieldCopyEntry[]): { html: string; text: string } {
+  const head = "<tr><th>Label</th><th>API Name</th><th>Data Type</th><th>Description</th><th>Required</th></tr>";
+  const rows = fields.map(
+    (f) =>
+      `<tr><td>${escapeHtmlCell(f.label)}</td><td>${escapeHtmlCell(f.name)}</td><td>${escapeHtmlCell(f.type)}</td><td>${escapeHtmlCell(flatCell(f.description))}</td><td>${f.required ? "Y" : "N"}</td></tr>`,
+  );
+  const html = `<table><thead>${head}</thead><tbody>${rows.join("")}</tbody></table>`;
+  const text = [
+    "Label\tAPI Name\tData Type\tDescription\tRequired",
+    ...fields.map((f) => `${flatCell(f.label)}\t${flatCell(f.name)}\t${flatCell(f.type)}\t${flatCell(f.description)}\t${f.required ? "Y" : "N"}`),
+  ].join("\n");
+  return { html, text };
 }
 
 /** Cell text for a live record value inside a copy table. */
