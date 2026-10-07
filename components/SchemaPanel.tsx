@@ -1878,6 +1878,7 @@ export default function SchemaPanel({
       title: "",
       kind,
       status: "open",
+      priority: "normal",
       entityApi: api,
       anchor: { type: "entity", id: api, labelAtCreation: labels.get(api) },
       createdAt: now,

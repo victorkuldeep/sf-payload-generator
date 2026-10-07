@@ -144,7 +144,7 @@ function EntryTop({
           <input
             value={entry.team ?? ""}
             onChange={(e) => onPatch({ team: e.target.value.trim() || undefined }, e.target.value.trim() ? `Team set to ${e.target.value.trim()}` : "Team cleared")}
-            placeholder="—"
+            placeholder="Enter team name…"
             spellCheck={false}
             className={inputCls}
           />
@@ -204,7 +204,7 @@ function EntryTop({
               const v = e.target.value.trim() || undefined;
               onPatch({ owner: v, assignee: v }, v ? `Owner set to ${v}` : "Owner cleared");
             }}
-            placeholder="—"
+            placeholder="Enter owner…"
             spellCheck={false}
             className={inputCls}
           />
@@ -225,7 +225,7 @@ function EntryTop({
           <textarea
             value={entry.resolution ?? ""}
             onChange={(e) => onPatch({ resolution: e.target.value || undefined }, "Resolution updated")}
-            placeholder="—"
+            placeholder="Describe the outcome…"
             spellCheck={false}
             rows={2}
             className="mt-0.5 w-full resize-y rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] p-1.5 text-xs normal-case tracking-normal text-ivory-950 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
