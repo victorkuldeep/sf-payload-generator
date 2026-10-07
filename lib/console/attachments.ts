@@ -40,6 +40,44 @@ export function checkAttachmentFile(file: PickedFile): { ok: true } | { ok: fals
   return { ok: true };
 }
 
+/** Longest side after a downscale pass - keeps screenshot text readable. */
+export const CONSOLE_ATTACHMENT_MAX_DIM = 1920;
+
+/** Pure: does this file need a downscale pass before the size gate? */
+export function needsDownscale(file: PickedFile): boolean {
+  return file.size > CONSOLE_ATTACHMENT_MAX_BYTES;
+}
+
+/**
+ * Browser-only: shrink oversized screenshots to MAX_DIM longest side.
+ * JPEG stays JPEG, everything else becomes WebP (crisp text, small bytes).
+ * GIFs pass through untouched - downscaling would kill animation.
+ */
+export async function downscaleImageFile(file: File): Promise<File> {
+  if (file.type === "image/gif") return file;
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, CONSOLE_ATTACHMENT_MAX_DIM / Math.max(bitmap.width, bitmap.height));
+  if (scale >= 1) {
+    bitmap.close();
+    return file;
+  }
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const type = file.type === "image/jpeg" ? "image/jpeg" : "image/webp";
+    const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, type, 0.92));
+    if (!blob) return file;
+    const base = file.name.replace(/\.[a-z0-9]+$/i, "").slice(0, 180) || "screenshot";
+    return new File([blob], `${base}.${type === "image/jpeg" ? "jpg" : "webp"}`, { type });
+  } finally {
+    bitmap.close();
+  }
+}
+
 /** Browser-only: read a picked file into a ConsoleAttachment. */
 export function readAttachmentFile(taskId: string, file: File, now = Date.now()): Promise<ConsoleAttachment> {
   return new Promise((resolve, reject) => {

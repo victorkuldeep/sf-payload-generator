@@ -5,7 +5,9 @@ import { AiMarkdown } from "@/components/ai/Markdown";
 import {
   checkAttachmentFile,
   deleteAttachment,
+  downscaleImageFile,
   listAttachments,
+  needsDownscale,
   readAttachmentFile,
   saveAttachment,
 } from "@/lib/console/attachments";
@@ -83,6 +85,7 @@ export function TaskDetail({
   const [attachments, setAttachments] = useState<ConsoleAttachment[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<ConsoleAttachment | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Fresh detail state whenever another task is picked from the queue.
@@ -112,10 +115,19 @@ export function TaskDetail({
     setSavedRev((r) => r + 1);
   };
 
-  const upload = (files: FileList | null) => {
-    if (!files) return;
-    void (async () => {
-      for (const f of Array.from(files)) {
+  const storeFiles = async (files: File[]) => {
+    for (let f of files) {
+      if (!f.type.startsWith("image/")) continue;
+      try {
+        // Oversized screenshots shrink to the downscale bound first instead
+        // of bouncing - architects paste 4K captures all day.
+        if (needsDownscale({ name: f.name, type: f.type, size: f.size })) {
+          f = await downscaleImageFile(f);
+        }
+      } catch {
+        /* fall through to the gate with the original bytes */
+      }
+      {
         const gate = checkAttachmentFile({ name: f.name, type: f.type, size: f.size });
         if (!gate.ok) {
           setAttachError(gate.error);
@@ -129,7 +141,24 @@ export function TaskDetail({
           setAttachError(`Could not read ${f.name}.`);
         }
       }
-    })();
+    }
+  };
+
+  const upload = (files: FileList | null) => {
+    if (!files) return;
+    void storeFiles(Array.from(files));
+  };
+
+  /** Paste-to-attach: screenshots land straight from the clipboard. Text
+   * fields keep their paste - only image payloads are intercepted, and only
+   * outside inputs so typing is never disturbed. */
+  const onPasteCapture = (e: React.ClipboardEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (target && typeof target.closest === "function" && target.closest("input, textarea, [contenteditable]")) return;
+    const images = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith("image/"));
+    if (images.length === 0) return;
+    e.preventDefault();
+    void storeFiles(images);
   };
 
   const removeAttachment = async (id: string) => {
@@ -139,7 +168,7 @@ export function TaskDetail({
   };
 
   return (
-    <div role="dialog" aria-modal="true" aria-label={task.title} className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={onClose}>
+    <div role="dialog" aria-modal="true" aria-label={task.title} className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={onClose} onPaste={onPasteCapture}>
       <div className="flex h-full w-full max-w-2xl flex-col overflow-hidden bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="border-b border-[#E8E2D8] px-5 py-3">
           <div className="flex items-center gap-2">
@@ -271,7 +300,20 @@ export function TaskDetail({
             </div>
           </section>
 
-          <section>
+          <section
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+              const images = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith("image/"));
+              if (images.length > 0) void storeFiles(images);
+            }}
+            className={`rounded-xl p-1 transition-colors ${dragOver ? "bg-[#F5EEDF] outline-2 outline-dashed outline-[#C9A86A]" : ""}`}
+          >
             <div className="flex items-center gap-2">
               <h4 className="font-mono text-[9px] uppercase tracking-[2px] text-[#A39B8E]">
                 Screenshots · {attachments.length} · stored in this browser
@@ -323,7 +365,7 @@ export function TaskDetail({
                 ))}
               </ul>
             ) : (
-              <p className="mt-1.5 text-[12px] text-[#A39B8E]">No screenshots yet — pin error states, ERDs, review markups. They travel with export.</p>
+              <p className="mt-1.5 text-[12px] text-[#A39B8E]">No screenshots yet — paste, drop or + Attach error states, ERDs, review markups. They travel with export.</p>
             )}
           </section>
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { newConsoleTask } from "./model";
-import { checkAttachmentFile, consoleAttachmentSchema } from "./attachments";
+import { checkAttachmentFile, consoleAttachmentSchema, needsDownscale } from "./attachments";
 import { exportConsoleTasks, importConsoleTasks } from "./store";
 
 describe("console attachments", () => {
@@ -9,6 +9,11 @@ describe("console attachments", () => {
     expect(checkAttachmentFile({ name: "doc.pdf", type: "application/pdf", size: 1024 }).ok).toBe(false);
     expect(checkAttachmentFile({ name: "big.png", type: "image/png", size: 4 * 1024 * 1024 }).ok).toBe(false);
     expect(checkAttachmentFile({ name: "empty.png", type: "image/png", size: 0 }).ok).toBe(false);
+  });
+
+  it("flags oversized files for a downscale pass", () => {
+    expect(needsDownscale({ name: "shot.png", type: "image/png", size: 1024 })).toBe(false);
+    expect(needsDownscale({ name: "huge.png", type: "image/png", size: 5 * 1024 * 1024 })).toBe(true);
   });
 
   it("validates attachment records", () => {
