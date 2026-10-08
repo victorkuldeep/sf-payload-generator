@@ -46,7 +46,7 @@ type Module = "mappings" | "experience" | "apis" | "decisions" | "deliverables";
  * Mapping Studio route.
  *
  * Workspace root (PROJECT umbrella, e.g. "Accenture") containing many
- * child Integration Mappings (TMF622, TMF764, …) plus one Experience
+ * child integration mappings (orders, quotes, …) plus one Experience
  * workspace. Standalone mappings keep working and can attach/upgrade.
  */
 export function MappingRoute() {
@@ -79,7 +79,7 @@ export function MappingRoute() {
     if (playState === "busy") return;
     setPlayState("busy");
     try {
-      const res = await fetch("/samples/tmf622-order-mapping.json");
+      const res = await fetch("/samples/product-order-mapping.json");
       const text = await res.text();
       const v = validateImport(text);
       if (!v.ok || !v.project) throw new Error(v.errors.join(" ") || "Sample invalid.");
@@ -545,7 +545,7 @@ export function MappingRoute() {
               <Button variant="ghost" onClick={() => setShowImport(true)}>
                 Import mapping JSON
               </Button>
-              <a href="/samples/tmf622-order-mapping.json" download className="inline-flex items-center rounded-lg border border-[#E8E2D8] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#777168] hover:border-[#A98450] hover:text-[#27241F]" title="A training mapping - import it to see the supported format, then break it">
+              <a href="/samples/product-order-mapping.json" download className="inline-flex items-center rounded-lg border border-[#E8E2D8] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#777168] hover:border-[#A98450] hover:text-[#27241F]" title="A training mapping - import it to see the supported format, then break it">
                 Try a sample
               </a>
             </div>
@@ -584,13 +584,13 @@ export function MappingRoute() {
             <p className="mt-0.5 text-xs text-[#777168]">Learn by playing - each template opens a real mapping you can break safely. Nothing leaves your browser.</p>
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
               <div className="rounded-xl border border-[#F0EBE0] p-3">
-                <p className="text-[13px] font-semibold text-[#27241F]">TMF622 order sample</p>
+                <p className="text-[13px] font-semibold text-[#27241F]">Product order sample</p>
                 <p className="mt-0.5 text-[11px] leading-relaxed text-[#777168]">Order + line items with an enum row, a plan and an open decision.</p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   <Button size="sm" onClick={() => void playSample()} disabled={playState === "busy"}>
                     {playState === "busy" ? "Opening…" : "Import & play"}
                   </Button>
-                  <a href="/samples/tmf622-order-mapping.json" download className="inline-flex items-center rounded-lg px-2 py-1 text-[12px] font-semibold text-[#777168] hover:text-[#27241F]">
+                  <a href="/samples/product-order-mapping.json" download className="inline-flex items-center rounded-lg px-2 py-1 text-[12px] font-semibold text-[#777168] hover:text-[#27241F]">
                     Download
                   </a>
                 </div>
@@ -1212,7 +1212,7 @@ function MappingsTab({
         )}
         {items.length === 0 && !attaching && (
           <p className="py-4 text-center text-[13px] text-[#A39B8E]">
-            No mappings yet - create one per payload (TMF622, TMF764, …), each with its own source JSON and Salesforce field maps.
+            No mappings yet - create one per payload (orders, quotes, …), each with its own source JSON and Salesforce field maps.
           </p>
         )}
         <ul className="space-y-2">

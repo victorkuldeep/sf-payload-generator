@@ -91,7 +91,7 @@ export function ProjectWizard({
         <div className="space-y-3">
           <label className="block text-[12px] font-semibold text-[#27241F]">
             Integration mapping name
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="TMF622 Product Order → Salesforce" className={`${inputCls} mt-1 font-normal`} />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Product Order → Salesforce" className={`${inputCls} mt-1 font-normal`} />
           </label>
           <label className="block text-[12px] font-semibold text-[#27241F]">
             Purpose
@@ -104,7 +104,7 @@ export function ProjectWizard({
             </label>
             <label className="block text-[12px] font-semibold text-[#27241F]">
               Source API
-              <input value={sourceApi} onChange={(e) => setSourceApi(e.target.value)} placeholder="TMF622 Product Order v4" className={`${inputCls} mt-1 font-normal`} />
+              <input value={sourceApi} onChange={(e) => setSourceApi(e.target.value)} placeholder="Product Order API v4" className={`${inputCls} mt-1 font-normal`} />
             </label>
           </div>
           <label className="block text-[12px] font-semibold text-[#27241F]">

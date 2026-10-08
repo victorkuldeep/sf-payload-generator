@@ -4,20 +4,20 @@
   "exportedAt": "2026-10-08T00:00:00.000Z",
   "exportKind": "full",
   "project": {
-    "id": "map-sample-tmf622",
-    "name": "TMF622 Product Order → Salesforce (sample)",
-    "description": "Training mapping: a TMF622-style product order mapped onto Salesforce. Import it, open it, break it.",
-    "sourceSystem": "Middleware (ZSP hub)",
-    "sourceApi": "TMF622 Product Order v4",
+    "id": "map-sample-product-order",
+    "name": "Product Order → Salesforce (sample)",
+    "description": "Training mapping: a product order payload mapped onto Salesforce. Import it, open it, break it.",
+    "sourceSystem": "Order hub",
+    "sourceApi": "Product Order API v4",
     "targetSystem": "Salesforce",
     "domain": "Order management",
-    "tags": ["sample", "tmf622"],
+    "tags": ["sample", "product-order"],
     "status": "draft",
     "createdAt": "2026-10-08T00:00:00.000Z",
     "updatedAt": "2026-10-08T00:00:00.000Z",
     "source": {
       "kind": "json-sample",
-      "name": "tmf622-product-order.json",
+      "name": "product-order.json",
       "originalText": "{\n  \"id\": \"PO-1001\",\n  \"state\": \"acknowledged\",\n  \"priority\": \"1\",\n  \"orderItem\": [\n    {\n      \"id\": \"1\",\n      \"action\": \"add\",\n      \"quantity\": 2,\n      \"product\": {\n        \"name\": \"Fiber 1G\",\n        \"status\": \"active\"\n      }\n    }\n  ],\n  \"relatedParty\": {\n    \"name\": \"Zayo\",\n    \"role\": \"customer\"\n  }\n}",
       "paths": [
         { "id": "$", "path": "$", "parent": null, "key": "$", "kind": "object", "jsonType": "object", "depth": 0, "inArray": false, "required": "unknown" },
@@ -50,7 +50,7 @@
       { "id": "row-sample-4", "sourcePath": "$.relatedParty.name", "planId": null, "objectName": "Account", "fieldName": "Name", "kind": "direct", "status": "mapped", "rationale": "Sample cross-object mapping.", "updatedAt": "2026-10-08T00:00:00.000Z" }
     ],
     "decisions": [
-      { "id": "dec-sample-1", "title": "Decide priority scale mapping", "description": "TMF priority 1-4 vs Salesforce urgency picklist is undecided.", "sourcePaths": ["$.priority"], "planId": null, "status": "open", "owner": "Architect", "createdAt": "2026-10-08T00:00:00.000Z", "updatedAt": "2026-10-08T00:00:00.000Z" }
+      { "id": "dec-sample-1", "title": "Decide priority scale mapping", "description": "Priority 1-4 vs the Salesforce urgency picklist is undecided.", "sourcePaths": ["$.priority"], "planId": null, "status": "open", "owner": "Architect", "createdAt": "2026-10-08T00:00:00.000Z", "updatedAt": "2026-10-08T00:00:00.000Z" }
     ],
     "versions": [],
     "extensions": {}

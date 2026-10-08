@@ -6,7 +6,7 @@ import { extractPaths } from "./source";
 
 /** The downloadable training sample must stay importable and self-consistent. */
 describe("training sample mapping", () => {
-  const text = readFileSync(join(process.cwd(), "public", "samples", "tmf622-order-mapping.json"), "utf8");
+  const text = readFileSync(join(process.cwd(), "public", "samples", "product-order-mapping.json"), "utf8");
 
   it("passes import validation with no errors", () => {
     const v = validateImport(text);
