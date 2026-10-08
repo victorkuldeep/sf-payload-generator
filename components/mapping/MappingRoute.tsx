@@ -50,6 +50,7 @@ type Module = "mappings" | "experience" | "apis" | "decisions" | "deliverables";
  */
 export function MappingRoute() {
   const [view, setView] = useState<View>("start");
+  const [invQuery, setInvQuery] = useState("");
   const [studios, setStudios] = useState<StudioSummary[]>([]);
   const [studio, setStudio] = useState<StudioProject | null>(null);
   const [child, setChild] = useState<MappingProject | null>(null);
@@ -385,6 +386,11 @@ export function MappingRoute() {
     [child, activePlan]
   );
   const coverageCount = useMemo(() => (child ? requiredTargets(child).length : 0), [child]);
+  const invShown = useMemo(() => {
+    const q = invQuery.trim().toLowerCase();
+    if (!q) return studios;
+    return studios.filter((s) => `${s.name} ${s.customer ?? ""}`.toLowerCase().includes(q));
+  }, [studios, invQuery]);
   const planMismatch =
     activePlan && picked && picked.objectName !== activePlan.objectName
       ? `Field is on ${picked.objectName}, but the active plan (${activePlan.name}) targets ${activePlan.objectName}. Switch plans or pick a ${activePlan.objectName} field.`
@@ -405,10 +411,73 @@ export function MappingRoute() {
     </span>
   );
 
-  // ================= start screen =================
+  // ================= start screen: inventory left, action right =================
   if (!studio) {
     return (
-      <div className="space-y-4">
+      <div className="grid items-start gap-3 lg:grid-cols-[300px_minmax(0,1fr)]">
+        <aside className="rounded-xl border border-[#E8E2D8] bg-white p-3 lg:sticky lg:top-3" aria-label="Projects inventory">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">Projects · {studios.length}</p>
+            <Button size="sm" variant="ghost" onClick={() => setView("ws-wizard")} title="New project umbrella">
+              + New
+            </Button>
+          </div>
+          {studios.length > 0 && (
+            <input
+              value={invQuery}
+              onChange={(e) => setInvQuery(e.target.value)}
+              placeholder="Search projects…"
+              aria-label="Search projects"
+              spellCheck={false}
+              className="mb-2 w-full rounded-lg border border-[#E8E2D8] px-2.5 py-1.5 text-[12px] focus:border-[#A98450] focus:outline-none"
+            />
+          )}
+          {invShown.length === 0 ? (
+            <div className="py-3 text-center">
+              <svg
+                width="132"
+                height="76"
+                viewBox="0 0 132 76"
+                fill="none"
+                aria-hidden="true"
+                className="mx-auto h-auto w-[132px]"
+              >
+                <rect x="6" y="12" width="48" height="52" rx="9" fill="#FFFFFF" stroke="#D8CFC0" strokeWidth="1.5" strokeDasharray="4 4" />
+                <line x1="16" y1="28" x2="44" y2="28" stroke="#E3D9C6" strokeWidth="4" strokeLinecap="round" />
+                <line x1="16" y1="40" x2="44" y2="40" stroke="#E3D9C6" strokeWidth="4" strokeLinecap="round" />
+                <line x1="16" y1="52" x2="34" y2="52" stroke="#E3D9C6" strokeWidth="4" strokeLinecap="round" />
+                <rect x="78" y="12" width="48" height="52" rx="9" fill="#FAF8F2" stroke="#C9A86A" strokeWidth="1.5" />
+                <line x1="88" y1="28" x2="116" y2="28" stroke="#C9A86A" strokeWidth="4" strokeLinecap="round" />
+                <line x1="88" y1="40" x2="108" y2="40" stroke="#C9A86A" strokeWidth="4" strokeLinecap="round" />
+                <line x1="54" y1="38" x2="78" y2="38" stroke="#A98450" strokeWidth="1.5" strokeDasharray="3 3" />
+                <path d="M72 33 L78 38 L72 43" stroke="#A98450" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+              </svg>
+              <p className="mt-2 text-[13px] font-semibold text-[#27241F]">No projects yet</p>
+              <ol className="mx-auto mt-2 max-w-[240px] space-y-1.5 text-left text-[11px] leading-relaxed text-[#777168]">
+                <li><span className="font-mono font-bold text-[#A98450]">1 </span>One umbrella per client or program.</li>
+                <li><span className="font-mono font-bold text-[#A98450]">2 </span>Many payload mappings under each.</li>
+                <li><span className="font-mono font-bold text-[#A98450]">3 </span>Paste JSON or generate from OpenAPI.</li>
+                <li><span className="font-mono font-bold text-[#A98450]">4 </span>Auto-suggest + coverage queue finish it fast.</li>
+                <li><span className="font-mono font-bold text-[#A98450]">5 </span>Export, share, hand off to build agents.</li>
+              </ol>
+            </div>
+          ) : (
+            <ul className="max-h-[60vh] space-y-1.5 overflow-y-auto">
+              {invShown.map((s) => (
+                <li key={s.id}>
+                  <button type="button" onClick={() => void openStudio(s.id)} className="w-full cursor-pointer rounded-xl border border-[#F0EBE0] px-3 py-2 text-left hover:border-[#A98450]">
+                    <span className="block truncate text-[13px] font-semibold text-[#27241F]">{s.name}{s.customer ? ` · ${s.customer}` : ""}</span>
+                    <span className="block font-mono text-[10px] text-[#A39B8E]">{s.status} · {s.mappingCount} mappings · {s.openDecisions} open decisions</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <button type="button" onClick={() => setView("library")} className="mt-2 w-full cursor-pointer rounded-lg px-2 py-1.5 text-center text-[12px] font-semibold text-[#777168] hover:bg-[#FAF8F2] hover:text-[#27241F]">
+            Standalone mappings ({library.length}) →
+          </button>
+        </aside>
+        <div className="min-w-0 space-y-3">
         <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-4 text-center">
           <svg
             width="430"
@@ -486,25 +555,6 @@ export function MappingRoute() {
           </div>
         )}
 
-        {view === "start" && studios.length > 0 && (
-          <div className="rounded-xl border border-[#E8E2D8] bg-white p-4">
-            <p className="mb-2 text-[13px] font-semibold text-[#27241F]">Projects · {studios.length}</p>
-            <ul className="space-y-2">
-              {studios.map((s) => (
-                <li key={s.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-[#F0EBE0] px-3 py-2">
-                  <button type="button" onClick={() => void openStudio(s.id)} className="min-w-0 flex-1 cursor-pointer text-left">
-                    <span className="block truncate text-[13px] font-semibold text-[#27241F] hover:underline">
-                      {s.name}{s.customer ? ` · ${s.customer}` : ""}
-                    </span>
-                    <span className="block font-mono text-[10px] text-[#A39B8E]">
-                      {s.status} · {s.mappingCount} mappings · {s.screenCount} screens · {s.operationCount} APIs · {s.openDecisions} open decisions
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
 
         {view === "ws-wizard" && (
           <div className="mx-auto max-w-xl rounded-xl border border-[#E8E2D8] bg-white p-5">
@@ -549,6 +599,7 @@ export function MappingRoute() {
             }}
           />
         )}
+        </div>
       </div>
     );
   }
