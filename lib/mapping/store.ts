@@ -17,6 +17,8 @@ function reqRead<T>(fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
 export interface ProjectSummary {
   id: string;
   name: string;
+  /** Short purpose line from the wizard - powers library word search. */
+  description?: string;
   sourceApi?: string;
   targetSystem: string;
   status: MappingProject["status"];
@@ -35,6 +37,7 @@ export function toSummary(p: MappingProject): ProjectSummary {
   return {
     id: p.id,
     name: p.name,
+    description: p.description,
     sourceApi: p.sourceApi,
     targetSystem: p.targetSystem,
     status: p.status,

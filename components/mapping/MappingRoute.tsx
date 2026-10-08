@@ -1048,6 +1048,18 @@ function LibraryList({
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameText, setRenameText] = useState("");
+  const [q, setQ] = useState("");
+
+  const query = q.trim().toLowerCase();
+  const shown =
+    query.length === 0
+      ? library
+      : library.filter((s) =>
+          [s.name, s.description ?? "", s.sourceApi ?? "", s.targetSystem ?? "", s.status]
+            .join(" ")
+            .toLowerCase()
+            .includes(query),
+        );
 
   const act = async (fn: () => Promise<void>) => {
     await fn().catch(() => undefined);
@@ -1059,8 +1071,15 @@ function LibraryList({
   return (
     <div className="rounded-xl border border-[#E8E2D8] bg-white p-4">
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-[13px] font-semibold text-[#27241F]">Standalone mappings · {library.length}</p>
-        <span className="flex gap-1.5">
+        <p className="text-[13px] font-semibold text-[#27241F]">Standalone mappings · {shown.length}{shown.length !== library.length ? ` of ${library.length}` : ""}</p>
+        <span className="flex items-center gap-1.5">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search name, purpose, API…"
+            aria-label="Search standalone mappings"
+            className="w-44 rounded-lg border border-[#E8E2D8] px-2 py-1 text-[12px] focus:border-[#A98450] focus:outline-none"
+          />
           <Button size="sm" variant="ghost" onClick={onBack}>
             ← Start
           </Button>
@@ -1077,11 +1096,17 @@ function LibraryList({
           </Button>
         </div>
       )}
+      {library.length > 0 && shown.length === 0 && (
+        <p className="rounded-xl border border-dashed border-[#E8E2D8] p-4 text-center text-[12px] text-[#A39B8E]">No mappings match &ldquo;{q.trim()}&rdquo; - clear the search or create a new one above.</p>
+      )}
       <ul className="space-y-2">
-        {library.map((s) => (
+        {shown.map((s) => (
           <li key={s.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-[#F0EBE0] px-3 py-2">
             <button type="button" onClick={() => onOpen(s.id)} className="min-w-0 flex-1 cursor-pointer text-left">
               <span className="block truncate text-[13px] font-semibold text-[#27241F] hover:underline">{s.name}</span>
+              {s.description ? (
+                <span className="block truncate text-[11px] text-[#777168]">{s.description}</span>
+              ) : null}
               <span className="block font-mono text-[10px] text-[#A39B8E]">
                 {s.sourceApi ?? "—"} · {s.status} · {s.mappingCount} mappings · {s.unmappedCount} unmapped · {s.decisionOpenCount} open decisions · v{s.versionCount}
               </span>
