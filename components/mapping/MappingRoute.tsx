@@ -512,6 +512,7 @@ export function MappingRoute() {
             library={library}
             onOpen={(id) => void openChildStandalone(id)}
             onBack={() => setView("start")}
+            onNew={() => setShowChildWizard(true)}
             onChanged={refreshAll}
             onUpgrade={(id) => void upgradeStandalone(id)}
           />
@@ -906,6 +907,12 @@ export function MappingRoute() {
                 const next = attachMapping(studio, p.id, new Date().toISOString());
                 await persistStudio(next);
                 setStudio(next);
+              } else {
+                // Standalone birth: open it direct - no umbrella needed.
+                setShowChildWizard(false);
+                refreshAll();
+                await openChildStandalone(p.id);
+                return;
               }
               setChildMaps((prev) => [...prev, p]);
               setShowChildWizard(false);
@@ -1027,12 +1034,14 @@ function LibraryList({
   library,
   onOpen,
   onBack,
+  onNew,
   onChanged,
   onUpgrade,
 }: {
   library: ProjectSummary[];
   onOpen: (id: string) => void;
   onBack: () => void;
+  onNew: () => void;
   onChanged: () => void;
   onUpgrade?: (id: string) => void;
 }) {
@@ -1051,11 +1060,23 @@ function LibraryList({
     <div className="rounded-xl border border-[#E8E2D8] bg-white p-4">
       <div className="mb-3 flex items-center justify-between">
         <p className="text-[13px] font-semibold text-[#27241F]">Standalone mappings · {library.length}</p>
-        <Button size="sm" variant="ghost" onClick={onBack}>
-          ← Start
-        </Button>
+        <span className="flex gap-1.5">
+          <Button size="sm" variant="ghost" onClick={onBack}>
+            ← Start
+          </Button>
+          <Button size="sm" onClick={onNew} title="Create a mapping without a project umbrella - paste JSON and map direct">
+            New standalone mapping
+          </Button>
+        </span>
       </div>
-      {library.length === 0 && <p className="py-6 text-center text-[13px] text-[#A39B8E]">No saved mappings yet.</p>}
+      {library.length === 0 && (
+        <div className="py-6 text-center">
+          <p className="text-[13px] text-[#A39B8E]">No saved mappings yet - map one payload direct, no project needed.</p>
+          <Button size="sm" onClick={onNew}>
+            Create the first one
+          </Button>
+        </div>
+      )}
       <ul className="space-y-2">
         {library.map((s) => (
           <li key={s.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-[#F0EBE0] px-3 py-2">
