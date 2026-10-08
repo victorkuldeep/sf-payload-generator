@@ -2,9 +2,11 @@
  * Mapping Studio - source JSON parsing + path catalog.
  *
  * Canonical notation: "$.order.orderNumber", "$.orderItem[].sku".
- * Arrays collapse to a single [] element path (first element supplies
- * the example). The canonical path IS the stable id, so reparse
- * reconciles without losing mappings.
+ * Arrays collapse to a single [] element path. Shape is the union of
+ * keys across the first ELEMENT_SCAN_LIMIT elements (first-seen order,
+ * first defined value wins) so ragged samples - line 7 carrying a key
+ * that line 1 lacks - still catalog every field once. The canonical
+ * path IS the stable id, so reparse reconciles without losing mappings.
  */
 
 import type { JsonType, NodeKind, SourcePath } from "./types";
@@ -68,6 +70,13 @@ function truncateExample(value: unknown): unknown {
   return value;
 }
 
+/** How many array elements contribute keys to the [] union shape. */
+export const ELEMENT_SCAN_LIMIT = 25;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
 /**
  * Extract every path. Object/array containers are catalog rows too
  * (mappable to record plans); array elements collapse to one [] row.
@@ -95,34 +104,63 @@ export function extractPaths(value: unknown): SourcePath[] {
         visit(v, `${path}${segment(k)}`, path, k, depth + 1, inArray);
       }
     } else if (kind === "array") {
-      const arr = node as unknown[];
+      const arr = (node as unknown[]).slice(0, ELEMENT_SCAN_LIMIT);
       if (arr.length > 0) {
-        // Single representative element. Record first scalar preview on the [] row.
+        // Single [] row. Union shape across scanned elements so ragged
+        // samples catalog every key once; first defined value wins.
         const first = arr[0];
         const firstKind = kindOf(first);
+        const elemIsContainer = firstKind === "object" || firstKind === "array" || arr.some((el) => isPlainObject(el) || Array.isArray(el));
         const elemPath = `${path}[]`;
         out.push({
           id: elemPath,
           path: elemPath,
           parent: path,
           key: `${key}[]`,
-          kind: firstKind === "object" || firstKind === "array" ? firstKind : "scalar",
+          kind: elemIsContainer ? (arr.some((el) => isPlainObject(el)) || firstKind === "object" ? "object" : "array") : firstKind === "null" ? "null" : "scalar",
           jsonType: jsonTypeOf(first),
           example: firstKind === "scalar" || firstKind === "null" ? truncateExample(first) : undefined,
           depth: depth + 1,
           inArray: true,
           required: "unknown",
         });
-        if (firstKind === "object") {
-          for (const [k, v] of Object.entries(first as Record<string, unknown>)) {
-            visit(v, `${elemPath}${segment(k)}`, elemPath, k, depth + 2, true);
+        const objects = arr.filter(isPlainObject);
+        if (objects.length > 0) {
+          // Union keys in first-seen order; shape per key from its first defined value.
+          const ordered: string[] = [];
+          const seenKeys = new Set<string>();
+          for (const obj of objects) {
+            for (const k of Object.keys(obj)) {
+              if (!seenKeys.has(k)) {
+                seenKeys.add(k);
+                ordered.push(k);
+              }
+            }
           }
-        } else if (firstKind === "array" && (first as unknown[]).length > 0) {
+          for (const k of ordered) {
+            const holder = (objects.find((obj) => k in obj && obj[k] !== undefined && obj[k] !== null) ??
+              objects.find((obj) => k in obj)) as Record<string, unknown>;
+            visit(holder[k], `${elemPath}${segment(k)}`, elemPath, k, depth + 2, true);
+          }
+        } else if (firstKind === "array") {
           // Nested array: elemPath already represents the element - expand one level.
-          const inner = (first as unknown[])[0];
-          if (inner && typeof inner === "object" && !Array.isArray(inner)) {
-            for (const [k, v] of Object.entries(inner as Record<string, unknown>)) {
-              visit(v, `${elemPath}[]${segment(k)}`, elemPath, k, depth + 2, true);
+          const inners = arr.filter((el): el is unknown[] => Array.isArray(el) && el.length > 0);
+          const innerObjects = inners.map((inner) => inner[0]).filter(isPlainObject);
+          if (innerObjects.length > 0) {
+            const ordered: string[] = [];
+            const seenKeys = new Set<string>();
+            for (const obj of innerObjects) {
+              for (const k of Object.keys(obj)) {
+                if (!seenKeys.has(k)) {
+                  seenKeys.add(k);
+                  ordered.push(k);
+                }
+              }
+            }
+            for (const k of ordered) {
+              const holder = (innerObjects.find((obj) => k in obj && obj[k] !== undefined && obj[k] !== null) ??
+                innerObjects.find((obj) => k in obj)) as Record<string, unknown>;
+              visit(holder[k], `${elemPath}[]${segment(k)}`, elemPath, k, depth + 2, true);
             }
           }
         }
@@ -150,12 +188,22 @@ export function extractPaths(value: unknown): SourcePath[] {
         visit(v, `$${segment(k)}`, rootPath, k, 1, false);
       }
     } else {
-      // Root array: "$[]" IS the element row - expand its children directly.
-      const first = (value as unknown[])[0];
-      if (first && typeof first === "object" && !Array.isArray(first)) {
-        for (const [k, v] of Object.entries(first as Record<string, unknown>)) {
-          visit(v, `${rootPath}${segment(k)}`, rootPath, k, 1, true);
+      // Root array: "$[]" IS the element row - expand its union children directly.
+      const scanned = (value as unknown[]).slice(0, ELEMENT_SCAN_LIMIT).filter(isPlainObject);
+      const ordered: string[] = [];
+      const seenKeys = new Set<string>();
+      for (const obj of scanned) {
+        for (const k of Object.keys(obj)) {
+          if (!seenKeys.has(k)) {
+            seenKeys.add(k);
+            ordered.push(k);
+          }
         }
+      }
+      for (const k of ordered) {
+        const holder = (scanned.find((obj) => k in obj && obj[k] !== undefined && obj[k] !== null) ??
+          scanned.find((obj) => k in obj)) as Record<string, unknown>;
+        visit(holder[k], `${rootPath}${segment(k)}`, rootPath, k, 1, true);
       }
     }
   } else {

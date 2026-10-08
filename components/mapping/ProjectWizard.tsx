@@ -4,6 +4,7 @@ import { useState } from "react";
 import Button from "../ui/Button";
 import { extractPaths, parseSourceJson } from "@/lib/mapping/source";
 import { blankProject, type MappingProject } from "@/lib/mapping/types";
+import { OpenApiSource } from "./OpenApiSource";
 
 function uid(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -25,6 +26,7 @@ export function ProjectWizard({
   const [domain, setDomain] = useState("");
   const [sourceText, setSourceText] = useState("");
   const [sourceName, setSourceName] = useState("source-payload.json");
+  const [sourceTab, setSourceTab] = useState<"paste" | "openapi">("paste");
   const [error, setError] = useState<string | null>(null);
 
   const create = () => {
@@ -99,6 +101,31 @@ export function ProjectWizard({
 
       {step === 1 && (
         <div className="space-y-3">
+          <div className="flex overflow-hidden rounded-lg border border-[#E8E2D8] self-start" role="group" aria-label="Source kind">
+            {(["paste", "openapi"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setSourceTab(t)}
+                aria-pressed={sourceTab === t}
+                className={`px-3 py-1.5 text-[12px] font-semibold ${sourceTab === t ? "bg-[#211F1B] text-white" : "bg-white text-[#777168]"}`}
+              >
+                {t === "paste" ? "Paste JSON" : "From OpenAPI"}
+              </button>
+            ))}
+          </div>
+          {sourceTab === "openapi" ? (
+            <OpenApiSource
+              onBack={() => setSourceTab("paste")}
+              onUse={(sample) => {
+                setSourceText(sample.text);
+                setSourceName(sample.name);
+                setError(null);
+                setSourceTab("paste");
+              }}
+            />
+          ) : (
+          <>
           <label className="block text-[12px] font-semibold text-[#27241F]">
             Source file name
             <input value={sourceName} onChange={(e) => setSourceName(e.target.value)} className={`${inputCls} mt-1 font-mono font-normal`} />
@@ -121,6 +148,8 @@ export function ProjectWizard({
             <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
               {error}
             </p>
+          )}
+          </>
           )}
         </div>
       )}

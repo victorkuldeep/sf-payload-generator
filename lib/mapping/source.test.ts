@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractPaths, parseSourceJson, reconcilePaths } from "./source";
+import { ELEMENT_SCAN_LIMIT, extractPaths, parseSourceJson, reconcilePaths } from "./source";
 
 describe("parseSourceJson", () => {
   it("parses valid JSON", () => {
@@ -70,6 +70,41 @@ describe("extractPaths", () => {
     const b = extractPaths(JSON.parse(JSON.stringify(doc))).map((p) => p.id);
     expect(a).toEqual(b);
     expect(new Set(a).size).toBe(a.length);
+  });
+
+  it("unions ragged array keys across elements, first defined value wins", () => {
+    const paths = extractPaths({
+      orderItem: [{ id: "1" }, { id: "2", promo: "SAVE10" }, { id: "3", quantity: 2 }],
+    });
+    const ids = paths.map((p) => p.id);
+    expect(ids).toContain("$.orderItem[].id");
+    expect(ids).toContain("$.orderItem[].promo");
+    expect(ids).toContain("$.orderItem[].quantity");
+    // Still one row per field - no per-index duplicates.
+    expect(ids.filter((i) => /\[\d+\]/.test(i))).toEqual([]);
+    expect(paths.find((p) => p.id === "$.orderItem[].promo")?.example).toBe("SAVE10");
+    expect(paths.find((p) => p.id === "$.orderItem[]")?.kind).toBe("object");
+  });
+
+  it("shapes a key from a later element when the first is null", () => {
+    const paths = extractPaths({ lines: [{ addr: null }, { addr: { city: "Paris" } }] });
+    expect(paths.find((p) => p.id === "$.lines[].addr")?.kind).toBe("object");
+    expect(paths.map((p) => p.id)).toContain("$.lines[].addr.city");
+  });
+
+  it("unions root-level arrays too", () => {
+    const paths = extractPaths([{ a: 1 }, { b: 2 }]);
+    expect(paths.map((p) => p.id)).toContain("$[].a");
+    expect(paths.map((p) => p.id)).toContain("$[].b");
+  });
+
+  it("caps the union scan at ELEMENT_SCAN_LIMIT", () => {
+    const items = Array.from({ length: ELEMENT_SCAN_LIMIT + 5 }, (_, i) =>
+      i === ELEMENT_SCAN_LIMIT + 4 ? { late: true } : { id: i }
+    );
+    const ids = extractPaths({ items }).map((p) => p.id);
+    expect(ids).toContain("$.items[].id");
+    expect(ids).not.toContain("$.items[].late");
   });
 });
 
