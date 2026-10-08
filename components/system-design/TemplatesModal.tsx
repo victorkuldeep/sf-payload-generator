@@ -94,11 +94,11 @@ export function TemplatesModal({
           )}
           {card(
             "Branched run · 3 systems",
-            "Sample: TMF622 order → middleware → events",
-            "Salesforce order read fans into two middleware posts (as-is TMF622, wrapped TMF688 event), then replays into the subscriber via {{request}} - lanes, per-hop picks, and mock mode in one canvas.",
+            "Sample: product order → middleware → events",
+            "Salesforce order read fans into two middleware posts (as-is, wrapped order event), then replays into the subscriber via {{request}} - lanes, per-hop picks, and mock mode in one canvas.",
             "Hub base URLs + HUB_TOKEN in Credentials",
             onLoadTmf,
-            "Load TMF order-flow sample"
+            "Load order-flow sample"
           )}
         </div>
       </div>

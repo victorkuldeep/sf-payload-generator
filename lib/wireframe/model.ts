@@ -6,7 +6,7 @@ import { z } from "zod";
  * Source-of-truth rule: the canvas visualizes, this model decides.
  * Every component is a structured, composable IT asset: asset identity +
  * version, `implements` (data contract: Salesforce object / SID entity),
- * `consumes` (APIs: TMF Open APIs, Salesforce REST), `emits` (events /
+ * `consumes` (APIs: OpenAPI specs, Salesforce REST), `emits` (events /
  * interaction intents). That ODA-aligned contract is what makes a
  * wireframe pluggable anywhere later - portal, storefront, Canvas, agent.
  */
@@ -66,7 +66,7 @@ export type ProposedField = z.infer<typeof proposedFieldSchema>;
 const odaContractSchema = z.object({
   /** Data contracts implemented, e.g. ["Account", "SID:Party"]. */
   implements: z.array(z.string().max(160)).max(50).default([]),
-  /** APIs consumed, e.g. ["TMF622:ProductOrder", "REST:PATCH /sobjects/Account/:id"]. */
+  /** APIs consumed, e.g. ["OpenAPI:ProductOrder", "REST:PATCH /sobjects/Account/:id"]. */
   consumes: z.array(z.string().max(200)).max(50).default([]),
   /** Events/intents emitted, e.g. ["save:Account", "navigate:confirmation"]. */
   emits: z.array(z.string().max(160)).max(50).default([]),

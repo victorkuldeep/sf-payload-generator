@@ -952,7 +952,7 @@ export function SystemDesigner() {
 
   const loadTmfSample = useCallback(() => {
     if (project && (project.systems.length > 0 || saveState === "dirty")) {
-      if (!window.confirm("Replace the current canvas with the TMF order-flow sample? Unsaved work will be lost.")) return;
+      if (!window.confirm("Replace the current canvas with the order-flow sample? Unsaved work will be lost.")) return;
     }
     setProject(buildTmfSampleProject());
     setPast([]);

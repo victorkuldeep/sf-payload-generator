@@ -11,6 +11,7 @@ import { deleteExperience, listExperiences, saveExperience } from "@/lib/wirefra
 import { findDeepRecord, useDeepParam } from "@/lib/deep/deep";
 import { experienceToDraft } from "@/lib/wireframe/systemBridge";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { InventoryAside } from "../ui/InventoryAside";
 import { HistoryDialog } from "./HistoryDialog";
 import { SpecDialog } from "./SpecDialog";
 import { WireCanvas } from "./WireCanvas";
@@ -95,6 +96,8 @@ export function WireframeRoute() {
   const [specOpen, setSpecOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [rev, setRev] = useState(0);
+  const [q, setQ] = useState("");
+  const nameRef = useRef<HTMLInputElement | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -196,6 +199,10 @@ export function WireframeRoute() {
     setDraft(null);
     router.push("/system");
   };
+
+  const shown = q.trim()
+    ? items.filter((e) => `${e.name} ${e.status}`.toLowerCase().includes(q.trim().toLowerCase()))
+    : items;
 
   return (
     <div className="space-y-3">
@@ -336,47 +343,27 @@ export function WireframeRoute() {
       </div>
 
       {!active && (
-        <>
-          <div className="flex gap-1.5">
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void create();
-              }}
-              placeholder="New experience - e.g. Customer Management Portal"
-              aria-label="New experience name"
-              spellCheck={false}
-              className="min-w-0 flex-1 rounded-xl border border-[#E8E2D8] bg-white px-3 py-2 text-[13px] text-[#27241F] placeholder-[#A39B8E] focus:border-[#C9A86A] focus:outline-none"
-            />
-            <Button onClick={() => void create()}>New Exp</Button>
-            <Button variant="secondary" onClick={() => fileRef.current?.click()} title="Import a package JSON from a fellow dev">
-              Import
-            </Button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".json,application/json"
-              className="hidden"
-              aria-label="Import experience package"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                e.target.value = "";
-                if (f) void importFile(f);
-              }}
-            />
-          </div>
-          {importError && <p className="text-[11px] text-red-700">{importError}</p>}
-
-          {loaded && items.length > 0 && (
+        <div className="grid items-stretch gap-3 lg:grid-cols-[300px_minmax(0,1fr)]">
+          <InventoryAside
+            title="Experiences"
+            count={items.length}
+            query={q}
+            onQuery={setQ}
+            searchLabel="Search experiences…"
+            onNew={() => nameRef.current?.focus()}
+            newTitle="Jump to the name box and start one"
+            zeroTitle="No experiences yet"
+            zeroLines={[
+              "Name one experience on the right to begin.",
+              "Screens compose structured components.",
+              "Bind fields to live Salesforce schema.",
+              "Submit, review, approve the workflow.",
+              "Export a build spec for coding agents.",
+            ]}
+          >
             <ul className="space-y-1.5">
-              <li aria-hidden="true" className="flex items-center gap-3 px-3 font-mono text-[9px] uppercase tracking-[2px] text-[#A39B8E]">
-                <span className="flex-1">Experience</span>
-                <span className="w-24 shrink-0 text-right">State</span>
-                <span className="w-[68px] shrink-0" />
-              </li>
-              {items.map((exp) => (
-                <li key={exp.id} className="group flex items-center gap-3 rounded-xl border border-[#E8E2D8] bg-white px-3 py-2">
+              {shown.map((exp) => (
+                <li key={exp.id} className="group flex flex-wrap items-center gap-3 rounded-xl border border-[#E8E2D8] bg-white px-3 py-2">
                   <button
                     type="button"
                     onClick={() => setActiveId(exp.id)}
@@ -421,14 +408,60 @@ export function WireframeRoute() {
                 </li>
               ))}
             </ul>
-          )}
-
-          {loaded && items.length === 0 && (
-            <p className="rounded-xl border border-dashed border-[#E3D9C6] px-4 py-6 text-center text-xs text-[#777168]">
-              No experiences yet - name one above and start modeling.
-            </p>
-          )}
-        </>
+          </InventoryAside>
+          <div className="min-w-0 space-y-3">
+            <div className="rounded-xl border border-[#E8E2D8] bg-white p-4">
+              <div className="flex gap-1.5">
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void create();
+                  }}
+                  placeholder="New experience - e.g. Customer Management Portal"
+                  aria-label="New experience name"
+                  spellCheck={false}
+                  ref={nameRef}
+                  className="min-w-0 flex-1 rounded-xl border border-[#E8E2D8] bg-white px-3 py-2 text-[13px] text-[#27241F] placeholder-[#A39B8E] focus:border-[#C9A86A] focus:outline-none"
+                />
+                <Button onClick={() => void create()}>New Exp</Button>
+                <Button variant="secondary" onClick={() => fileRef.current?.click()} title="Import a package JSON from a fellow dev">
+                  Import
+                </Button>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".json,application/json"
+                  className="hidden"
+                  aria-label="Import experience package"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = "";
+                    if (f) void importFile(f);
+                  }}
+                />
+              </div>
+              {importError && <p className="mt-2 text-[11px] text-red-700">{importError}</p>}
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
+                <p className="font-mono text-[10px] font-bold uppercase tracking-[2px] text-[#A98450]">01</p>
+                <p className="mt-1 text-[13px] font-semibold text-[#27241F]">Model screens</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-[#777168]">Compose structured components - the canvas is a view, the model is the truth.</p>
+              </div>
+              <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
+                <p className="font-mono text-[10px] font-bold uppercase tracking-[2px] text-[#A98450]">02</p>
+                <p className="mt-1 text-[13px] font-semibold text-[#27241F]">Bind schema</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-[#777168]">Every field binds to live Salesforce metadata - existing, proposed or external.</p>
+              </div>
+              <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
+                <p className="font-mono text-[10px] font-bold uppercase tracking-[2px] text-[#A98450]">03</p>
+                <p className="mt-1 text-[13px] font-semibold text-[#27241F]">Review and ship</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-[#777168]">Submit, approve, then export a build spec your coding agent can execute.</p>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {active && (

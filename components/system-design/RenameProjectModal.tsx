@@ -86,7 +86,7 @@ export function RenameProjectModal({
             autoFocus
             maxLength={80}
             spellCheck={false}
-            placeholder="e.g. Zayo TMF order flow"
+            placeholder="e.g. Order to fulfillment flow"
             aria-label="Project name"
             className="w-full rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-2.5 py-2 text-[13px] font-semibold text-ivory-950 placeholder-ivory-400 placeholder:font-normal focus:border-bronze-500 focus:outline-none"
           />

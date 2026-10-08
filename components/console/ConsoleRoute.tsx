@@ -463,8 +463,19 @@ export function ConsoleRoute() {
             </li>
           ))}
           {loaded && filtered.length === 0 && (
-            <li className="px-4 py-6 text-center text-[12px] text-[#A39B8E]">
-              {tasks.length === 0 ? "No tasks yet — log the first one above." : "Nothing matches this filter."}
+            <li className="px-4 py-6 text-center">
+              {tasks.length === 0 ? (
+                <>
+                  <p className="text-[13px] font-semibold text-[#27241F]">No tasks yet</p>
+                  <ol className="mx-auto mt-2 max-w-[420px] space-y-1 text-left text-[11px] leading-relaxed text-[#777168]">
+                    <li><span className="font-mono font-bold text-[#A98450]">1 </span>Log anything - task, note, question, decision.</li>
+                    <li><span className="font-mono font-bold text-[#A98450]">2 </span>Canvas TODOs land here on their own.</li>
+                    <li><span className="font-mono font-bold text-[#A98450]">3 </span>Push to JIRA / ServiceNow or drop to a coding agent.</li>
+                  </ol>
+                </>
+              ) : (
+                <span className="text-[12px] text-[#A39B8E]">Nothing matches this filter.</span>
+              )}
             </li>
           )}
         </ol>

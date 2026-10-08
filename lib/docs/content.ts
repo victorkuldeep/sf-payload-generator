@@ -453,21 +453,21 @@ export const DOC_SECTIONS: DocSection[] = [
     ],
   },
   {
-    id: "guide-tmf",
+    id: "guide-order-flow",
     group: "Guides",
-    title: "Guide: TMF order through middleware",
-    keywords: "guide example tmf order middleware hub 622 688 tutorial walkthrough",
+    title: "Guide: product order through middleware",
+    keywords: "guide example order middleware hub events tutorial walkthrough",
     blocks: [
       {
         k: "p",
-        text: "The canonical first simulation. Salesforce emits a TMF 622 order; the hub takes it as-is on one operation or as a TMF 688 event on another.",
+        text: "The canonical first simulation. Salesforce emits a product order; the hub takes it as-is on one operation or as an order event on another.",
       },
       {
         k: "list",
         items: [
-          "Salesforce node: GET the productOrder URL → inspect the 622 JSON in the run trace.",
-          "Middleware node: POST /TMF622v401/productOrder with $body as-is (hub auth header on the node).",
-          "Second operation: POST the 688 topic with transform { event: { productOrder: $body } }.",
+          "Salesforce node: GET the productOrder URL → inspect the order JSON in the run trace.",
+          "Middleware node: POST /v4/productOrder with $body as-is (hub auth header on the node).",
+          "Second operation: POST the events topic with transform { event: { productOrder: $body } }.",
           "Flow: Salesforce GET → Middleware op-1. Run. Responses trace all the way back.",
           "Hub unreachable? Flip it to mock with a recorded 201 and keep designing.",
           "Save as Project, export the run as Markdown, share the package JSON.",

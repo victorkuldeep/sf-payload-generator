@@ -2,7 +2,7 @@
  * Studio workspace root - the PROJECT umbrella.
  *
  * Example: "Accenture" root containing 100s of child Integration Mappings
- * (TMF622, TMF764, …) plus one Experience workspace whose screens map to
+ * (orders, quotes, …) plus one Experience workspace whose screens map to
  * endpoint payloads. Experience, API Catalog, Decisions and snapshots live
  * ONCE at the root; each child mapping owns its payload + SF field maps.
  */

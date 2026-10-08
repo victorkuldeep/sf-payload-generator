@@ -48,13 +48,13 @@ export function buildDemoProject(): SystemProject {
  * live in this file - the vault holds them for the tab only.
  */
 /**
- * Sample topology: Salesforce TMF622 order read flows into middleware two
- * ways - as-is passthrough, and wrapped as a TMF688 event via template -
+ * Sample topology: Salesforce product-order read flows into middleware two
+ * ways - as-is passthrough, and wrapped as an order event via template -
  * then on to the event subscriber. Proves branching lanes, per-hop picks,
  * and request-replay ({{requests.*}}) end to end.
  */
 export function buildTmfSampleProject(): SystemProject {
-  const project = newProject("Sample: TMF622 order → middleware → events");
+  const project = newProject("Sample: product order → middleware → events");
   const by = (type: string) => SYSTEM_TEMPLATES.find((t) => t.systemType === type)!;
   const sf = { ...newSystemFromTemplate(by("salesforce"), { x: 80, y: 200 }, 1), name: "Salesforce", id: "sys_tmf_sf" };
   const mw = { ...newSystemFromTemplate(by("middleware"), { x: 520, y: 200 }, 1), name: "Middleware Hub", id: "sys_tmf_mw", baseUrl: "https://hub-zsp.zke.dev.public.zayo.com" };
@@ -68,16 +68,16 @@ export function buildTmfSampleProject(): SystemProject {
   project.operations = [
     {
       id: "op_tmf_get", interfaceId: "iface_tmf_sf", name: "Get product order",
-      method: "GET", path: "/tmf/productOrderingManagement/v5/productOrder/revenueCloud/00000238", version: "v1",
+      method: "GET", path: "/api/orderManagement/v5/productOrder/revenueCloud/00000238", version: "v1",
     },
     {
-      id: "op_tmf_fwd", interfaceId: "iface_tmf_mw", name: "Forward TMF622",
-      method: "POST", path: "/TMF622v401/productOrder", version: "v1",
+      id: "op_tmf_fwd", interfaceId: "iface_tmf_mw", name: "Forward order",
+      method: "POST", path: "/v4/productOrder", version: "v1",
       headers: [{ key: "Authorization", value: "Bearer $env.HUB_TOKEN" }],
     },
     {
-      id: "op_tmf_pub", interfaceId: "iface_tmf_mw", name: "Publish TMF688 event",
-      method: "POST", path: "/TMF688v400/topic/TMF622-v401-Events/event", version: "v1",
+      id: "op_tmf_pub", interfaceId: "iface_tmf_mw", name: "Publish order event",
+      method: "POST", path: "/v4/topic/order-events/event", version: "v1",
       headers: [{ key: "Authorization", value: "Bearer $env.HUB_TOKEN" }],
     },
     {
@@ -92,7 +92,7 @@ export function buildTmfSampleProject(): SystemProject {
       mapping: { mode: "passthrough" as const, template: "" },
     },
     {
-      id: "conn_tmf_2", sourceId: sf.id, targetId: mw.id, label: "Order as TMF688 event",
+      id: "conn_tmf_2", sourceId: sf.id, targetId: mw.id, label: "Order as event",
       status: "draft" as const, sourceOperationId: "op_tmf_get", targetOperationId: "op_tmf_pub",
       mapping: {
         mode: "template" as const,
@@ -110,9 +110,9 @@ export function buildTmfSampleProject(): SystemProject {
   project.environments = [{ id: "env_tmf", name: "Sandbox", baseUrl: "", baseUrlOverrides: {} }];
   project.activeEnvironmentId = "env_tmf";
   project.notes = [
-    "## TMF622 order → middleware → events (2 lanes)",
+    "## Product order → middleware → events (2 lanes)",
     "",
-    "Lane 1 forwards the order as-is; lane 2 wraps it as a TMF688 event.",
+    "Lane 1 forwards the order as-is; lane 2 wraps it as an order event.",
     "The final hop replays `{{request}}` (what middleware received), not the",
     "middleware ack - compare with `{{response}}` to see the difference.",
     "",

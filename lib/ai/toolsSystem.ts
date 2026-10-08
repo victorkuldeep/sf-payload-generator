@@ -37,7 +37,7 @@ const addSystemArgs = z.object({
 const connectArgs = z.object({
   from: z.string().min(1).describe("Source system name or id"),
   to: z.string().min(1).describe("Target system name or id"),
-  label: z.string().max(120).optional().describe("Edge label, e.g. TMF622 order POST"),
+  label: z.string().max(120).optional().describe("Edge label, e.g. order POST"),
 });
 
 function needCanvas() {

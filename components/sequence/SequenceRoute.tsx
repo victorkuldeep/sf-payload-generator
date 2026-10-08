@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Button from "../ui/Button";
 import { ConfirmDialog } from "../wireframe/ConfirmDialog";
+import { InventoryAside } from "../ui/InventoryAside";
 import { SequenceCanvas } from "./SequenceCanvas";
 import { SequenceHistoryDialog } from "./SequenceHistoryDialog";
 import {
@@ -40,6 +41,8 @@ export function SequenceRoute() {
   const [items, setItems] = useState<SequenceDocument[]>([]);
   const [matrixBusy, setMatrixBusy] = useState(false);
   const [name, setName] = useState("");
+  const [q, setQ] = useState("");
+  const nameRef = useRef<HTMLInputElement | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -127,6 +130,10 @@ export function SequenceRoute() {
 
   const active = items.find((i) => i.id === activeId) ?? null;
   const problems = active ? validateSequence(active) : [];
+
+  const shown = q.trim()
+    ? items.filter((d) => `${d.name} ${d.status}`.toLowerCase().includes(q.trim().toLowerCase()))
+    : items;
 
   return (
     <div className="space-y-3">
@@ -251,42 +258,26 @@ export function SequenceRoute() {
       </div>
 
       {!active && (
-        <>
-          <div className="flex gap-1.5">
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void create();
-              }}
-              placeholder="New Sequence - e.g. Order to fulfillment"
-              aria-label="New Sequence name"
-              spellCheck={false}
-              className="min-w-0 flex-1 rounded-xl border border-[#E8E2D8] bg-white px-3 py-2 text-[13px] text-[#27241F] placeholder-[#A39B8E] focus:border-[#C9A86A] focus:outline-none"
-            />
-            <Button onClick={() => void create()}>New Sequence</Button>
-            <Button variant="secondary" onClick={() => fileRef.current?.click()} title="Import a package JSON or DSL text file from a fellow dev">
-              Import
-            </Button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".json,.txt,.text,.seq,.dsl,application/json,text/plain"
-              className="hidden"
-              aria-label="Import sequence file"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                e.target.value = "";
-                if (f) void importFile(f);
-              }}
-            />
-          </div>
-          {importError && <p className="text-[11px] text-red-700">{importError}</p>}
-
-          {loaded && items.length > 0 && (
-            <ul className="grid gap-2 sm:grid-cols-2">
-              {items.map((doc) => (
-                <li key={doc.id} className="group flex items-center gap-2 rounded-xl border border-[#E8E2D8] bg-white px-3 py-2.5">
+        <div className="grid items-stretch gap-3 lg:grid-cols-[300px_minmax(0,1fr)]">
+          <InventoryAside
+            title="Sequences"
+            count={items.length}
+            query={q}
+            onQuery={setQ}
+            searchLabel="Search sequences…"
+            onNew={() => nameRef.current?.focus()}
+            newTitle="Jump to the name box and start one"
+            zeroTitle="No sequences yet"
+            zeroLines={[
+              "Name one interaction on the right.",
+              "Describe it in plain statements.",
+              "Watch the diagram render itself.",
+              "Bridge systems in, export proof out.",
+            ]}
+          >
+            <ul className="space-y-1.5">
+              {shown.map((doc) => (
+                <li key={doc.id} className="group flex flex-wrap items-center gap-2 rounded-xl border border-[#E8E2D8] bg-white px-3 py-2.5">
                   <button
                     type="button"
                     onClick={() => setActiveId(doc.id)}
@@ -317,14 +308,60 @@ export function SequenceRoute() {
                 </li>
               ))}
             </ul>
-          )}
-
-          {loaded && items.length === 0 && (
-            <p className="rounded-xl border border-dashed border-[#E3D9C6] px-4 py-6 text-center text-xs text-[#777168]">
-              No sequences yet - name one above and start modeling.
-            </p>
-          )}
-        </>
+          </InventoryAside>
+          <div className="min-w-0 space-y-3">
+            <div className="rounded-xl border border-[#E8E2D8] bg-white p-4">
+              <div className="flex gap-1.5">
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void create();
+                  }}
+                  placeholder="New Sequence - e.g. Order to fulfillment"
+                  aria-label="New Sequence name"
+                  spellCheck={false}
+                  ref={nameRef}
+                  className="min-w-0 flex-1 rounded-xl border border-[#E8E2D8] bg-white px-3 py-2 text-[13px] text-[#27241F] placeholder-[#A39B8E] focus:border-[#C9A86A] focus:outline-none"
+                />
+                <Button onClick={() => void create()}>New Sequence</Button>
+                <Button variant="secondary" onClick={() => fileRef.current?.click()} title="Import a package JSON or DSL text file from a fellow dev">
+                  Import
+                </Button>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".json,.txt,.text,.seq,.dsl,application/json,text/plain"
+                  className="hidden"
+                  aria-label="Import sequence file"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = "";
+                    if (f) void importFile(f);
+                  }}
+                />
+              </div>
+              {importError && <p className="mt-2 text-[11px] text-red-700">{importError}</p>}
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
+                <p className="font-mono text-[10px] font-bold uppercase tracking-[2px] text-[#A98450]">01</p>
+                <p className="mt-1 text-[13px] font-semibold text-[#27241F]">Describe</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-[#777168]">Write the interaction as plain statements - no arrow-drawing marathons.</p>
+              </div>
+              <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
+                <p className="font-mono text-[10px] font-bold uppercase tracking-[2px] text-[#A98450]">02</p>
+                <p className="mt-1 text-[13px] font-semibold text-[#27241F]">See</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-[#777168]">Loops, conditions, retries and fan-out render as architecture, not decoration.</p>
+              </div>
+              <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
+                <p className="font-mono text-[10px] font-bold uppercase tracking-[2px] text-[#A98450]">03</p>
+                <p className="mt-1 text-[13px] font-semibold text-[#27241F]">Prove</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-[#777168]">Export the matrix, bridge systems in, hand the proof to reviewers.</p>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {active && (
