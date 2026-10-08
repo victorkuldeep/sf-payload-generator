@@ -9,6 +9,8 @@ import { SfExplorer } from "./SfExplorer";
 import { FieldInspector } from "./FieldInspector";
 import { MappingTable } from "./MappingTable";
 import { MappingGrid } from "./MappingGrid";
+import { SuggestModal } from "./SuggestModal";
+import { suggestMappings } from "@/lib/mapping/suggest";
 import { RecordPlans } from "./RecordPlans";
 import { ExportDialog, ImportDialog } from "./ProjectExchange";
 import { DriftReview } from "./DriftReview";
@@ -242,6 +244,7 @@ export function MappingRoute() {
 
   // ---- child mapping actions (integration workspace) ----
   const [mapMode, setMapMode] = useState<"guide" | "grid">("guide");
+  const [showSuggest, setShowSuggest] = useState(false);
 
   // Grid surface: typed Object.Field targets upsert by source path.
   const upsertRow = (sourcePath: string, target: { objectName: string; fieldName: string }) => {
@@ -368,6 +371,11 @@ export function MappingRoute() {
   );
 
   const activePlan = child?.recordPlans.find((p) => p.id === activePlanId) ?? null;
+  // Auto-suggest scopes to the active record plan object when one is picked.
+  const suggestions = useMemo(
+    () => (child ? suggestMappings(child, { planObject: activePlan?.objectName ?? null }) : []),
+    [child, activePlan]
+  );
   const planMismatch =
     activePlan && picked && picked.objectName !== activePlan.objectName
       ? `Field is on ${picked.objectName}, but the active plan (${activePlan.name}) targets ${activePlan.objectName}. Switch plans or pick a ${activePlan.objectName} field.`
@@ -595,6 +603,37 @@ export function MappingRoute() {
           </div>
         </div>
         {showExport && <ExportDialog project={child} onClose={() => setShowExport(false)} />}
+        {showSuggest && (
+          <SuggestModal
+            suggestions={suggestions}
+            onClose={() => setShowSuggest(false)}
+            onApply={(chosen) => {
+              const now = new Date().toISOString();
+              mutateChild((p) => {
+                let mappings = p.mappings;
+                for (const s of chosen) {
+                  if (mappings.some((m) => m.sourcePath === s.sourcePath)) continue;
+                  mappings = [
+                    ...mappings,
+                    {
+                      id: uid("row"),
+                      sourcePath: s.sourcePath,
+                      planId: activePlanId,
+                      objectName: s.objectName,
+                      fieldName: s.fieldName,
+                      kind: "direct" as const,
+                      status: "mapped" as const,
+                      rationale: `Auto-suggested (${s.confidence} name match) - review me.`,
+                      updatedAt: now,
+                    },
+                  ];
+                }
+                return { ...p, mappings };
+              });
+              setShowSuggest(false);
+            }}
+          />
+        )}
 
         <div id="mapping-workspace" className="grid items-start gap-3 xl:grid-cols-[23%_52%_25%] lg:grid-cols-[280px_minmax(0,1fr)]">
           <div className="rounded-xl border border-[#E8E2D8] bg-white p-3">
@@ -664,6 +703,15 @@ export function MappingRoute() {
               <p className="font-mono text-[10px] text-[#A39B8E]">
                 {mapMode === "grid" ? "Spreadsheet editing - same rows, click any cell to type." : "Guided mapping - pick a source, then a target field."}
               </p>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setShowSuggest(true)}
+                disabled={suggestions.length === 0}
+                title={suggestions.length === 0 ? "No name-similar targets found - capture a snapshot first" : "Review name-similarity proposals before applying"}
+              >
+                Auto-suggest{suggestions.length > 0 ? ` (${suggestions.length})` : ""}
+              </Button>
             </div>
             {mapMode === "guide" ? (
               <MappingTable
