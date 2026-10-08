@@ -437,8 +437,8 @@ export function MappingRoute() {
   // ================= start screen: inventory left, action right =================
   if (!studio) {
     return (
-      <div className="grid items-start gap-3 lg:grid-cols-[300px_minmax(0,1fr)]">
-        <aside className="flex max-h-[calc(100vh-140px)] min-h-[340px] flex-col rounded-xl border border-[#E8E2D8] bg-white p-3 lg:sticky lg:top-3" aria-label="Projects inventory">
+      <div className="grid items-stretch gap-3 lg:grid-cols-[300px_minmax(0,1fr)]">
+        <aside className="flex h-full max-h-[calc(100vh-140px)] min-h-[420px] flex-col rounded-xl border border-[#E8E2D8] bg-white p-3" aria-label="Projects inventory">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">Projects · {studios.length}</p>
             <Button size="sm" variant="ghost" onClick={() => setView("ws-wizard")} title="New project umbrella">
@@ -496,7 +496,7 @@ export function MappingRoute() {
               ))}
             </ul>
           )}
-          <button type="button" onClick={() => setView("library")} className="mt-2 w-full cursor-pointer rounded-lg px-2 py-1.5 text-center text-[12px] font-semibold text-[#777168] hover:bg-[#FAF8F2] hover:text-[#27241F]">
+          <button type="button" onClick={() => setView("library")} className="mt-auto w-full shrink-0 cursor-pointer rounded-lg px-2 py-1.5 pt-2 text-center text-[12px] font-semibold text-[#777168] hover:bg-[#FAF8F2] hover:text-[#27241F]">
             Standalone mappings ({library.length}) →
           </button>
         </aside>
