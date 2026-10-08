@@ -64,6 +64,11 @@ export function MappingRoute() {
   const [showImport, setShowImport] = useState(false);
   const [showReview, setShowReview] = useState(false);
   const [showChildWizard, setShowChildWizard] = useState(false);
+  const [childWizardMode, setChildWizardMode] = useState<"attached" | "standalone">("attached");
+  const startChildWizard = (mode: "attached" | "standalone") => {
+    setChildWizardMode(mode);
+    setShowChildWizard(true);
+  };
   const [confirmDeleteWs, setConfirmDeleteWs] = useState(false);
   const [confirmDeleteChild, setConfirmDeleteChild] = useState(false);
   const [module, setModule] = useState<Module>("mappings");
@@ -448,6 +453,9 @@ export function MappingRoute() {
               <Button variant="ghost" onClick={() => setShowImport(true)}>
                 Import mapping JSON
               </Button>
+              <a href="/samples/tmf622-order-mapping.json" download className="inline-flex items-center rounded-lg border border-[#E8E2D8] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#777168] hover:border-[#A98450] hover:text-[#27241F]" title="A training mapping - import it to see the supported format, then break it">
+                Try a sample
+              </a>
             </div>
           )}
         </div>
@@ -525,7 +533,7 @@ export function MappingRoute() {
             library={library}
             onOpen={(id) => void openChildStandalone(id)}
             onBack={() => setView("start")}
-            onNew={() => setShowChildWizard(true)}
+            onNew={() => startChildWizard("standalone")}
             onChanged={refreshAll}
             onUpgrade={(id) => void upgradeStandalone(id)}
           />
@@ -935,7 +943,8 @@ export function MappingRoute() {
           items={childMaps}
           library={library}
           onOpen={(id) => void openChild(id)}
-          onNew={() => setShowChildWizard(true)}
+          onNew={() => startChildWizard("attached")}
+          onNewStandalone={() => startChildWizard("standalone")}
           onAttach={(id) => void attachExisting(id)}
           onDetach={(id) => {
             const next = detachMapping(studio, id, new Date().toISOString());
@@ -990,11 +999,14 @@ export function MappingRoute() {
       )}
 
       {showChildWizard && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-4 sm:p-8" role="dialog" aria-modal="true" aria-label="New integration mapping">
         <ProjectWizard
+          title={childWizardMode === "standalone" ? "New standalone mapping" : "New integration mapping"}
+          contextName={childWizardMode === "attached" && studio ? studio.name : undefined}
           onCreate={(p) => {
             void (async () => {
               await saveProject(p).catch(() => undefined);
-              if (studio) {
+              if (childWizardMode === "attached" && studio) {
                 const next = attachMapping(studio, p.id, new Date().toISOString());
                 await persistStudio(next);
                 setStudio(next);
@@ -1012,13 +1024,11 @@ export function MappingRoute() {
           }}
           onCancel={() => setShowChildWizard(false)}
         />
+        </div>
       )}
     </div>
   );
 
-  function setChildWizardForStudio() {
-    setShowChildWizard(true);
-  }
 }
 
 function MappingsTab({
@@ -1027,6 +1037,7 @@ function MappingsTab({
   library,
   onOpen,
   onNew,
+  onNewStandalone,
   onAttach,
   onDetach,
   onDelete,
@@ -1036,6 +1047,7 @@ function MappingsTab({
   library: ProjectSummary[];
   onOpen: (id: string) => void;
   onNew: () => void;
+  onNewStandalone: () => void;
   onAttach: (id: string) => void;
   onDetach: (id: string) => void;
   onDelete: (id: string) => void;
@@ -1057,6 +1069,9 @@ function MappingsTab({
             </Button>
             <Button size="sm" onClick={onNew}>
               New mapping
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onNewStandalone} title="Create outside this project - opens direct, attach later if needed">
+              New standalone
             </Button>
           </span>
         </div>

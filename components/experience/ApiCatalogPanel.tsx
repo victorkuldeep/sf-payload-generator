@@ -270,7 +270,7 @@ function OperationDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-label="API operation">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-[#E8E2D8] bg-white p-5">
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-[#E8E2D8] bg-white p-5 sm:p-6">
         <p className="text-[14px] font-semibold text-[#27241F]">{initial ? "Edit operation" : "Add operation"}</p>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           <label className="block text-[12px] font-semibold text-[#27241F] sm:col-span-2">
