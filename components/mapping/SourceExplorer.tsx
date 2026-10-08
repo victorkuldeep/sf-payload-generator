@@ -135,6 +135,11 @@ export function SourceExplorer({
                   <span className="w-3 shrink-0" aria-hidden="true" />
                 )}
                 <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[#27241F]">{p.key}</span>
+                {(p.kind === "scalar" || p.kind === "null") && p.example !== undefined && (
+                  <span className="max-w-[38%] shrink-0 truncate font-mono text-[10px] text-[#A39B8E]" title={`Sample value: ${String(p.example)}`}>
+                    = {String(p.example)}
+                  </span>
+                )}
                 <span className={`shrink-0 font-mono text-[10px] ${KIND_BADGE[p.kind]}`}>{typeLabel(p)}</span>
                 {isMapped && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#2F7D4F]" title="Mapped" aria-label="Mapped" />}
               </button>

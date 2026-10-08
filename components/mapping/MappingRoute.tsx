@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Button from "../ui/Button";
 import { ProjectWizard } from "./ProjectWizard";
 import { SourceExplorer } from "./SourceExplorer";
+import { SourceJsonViewer } from "./SourceJsonViewer";
 import { SfExplorer } from "./SfExplorer";
 import { FieldInspector } from "./FieldInspector";
 import { MappingTable } from "./MappingTable";
@@ -604,6 +605,9 @@ export function MappingRoute() {
               <SourceExplorer paths={child.source.paths} mappings={child.mappings} selected={selectedSource} onSelect={setSelectedSource} />
             ) : (
               <p className="text-[12px] text-[#A39B8E]">No source loaded.</p>
+            )}
+            {child.source && (
+              <SourceJsonViewer text={child.source.originalText} selected={selectedSource} onSelectPath={setSelectedSource} />
             )}
           </div>
 
