@@ -16,6 +16,7 @@ export function ProjectWizard({
   onCancel,
   title,
   contextName,
+  initialSourceTab,
 }: {
   onCreate: (project: MappingProject) => void;
   onCancel: () => void;
@@ -23,6 +24,8 @@ export function ProjectWizard({
   title?: string;
   /** Umbrella shown for context, e.g. the studio project name. */
   contextName?: string;
+  /** Which source card shows first. The wizard remounts per open, so this applies cleanly. */
+  initialSourceTab?: "paste" | "openapi";
 }) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
@@ -32,7 +35,7 @@ export function ProjectWizard({
   const [domain, setDomain] = useState("");
   const [sourceText, setSourceText] = useState("");
   const [sourceName, setSourceName] = useState("source-payload.json");
-  const [sourceTab, setSourceTab] = useState<"paste" | "openapi">("paste");
+  const [sourceTab, setSourceTab] = useState<"paste" | "openapi">(initialSourceTab ?? "paste");
   const [error, setError] = useState<string | null>(null);
 
   const create = () => {

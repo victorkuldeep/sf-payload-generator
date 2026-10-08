@@ -28,6 +28,7 @@ import { buildSnapshot } from "@/lib/mapping/snapshot";
 import { mergePasteRows, type PasteRow } from "@/lib/mapping/grid";
 import { deleteProject, duplicateProject, listProjects, loadProject, saveProject, type ProjectSummary } from "@/lib/mapping/store";
 import { FREE_SOURCE_PATH } from "@/lib/mapping/types";
+import { validateImport } from "@/lib/mapping/exchange";
 import type { MappingProject, MappingRow, RecordPlan, RelationshipDef, SnapshotField, SnapshotObject } from "@/lib/mapping/types";
 import { attachMapping, detachMapping, upgradeToWorkspace } from "@/lib/studio/upgrade";
 import { blankStudio, type StudioProject } from "@/lib/studio/types";
@@ -66,9 +67,31 @@ export function MappingRoute() {
   const [showReview, setShowReview] = useState(false);
   const [showChildWizard, setShowChildWizard] = useState(false);
   const [childWizardMode, setChildWizardMode] = useState<"attached" | "standalone">("attached");
-  const startChildWizard = (mode: "attached" | "standalone") => {
+  const startChildWizard = (mode: "attached" | "standalone", tab: "paste" | "openapi" = "paste") => {
     setChildWizardMode(mode);
+    setWizardTab(tab);
     setShowChildWizard(true);
+  };
+  const [wizardTab, setWizardTab] = useState<"paste" | "openapi">("paste");
+  const [playState, setPlayState] = useState<"idle" | "busy" | "error">("idle");
+  // Training playground: fetch the bundled sample, validate, save a fresh copy, open it.
+  const playSample = async () => {
+    if (playState === "busy") return;
+    setPlayState("busy");
+    try {
+      const res = await fetch("/samples/tmf622-order-mapping.json");
+      const text = await res.text();
+      const v = validateImport(text);
+      if (!v.ok || !v.project) throw new Error(v.errors.join(" ") || "Sample invalid.");
+      const now = new Date().toISOString();
+      const project = { ...v.project, id: uid("map"), createdAt: now, updatedAt: now };
+      await saveProject(project);
+      refreshAll();
+      await openChildStandalone(project.id);
+      setPlayState("idle");
+    } catch {
+      setPlayState("error");
+    }
   };
   const [confirmDeleteWs, setConfirmDeleteWs] = useState(false);
   const [confirmDeleteChild, setConfirmDeleteChild] = useState(false);
@@ -415,7 +438,7 @@ export function MappingRoute() {
   if (!studio) {
     return (
       <div className="grid items-start gap-3 lg:grid-cols-[300px_minmax(0,1fr)]">
-        <aside className="rounded-xl border border-[#E8E2D8] bg-white p-3 lg:sticky lg:top-3" aria-label="Projects inventory">
+        <aside className="flex max-h-[calc(100vh-140px)] min-h-[340px] flex-col rounded-xl border border-[#E8E2D8] bg-white p-3 lg:sticky lg:top-3" aria-label="Projects inventory">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">Projects · {studios.length}</p>
             <Button size="sm" variant="ghost" onClick={() => setView("ws-wizard")} title="New project umbrella">
@@ -433,7 +456,7 @@ export function MappingRoute() {
             />
           )}
           {invShown.length === 0 ? (
-            <div className="py-3 text-center">
+            <div className="min-h-0 flex-1 overflow-y-auto py-3 text-center">
               <svg
                 width="132"
                 height="76"
@@ -462,7 +485,7 @@ export function MappingRoute() {
               </ol>
             </div>
           ) : (
-            <ul className="max-h-[60vh] space-y-1.5 overflow-y-auto">
+            <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto">
               {invShown.map((s) => (
                 <li key={s.id}>
                   <button type="button" onClick={() => void openStudio(s.id)} className="w-full cursor-pointer rounded-xl border border-[#F0EBE0] px-3 py-2 text-left hover:border-[#A98450]">
@@ -551,6 +574,48 @@ export function MappingRoute() {
               <p className="mt-0.5 text-xs leading-relaxed text-[#777168]">
                 Attach the experience workspace to bind UI screens to the same payloads, then export or share the set.
               </p>
+            </div>
+          </div>
+        )}
+
+        {view === "start" && (
+          <div className="rounded-xl border border-[#E8E2D8] bg-white p-4">
+            <p className="text-[13px] font-semibold text-[#27241F]">Training playground</p>
+            <p className="mt-0.5 text-xs text-[#777168]">Learn by playing - each template opens a real mapping you can break safely. Nothing leaves your browser.</p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              <div className="rounded-xl border border-[#F0EBE0] p-3">
+                <p className="text-[13px] font-semibold text-[#27241F]">TMF622 order sample</p>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-[#777168]">Order + line items with an enum row, a plan and an open decision.</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <Button size="sm" onClick={() => void playSample()} disabled={playState === "busy"}>
+                    {playState === "busy" ? "Opening…" : "Import & play"}
+                  </Button>
+                  <a href="/samples/tmf622-order-mapping.json" download className="inline-flex items-center rounded-lg px-2 py-1 text-[12px] font-semibold text-[#777168] hover:text-[#27241F]">
+                    Download
+                  </a>
+                </div>
+                {playState === "error" && (
+                  <p role="alert" className="mt-2 text-[11px] text-red-700">Could not load the sample - check connection and retry.</p>
+                )}
+              </div>
+              <div className="rounded-xl border border-[#F0EBE0] p-3">
+                <p className="text-[13px] font-semibold text-[#27241F]">Spec to sample</p>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-[#777168]">Paste an OpenAPI spec, tick fields, get a mapping-ready sample.</p>
+                <div className="mt-2">
+                  <Button size="sm" variant="ghost" onClick={() => startChildWizard("standalone", "openapi")}>
+                    Start from a spec
+                  </Button>
+                </div>
+              </div>
+              <div className="rounded-xl border border-[#F0EBE0] p-3">
+                <p className="text-[13px] font-semibold text-[#27241F]">Blank canvas</p>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-[#777168]">Paste any JSON and map it with auto-suggest and coverage.</p>
+                <div className="mt-2">
+                  <Button size="sm" variant="ghost" onClick={() => startChildWizard("standalone", "paste")}>
+                    Start blank
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -1053,6 +1118,7 @@ export function MappingRoute() {
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-4 sm:p-8" role="dialog" aria-modal="true" aria-label="New integration mapping">
         <ProjectWizard
           title={childWizardMode === "standalone" ? "New standalone mapping" : "New integration mapping"}
+          initialSourceTab={wizardTab}
           contextName={childWizardMode === "attached" && studio ? studio.name : undefined}
           onCreate={(p) => {
             void (async () => {
