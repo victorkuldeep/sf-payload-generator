@@ -10,6 +10,8 @@ import { FieldInspector } from "./FieldInspector";
 import { MappingTable } from "./MappingTable";
 import { MappingGrid } from "./MappingGrid";
 import { SuggestModal } from "./SuggestModal";
+import { CoverageModal } from "./CoverageModal";
+import { requiredTargets } from "@/lib/mapping/coverage";
 import { suggestMappings } from "@/lib/mapping/suggest";
 import { RecordPlans } from "./RecordPlans";
 import { ExportDialog, ImportDialog } from "./ProjectExchange";
@@ -245,6 +247,7 @@ export function MappingRoute() {
   // ---- child mapping actions (integration workspace) ----
   const [mapMode, setMapMode] = useState<"guide" | "grid">("guide");
   const [showSuggest, setShowSuggest] = useState(false);
+  const [showCoverage, setShowCoverage] = useState(false);
 
   // Grid surface: typed Object.Field targets upsert by source path.
   const upsertRow = (sourcePath: string, target: { objectName: string; fieldName: string }) => {
@@ -376,6 +379,7 @@ export function MappingRoute() {
     () => (child ? suggestMappings(child, { planObject: activePlan?.objectName ?? null }) : []),
     [child, activePlan]
   );
+  const coverageCount = useMemo(() => (child ? requiredTargets(child).length : 0), [child]);
   const planMismatch =
     activePlan && picked && picked.objectName !== activePlan.objectName
       ? `Field is on ${picked.objectName}, but the active plan (${activePlan.name}) targets ${activePlan.objectName}. Switch plans or pick a ${activePlan.objectName} field.`
@@ -634,6 +638,32 @@ export function MappingRoute() {
             }}
           />
         )}
+        {showCoverage && child && (
+          <CoverageModal
+            project={child}
+            onClose={() => setShowCoverage(false)}
+            onApply={(item, sourcePath) => {
+              const now = new Date().toISOString();
+              mutateChild((p) => ({
+                ...p,
+                mappings: [
+                  ...p.mappings,
+                  {
+                    id: uid("row"),
+                    sourcePath,
+                    planId: item.planId ?? activePlanId,
+                    objectName: item.objectName,
+                    fieldName: item.field.name,
+                    kind: "direct" as const,
+                    status: "mapped" as const,
+                    rationale: "Coverage queue - review me.",
+                    updatedAt: now,
+                  },
+                ],
+              }));
+            }}
+          />
+        )}
 
         <div id="mapping-workspace" className="grid items-start gap-3 xl:grid-cols-[23%_52%_25%] lg:grid-cols-[280px_minmax(0,1fr)]">
           <div className="rounded-xl border border-[#E8E2D8] bg-white p-3">
@@ -711,6 +741,15 @@ export function MappingRoute() {
                 title={suggestions.length === 0 ? "No name-similar targets found - capture a snapshot first" : "Review name-similarity proposals before applying"}
               >
                 Auto-suggest{suggestions.length > 0 ? ` (${suggestions.length})` : ""}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setShowCoverage(true)}
+                disabled={coverageCount === 0}
+                title={coverageCount === 0 ? "Zero required fields unmapped" : "Step through required fields with no mapping"}
+              >
+                Coverage{coverageCount > 0 ? ` (${coverageCount})` : ""}
               </Button>
             </div>
             {mapMode === "guide" ? (
