@@ -20,7 +20,7 @@ import { validateTarget } from "@/lib/mapping/grid";
  * Anything else is "unresolved" - listed visibly, never dropped silently.
  */
 
-export type GraphSurface = "system" | "wireframe" | "sequence" | "draw" | "schema" | "decision" | "console" | "requirement" | "mapping";
+export type GraphSurface = "system" | "wireframe" | "sequence" | "draw" | "schema" | "decision" | "console" | "requirement" | "mapping" | "notes";
 
 export type GraphNodeKind =
   | "project"
@@ -43,6 +43,7 @@ export type GraphNodeKind =
   | "external-system"
   | "external-issue"
   | "event"
+  | "note"
   | "draw-board";
 
 export type GraphEdgeKind =
@@ -316,7 +317,7 @@ function indexSequence(b: Builder, doc: SequenceDocument): void {
 function indexRecordLinks(
   b: Builder,
   from: string,
-  links: { surface: "system" | "wireframe" | "sequence" | "draw" | "schema" | "decision" | "requirement"; recordId: string; label: string }[],
+  links: { surface: "system" | "wireframe" | "sequence" | "draw" | "schema" | "decision" | "requirement" | "notes"; recordId: string; label: string }[],
 ): void {
   for (const l of links) {
     if (l.surface === "draw") {
@@ -341,6 +342,11 @@ function indexRecordLinks(
     }
     if (l.surface === "decision" || l.surface === "requirement") {
       const hit = b.resolve(from, l.surface, l.surface, { id: l.recordId, name: l.label });
+      b.edge(from, hit.to, "links", hit.resolution, l.label);
+      continue;
+    }
+    if (l.surface === "notes") {
+      const hit = b.resolve(from, l.surface, "note", { id: l.recordId, name: l.label });
       b.edge(from, hit.to, "links", hit.resolution, l.label);
       continue;
     }

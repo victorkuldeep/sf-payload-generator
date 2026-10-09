@@ -307,7 +307,6 @@ export function AppHeader(props: AppHeaderProps) {
         { kind: "mode", id: "soql", label: "Query", desc: "SOQL + SOSL query builder" },
         { kind: "mode", id: "graphql", label: "GraphQL", desc: "GraphQL query builder" },
         { kind: "mode", id: "rest", label: "Rest", desc: "REST explorer" },
-        { kind: "route", href: "/mapping", label: "Mapping", desc: "Payload-to-object integration mapping" },
       ],
     },
     {
@@ -321,6 +320,7 @@ export function AppHeader(props: AppHeaderProps) {
         { kind: "route", href: "/system", label: "System", desc: "Visual architecture and integration workbench" },
         { kind: "route", href: "/sequence", label: "Sequence", desc: "Describe the interaction, see the architecture" },
         { kind: "route", href: "/wireframe", label: "Wireframe", desc: "Schema-aware experience modeling" },
+        { kind: "route", href: "/notes", label: "Notes", desc: "General notes with lifecycle, Word export and Console trail" },
       ],
     },
     {
@@ -344,6 +344,7 @@ export function AppHeader(props: AppHeaderProps) {
         { kind: "route", href: "/contracts", label: "Contracts", desc: "OpenAPI profiles" },
         { kind: "route", href: "/validate", label: "Validate", desc: "OpenAPI spec vs payload findings" },
         { kind: "route", href: "/architect", label: "Architect", desc: "Design custom APIs" },
+        { kind: "route", href: "/mapping", label: "Mapping", desc: "Payload-to-object integration mapping" },
       ],
     },
   ];

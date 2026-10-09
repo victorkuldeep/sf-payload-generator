@@ -34,7 +34,7 @@ export type ConsolePriority = (typeof CONSOLE_PRIORITIES)[number];
 /** Address of a canvas record this task tracks. */
 export interface ConsoleLink {
   /** Owning surface. Only "system" syncs two-way in v1; others are jump links. */
-  surface: "system" | "wireframe" | "sequence" | "draw" | "schema" | "decision" | "requirement";
+  surface: "system" | "wireframe" | "sequence" | "draw" | "schema" | "decision" | "requirement" | "notes";
   /** Owning record id (e.g. System project id). */
   recordId: string;
   /** Canvas TODO id when tracking one TODO; absent when tracking the whole record. */
@@ -52,6 +52,7 @@ export const CONSOLE_SURFACE_ROUTES: Record<ConsoleLink["surface"], string> = {
   schema: "/",
   decision: "/decisions",
   requirement: "/requirements",
+  notes: "/notes",
 };
 
 /**
@@ -77,6 +78,8 @@ export function consoleLinkHref(link: Pick<ConsoleLink, "surface"> & Partial<Pic
       return "/?tab=schema";
     case "draw":
       return "/draw";
+    case "notes":
+      return q ? `/notes?id=${q}` : "/notes";
     default:
       return CONSOLE_SURFACE_ROUTES[link.surface] ?? "/console";
   }
@@ -173,7 +176,7 @@ export function newConsoleTask(title: string, now = Date.now()): ConsoleTask {
 }
 
 const linkSchema = z.object({
-  surface: z.enum(["system", "wireframe", "sequence", "draw", "schema", "decision", "requirement"]),
+  surface: z.enum(["system", "wireframe", "sequence", "draw", "schema", "decision", "requirement", "notes"]),
   recordId: z.string().min(1).max(160),
   todoId: z.string().min(1).max(160).optional(),
   label: z.string().max(200),

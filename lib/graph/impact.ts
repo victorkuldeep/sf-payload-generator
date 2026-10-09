@@ -45,6 +45,7 @@ const SURFACE_META: Record<GraphSurface, { label: string; href: string }> = {
   console: { label: "Console", href: "/console" },
   requirement: { label: "Requirements", href: "/requirements" },
   mapping: { label: "Mapping", href: "/mapping" },
+  notes: { label: "Notes", href: "/notes" },
 };
 
 const GROUP_ORDER: GraphSurface[] = ["system", "wireframe", "sequence", "decision", "requirement", "console", "mapping", "schema", "draw"];

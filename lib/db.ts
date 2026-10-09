@@ -8,7 +8,7 @@
 export const DB_NAME = "gravenx-studio";
 // v23: additive heal - recreates any store missing from an already-upgraded
 // DB (e.g. decision-records), so a stuck browser self-repairs on next open.
-export const DB_VERSION = 23;
+export const DB_VERSION = 24;
 
 export const STORES = {
   items: "request-collection",
@@ -33,6 +33,7 @@ export const STORES = {
   sequenceSnapshots: "sequence-snapshots",
   consoleTasks: "console-tasks",
   consoleAttachments: "console-attachments",
+  notes: "standalone-notes",
   decisionRecords: "decision-records",
   requirementRecords: "requirement-records",
 } as const;

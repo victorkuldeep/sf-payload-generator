@@ -14,7 +14,7 @@ import type { ConsoleStatus } from "./model";
  * (updatedAt newer than the pulled snapshot) instead of clobbering.
  */
 
-export type SyncSurface = "system" | "schema";
+export type SyncSurface = "system" | "schema" | "notes";
 
 export interface CanvasLinkView {
   surface: SyncSurface;

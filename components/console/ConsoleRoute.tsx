@@ -29,6 +29,7 @@ import {
   pushTodoStatus,
   type CanvasLinkView,
 } from "@/lib/console/sync";
+import { pullNotes } from "@/lib/notes/standalone";
 import { getCachedConnection } from "@/lib/session/cache";
 import { TaskDetail, fmtDate } from "./TaskDetail";
 import { NewTaskDialog, type NewTaskDraft } from "./NewTaskDialog";
@@ -104,12 +105,13 @@ export function ConsoleRoute() {
     // Schema views need the connected org (notes slices are per-org); the
     // System surface is global. Offline simply yields no schema views.
     const orgKey = getCachedConnection()?.orgKey ?? "";
-    const [t, sys, sch] = await Promise.all([
+    const [t, sys, sch, nts] = await Promise.all([
       listConsoleTasks(),
       pullSystem(liveSystemFns),
       orgKey ? pullSchema(orgKey, liveSchemaFns) : Promise.resolve([] as CanvasLinkView[]),
+      pullNotes(),
     ]);
-    const v = [...sys, ...sch];
+    const v = [...sys, ...sch, ...nts];
     setTasks(t);
     setViews(v);
     for (const item of v) {
