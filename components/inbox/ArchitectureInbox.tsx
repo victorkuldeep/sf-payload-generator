@@ -258,9 +258,16 @@ export function ArchitectureInbox({
     setConfirmDelete(false);
   };
 
+  const closeReader = () => {
+    setSelectedId(null);
+    setEditing(false);
+    setConfirmDelete(false);
+    setReviewOpen(false);
+  };
+
   return (
     <div className="modal-overlay modal-notes" role="dialog" aria-modal="true" aria-labelledby="inbox-title" onClick={onClose}>
-      <div className="modal-card flex h-full flex-col" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-card flex min-h-0 flex-col" style={{ height: "calc(100dvh - 40px)" }} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-start justify-between gap-3 px-6 pt-5 pb-4 border-b border-[var(--color-line-soft)] shrink-0">
           <div className="min-w-0">
@@ -369,9 +376,9 @@ export function ArchitectureInbox({
           )}
         </div>
 
-        {/* List + inspector */}
+        {/* List (30%) + reader (70%) */}
         <div className="flex min-h-0 flex-1 gap-4 overflow-hidden px-6 py-3">
-          <div className="min-w-0 flex-1 overflow-y-auto">
+          <div className={selected ? "min-w-[240px] w-[30%] shrink-0 overflow-y-auto" : "min-w-0 flex-1 overflow-y-auto"}>
             {filtered.length === 0 ? (
               <div className="py-10 text-center">
                 <p className="text-sm font-semibold text-ivory-950">
@@ -415,24 +422,36 @@ export function ArchitectureInbox({
                           aria-current={selectedId === item.id}
                           className={`block w-full rounded-xl border p-2.5 text-left transition-colors cursor-pointer ${selectedId === item.id ? "border-bronze-500 bg-bronze-100/40" : "border-[var(--color-line)] bg-[var(--color-surface)] hover:border-bronze-400"}`}
                         >
-                          <span className="flex items-center gap-1.5">
-                            <KindPill kind={item.kind} />
-                            <StatusPill status={item.status} />
-                            {item.stale === "missing" && (
-                              <span className="shrink-0 rounded-full border border-red-300 bg-red-50 px-1.5 py-px text-[10px] font-bold text-red-700" title="Anchor missing from the current schema - review required">
-                                Stale
+                          <span className="flex items-center gap-2">
+                            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#A98450" strokeWidth="1.6" aria-hidden="true" className="shrink-0">
+                              <rect x="5" y="3" width="14" height="18" rx="2.5" />
+                              <line x1="9" y1="8.5" x2="15" y2="8.5" strokeLinecap="round" />
+                              <line x1="9" y1="12.5" x2="15" y2="12.5" strokeLinecap="round" />
+                              <line x1="9" y1="16.5" x2="13" y2="16.5" strokeLinecap="round" />
+                            </svg>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-xs font-bold text-ivory-950">{item.title}</span>
+                              <span className="block truncate text-[11px] text-ivory-600">{firstLine(item.body)}</span>
+                            </span>
+                            <span className="flex shrink-0 flex-col items-end gap-1">
+                              <span className="font-mono text-[10px] text-ivory-500">{timeAgo(item.updatedAt)}</span>
+                              <span className="flex items-center gap-1">
+                                <KindPill kind={item.kind} />
+                                <StatusPill status={item.status} />
+                                {item.stale === "missing" && (
+                                  <span className="shrink-0 rounded-full border border-red-300 bg-red-50 px-1.5 py-px text-[10px] font-bold text-red-700" title="Anchor missing from the current schema - review required">
+                                    Stale
+                                  </span>
+                                )}
+                                {item.stale === "changed" && (
+                                  <span className="shrink-0 rounded-full border border-amber-300 bg-amber-50 px-1.5 py-px text-[10px] font-bold text-amber-800" title="Anchor changed since capture - review required">
+                                    Changed
+                                  </span>
+                                )}
+                                <span className="font-mono text-[10px] text-ivory-500">{item.anchor.id}</span>
                               </span>
-                            )}
-                            {item.stale === "changed" && (
-                              <span className="shrink-0 rounded-full border border-amber-300 bg-amber-50 px-1.5 py-px text-[10px] font-bold text-amber-800" title="Anchor changed since capture - review required">
-                                Changed
-                              </span>
-                            )}
-                            <span className="ml-auto shrink-0 font-mono text-[10px] text-ivory-500">{timeAgo(item.updatedAt)}</span>
+                            </span>
                           </span>
-                          <span className="mt-1 block truncate text-xs font-bold text-ivory-950">{item.title}</span>
-                          <span className="block truncate text-[11px] text-ivory-600">{firstLine(item.body)}</span>
-                          <span className="mt-0.5 block truncate font-mono text-[10px] text-ivory-500">{item.anchor.id}</span>
                         </button>
                       </li>
                     ))}
@@ -443,21 +462,23 @@ export function ArchitectureInbox({
           </div>
 
           {selected && (
-            <div className="flex w-[380px] shrink-0 flex-col overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] xl:w-[440px]">
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)]">
               <div className="border-b border-[var(--color-line-soft)] p-3">
-                <div className="flex items-center gap-1.5">
-                  <KindPill kind={selected.kind} />
-                  <StatusPill status={selected.status} />
-                  {selected.stale === "missing" && (
-                    <span className="rounded-full border border-red-300 bg-red-50 px-1.5 py-px text-[10px] font-bold text-red-700">
-                      Stale anchor
-                    </span>
-                  )}
+                <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1">
+                    <KindPill kind={selected.kind} />
+                    <StatusPill status={selected.status} />
+                    {selected.stale === "missing" && (
+                      <span className="rounded-full border border-red-300 bg-red-50 px-1.5 py-px text-[10px] font-bold text-red-700">
+                        Stale anchor
+                      </span>
+                    )}
+                    <p className="min-w-0 truncate text-sm font-bold text-ivory-950">{selected.title}</p>
+                  </div>
+                  <p className="shrink-0 font-mono text-[10px] text-ivory-600">
+                    {selected.canvasName} · {selected.anchor.id} · {timeAgo(selected.updatedAt)}
+                  </p>
                 </div>
-                <p className="mt-1.5 text-sm font-bold text-ivory-950">{selected.title}</p>
-                <p className="mt-0.5 font-mono text-[10px] text-ivory-600">
-                  {selected.canvasName} · {selected.anchor.id} · {timeAgo(selected.updatedAt)}
-                </p>
                 {selected.stale === "missing" && (
                   <p className="mt-1.5 rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] leading-relaxed text-red-800">
                     Anchor <span className="font-mono font-semibold">{selected.anchor.id}</span> is missing
@@ -471,7 +492,8 @@ export function ArchitectureInbox({
                   </p>
                 )}
               </div>
-              {/* Anchor + review */}
+              {/* Anchor + review (live canvas notes need neither) */}
+              {selected.id !== "live-canvas" && (
               <div className="border-b border-[var(--color-line-soft)] px-3 py-2">
                 <p className="font-mono text-[10px] text-ivory-600">
                   {selected.anchor.type} · {selected.anchor.id}
@@ -503,13 +525,10 @@ export function ArchitectureInbox({
                   </div>
                 )}
               </div>
+              )}
               {/* Lifecycle */}
+              {selected.id !== "live-canvas" && (
               <div className="border-b border-[var(--color-line-soft)] px-3 py-2">
-                {selected.id === "live-canvas" ? (
-                  <p className="text-[11px] leading-relaxed text-ivory-600">
-                    Canvas notes stay free-form - track work as TODOs in the notes panel.
-                  </p>
-                ) : (
                 <>
                 <div className="grid grid-cols-2 gap-1.5">
                   <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
@@ -637,8 +656,8 @@ export function ArchitectureInbox({
                   </details>
                 )}
               </>
-              )}
               </div>
+              )}
               <div className={editing ? "flex min-h-0 flex-1 flex-col overflow-y-auto p-3" : "min-h-0 flex-1 overflow-y-auto p-3"}>
                 {editing ? (
                   <NoteEditor
@@ -650,11 +669,11 @@ export function ArchitectureInbox({
                     renderPreview={(md) => renderMarkdownLite(md)}
                   />
                 ) : selected.bodyFormat === "rich" && selected.bodyHtml?.trim() ? (
-                  <div className="rounded-lg border border-[var(--color-line)] bg-white p-2.5">
+                  <div className="min-h-full rounded-lg border border-[var(--color-line)] bg-white p-2.5">
                     <RichBody html={selected.bodyHtml} compact />
                   </div>
                 ) : (
-                  <div className="rounded-lg border border-[var(--color-line)] bg-white p-2.5">
+                  <div className="min-h-full rounded-lg border border-[var(--color-line)] bg-white p-2.5">
                     {renderMarkdownLite(selected.body, (idx) =>
                       onEditBody(
                         selected.id,
@@ -664,18 +683,20 @@ export function ArchitectureInbox({
                   </div>
                 )}
               </div>
-              <div className="space-y-1.5 border-t border-[var(--color-line-soft)] p-3">
+              <div className="flex gap-1.5 border-t border-[var(--color-line-soft)] p-3">
                 {editing ? (
-                  <div className="flex gap-1.5">
-                    <Button size="sm" onClick={saveEdit} className="flex-1">
-                      Save
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
-                      Cancel
-                    </Button>
-                  </div>
+                  <>
+                    <span className="ml-auto flex gap-1.5">
+                      <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+                        Cancel
+                      </Button>
+                      <Button size="sm" onClick={saveEdit}>
+                        Save
+                      </Button>
+                    </span>
+                  </>
                 ) : (
-                  <div className="flex gap-1.5">
+                  <>
                     <Button size="sm" variant="secondary" onClick={startEdit} className="flex-1">
                       Edit
                     </Button>
@@ -689,27 +710,28 @@ export function ArchitectureInbox({
                         Reopen
                       </Button>
                     )}
-                  </div>
-                )}
-                <div className="flex gap-1.5">
-                  <Button size="sm" variant="ghost" onClick={() => onNavigate(selected)} className="flex-1">
-                    Open in ERD
-                  </Button>
-                  {confirmDelete ? (
-                    <>
-                      <Button size="sm" variant="ghost" onClick={doDelete} className="flex-1 !text-red-700">
-                        Confirm delete
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(false)}>
-                        Keep
-                      </Button>
-                    </>
-                  ) : (
-                    <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(true)} className="flex-1">
-                      Delete
+                    <Button size="sm" variant="ghost" onClick={() => onNavigate(selected)} className="flex-1">
+                      Open in ERD
                     </Button>
-                  )}
-                </div>
+                    {confirmDelete ? (
+                      <>
+                        <Button size="sm" variant="ghost" onClick={doDelete} className="!text-red-700">
+                          Confirm delete
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(false)}>
+                          Keep
+                        </Button>
+                      </>
+                    ) : (
+                      <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(true)}>
+                        Delete
+                      </Button>
+                    )}
+                    <Button size="sm" variant="ghost" onClick={closeReader} title="Close the reading pane">
+                      Close
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           )}
