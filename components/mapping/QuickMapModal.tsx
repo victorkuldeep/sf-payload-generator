@@ -124,7 +124,7 @@ export function QuickMapModal({
             ) : (
               <span className="font-semibold text-[#B3261E]">no record plan picked</span>
             )}
-            . Same source updates in place. Already-mapped rows prefill below - "quoted" values are constants.
+            . Same source updates in place. Already-mapped rows prefill below - &quot;quoted&quot; values are constants.
           </p>
 
           <div className="mt-3 rounded-xl border border-[#E8E2D8] bg-[var(--color-canvas)] p-2.5">

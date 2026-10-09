@@ -109,7 +109,7 @@ export function mdToHtml(md: string): string {
     if (line.trim().startsWith("```")) {
       const buf: string[] = [];
       i++;
-      while (i < lines.length && !lines[i].trim().startsWith("```")) buf.push(lines[i]), i++;
+      while (i < lines.length && !lines[i].trim().startsWith("```")) { buf.push(lines[i]); i++; }
       i++;
       out.push(`<pre>${escapeHtml(buf.join("\n"))}</pre>`);
       continue;
@@ -136,13 +136,13 @@ export function mdToHtml(md: string): string {
     }
     if (BULLET_RE.test(line)) {
       const buf: string[] = [];
-      while (i < lines.length && BULLET_RE.test(lines[i])) buf.push(lines[i]), i++;
+      while (i < lines.length && BULLET_RE.test(lines[i])) { buf.push(lines[i]); i++; }
       out.push(mdToHtmlListBlock(buf, false));
       continue;
     }
     if (ORDERED_RE.test(line)) {
       const buf: string[] = [];
-      while (i < lines.length && ORDERED_RE.test(lines[i])) buf.push(lines[i]), i++;
+      while (i < lines.length && ORDERED_RE.test(lines[i])) { buf.push(lines[i]); i++; }
       out.push(mdToHtmlListBlock(buf, true));
       continue;
     }
