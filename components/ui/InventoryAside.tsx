@@ -44,6 +44,7 @@ export function InventoryAside({
   zeroLines,
   footer,
   children,
+  fill = false,
 }: {
   title: string;
   count: number;
@@ -56,10 +57,12 @@ export function InventoryAside({
   zeroLines: string[];
   footer?: ReactNode;
   children: ReactNode;
+  /** Fill the parent row with no viewport cap - parent must own the height. */
+  fill?: boolean;
 }) {
   return (
     <aside
-      className="flex h-full max-h-[calc(100vh-140px)] min-h-[420px] flex-col rounded-xl border border-[#E8E2D8] bg-white p-3"
+      className={`flex h-full flex-col rounded-xl border border-[#E8E2D8] bg-white p-3 ${fill ? "min-h-0" : "max-h-[calc(100vh-140px)] min-h-[420px]"}`}
       aria-label={`${title} inventory`}
     >
       <div className="mb-2 flex shrink-0 items-center justify-between">

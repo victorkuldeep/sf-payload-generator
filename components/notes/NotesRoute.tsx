@@ -132,8 +132,9 @@ export function NotesRoute() {
   }, [active, exporting]);
 
   return (
-    <div className="grid items-stretch gap-3 lg:grid-cols-[300px_minmax(0,1fr)]">
+    <div className="grid min-h-0 flex-1 items-stretch gap-3 lg:grid-cols-[300px_minmax(0,1fr)]">
       <InventoryAside
+        fill
         title="Notes"
         count={notes.length}
         query={q}
@@ -179,10 +180,29 @@ export function NotesRoute() {
         </ul>
       </InventoryAside>
 
-      <div className="min-w-0">
+      <div className="flex min-h-0 min-w-0 flex-col">
         {!active ? (
-          <div className="flex h-full min-h-[420px] flex-col items-center justify-center rounded-xl border border-[#E8E2D8] bg-white p-8 text-center">
-            <p className="text-[15px] font-semibold text-[#27241F]">General notes, architect-grade</p>
+          <div className="flex h-full min-h-0 flex-1 flex-col items-center justify-center rounded-xl border border-[#E8E2D8] bg-white p-8 text-center">
+            <svg width="220" height="120" viewBox="0 0 220 120" fill="none" aria-hidden="true" className="mx-auto h-auto w-[220px]">
+              <rect x="78" y="14" width="64" height="80" rx="8" fill="#FAF8F2" stroke="#722F37" strokeWidth="2" />
+              <line x1="90" y1="34" x2="130" y2="34" stroke="#722F37" strokeWidth="4" strokeLinecap="round" />
+              <line x1="90" y1="48" x2="130" y2="48" stroke="#C9A86A" strokeWidth="4" strokeLinecap="round" />
+              <line x1="90" y1="62" x2="118" y2="62" stroke="#C9A86A" strokeWidth="4" strokeLinecap="round" />
+              <line x1="90" y1="76" x2="124" y2="76" stroke="#E3D9C6" strokeWidth="4" strokeLinecap="round" />
+              <line x1="142" y1="40" x2="172" y2="28" stroke="#A98450" strokeWidth="1.5" strokeDasharray="3 3" />
+              <line x1="142" y1="68" x2="172" y2="82" stroke="#A98450" strokeWidth="1.5" strokeDasharray="3 3" />
+              <line x1="78" y1="60" x2="48" y2="40" stroke="#A98450" strokeWidth="1.5" strokeDasharray="3 3" />
+              <line x1="78" y1="72" x2="48" y2="88" stroke="#A98450" strokeWidth="1.5" strokeDasharray="3 3" />
+              <circle cx="178" cy="26" r="7" fill="#4E342E" />
+              <text x="178" y="30" textAnchor="middle" fontSize="9" fontWeight="bold" fill="#F4EAD6" fontFamily="monospace">T</text>
+              <circle cx="178" cy="84" r="7" fill="#722F37" />
+              <text x="178" y="88" textAnchor="middle" fontSize="9" fontWeight="bold" fill="#F4EAD6" fontFamily="monospace">D</text>
+              <circle cx="42" cy="38" r="7" fill="#FFFFFF" stroke="#C9A86A" strokeWidth="1.5" />
+              <text x="42" y="42" textAnchor="middle" fontSize="9" fontWeight="bold" fill="#A98450" fontFamily="monospace">?</text>
+              <circle cx="42" cy="90" r="7" fill="#FFFFFF" stroke="#C9A86A" strokeWidth="1.5" />
+              <text x="42" y="94" textAnchor="middle" fontSize="9" fontWeight="bold" fill="#A98450" fontFamily="monospace">✓</text>
+            </svg>
+            <p className="mt-3 text-[15px] font-semibold text-[#27241F]">General notes, architect-grade</p>
             <p className="mt-1 max-w-[420px] text-[12px] leading-relaxed text-[#777168]">
               Meeting notes, hallway decisions, review threads - everything that is not a canvas TODO gets a full editor, a lifecycle, Word export, and a Console trail.
             </p>
@@ -191,7 +211,7 @@ export function NotesRoute() {
             </div>
           </div>
         ) : (
-          <div className="flex min-h-[420px] flex-col rounded-xl border border-[#E8E2D8] bg-white">
+          <div className="flex h-full min-h-0 flex-1 flex-col rounded-xl border border-[#E8E2D8] bg-white">
             <div className="flex flex-wrap items-center gap-2 border-b border-[#F0EBE0] px-4 py-3">
               <input
                 value={active.title}
@@ -217,7 +237,7 @@ export function NotesRoute() {
                 </select>
               </label>
               <Button size="sm" variant="ghost" onClick={() => void exportWord()} disabled={exporting} title="Export this note as Word (.docx)">
-                {exporting ? "Exporting…" : "Word"}
+                {exporting ? "Exporting…" : "Export Word"}
               </Button>
               <WordImportButton onImport={(imp) => void importWord(imp)} onError={setNotice} />
               {notice && (

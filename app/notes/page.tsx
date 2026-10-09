@@ -6,9 +6,9 @@ export const metadata = { title: "Notes" };
 
 export default function NotesPage() {
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex h-dvh flex-col">
       <AppHeader />
-      <main className="mx-auto w-full max-w-[1600px] px-2.5 pt-3 pb-1 flex-1">
+      <main className="mx-auto flex w-full max-w-[1600px] min-h-0 flex-1 flex-col px-2.5 pt-0.5 pb-0.5">
         <NotesRoute />
       </main>
       <AppFooter variant="slim" />
