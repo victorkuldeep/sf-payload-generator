@@ -950,6 +950,25 @@ export default function SchemaPanel({
   }
   const [notesOpen, setNotesOpen] = useState(false);
   const [notesZen, setNotesZen] = useState(false);
+  const [noteExporting, setNoteExporting] = useState(false);
+  const exportCanvasNote = async () => {
+    if (noteExporting || noteBodyEmpty(canvasNote)) return;
+    setNoteExporting(true);
+    try {
+      const { noteToDocxBlob, noteDocxFilename } = await import("@/lib/notes/docxExport");
+      const blob = await noteToDocxBlob("Design Notes", [
+        `Canvas prose · auto-saved ${notesSavedAt ? timeAgo(notesSavedAt) : "per org"}`,
+      ], canvasNote);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = noteDocxFilename("design-notes");
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setNoteExporting(false);
+    }
+  };
   const [canvasNote, setCanvasNote] = useState<NoteBody>(() => emptyNoteBody());
   const [notesSavedAt, setNotesSavedAt] = useState<number | null>(null);
   /** Per-entity log: many entries (note/task/question/decision) under one object. */
@@ -5737,6 +5756,20 @@ export default function SchemaPanel({
             )}
             <button
               type="button"
+              onClick={() => void exportCanvasNote()}
+              disabled={noteExporting || noteBodyEmpty(canvasNote)}
+              title="Export canvas notes as Word (.docx)"
+              aria-label="Export canvas notes as Word"
+              className="rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer disabled:opacity-40"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                <path d="M6 3h8l4 4v14H6V3Z" />
+                <path d="M14 3v4h4" />
+                <path d="M9 13l1.5 4L12 14l1.5 3L15 13" />
+              </svg>
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 setNotesOpen(false);
               }}
@@ -5902,6 +5935,15 @@ export default function SchemaPanel({
                   {canvasNote.md.trim().split(/\s+/).filter(Boolean).length} words · {notesSavedAt ? `Auto-saved ${timeAgo(notesSavedAt)}` : "Autosaves per org"}
                 </p>
               </div>
+              <button
+                type="button"
+                onClick={() => void exportCanvasNote()}
+                disabled={noteExporting || noteBodyEmpty(canvasNote)}
+                title="Export as Word (.docx)"
+                className="rounded-lg border border-[var(--color-line-soft)] px-3 py-1.5 text-[11px] font-semibold text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer disabled:opacity-40"
+              >
+                {noteExporting ? "Exporting…" : "Word"}
+              </button>
               <button
                 type="button"
                 onClick={() => setNotesZen(false)}

@@ -134,6 +134,16 @@ describe("schema console sync", () => {
     expect(await pullSchema("", fns)).toEqual([]);
   });
 
+  it("surfaces canvas prose as a read-only note view", async () => {
+    const { fns, docs } = seedSchema();
+    docs.get("tab1")!.canvasText = { md: "Discussed the junction model.", updatedAt: 80 };
+    const views = await pullSchema("org1", fns);
+    expect(views).toHaveLength(4);
+    const prose = views.find((v) => v.todoId === undefined);
+    expect(prose).toMatchObject({ kind: "note", status: null, title: "Canvas 1 · Canvas notes" });
+    expect(prose?.excerpt).toContain("junction");
+  });
+
   it("pushes entry status with the same stale guard", async () => {
     const { fns, docs } = seedSchema();
     expect((await pushSchemaEntryStatus(fns, "org1", "tab1", "e1", "blocked", 60, 200)).ok).toBe(true);

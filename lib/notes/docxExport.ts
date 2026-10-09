@@ -8,7 +8,7 @@ import {
   TextRun,
 } from "docx";
 import type { CanvasTodo } from "@/lib/inbox/types";
-import { mdToHtml } from "@/lib/notes/notebody";
+import { mdToHtml, type NoteBody } from "@/lib/notes/notebody";
 import { HIGHLIGHT_COLORS } from "@/lib/decisions/richtext";
 
 /**
@@ -393,4 +393,53 @@ export function buildEntryDocx(apiName: string, entityLabel: string, entry: Canv
 
 export async function entryToDocxBlob(apiName: string, entityLabel: string, entry: CanvasTodo): Promise<Blob> {
   return Packer.toBlob(buildEntryDocx(apiName, entityLabel, entry));
+}
+
+/** Download filename for a free note: design-notes-20261007.docx style. */
+export function noteDocxFilename(title: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  const d = new Date();
+  const pad = (v: number) => String(v).padStart(2, "0");
+  const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+  return `${slug || "note"}-${stamp}.docx`;
+}
+
+/** A titled free note (canvas prose, standalone notes) as a styled document. */
+export function buildNoteDocx(title: string, meta: string[], body: NoteBody): File {
+  const children: Paragraph[] = [
+    new Paragraph({
+      heading: HeadingLevel.TITLE,
+      children: [new TextRun({ text: title, color: BURGUNDY, bold: true })],
+    }),
+    metaLine(meta) ?? new Paragraph({ children: [] }),
+  ];
+  const blocks = entryBodyBlocks({ body: body.md, bodyFormat: body.format, bodyHtml: body.html });
+  if (blocks.length === 0) {
+    children.push(
+      new Paragraph({
+        children: [new TextRun({ text: "No content recorded.", color: MUTED, italics: true })],
+        spacing: { before: 200 },
+      }),
+    );
+  } else {
+    for (const block of blocks) {
+      const p = blockToParagraph(block);
+      if (p) children.push(p);
+    }
+  }
+  return new File({
+    creator: "GRAVENX",
+    title,
+    subject: "note",
+    description: `Exported from GRAVENX on ${dateLine(Date.now())}.`,
+    sections: [{ children }],
+  });
+}
+
+export async function noteToDocxBlob(title: string, meta: string[], body: NoteBody): Promise<Blob> {
+  return Packer.toBlob(buildNoteDocx(title, meta, body));
 }

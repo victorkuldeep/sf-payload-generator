@@ -3,9 +3,11 @@ import { Packer } from "docx";
 import type { CanvasTodo } from "@/lib/inbox/types";
 import {
   buildEntryDocx,
+  buildNoteDocx,
   entryBodyBlocks,
   entryDocxFilename,
   htmlToDocxBlocks,
+  noteDocxFilename,
 } from "./docxExport";
 
 function entry(over: Partial<CanvasTodo> = {}): CanvasTodo {
@@ -20,6 +22,16 @@ function entry(over: Partial<CanvasTodo> = {}): CanvasTodo {
     ...over,
   };
 }
+
+describe("free note docx", () => {
+  it("builds a titled note document from rich or markdown bodies", async () => {
+    const rich = buildNoteDocx("Design Notes", ["Canvas prose"], { format: "rich", md: "", html: "<p>Ship <strong>Friday</strong></p>" });
+    expect((await Packer.toBuffer(rich)).length).toBeGreaterThan(1000);
+    const mdDoc = buildNoteDocx("Empty", [], { format: "md", md: "", html: "" });
+    expect((await Packer.toBuffer(mdDoc)).length).toBeGreaterThan(1000);
+    expect(noteDocxFilename("Design Notes")).toMatch(/^design-notes-\d{8}\.docx$/);
+  });
+});
 
 describe("html to docx blocks", () => {
   it("maps headings, marks and links without a DOM", () => {

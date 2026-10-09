@@ -139,10 +139,12 @@ export async function pushTodoNote(
   return { ok: true };
 }
 
-/** Schema (ERD) notes slice: canvas TODOs + per-entity log entries. */
+/** Schema (ERD) notes slice: canvas prose + canvas TODOs + per-entity log entries. */
 export interface SchemaNotesDoc {
   todos: CanvasTodo[];
   entities: Record<string, CanvasTodo[]>;
+  /** Free canvas prose (the Design Notes text) - surfaces in Console as a read-only note view. */
+  canvasText?: { md: string; updatedAt: number };
 }
 
 export interface SchemaNotesStoreFns {
@@ -191,6 +193,20 @@ export async function pullSchema(
     if (!doc) continue;
     for (const entry of schemaEntryLists(doc)) {
       views.push(schemaView(tab.tabId, tab.name, entry, labels));
+    }
+    // Canvas prose is not a task and never pushes - but it must be visible
+    // and linkable, otherwise notes taken on canvas vanish from Console.
+    if (doc.canvasText) {
+      views.push({
+        surface: "schema",
+        recordId: tab.tabId,
+        recordName: tab.name,
+        title: `${tab.name} · Canvas notes`,
+        kind: "note",
+        status: null,
+        updatedAt: doc.canvasText.updatedAt,
+        excerpt: doc.canvasText.md.slice(0, 120),
+      });
     }
   }
   return views.sort((a, b) => b.updatedAt - a.updatedAt);
@@ -279,14 +295,22 @@ export const liveSchemaFns: SchemaNotesStoreFns = {
   loadNotes: async (orgKey: string, tabId: string) => {
     const { loadAutosave } = await import("@/lib/workspace/autosave");
     const { migrateEntityLogValue } = await import("@/lib/inbox/types");
-    const rec = await loadAutosave<{ todos?: CanvasTodo[]; entities?: Record<string, unknown> }>(orgKey, "notes", tabId).catch(() => null);
+    const rec = await loadAutosave<{ todos?: CanvasTodo[]; entities?: Record<string, unknown>; text?: unknown; updatedAt?: unknown }>(orgKey, "notes", tabId).catch(() => null);
     if (!rec) return null;
     const entities: Record<string, CanvasTodo[]> = {};
     for (const [api, value] of Object.entries(rec.data.entities ?? {})) {
       const rows = migrateEntityLogValue(api, value);
       if (rows.length > 0) entities[api] = rows;
     }
-    return { todos: Array.isArray(rec.data.todos) ? rec.data.todos : [], entities };
+    const doc: SchemaNotesDoc = { todos: Array.isArray(rec.data.todos) ? rec.data.todos : [], entities };
+    const prose = typeof rec.data.text === "string" ? rec.data.text.trim() : "";
+    if (prose) {
+      doc.canvasText = {
+        md: prose,
+        updatedAt: typeof rec.data.updatedAt === "number" ? rec.data.updatedAt : Date.now(),
+      };
+    }
+    return doc;
   },
   saveNotes: async (orgKey: string, tabId: string, doc: SchemaNotesDoc) => {
     const { loadAutosave, writeAutosave } = await import("@/lib/workspace/autosave");
