@@ -347,7 +347,7 @@ export function EntityLogModal({
       onClick={onClose}
     >
       <div
-        className="flex h-full max-h-[880px] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] shadow-2xl"
+        className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center gap-2 border-b border-[var(--color-line-soft)] px-4 py-2.5">

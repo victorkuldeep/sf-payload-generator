@@ -57,10 +57,9 @@ export function ProjectNotesModal({
   };
 
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="notes-title" onClick={onClose}>
+    <div className="modal-overlay modal-notes" role="dialog" aria-modal="true" aria-labelledby="notes-title" onClick={onClose}>
       <div
-        className="modal-card max-w-2xl flex flex-col"
-        style={{ maxHeight: "88vh" }}
+        className="modal-card flex h-full flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 border-b border-[var(--color-line-soft)] px-6 pt-5 pb-4 shrink-0">

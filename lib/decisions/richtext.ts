@@ -10,6 +10,35 @@ const ALLOWED = new Set([
   "ul", "ol", "li", "blockquote", "code", "pre", "br", "a", "mark",
 ]);
 
+/** Fixed font palette: the only text colors the sanitizer keeps. */
+export const FONT_COLORS = ["#27241F", "#C0392B", "#2F7D4F", "#2B5F9E", "#A98450"] as const;
+export type FontColor = (typeof FONT_COLORS)[number];
+const FONT_SET = new Set<string>(FONT_COLORS);
+
+/** Block tags that may carry an alignment (nothing else keeps style). */
+const ALIGNABLE = new Set(["p", "h2", "h3", "li", "blockquote"]);
+const ALIGN_RE = /text-align\s*:\s*(left|center|right|justify)/i;
+/** A style attribute is safe only when it holds exactly one palette color. */
+const STYLE_ATTR_RE = /style\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i;
+const COLOR_RE = /^\s*color\s*:\s*([^;]+?)\s*;?\s*$/i;
+
+function styleValue(attrs: string | undefined): string {
+  if (!attrs) return "";
+  return STYLE_ATTR_RE.exec(attrs)?.[2] ?? "";
+}
+
+function pickTextAlign(attrs: string | undefined): string | null {
+  const m = ALIGN_RE.exec(styleValue(attrs));
+  return m ? m[1].toLowerCase() : null;
+}
+
+function pickFontColor(attrs: string | undefined): string | null {
+  const m = COLOR_RE.exec(styleValue(attrs));
+  if (!m) return null;
+  const color = m[1].trim().toUpperCase();
+  return FONT_SET.has(color) ? color : null;
+}
+
 /** Fixed highlight palette: the only data-color values the sanitizer keeps. */
 export const HIGHLIGHT_COLORS = ["#FFEB9C", "#C6F6C6", "#F9C9D4", "#C4E3FC"] as const;
 export type HighlightColor = (typeof HIGHLIGHT_COLORS)[number];
@@ -26,7 +55,7 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-const MARKUP_TAG = /<\/?(p|h2|h3|strong|b|em|i|u|s|strike|ul|ol|li|blockquote|code|pre|br|a|mark|div|span|table)(\s[^<>]*)?\s*\/?>/i;
+const MARKUP_TAG = /<\/?(p|h2|h3|strong|b|em|i|u|s|strike|ul|ol|li|blockquote|code|pre|br|a|mark|span|div|table)(\s[^<>]*)?\s*\/?>/i;
 
 /** True when the stored value already carries markup (a lone <T> is text). */
 export function isHtml(value: string): boolean {
@@ -78,11 +107,24 @@ export function sanitizeDecisionHtml(html: string): string {
   // Remove script/style elements wholesale, with or without closers.
   let out = html.replace(/<(script|style|iframe|object|embed)[^>]*>[\s\S]*?(<\/\1\s*>|$)/gi, "");
   out = out.replace(/<\/?(html|head|body)[^>]*>/gi, "");
+  // Kept palette-color spans pair open/close through a local stack so
+  // pasted multi-color text survives while stray closers still vanish.
+  const spanStack: boolean[] = [];
   out = out.replace(/<(\/?)([a-zA-Z][a-zA-Z0-9]*)(\s[^<>]*)?\s*(\/?)>/g, (m, close: string, tagRaw: string, attrs: string | undefined, self: string) => {
     const tag = tagRaw.toLowerCase();
+    if (tag === "span") {
+      if (close) return spanStack.pop() ? "</span>" : "";
+      const color = pickFontColor(attrs);
+      spanStack.push(color !== null);
+      return color !== null ? `<span style="color: ${color}">` : "";
+    }
     if (!ALLOWED.has(tag)) return UNWRAP.has(tag) ? (tag === "hr" ? "<br>" : "") : escapeHtml(m);
     if (close) return `</${tag}>`;
     if (tag === "br") return "<br>";
+    if (ALIGNABLE.has(tag)) {
+      const align = pickTextAlign(attrs);
+      if (align) return `<${tag} style="text-align: ${align}">`;
+    }
     if (tag === "a") {
       const href = /href\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attrs ?? "")?.[2] ?? "";
       const safe = /^(https?:\/\/|mailto:|\/|#)/i.test(href.trim()) ? escapeHtml(href.trim()) : "";

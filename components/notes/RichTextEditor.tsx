@@ -4,7 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Highlight from "@tiptap/extension-highlight";
+import Underline from "@tiptap/extension-underline";
+import TextAlign from "@tiptap/extension-text-align";
+import { TextStyle } from "@tiptap/extension-text-style";
+import Color from "@tiptap/extension-color";
 import {
+  FONT_COLORS,
   HIGHLIGHT_COLORS,
   htmlToText,
   isHtml,
@@ -46,6 +51,59 @@ function ToolButton({
 }
 
 /**
+ * Copy-for-Word: places sanitized rich HTML plus a plain-text fallback on
+ * the clipboard, so pasting into Word/Docs keeps headings, lists, bold,
+ * colors and alignment. Falls back to plain text where HTML fails.
+ */
+function CopyButton({ editor }: { editor: Editor }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+  return (
+    <button
+      type="button"
+      title="Copy for Word - rich text plus plain-text fallback"
+      aria-label="Copy for Word"
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => {
+        void (async () => {
+          const clean = sanitizeDecisionHtml(editor.getHTML());
+          const plain = htmlToText(clean);
+          try {
+            if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+              await navigator.clipboard.write([
+                new ClipboardItem({
+                  "text/html": new Blob([clean], { type: "text/html" }),
+                  "text/plain": new Blob([plain], { type: "text/plain" }),
+                }),
+              ]);
+            } else if (navigator.clipboard?.writeText) {
+              await navigator.clipboard.writeText(plain);
+            } else {
+              return;
+            }
+            setCopied(true);
+            if (timer.current) clearTimeout(timer.current);
+            timer.current = setTimeout(() => setCopied(false), 1600);
+          } catch {
+            // Clipboard denied (permissions/iframe) - stay silent, no fake success.
+          }
+        })();
+        editor.commands.focus();
+      }}
+      className="min-w-7 shrink-0 cursor-pointer rounded-md px-1.5 py-1 text-[12px] font-semibold text-[#3A352D] transition-colors hover:bg-[#F5F1E8]"
+    >
+      {copied ? "Copied ✓" : "Copy"}
+    </button>
+  );
+}
+
+/**
  * Shared rich-text editor (Tiptap, bundled - no CDN), never markdown.
  * Stores sanitized HTML; legacy plain text upgrades to paragraphs on
  * load. Commits on blur like every other field.
@@ -72,7 +130,14 @@ export function RichTextEditor({
   const bump = () => setTick((t) => t + 1);
 
   const editor = useEditor({
-    extensions: [StarterKit, Highlight.configure({ multicolor: true })],
+    extensions: [
+      StarterKit,
+      Highlight.configure({ multicolor: true }),
+      Underline,
+      TextStyle,
+      Color,
+      TextAlign.configure({ types: ["heading", "paragraph"] }),
+    ],
     content: value.trim() === "" ? "" : isHtml(value) ? sanitizeDecisionHtml(value) : textToHtml(value),
     immediatelyRender: false,
     editorProps: {
@@ -157,6 +222,9 @@ export function RichTextEditor({
         <ToolButton editor={editor} title="Strikethrough" active={editor.isActive("strike")} onRun={() => editor.chain().toggleStrike().run()}>
           <span className="line-through">S</span>
         </ToolButton>
+        <ToolButton editor={editor} title="Underline" active={editor.isActive("underline")} onRun={() => editor.chain().toggleUnderline().run()}>
+          <span className="underline">U</span>
+        </ToolButton>
         <ToolButton editor={editor} title="Highlight (yellow)" active={editor.isActive("highlight")} onRun={() => editor.chain().toggleHighlight({ color: HIGHLIGHT_COLORS[0] }).run()}>
           <span className="rounded-sm px-0.5" style={{ backgroundColor: HIGHLIGHT_COLORS[0] }}>H</span>
         </ToolButton>
@@ -183,6 +251,53 @@ export function RichTextEditor({
               />
             );
           })}
+        </span>
+        <span className="inline-flex shrink-0 items-center gap-1 px-1" role="group" aria-label="Font color">
+          {FONT_COLORS.map((c) => {
+            const on = editor.isActive("textStyle", { color: c });
+            return (
+              <button
+                key={c}
+                type="button"
+                title={`Font ${c}`}
+                aria-label={`Font ${c}`}
+                aria-pressed={on}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  if (on) editor.chain().unsetColor().run();
+                  else editor.chain().setColor(c).run();
+                  editor.commands.focus();
+                }}
+                className={`flex h-5 w-5 cursor-pointer items-center justify-center rounded-md border text-[13px] font-bold transition-transform ${
+                  on ? "scale-110 border-[#27241F] ring-1 ring-[#27241F]" : "border-black/20 hover:scale-110"
+                }`}
+                style={{ color: c }}
+              >
+                A
+              </button>
+            );
+          })}
+        </span>
+        <span aria-hidden="true" className="mx-1 h-4 w-px bg-[#E8E2D8]" />
+        <span className="inline-flex shrink-0 items-center gap-0.5 px-1" role="group" aria-label="Alignment">
+          {(
+            [
+              ["left", "Align left", "L"],
+              ["center", "Align center", "C"],
+              ["right", "Align right", "R"],
+              ["justify", "Justify", "J"],
+            ] as const
+          ).map(([align, title, glyph]) => (
+            <ToolButton
+              key={align}
+              editor={editor}
+              title={title}
+              active={editor.isActive({ textAlign: align })}
+              onRun={() => editor.chain().setTextAlign(align).run()}
+            >
+              {glyph}
+            </ToolButton>
+          ))}
         </span>
         <span aria-hidden="true" className="mx-1 h-4 w-px bg-[#E8E2D8]" />
         <ToolButton editor={editor} title="Heading" active={editor.isActive("heading", { level: 2 })} onRun={() => editor.chain().toggleHeading({ level: 2 }).run()}>
@@ -214,6 +329,8 @@ export function RichTextEditor({
         <ToolButton editor={editor} title="Clear formatting" onRun={() => editor.chain().clearNodes().unsetAllMarks().run()}>
           Clear
         </ToolButton>
+        <span aria-hidden="true" className="mx-1 h-4 w-px bg-[#E8E2D8]" />
+        <CopyButton editor={editor} />
       </div>
       <EditorContent
         editor={editor}

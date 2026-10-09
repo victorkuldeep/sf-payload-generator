@@ -246,6 +246,11 @@ button, input, select, textarea, optgroup, option {
   backdrop-filter: blur(3px);
   animation: overlay-in 0.18s ease-out;
 }
+/* Notes-family modals: 20px all around, full remaining space. */
+.modal-overlay.modal-notes {
+  align-items: center;
+  padding: 20px;
+}
 .modal-card {
   width: 100%;
   background: var(--color-surface);

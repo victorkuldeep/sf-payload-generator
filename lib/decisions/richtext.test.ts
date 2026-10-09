@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { htmlToText, isHtml, sanitizeDecisionHtml, textToHtml } from "./richtext";
+import { FONT_COLORS, htmlToText, isHtml, sanitizeDecisionHtml, textToHtml } from "./richtext";
 
 describe("decision rich text", () => {
   it("detects markup and converts plain text to paragraphs", () => {
@@ -48,5 +48,27 @@ describe("decision rich text", () => {
       "<p><mark>x</mark></p>",
     );
     expect(htmlToText("<p>Ship <mark>Friday</mark> now</p>")).toBe("Ship Friday now");
+  });
+
+  it("keeps underline, palette font colors and block alignment - nothing else", () => {
+    expect(sanitizeDecisionHtml("<p><u>Filed</u> under notes</p>")).toBe("<p><u>Filed</u> under notes</p>");
+    expect(sanitizeDecisionHtml('<p style="text-align: center">Mid</p>')).toBe(
+      '<p style="text-align: center">Mid</p>',
+    );
+    expect(sanitizeDecisionHtml('<h2 style="text-align: right">R</h2>')).toBe('<h2 style="text-align: right">R</h2>');
+    // Junk alignment values and non-alignable tags fall back to bare tags.
+    expect(sanitizeDecisionHtml('<p style="text-align: diagonal">x</p>')).toBe("<p>x</p>");
+    expect(sanitizeDecisionHtml('<strong style="text-align: center">x</strong>')).toBe("<strong>x</strong>");
+    expect(sanitizeDecisionHtml('<p style="margin: 99px">x</p>')).toBe("<p>x</p>");
+    // Palette colors survive (normalized), everything else unwraps.
+    for (const c of FONT_COLORS) {
+      expect(sanitizeDecisionHtml(`<p><span style="color: ${c.toLowerCase()}">x</span></p>`)).toBe(
+        `<p><span style="color: ${c}">x</span></p>`,
+      );
+    }
+    expect(sanitizeDecisionHtml('<p><span style="color: hotpink">x</span></p>')).toBe("<p>x</p>");
+    expect(sanitizeDecisionHtml('<p><span style="color: #C0392B; margin: 1px">x</span></p>')).toBe("<p>x</p>");
+    expect(sanitizeDecisionHtml("<p>stray</span> closer</p>")).toBe("<p>stray closer</p>");
+    expect(htmlToText('<p style="text-align: center">Mid <span style="color: #C0392B">red</span></p>')).toBe("Mid red");
   });
 });

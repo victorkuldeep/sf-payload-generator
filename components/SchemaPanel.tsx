@@ -5893,8 +5893,8 @@ export default function SchemaPanel({
       {/* Fullscreen notes editor (Outlook-style pop-out) - same canvas text,
           collapses straight back to the vertical panel. */}
       {notesZen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-ivory-950/40 p-4 sm:p-10" role="dialog" aria-modal="true" aria-label="Design notes fullscreen editor">
-          <div className="flex h-full w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] shadow-2xl">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-ivory-950/40 p-5" role="dialog" aria-modal="true" aria-label="Design notes fullscreen editor">
+          <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] shadow-2xl">
             <div className="flex items-center gap-2 border-b border-[var(--color-line-soft)] px-4 py-2.5">
               <div className="min-w-0 flex-1">
                 <h2 className="truncate text-sm font-bold text-ivory-950">Design Notes</h2>
