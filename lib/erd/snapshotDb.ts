@@ -2,6 +2,10 @@ export interface ErdSnapshot {
   id: string;
   /** Org hostname, e.g. myorg.my.salesforce.com - snapshots are listed per org. */
   orgDomain: string;
+  /** Owning canvas tab - stamped at creation so inbox navigation routes back.
+   * Absent on vintage snapshots (restore in place). */
+  tabId?: string;
+  tabName?: string;
   name: string;
   createdAt: number;
   root: string;

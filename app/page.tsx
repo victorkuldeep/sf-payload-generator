@@ -41,6 +41,8 @@ import { getCachedConnection, setCachedConnection, clearCachedConnection } from 
 import { clearSessionExpired, markSessionExpired } from "@/lib/ai/gate";
 import { loadAutosave, queueAutosave, flushAutosaves, clearAutosave, migrateLegacyWorkspace } from "@/lib/workspace/autosave";
 import Button from "@/components/ui/Button";
+import type { SchemaNavRequest } from "@/components/SchemaPanel";
+import { useDeepParam } from "@/lib/deep/deep";
 import ObjectPanel from "@/components/ObjectPanel";
 import FieldPanel from "@/components/FieldPanel";
 import PayloadPanel from "@/components/PayloadPanel";
@@ -64,6 +66,8 @@ const SchemaPanel = dynamic(() => import("@/components/SchemaPanel"), {
 });
 
 type BuilderMode = "home" | "single" | "composite" | "soql" | "graphql" | "schema" | "rest";
+
+
 
 interface AppState {
   connected: boolean;
@@ -527,6 +531,40 @@ export default function Home() {
     { tabId: newItemId(), name: "Canvas 1" },
   ]);
   const [activeSchemaTabId, setActiveSchemaTabId] = useState<string>("");
+  /** Cross-tab schema navigation: one panel's inbox asks to land on another tab. */
+  const [schemaNav, setSchemaNav] = useState<SchemaNavRequest | null>(null);
+
+  const handleRequestTab = useCallback(
+    (targetTabId: string, nav: Omit<SchemaNavRequest, "tabId">, fromTabId: string) => {
+      const live = schemaTabs.some((t) => t.tabId === targetTabId);
+      const tabId = live ? targetTabId : fromTabId;
+      if (live) setActiveSchemaTabId(targetTabId);
+      setSchemaNav({ ...nav, tabId });
+    },
+    [schemaTabs]
+  );
+
+  /** Console deep link (?canvas=tabId): land on schema with the right canvas. */
+  const deepCanvas = useDeepParam("canvas");
+  const deepCanvasDoneRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!deepCanvas || schemaTabs.length === 0 || deepCanvasDoneRef.current === deepCanvas) return;
+    const target = schemaTabs.find((t) => t.tabId === deepCanvas);
+    if (!target) return;
+    deepCanvasDoneRef.current = deepCanvas;
+    setActiveSchemaTabId(target.tabId);
+    goMode("schema");
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("canvas");
+      url.searchParams.delete("mode");
+      const rest = url.searchParams.toString();
+      window.history.replaceState(null, "", url.pathname + (rest ? `?${rest}` : "") + url.hash);
+    } catch {
+      /* non-browser - ignore */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepCanvas, schemaTabs]);
   const [renamingSchemaTabId, setRenamingSchemaTabId] = useState<string | null>(null);
   // Resolve active tab (defaults to first). updateDraft below writes through
   // the ref so async describe resolutions land in the tab that started them.
@@ -1681,6 +1719,9 @@ export default function Home() {
                         tabName={t.name}
                         shareId={active ? shareId : null}
                         onShareConsumed={() => setShareId(null)}
+                        pendingNav={schemaNav && schemaNav.tabId === t.tabId ? schemaNav : null}
+                        onNavConsumed={() => setSchemaNav(null)}
+                        onRequestTab={handleRequestTab}
                         getToken={() => tokenRef.current}
                         onSessionExpired={handleSessionExpired}
                       />

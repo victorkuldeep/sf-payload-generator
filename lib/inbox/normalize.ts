@@ -51,7 +51,7 @@ export interface StaleContext {
 
 function firstLine(text: string, max = 90): string {
   const line = text.split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "";
-  const clean = line.replace(/^#{1,3}\s+|^[-*]\s+(\[[ xX]\]\s+)?|^\d+[.)]\s+/, "");
+  const clean = line.replace(/^#{1,3}\s+|^[-*]\s+(\[[ xX]\]\s+)?|^\d+[.)]\s+|^\d+(?:\.\d+)+[.)]\s+/, "");
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 

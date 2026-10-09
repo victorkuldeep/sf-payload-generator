@@ -82,6 +82,21 @@ import Button from "./ui/Button";
 import Input from "./ui/Input";
 import Badge from "./ui/Badge";
 
+/**
+ * Cross-tab navigation request: some other tab's inbox asked to land here
+ * and open something. The owning panel applies it, then consumes it.
+ */
+export interface SchemaNavRequest {
+  tabId: string;
+  /** Restore this snapshot first (owning-tab snapshot notes). */
+  snapshotId?: string;
+  /** Open the log modal on this entity bucket + entry. */
+  api?: string;
+  entryId?: string | null;
+  /** Open the canvas log modal (whole-canvas TODOs). */
+  openCanvasLog?: boolean;
+}
+
 interface SchemaPanelProps {
   objects: SalesforceObject[];
   instanceUrl: string;
@@ -94,6 +109,11 @@ interface SchemaPanelProps {
   /** Inbound collaboration share (?share=) - consumed once per id. */
   shareId: string | null;
   onShareConsumed: () => void;
+  /** Cross-tab navigation: applied when nav.tabId is this tab, then consumed. */
+  pendingNav: SchemaNavRequest | null;
+  onNavConsumed: () => void;
+  /** Ask the page to switch to another canvas tab, carrying a nav request. */
+  onRequestTab: (targetTabId: string, nav: Omit<SchemaNavRequest, "tabId">, fromTabId: string) => void;
   getToken: () => string;
   onSessionExpired?: () => void;
 }
@@ -794,6 +814,9 @@ export default function SchemaPanel({
   tabName,
   shareId,
   onShareConsumed,
+  pendingNav,
+  onNavConsumed,
+  onRequestTab,
   getToken,
   onSessionExpired,
 }: SchemaPanelProps) {
@@ -828,6 +851,14 @@ export default function SchemaPanel({
   // ERD table coordinates (first graph open looked wind-blown until Rebalance).
   const [graphEnforced, setGraphEnforced] = useState<Map<string, { x: number; y: number }> | null>(null);
   const canvasRef = useRef<ErdCanvasHandle | null>(null);
+  const canvasNotesRef = useRef<HTMLDivElement>(null);
+
+  /** Reveal the inline canvas-notes surface (used after snapshot restores). */
+  const revealCanvasNotes = useCallback(() => {
+    window.setTimeout(() => {
+      canvasNotesRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 120);
+  }, []);
   // New arrivals land off-viewport (spiral) - glide the canvas onto them
   // with a few retries while the node syncs through. No viewport steal on
   // data-only refreshes: callers invoke this only for explicit adds.
@@ -3341,6 +3372,8 @@ export default function SchemaPanel({
     const snap: ErdSnapshot = {
       id: newItemId(),
       orgDomain,
+      tabId,
+      tabName,
       name: describes.size > 1 ? `${label} +${describes.size - 1}` : label,
       createdAt: now,
       root: rootName,
@@ -3357,7 +3390,7 @@ export default function SchemaPanel({
     } catch {
       setError("Couldn't save snapshot (IndexedDB unavailable).");
     }
-  }, [busy, describes, orgDomain, rootName, focusName, labels, canvasNote]);
+  }, [busy, describes, orgDomain, rootName, focusName, labels, canvasNote, tabId, tabName]);
 
   const restoreSnapshot = useCallback(
     async (snap: ErdSnapshot) => {
@@ -3684,6 +3717,47 @@ export default function SchemaPanel({
     }
   }, [snapshots, orgDomain, touchNotes, deleteEntryById]);
 
+  /** Open a log entry modal on this tab - shared by inbox + cross-tab nav. */
+  const openLogEntry = useCallback(
+    (api: string, entryId: string | null) => {
+      const rows = entityLog[api] ?? [];
+      if (api !== CANVAS_LOG_API && !rows.some((r) => r.id === entryId)) return false;
+      setNoteEntity(api);
+      setNoteEntryId(entryId);
+      setLogModalOpen(true);
+      return true;
+    },
+    [entityLog]
+  );
+
+  // Cross-tab navigation: the page routes another tab's request here; apply
+  // it once (restore first when a snapshot carries the note), then consume.
+  const navHandledRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!pendingNav || pendingNav.tabId !== tabId) return;
+    const key = JSON.stringify(pendingNav);
+    if (navHandledRef.current === key) return;
+    navHandledRef.current = key;
+    setInboxOpen(false);
+    (async () => {
+      if (pendingNav.snapshotId) {
+        const s = snapshots.find((x) => x.id === pendingNav.snapshotId);
+        if (s) {
+          await restoreSnapshot(s);
+          revealCanvasNotes();
+        }
+      } else if (pendingNav.api) {
+        openLogEntry(pendingNav.api, pendingNav.entryId ?? null);
+      } else if (pendingNav.openCanvasLog) {
+        setNoteEntity(CANVAS_LOG_API);
+        setNoteEntryId(null);
+        setLogModalOpen(true);
+      }
+      onNavConsumed();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingNav, tabId]);
+
   const inboxNavigate = useCallback((item: ArchitectureInboxItem) => {
     setInboxOpen(false);
     if (item.id.startsWith("live-entry-")) {
@@ -3697,10 +3771,23 @@ export default function SchemaPanel({
         }
       }
     }
+    // Whole-canvas note: open the canvas log modal on this tab.
+    if (item.id === "live-canvas") {
+      setNoteEntity(CANVAS_LOG_API);
+      setNoteEntryId(null);
+      setLogModalOpen(true);
+      return;
+    }
     if (item.provenance.source === "snapshot" && item.provenance.snapshotId) {
       const s = snapshots.find((x) => x.id === item.provenance.snapshotId);
       if (s) {
-        void restoreSnapshot(s);
+        // Another tab owns this snapshot - never restore it here (that would
+        // clobber this canvas); route to the owning tab instead.
+        if (s.tabId && s.tabId !== tabId) {
+          onRequestTab(s.tabId, { snapshotId: s.id }, tabId);
+          return;
+        }
+        void restoreSnapshot(s).then(() => revealCanvasNotes());
         return;
       }
     }
@@ -3712,7 +3799,7 @@ export default function SchemaPanel({
         canvasRef.current?.focusNode(item.anchor.id);
       }, 400);
     }
-  }, [snapshots, restoreSnapshot, handleFocusChange, entityLog]);
+  }, [snapshots, restoreSnapshot, handleFocusChange, entityLog, tabId, onRequestTab, revealCanvasNotes]);
 
   const renameSnapshot = useCallback(
     async (id: string, name: string) => {
@@ -5862,6 +5949,7 @@ export default function SchemaPanel({
                     </svg>
                   </button>
                 </div>
+                <div ref={canvasNotesRef} className="scroll-mt-2">
                 <CanvasNotesField
                   note={canvasNote}
                   onNote={(b) => {
@@ -5873,6 +5961,7 @@ export default function SchemaPanel({
                     touchNotes();
                   }}
                 />
+                </div>
                 <div className="mt-2 flex items-center justify-between gap-2">
                   <p className="text-[10px] text-ivory-500">
                     {canvasNote.md.trim().split(/\s+/).filter(Boolean).length} words · {canvasNote.format === "rich" ? "rich text" : "markdown"} · attaches to snapshots
