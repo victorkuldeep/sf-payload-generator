@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Button from "../ui/Button";
 import { analyzeRow } from "@/lib/mapping/diagnostics";
-import type { EnumValueMap, MappingProject, MappingRow, MappingStatus, SnapshotField } from "@/lib/mapping/types";
+import { STATUS_LABELS, type EnumValueMap, type MappingProject, type MappingRow, type MappingStatus, type SnapshotField } from "@/lib/mapping/types";
 
 export const STATUS_STYLES: Record<MappingStatus, string> = {
   unmapped: "bg-[#F5F1E8] text-[#777168] border-[#E8E2D8]",
@@ -30,6 +30,9 @@ export function MappingTable({
   pendingTarget,
   planMismatch,
   onConfirmMap,
+  constants,
+  onOpenConstants,
+  onMapConstant,
   onUpdateRow,
   onRemoveRow,
 }: {
@@ -39,12 +42,16 @@ export function MappingTable({
   pendingTarget: PendingTarget | null;
   planMismatch: string | null;
   onConfirmMap: (sourcePath: string) => void;
+  constants: MappingRow[];
+  onOpenConstants: () => void;
+  onMapConstant: (sourcePath: string, constantId: string) => void;
   onUpdateRow: (id: string, patch: Partial<MappingRow>) => void;
   onRemoveRow: (id: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [constantId, setConstantId] = useState("");
 
   const rows = useMemo(() => {
     const bySource = new Map(project.mappings.map((m) => [m.sourcePath, m]));
@@ -96,6 +103,41 @@ export function MappingTable({
           ) : (
             <span className="text-[#A39B8E]">pick a field in the Salesforce explorer…</span>
           )}
+          <span className="flex items-center gap-1.5 border-l border-[#E8D9BE] pl-2">
+            <select
+              value={constantId}
+              onChange={(e) => {
+                if (e.target.value === "__new__") {
+                  onOpenConstants();
+                  setConstantId("");
+                } else {
+                  setConstantId(e.target.value);
+                }
+              }}
+              aria-label="Map a constant instead of a Salesforce field"
+              title="Map a hardcoded constant onto this source"
+              className="max-w-[190px] cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-2 py-1 text-[11px]"
+            >
+              <option value="">constant…</option>
+              {constants.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.notes ?? "Unlabelled"} · {c.hardcodedValue === undefined ? "Null" : String(c.hardcodedValue)}
+                </option>
+              ))}
+              <option value="__new__">+ New constant…</option>
+            </select>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!constantId}
+              onClick={() => {
+                onMapConstant(selectedSource, constantId);
+                setConstantId("");
+              }}
+            >
+              Map constant
+            </Button>
+          </span>
           <span className="ml-auto flex gap-1.5">
             <Button size="sm" disabled={!pendingTarget} onClick={() => onConfirmMap(selectedSource)}>
               Confirm mapping
@@ -127,14 +169,17 @@ export function MappingTable({
           aria-label="Filter by status"
           className="cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-2 py-1.5 text-[11px]"
         >
-          <option value="all">all statuses</option>
+          <option value="all">All</option>
           {statuses.map((s) => (
             <option key={s} value={s}>
-              {s}
+              {STATUS_LABELS[s]}
             </option>
           ))}
         </select>
         <span className="font-mono text-[10px] text-[#A39B8E]">{filtered.length} rows</span>
+        <Button size="sm" variant="secondary" onClick={onOpenConstants} title="Name label + value constants reusable from Guide and Grid">
+          Constants{constants.length > 0 ? ` (${constants.length})` : ""}
+        </Button>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-[#E8E2D8]">
@@ -163,7 +208,7 @@ export function MappingTable({
                 >
                   <td className="px-2.5 py-1.5">
                     <span className={`whitespace-nowrap rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-semibold ${STATUS_STYLES[st]}`}>
-                      {st}
+                      {STATUS_LABELS[st]}
                     </span>
                   </td>
                   <td className="max-w-[260px] truncate px-2.5 py-1.5 font-mono text-[11px] text-[#27241F]" title={leaf.path}>
@@ -171,12 +216,18 @@ export function MappingTable({
                     <span className="ml-1 text-[10px] text-[#A39B8E]">{leaf.jsonType}</span>
                   </td>
                   <td className="max-w-[140px] truncate px-2.5 py-1.5 font-mono text-[11px] text-[#777168]" title={String(leaf.example ?? "")}>
-                    {leaf.example === undefined ? "—" : String(leaf.example)}
+                    {leaf.example === undefined ? <span className="text-[#C9C2B2]">Null</span> : String(leaf.example)}
                   </td>
                   <td className="max-w-[220px] truncate px-2.5 py-1.5 font-mono text-[11px] text-[#27241F]" title={mapping ? `${mapping.objectName}.${mapping.fieldName}` : ""}>
-                    {mapping?.fieldName ? `${mapping.objectName}.${mapping.fieldName}` : mapping ? `${mapping.objectName} (no field)` : "—"}
+                    {mapping?.kind === "hardcoded" ? (
+                      mapping.hardcodedValue === undefined || mapping.hardcodedValue === "" ? (
+                        <span className="text-[#C9C2B2]">Null</span>
+                      ) : (
+                        <span>&quot;{String(mapping.hardcodedValue)}&quot;{mapping.notes ? ` · ${mapping.notes}` : ""}</span>
+                      )
+                    ) : mapping?.fieldName ? `${mapping.objectName}.${mapping.fieldName}` : mapping ? `${mapping.objectName} (no field)` : <span className="text-[#C9C2B2]">Null</span>}
                   </td>
-                  <td className="px-2.5 py-1.5 font-mono text-[11px] text-[#777168]">{mapping?.kind ?? "—"}</td>
+                  <td className="px-2.5 py-1.5 font-mono text-[11px] text-[#777168]">{mapping?.kind ?? <span className="text-[#C9C2B2]">Null</span>}</td>
                   <td className="px-2.5 py-1.5 text-right">
                     {mapping && (
                       <button

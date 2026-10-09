@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Button from "../ui/Button";
 import { analyzeRow } from "@/lib/mapping/diagnostics";
-import { FREE_SOURCE_PATH, type MappingKind, type MappingProject, type MappingRow, type MappingStatus } from "@/lib/mapping/types";
+import { FREE_SOURCE_PATH, STATUS_LABELS, type MappingKind, type MappingProject, type MappingRow, type MappingStatus } from "@/lib/mapping/types";
 import { snapshotTargets, validateTarget, type PasteRow } from "@/lib/mapping/grid";
 import { QuickMapModal } from "./QuickMapModal";
 import { STATUS_STYLES } from "./MappingTable";
@@ -42,7 +42,7 @@ export function MappingGrid({
   onRemoveRow,
   onUpsertRow,
   onImportPaste,
-  onAddFreeRow,
+  onOpenConstants,
 }: {
   project: MappingProject;
   /** Active record plan - resolves bare-field targets in Quick map. */
@@ -54,8 +54,8 @@ export function MappingGrid({
   onUpsertRow: (sourcePath: string, target: { objectName: string; fieldName: string }) => void;
   /** Paste import: validated rows, last-wins by source. */
   onImportPaste: (rows: PasteRow[]) => void;
-  /** Append a free constant row (no source node). */
-  onAddFreeRow: () => void;
+  /** Open the constants manager (label + value prompt). */
+  onOpenConstants: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -270,10 +270,10 @@ export function MappingGrid({
           aria-label="Filter by status"
           className="cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-2 py-1.5 text-[11px]"
         >
-          <option value="all">all statuses</option>
+          <option value="all">All</option>
           {statuses.map((s) => (
             <option key={s} value={s}>
-              {s}
+              {STATUS_LABELS[s]}
             </option>
           ))}
         </select>
@@ -282,7 +282,7 @@ export function MappingGrid({
           <Button size="sm" variant="secondary" onClick={() => setQuickOpen(true)} title="Fast-forward mapper: dump K:V pairs and auto-map to the template">
             Quick map
           </Button>
-          <Button size="sm" variant="secondary" onClick={onAddFreeRow} title="Append a constant row with no source node">
+          <Button size="sm" variant="secondary" onClick={onOpenConstants} title="Name a label + value constant reusable from Guide and Grid">
             Add constant
           </Button>
         </span>
@@ -345,7 +345,7 @@ export function MappingGrid({
       )}
 
       <div className="overflow-x-auto rounded-xl border border-[#E8E2D8]">
-        <table className="w-full min-w-[980px] border-collapse bg-white text-left text-[12px]">
+        <table className="w-full min-w-[1180px] border-collapse bg-white text-left text-[12px]">
           <thead>
             <tr className="border-b border-[#E8E2D8] bg-[#FAF8F2] font-mono text-[10px] uppercase tracking-wider text-[#A39B8E]">
               <th className="w-8 px-2 py-2">
@@ -394,14 +394,14 @@ export function MappingGrid({
                   </td>
                   <td className="px-2 py-1">
                     <span className={`whitespace-nowrap rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-semibold ${STATUS_STYLES[st]}`}>
-                      {st}
+                      {STATUS_LABELS[st]}
                     </span>
                   </td>
                   <td className={`max-w-[220px] truncate px-2 py-1 font-mono text-[11px] ${row.free ? "text-[#A39B8E]" : "text-[#27241F]"}`} title={row.sourcePath}>
                     {row.free ? "(constant)" : row.sourcePath}
                   </td>
                   <td className="max-w-[110px] truncate px-2 py-1 font-mono text-[11px] text-[#777168]" title={row.example}>
-                    {row.example || "—"}
+                    {row.example || <span className="text-[#C9C2B2]">Null</span>}
                   </td>
                   <td className={`min-w-[170px] px-1 py-0.5 ${cellRing(row, "target")}`} title={firstErr ?? "Object.Field - Enter to commit"}>
                     {isEditing("target") && editing ? (
@@ -434,7 +434,7 @@ export function MappingGrid({
                       </div>
                     )}
                   </td>
-                  <td className={`px-1 py-0.5 ${cellRing(row, "kind")}`}>
+                  <td className={`px-1 py-0.5 ${cellRing(row, "kind")} min-w-[132px]`}>
                     {m ? (
                       <select
                         value={m.kind}
@@ -454,10 +454,10 @@ export function MappingGrid({
                         ))}
                       </select>
                     ) : (
-                      <span className="px-1.5 text-[11px] text-[#C9C2B2]">—</span>
+                      <span className="px-1.5 text-[11px] text-[#C9C2B2]">Null</span>
                     )}
                   </td>
-                  <td className={`px-1 py-0.5 ${cellRing(row, "plan")}`}>
+                  <td className={`px-1 py-0.5 ${cellRing(row, "plan")} min-w-[150px]`}>
                     {m ? (
                       <select
                         value={m.planId ?? ""}
@@ -474,10 +474,10 @@ export function MappingGrid({
                         ))}
                       </select>
                     ) : (
-                      <span className="px-1.5 text-[11px] text-[#C9C2B2]">—</span>
+                      <span className="px-1.5 text-[11px] text-[#C9C2B2]">Null</span>
                     )}
                   </td>
-                  <td className={`min-w-[110px] px-1 py-0.5 ${cellRing(row, "constant")}`}>
+                  <td className={`min-w-[150px] px-1 py-0.5 ${cellRing(row, "constant")}`}>
                     {m ? (
                       isEditing("constant") && editing ? (
                         <input
@@ -506,14 +506,14 @@ export function MappingGrid({
                           title="Typing a constant switches the row to hardcoded"
                           className="cursor-text truncate rounded px-1.5 py-1 font-mono text-[11px] text-[#27241F] hover:bg-[#FAF8F2]"
                         >
-                          {m.hardcodedValue === undefined || m.hardcodedValue === "" ? <span className="text-[#C9C2B2]">—</span> : String(m.hardcodedValue)}
+                          {m.hardcodedValue === undefined || m.hardcodedValue === "" ? <span className="text-[#C9C2B2]">Null</span> : String(m.hardcodedValue)}
                         </div>
                       )
                     ) : (
-                      <span className="px-1.5 text-[11px] text-[#C9C2B2]">—</span>
+                      <span className="px-1.5 text-[11px] text-[#C9C2B2]">Null</span>
                     )}
                   </td>
-                  <td className={`min-w-[110px] px-1 py-0.5 ${cellRing(row, "notes")}`}>
+                  <td className={`min-w-[170px] px-1 py-0.5 ${cellRing(row, "notes")}`}>
                     {m ? (
                       isEditing("notes") && editing ? (
                         <input
@@ -541,11 +541,11 @@ export function MappingGrid({
                           onClick={() => startEdit(row, "notes")}
                           className="cursor-text truncate rounded px-1.5 py-1 font-mono text-[11px] text-[#27241F] hover:bg-[#FAF8F2]"
                         >
-                          {m.notes ? m.notes : <span className="text-[#C9C2B2]">—</span>}
+                          {m.notes ? m.notes : <span className="text-[#C9C2B2]">Null</span>}
                         </div>
                       )
                     ) : (
-                      <span className="px-1.5 text-[11px] text-[#C9C2B2]">—</span>
+                      <span className="px-1.5 text-[11px] text-[#C9C2B2]">Null</span>
                     )}
                   </td>
                   <td className="px-2 py-1 text-right">

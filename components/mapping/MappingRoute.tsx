@@ -9,6 +9,7 @@ import { SfExplorer } from "./SfExplorer";
 import { FieldInspector } from "./FieldInspector";
 import { MappingTable } from "./MappingTable";
 import { MappingGrid } from "./MappingGrid";
+import { ConstantsModal } from "./ConstantsModal";
 import { SuggestModal } from "./SuggestModal";
 import { CoverageModal } from "./CoverageModal";
 import { requiredTargets } from "@/lib/mapping/coverage";
@@ -26,8 +27,8 @@ import { WorkspaceDeliverables } from "@/components/experience/WorkspaceDelivera
 import { useMappingMetadata } from "./useMappingMetadata";
 import { buildSnapshot } from "@/lib/mapping/snapshot";
 import { mergePasteRows, type PasteRow } from "@/lib/mapping/grid";
+import { freeConstants, mapLeafToConstant, upsertConstant } from "@/lib/mapping/constants";
 import { deleteProject, duplicateProject, listProjects, loadProject, saveProject, type ProjectSummary } from "@/lib/mapping/store";
-import { FREE_SOURCE_PATH } from "@/lib/mapping/types";
 import { validateImport } from "@/lib/mapping/exchange";
 import type { MappingProject, MappingRow, RecordPlan, RelationshipDef, SnapshotField, SnapshotObject } from "@/lib/mapping/types";
 import { attachMapping, detachMapping, upgradeToWorkspace } from "@/lib/studio/upgrade";
@@ -275,8 +276,11 @@ export function MappingRoute() {
 
   // ---- child mapping actions (integration workspace) ----
   const [mapMode, setMapMode] = useState<"guide" | "grid">("guide");
+  const [sourceOpen, setSourceOpen] = useState(true);
+  const [sfOpen, setSfOpen] = useState(true);
   const [showSuggest, setShowSuggest] = useState(false);
   const [showCoverage, setShowCoverage] = useState(false);
+  const [constantsOpen, setConstantsOpen] = useState(false);
 
   // Grid surface: typed Object.Field targets upsert by source path.
   const upsertRow = (sourcePath: string, target: { objectName: string; fieldName: string }) => {
@@ -304,12 +308,19 @@ export function MappingRoute() {
     mutateChild((p) => ({ ...p, mappings: mergePasteRows(p.mappings, rows, activePlanId, () => uid("row"), now) }));
   };
 
-  // Grid surface: free constant rows carry no source node.
-  const addFreeRow = () => {
-    mutateChild((p) => ({
-      ...p,
-      mappings: [...p.mappings, { id: uid("row"), sourcePath: FREE_SOURCE_PATH, planId: activePlanId, objectName: "", fieldName: "", kind: "hardcoded" as const, status: "hardcoded" as const, updatedAt: new Date().toISOString() }],
-    }));
+  // Constants: named hardcoded literals shared by Guide and Grid.
+  const saveConstant = (id: string | null, label: string, value: string) => {
+    const now = new Date().toISOString();
+    mutateChild((p) => ({ ...p, mappings: upsertConstant(p.mappings, { label, value }, { id, planId: activePlanId, uid: () => uid("row"), now }) }));
+  };
+  const removeConstant = (id: string) => {
+    mutateChild((p) => ({ ...p, mappings: p.mappings.filter((m) => m.id !== id) }));
+  };
+  // Guide surface: map a source leaf onto an existing constant.
+  const confirmConstant = (sourcePath: string, constantId: string) => {
+    const now = new Date().toISOString();
+    mutateChild((p) => ({ ...p, mappings: mapLeafToConstant(p.mappings, sourcePath, constantId, { planId: activePlanId, uid: () => uid("row"), now }) }));
+    setSelectedSource(null);
   };
 
   const confirmMap = (sourcePath: string) => {
@@ -789,11 +800,26 @@ export function MappingRoute() {
           />
         )}
 
-        <div id="mapping-workspace" className="grid items-start gap-3 xl:grid-cols-[23%_52%_25%] lg:grid-cols-[280px_minmax(0,1fr)]">
+        <div
+          id="mapping-workspace"
+          className={'grid items-start gap-3 ' + (sourceOpen ? (sfOpen ? 'xl:grid-cols-[23%_52%_25%] lg:grid-cols-[280px_minmax(0,1fr)]' : 'xl:grid-cols-[25%_minmax(0,1fr)_48px] lg:grid-cols-[280px_minmax(0,1fr)]') : sfOpen ? 'xl:grid-cols-[48px_minmax(0,1fr)_25%] lg:grid-cols-[48px_minmax(0,1fr)]' : 'xl:grid-cols-[48px_minmax(0,1fr)_48px] lg:grid-cols-[48px_minmax(0,1fr)]')}
+        >
+          {sourceOpen ? (
           <div className="rounded-xl border border-[#E8E2D8] bg-white p-3">
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">
-              Source · {child.source?.paths.length ?? 0} paths
-            </p>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">
+                Source · {child.source?.paths.length ?? 0} paths
+              </p>
+              <button
+                type="button"
+                onClick={() => setSourceOpen(false)}
+                aria-label="Collapse Source panel"
+                title="Collapse Source panel"
+                className="cursor-pointer rounded-md px-1.5 py-0.5 font-mono text-[12px] text-[#A39B8E] hover:bg-[#FAF8F2] hover:text-[#27241F]"
+              >
+                «
+              </button>
+            </div>
             {child.source ? (
               <SourceExplorer paths={child.source.paths} mappings={child.mappings} selected={selectedSource} onSelect={setSelectedSource} />
             ) : (
@@ -803,6 +829,22 @@ export function MappingRoute() {
               <SourceJsonViewer text={child.source.originalText} selected={selectedSource} onSelectPath={setSelectedSource} />
             )}
           </div>
+          ) : (
+          <div className="flex flex-col items-center gap-2 rounded-xl border border-[#E8E2D8] bg-white py-3">
+            <button
+              type="button"
+              onClick={() => setSourceOpen(true)}
+              aria-label="Expand Source panel"
+              title="Expand Source panel"
+              className="cursor-pointer rounded-md px-1.5 py-0.5 font-mono text-[12px] text-[#A39B8E] hover:bg-[#FAF8F2] hover:text-[#27241F]"
+            >
+              »
+            </button>
+            <span className="text-[10px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E] [writing-mode:vertical-rl]">
+              Source
+            </span>
+          </div>
+          )}
 
           <div className="rounded-xl border border-[#E8E2D8] bg-white p-3">
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">Mapping table</p>
@@ -884,6 +926,9 @@ export function MappingRoute() {
                 pendingTarget={picked}
                 planMismatch={planMismatch}
                 onConfirmMap={confirmMap}
+                constants={freeConstants(child.mappings)}
+                onOpenConstants={() => setConstantsOpen(true)}
+                onMapConstant={confirmConstant}
                 onUpdateRow={(id, patch) => mutateChild((p) => ({ ...p, mappings: p.mappings.map((m) => (m.id === id ? { ...m, ...patch, updatedAt: new Date().toISOString() } : m)) }))}
                 onRemoveRow={(id) => mutateChild((p) => ({ ...p, mappings: p.mappings.filter((m) => m.id !== id) }))}
               />
@@ -896,18 +941,30 @@ export function MappingRoute() {
                 onRemoveRow={(id) => mutateChild((p) => ({ ...p, mappings: p.mappings.filter((m) => m.id !== id) }))}
                 onUpsertRow={upsertRow}
                 onImportPaste={importPaste}
-                onAddFreeRow={addFreeRow}
+                onOpenConstants={() => setConstantsOpen(true)}
               />
             )}
           </div>
 
+          {sfOpen ? (
           <div className="space-y-3 lg:col-span-2 xl:col-span-1">
             <div className="rounded-xl border border-[#E8E2D8] bg-white p-3">
-              <div className="mb-2 flex items-center justify-between">
+              <div className="mb-2 flex items-center justify-between gap-2">
                 <p className="text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">Salesforce</p>
+                <span className="flex items-center gap-1">
                 <Button size="sm" variant="ghost" disabled={!meta.connected || snapshotBusy || childObjectsUsed.length === 0} onClick={() => void captureSnapshot()} title={childObjectsUsed.length === 0 ? "Map a field first" : "Freeze current metadata for mapped objects"}>
                   {snapshotBusy ? "Capturing…" : "Capture snapshot"}
                 </Button>
+                <button
+                  type="button"
+                  onClick={() => setSfOpen(false)}
+                  aria-label="Collapse Salesforce panel"
+                  title="Collapse Salesforce panel"
+                  className="cursor-pointer rounded-md px-1.5 py-0.5 font-mono text-[12px] text-[#A39B8E] hover:bg-[#FAF8F2] hover:text-[#27241F]"
+                >
+                  »
+                </button>
+                </span>
               </div>
               <SfExplorer
                 connected={meta.connected}
@@ -926,7 +983,32 @@ export function MappingRoute() {
               <FieldInspector objectName={picked?.objectName ?? null} field={picked?.field ?? null} />
             </div>
           </div>
+          ) : (
+          <div className="flex flex-col items-center gap-2 rounded-xl border border-[#E8E2D8] bg-white py-3 lg:col-span-2 xl:col-span-1">
+            <button
+              type="button"
+              onClick={() => setSfOpen(true)}
+              aria-label="Expand Salesforce panel"
+              title="Expand Salesforce panel"
+              className="cursor-pointer rounded-md px-1.5 py-0.5 font-mono text-[12px] text-[#A39B8E] hover:bg-[#FAF8F2] hover:text-[#27241F]"
+            >
+              «
+            </button>
+            <span className="text-[10px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E] [writing-mode:vertical-rl]">
+              Salesforce
+            </span>
+          </div>
+          )}
         </div>
+
+        {constantsOpen && child && (
+          <ConstantsModal
+            constants={freeConstants(child.mappings)}
+            onSave={(id, label, value) => saveConstant(id, label, value)}
+            onRemove={removeConstant}
+            onClose={() => setConstantsOpen(false)}
+          />
+        )}
 
         <DriftReview
           project={child}
