@@ -5,10 +5,12 @@ import {
   consoleBodyToNote,
   consoleTaskKey,
   consoleTaskSchema,
+  groupCanvasViews,
   moveTask,
   newConsoleTask,
   nextStatuses,
   noteToConsoleBody,
+  type CanvasViewRef,
 } from "./model";
 import { noteBodyFromHtml, noteBodyFromMd } from "@/lib/notes/notebody";
 
@@ -85,5 +87,40 @@ describe("console model", () => {
     const md = { ...newConsoleTask("Z", 3), ...noteToConsoleBody(noteBodyFromMd("plain")) };
     expect(consoleTaskSchema.safeParse(md).success).toBe(true);
     expect(consoleTaskSchema.safeParse({ ...md, bodyFormat: "quill" }).success).toBe(false);
+  });
+});
+
+describe("groupCanvasViews", () => {
+  const v = (over: Partial<CanvasViewRef> & { recordId: string }): CanvasViewRef => ({
+    surface: "schema",
+    recordName: "Orders ERD",
+    updatedAt: 1,
+    ...over,
+  });
+
+  it("groups by canvas, notes before TODOs, newest first", () => {
+    const groups = groupCanvasViews([
+      v({ recordId: "a", todoId: "t1", updatedAt: 5 }),
+      v({ recordId: "a", updatedAt: 9 }),
+      v({ recordId: "a", todoId: "t2", updatedAt: 7 }),
+      v({ recordId: "b", updatedAt: 3 }),
+    ]);
+    expect(groups).toHaveLength(2);
+    expect(groups[0].items.map((i) => i.todoId ?? "notes")).toEqual(["notes", "t2", "t1"]);
+    expect(groups[1].recordId).toBe("b");
+  });
+
+  it("orders surfaces system, schema, notes and canvases alphabetically", () => {
+    const groups = groupCanvasViews([
+      v({ surface: "notes", recordId: "n", recordName: "Zebra" }),
+      v({ surface: "system", recordId: "s", recordName: "Zulu" }),
+      v({ surface: "schema", recordId: "b", recordName: "Beta" }),
+      v({ surface: "schema", recordId: "a", recordName: "Alpha" }),
+    ]);
+    expect(groups.map((g) => g.recordId)).toEqual(["s", "a", "b", "n"]);
+  });
+
+  it("returns empty for empty", () => {
+    expect(groupCanvasViews([])).toEqual([]);
   });
 });

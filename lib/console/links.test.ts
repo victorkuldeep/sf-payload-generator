@@ -13,11 +13,13 @@ describe("console link hrefs", () => {
 
   it("lands on the exact record when addressable", () => {
     expect(consoleLinkHref({ surface: "decision", recordId: "d1" })).toBe("/decisions?id=d1");
+    expect(consoleLinkHref({ surface: "schema", recordId: "tabAbc" })).toBe("/?mode=schema&canvas=tabAbc");
+    expect(consoleLinkHref({ surface: "schema" })).toBe("/?mode=schema");
     expect(consoleLinkHref({ surface: "requirement", recordId: "r1" })).toBe("/requirements?id=r1");
     expect(consoleLinkHref({ surface: "sequence", recordId: "s1" })).toBe("/sequence?id=s1");
     expect(consoleLinkHref({ surface: "wireframe", recordId: "e1" })).toBe("/wireframe?exp=e1");
     expect(consoleLinkHref({ surface: "system", recordId: "p1" })).toBe("/system?project=p1");
-    expect(consoleLinkHref({ surface: "schema", recordId: "" })).toBe("/?tab=schema");
+    expect(consoleLinkHref({ surface: "schema", recordId: "" })).toBe("/?mode=schema");
   });
 
   it("encodes record ids safely", () => {

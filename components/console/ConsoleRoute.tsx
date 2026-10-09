@@ -33,6 +33,7 @@ import { pullNotes } from "@/lib/notes/standalone";
 import { getCachedConnection } from "@/lib/session/cache";
 import { TaskDetail, fmtDate } from "./TaskDetail";
 import { NewTaskDialog, type NewTaskDraft } from "./NewTaskDialog";
+import { CanvasViews } from "./CanvasViews";
 
 const PRIORITY_DOT: Record<string, string> = {
   low: "bg-[#A39B8E]",
@@ -91,7 +92,7 @@ export function ConsoleRoute() {
   const [views, setViews] = useState<CanvasLinkView[]>([]);
   const [attachCounts, setAttachCounts] = useState<Record<string, number>>({});
   const [loaded, setLoaded] = useState(false);
-  const [view, setView] = useState<"queue" | "board" | "timeline">("queue");
+  const [view, setView] = useState<"queue" | "board" | "timeline" | "canvas">("queue");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<ConsoleStatus | "all">("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -157,6 +158,36 @@ export function ConsoleRoute() {
     setShowCreate(false);
     setSelectedId(task.id);
   }, []);
+
+  /** Start tracking a canvas item as a Console task - kind/owner/due/status adopted. */
+  const createFromView = useCallback(
+    async (item: CanvasLinkView) => {
+      const link: ConsoleLink = {
+        surface: item.surface,
+        recordId: item.recordId,
+        ...(item.todoId ? { todoId: item.todoId } : {}),
+        label: item.todoId ? `${item.recordName} · ${item.title}` : item.title,
+      };
+      const base = newConsoleTask(item.title);
+      const task: ConsoleTask = {
+        ...base,
+        ...(item.kind ? { kind: item.kind } : {}),
+        ...(item.owner ? { owner: item.owner } : {}),
+        ...(item.dueDate ? { dueDate: item.dueDate } : {}),
+        ...(item.status ? { status: item.status } : {}),
+        links: [link],
+        updatedAt: Date.now(),
+        history: [...base.history, { at: Date.now(), what: `Tracked from canvas: ${link.label}.` }],
+      };
+      if (item.todoId) {
+        knownRef.current.set(`${item.surface}:${item.recordId}:${item.todoId}`, item.updatedAt);
+      }
+      setTasks((prev) => [task, ...prev]);
+      await saveConsoleTask(task);
+      setSelectedId(task.id);
+    },
+    [],
+  );
 
   /** Push a Console status move back onto every linked canvas entry. */
   const moveWithSync = useCallback(
@@ -471,7 +502,7 @@ export function ConsoleRoute() {
                   <p className="text-[13px] font-semibold text-[#27241F]">No tasks yet</p>
                   <ol className="mx-auto mt-2 max-w-[420px] space-y-1 text-left text-[11px] leading-relaxed text-[#777168]">
                     <li><span className="font-mono font-bold text-[#A98450]">1 </span>Log anything - task, note, question, decision.</li>
-                    <li><span className="font-mono font-bold text-[#A98450]">2 </span>Canvas TODOs land here on their own.</li>
+                    <li><span className="font-mono font-bold text-[#A98450]">2 </span>Browse every canvas TODO and note under Canvas.</li>
                     <li><span className="font-mono font-bold text-[#A98450]">3 </span>Push to JIRA / ServiceNow or drop to a coding agent.</li>
                   </ol>
                 </>
@@ -541,6 +572,10 @@ export function ConsoleRoute() {
         </ol>
       )}
 
+      {view === "canvas" && (
+        <CanvasViews views={views} query={query} onNewTask={(item) => void createFromView(item)} />
+      )}
+
       {showCreate && <NewTaskDialog onClose={() => setShowCreate(false)} onCreate={(d) => void create(d)} />}
 
       {selected && (
@@ -565,10 +600,10 @@ export function ConsoleRoute() {
   );
 }
 
-function ViewToggle({ view, setView }: { view: "queue" | "board" | "timeline"; setView: (v: "queue" | "board" | "timeline") => void }) {
+function ViewToggle({ view, setView }: { view: "queue" | "board" | "timeline" | "canvas"; setView: (v: "queue" | "board" | "timeline" | "canvas") => void }) {
   return (
     <span className="inline-flex overflow-hidden rounded-lg border border-[#E8E2D8]" role="group" aria-label="Console view">
-      {(["queue", "board", "timeline"] as const).map((v) => (
+      {(["queue", "board", "timeline", "canvas"] as const).map((v) => (
         <button
           key={v}
           type="button"

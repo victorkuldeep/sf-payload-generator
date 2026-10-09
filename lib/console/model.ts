@@ -43,6 +43,52 @@ export interface ConsoleLink {
   label: string;
 }
 
+/**
+ * Minimal canvas-view shape for grouping (mirrors CanvasLinkView without
+ * importing the sync engine - model stays cycle-free).
+ */
+export interface CanvasViewRef {
+  surface: string;
+  recordId: string;
+  recordName: string;
+  todoId?: string;
+  updatedAt: number;
+}
+
+export interface CanvasViewGroup<T extends CanvasViewRef> {
+  surface: string;
+  recordId: string;
+  recordName: string;
+  items: T[];
+}
+
+const CANVAS_SURFACE_ORDER = ["system", "schema", "notes"];
+
+/**
+ * Group live canvas views by owning canvas: one section per record, notes
+ * (whole-record) before TODOs, newest first. Surfaces follow studio order.
+ */
+export function groupCanvasViews<T extends CanvasViewRef>(views: T[]): CanvasViewGroup<T>[] {
+  const map = new Map<string, CanvasViewGroup<T>>();
+  for (const v of views) {
+    const key = `${v.surface}::${v.recordId}`;
+    let g = map.get(key);
+    if (!g) {
+      g = { surface: v.surface, recordId: v.recordId, recordName: v.recordName, items: [] };
+      map.set(key, g);
+    }
+    g.items.push(v);
+  }
+  for (const g of map.values()) {
+    g.items.sort((a, b) => (a.todoId ? 1 : -1) - (b.todoId ? 1 : -1) || b.updatedAt - a.updatedAt);
+  }
+  return [...map.values()].sort(
+    (a, b) =>
+      CANVAS_SURFACE_ORDER.indexOf(a.surface) - CANVAS_SURFACE_ORDER.indexOf(b.surface) ||
+      a.recordName.localeCompare(b.recordName),
+  );
+}
+
 /** Studio tab route for each linkable surface - Console links jump, never copy. */
 export const CONSOLE_SURFACE_ROUTES: Record<ConsoleLink["surface"], string> = {
   system: "/system",
@@ -75,7 +121,7 @@ export function consoleLinkHref(link: Pick<ConsoleLink, "surface"> & Partial<Pic
     case "system":
       return q ? `/system?project=${q}` : "/system";
     case "schema":
-      return "/?tab=schema";
+      return q ? `/?mode=schema&canvas=${q}` : "/?mode=schema";
     case "draw":
       return "/draw";
     case "notes":
