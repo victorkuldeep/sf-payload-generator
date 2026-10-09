@@ -48,6 +48,8 @@ export interface PasteRow {
   sourcePath: string;
   objectName: string;
   fieldName: string;
+  /** Set when the value is a "double-quoted" constant instead of a target. */
+  hardcodedValue?: string;
 }
 
 export interface PasteSkip {
@@ -106,20 +108,30 @@ export function mergePasteRows(
   for (const p of parsed) {
     const hit = p.sourcePath === FREE_SOURCE_PATH ? undefined : bySource.get(p.sourcePath);
     if (hit) {
-      hit.objectName = p.objectName;
-      hit.fieldName = p.fieldName;
-      hit.kind = "direct";
+      if (p.hardcodedValue !== undefined) {
+        hit.objectName = "";
+        hit.fieldName = "";
+        hit.kind = "hardcoded";
+        hit.status = "hardcoded";
+        hit.hardcodedValue = p.hardcodedValue;
+      } else {
+        hit.objectName = p.objectName;
+        hit.fieldName = p.fieldName;
+        hit.kind = "direct";
+      }
       hit.updatedAt = now;
       continue;
     }
+    const hardcoded = p.hardcodedValue !== undefined;
     const row: MappingRow = {
       id: nextId(),
       sourcePath: p.sourcePath,
       planId,
-      objectName: p.objectName,
-      fieldName: p.fieldName,
-      kind: "direct",
-      status: "mapped",
+      objectName: hardcoded ? "" : p.objectName,
+      fieldName: hardcoded ? "" : p.fieldName,
+      kind: hardcoded ? "hardcoded" : "direct",
+      status: hardcoded ? "hardcoded" : "mapped",
+      ...(hardcoded ? { hardcodedValue: p.hardcodedValue } : {}),
       updatedAt: now,
     };
     next.push(row);
@@ -302,7 +314,40 @@ export function resolveQuickPairs(
       });
       continue;
     }
-    fail("unknown-target", `"${pair.value}" must be Object.Field or a bare field with a plan picked.`);
+    // "Double-quoted" literal - a hardcoded constant, not a target.
+    const quoted = /^"([\s\S]*)"$/.exec(pair.value.trim());
+    if (quoted && quoted[1].trim()) {
+      const row: PasteRow = { sourcePath: sourcePath!, objectName: "", fieldName: "", hardcodedValue: quoted[1] };
+      rows.push(row);
+      matches.push({
+        key: pair.key, value: pair.value, line: pair.line,
+        status: !project.sfSnapshot || blindSource ? "blind" : "ok",
+        note: `${sourcePath} → "${quoted[1]}" (constant)${!project.sfSnapshot ? " (blind - no snapshot)" : ""}`,
+        row,
+      });
+      continue;
+    }
+    fail("unknown-target", `"${pair.value}" must be Object.Field, a bare field with a plan picked, or a "quoted" constant.`);
   }
   return { rows, matches };
+}
+
+/**
+ * Fast-mapper prefill: existing leaf rows back into K:V text. Direct rows
+ * read as Object.Field; pure constants read as "quoted" literals; excluded,
+ * enum and untargeted rows have no K:V spelling and are skipped, so an
+ * untouched reimport never degrades them.
+ */
+export function mappingsToKvPrefill(mappings: MappingRow[]): { key: string; value: string }[] {
+  const out: { key: string; value: string }[] = [];
+  for (const m of mappings) {
+    if (m.sourcePath === FREE_SOURCE_PATH) continue;
+    if (m.kind === "excluded" || m.kind === "enum") continue;
+    if (m.fieldName) {
+      out.push({ key: m.sourcePath, value: `${m.objectName}.${m.fieldName}` });
+    } else if (m.kind === "hardcoded" && m.hardcodedValue !== undefined && String(m.hardcodedValue).trim() !== "") {
+      out.push({ key: m.sourcePath, value: `"${String(m.hardcodedValue)}"` });
+    }
+  }
+  return out;
 }

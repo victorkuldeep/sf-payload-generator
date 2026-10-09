@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Button from "../ui/Button";
-import { parseKeyValueGrid, resolveQuickPairs, type KeyValuePair, type QuickMatch } from "@/lib/mapping/grid";
+import { mappingsToKvPrefill, parseKeyValueGrid, resolveQuickPairs, type KeyValuePair, type QuickMatch } from "@/lib/mapping/grid";
 import type { MappingProject } from "@/lib/mapping/types";
 import type { PasteRow } from "@/lib/mapping/grid";
 
@@ -21,6 +21,7 @@ export const KV_AGENT_CONTRACT = [
   "Key = source JSON path (full $.path preferred, unique leaf ok).",
   "Value = Object.Field, or a bare field resolved through the record plan.",
   "Separators: = or -> or tab. Or one JSON object: {\"$.path\": \"Object.Field\"}.",
+  "Constant: a \"double-quoted\" value ships verbatim, e.g. $.type = \"ProductOrder\".",
   "No prose, no bullets - only K:V lines or the JSON object.",
 ].join("\n");
 
@@ -61,9 +62,10 @@ export function QuickMapModal({
   onImport: (rows: PasteRow[]) => void;
   onClose: () => void;
 }) {
+  // Already-mapped rows prefill as K:V (constants quoted) so the format
+  // reads by example; untouched rows reimport to themselves.
   const [kvRows, setKvRows] = useState<KvRow[]>(() => [
-    { id: nid(), key: "", value: "" },
-    { id: nid(), key: "", value: "" },
+    ...mappingsToKvPrefill(project.mappings).map((p) => ({ id: nid(), key: p.key, value: p.value })),
     { id: nid(), key: "", value: "" },
   ]);
   const [bulk, setBulk] = useState("");
@@ -122,7 +124,7 @@ export function QuickMapModal({
             ) : (
               <span className="font-semibold text-[#B3261E]">no record plan picked</span>
             )}
-            . Same source updates in place.
+            . Same source updates in place. Already-mapped rows prefill below - "quoted" values are constants.
           </p>
 
           <div className="mt-3 rounded-xl border border-[#E8E2D8] bg-[var(--color-canvas)] p-2.5">
@@ -132,7 +134,7 @@ export function QuickMapModal({
               onChange={(e) => setBulk(e.target.value)}
               rows={3}
               spellCheck={false}
-              placeholder={"$.order.id = Order.Id\nindustry → Industry\n{\"$.total\": \"Order.Amount__c\"}"}
+              placeholder={"$.order.id = Order.Id\n$.type = \"ProductOrder\" (constant)\n{\"$.total\": \"Order.Amount__c\"}"}
               aria-label="Bulk K:V dump"
               className="mt-1.5 w-full rounded-lg border border-[#E8E2D8] bg-white px-2.5 py-2 font-mono text-[12px] focus:border-[#A98450] focus:outline-none"
             />
