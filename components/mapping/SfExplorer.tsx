@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { SalesforceDescribeResult, SalesforceObject } from "@/lib/salesforce/types";
 import type { SnapshotField, SnapshotObject } from "@/lib/mapping/types";
+import { rankByQuery } from "@/lib/mapping/rank";
 
 /** Salesforce object + field explorer. Live session first, snapshot fallback. */
 export function SfExplorer({
@@ -38,9 +39,10 @@ export function SfExplorer({
   }, [connected, objects, snapshotObjects]);
 
   const filteredObjects = useMemo(() => {
-    const q = objQuery.trim().toLowerCase();
+    const q = objQuery.trim();
     if (!q) return objectList.slice(0, 200);
-    return objectList.filter((o) => o.name.toLowerCase().includes(q) || o.label.toLowerCase().includes(q)).slice(0, 200);
+    // Relevance first: an exact "Order" hit outranks "AssessmentTaskOrder".
+    return rankByQuery(objectList, q, 200);
   }, [objectList, objQuery]);
 
   const fields: SnapshotField[] = useMemo(() => {
@@ -72,11 +74,13 @@ export function SfExplorer({
   }, [selectedObject, describes, snapshotObjects]);
 
   const filteredFields = useMemo(() => {
-    const q = fieldQuery.trim().toLowerCase();
+    const q = fieldQuery.trim();
     if (!q) return fields;
-    return fields.filter(
-      (f) => f.name.toLowerCase().includes(q) || f.label.toLowerCase().includes(q) || f.type.toLowerCase().includes(q)
-    );
+    // Exact-name hits first; type text still matches as a fallback.
+    const ranked = rankByQuery(fields, q, 500);
+    if (ranked.length > 0) return ranked;
+    const lq = q.toLowerCase();
+    return fields.filter((f) => f.type.toLowerCase().includes(lq));
   }, [fields, fieldQuery]);
 
   const selectObject = (name: string) => {

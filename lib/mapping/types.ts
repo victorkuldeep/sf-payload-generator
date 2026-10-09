@@ -139,6 +139,31 @@ export type MappingStatus =
   | "stale-target"
   | "invalid";
 
+/** Display copy for status ids - Title Case everywhere, never raw kebab. */
+export const STATUS_LABELS: Record<MappingStatus, string> = {
+  unmapped: "Unmapped",
+  mapped: "Mapped",
+  hardcoded: "Hardcoded",
+  excluded: "Excluded",
+  "needs-transformation": "Needs Transformation",
+  "needs-decision": "Needs Decision",
+  incompatible: "Incompatible",
+  "stale-target": "Stale Target",
+  invalid: "Invalid",
+};
+
+export const ALL_STATUSES: MappingStatus[] = [
+  "unmapped",
+  "mapped",
+  "hardcoded",
+  "excluded",
+  "needs-transformation",
+  "needs-decision",
+  "incompatible",
+  "stale-target",
+  "invalid",
+];
+
 export interface EnumValueMap {
   sourceValue: string;
   targetValue: string;
