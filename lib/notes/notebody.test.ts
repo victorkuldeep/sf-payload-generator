@@ -178,3 +178,35 @@ describe("tab-switch commits and vacant entries", () => {
     expect(entryBodyVacant("", noteBodyFromMd("drafting"))).toBe(false);
   });
 });
+
+describe("dotted ordered markers", () => {
+  it("nests 1.1 items under their parent instead of flattening to paragraphs", () => {
+    const html = mdToHtml(["1. First", "2. Second", "   1.1. Sub detail", "   1.2. More detail"].join("\n"));
+    expect(html).toBe(
+      "<ol><li>First</li><li>Second<ol><li>Sub detail</li><li>More detail</li></ol></li></ol>"
+    );
+  });
+
+  it("keeps plain numbered lists flat", () => {
+    expect(mdToHtml("1. one\n2. two")).toBe("<ol><li>one</li><li>two</li></ol>");
+  });
+
+  it("maps all three heading levels and reads them back", () => {
+    expect(mdToHtml("# One\n## Two\n### Three")).toBe("<h1>One</h1><h2>Two</h2><h3>Three</h3>");
+    expect(htmlToMd("<h1>One</h1><h2>Two</h2><h3>Three</h3>")).toBe("# One\n\n## Two\n\n### Three");
+  });
+
+  it("round-trips dotted content through reload without losing words or list shape", () => {
+    const md = ["1. First point", "   1.1. Sub detail", "- bullet one"].join("\n");
+    const stored = noteBodyFromMd(md);
+    expect(stored.html).toContain("<ol>");
+    const back = htmlToMd(stored.html);
+    for (const word of ["First point", "Sub detail", "bullet one"]) expect(back).toContain(word);
+    expect(back).toMatch(/1\. First point/);
+    expect(back).toMatch(/- bullet one/);
+  });
+
+  it("leaves a leading bare decimal as paragraph text", () => {
+    expect(mdToHtml("3.14 pi value")).toBe("<p>3.14 pi value</p>");
+  });
+});

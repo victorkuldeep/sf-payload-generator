@@ -30,7 +30,7 @@ export type DocxRun = {
   link?: string;
 };
 
-export type DocxBlockKind = "p" | "h2" | "h3" | "bullet" | "numbered" | "quote" | "code";
+export type DocxBlockKind = "p" | "h1" | "h2" | "h3" | "bullet" | "numbered" | "quote" | "code";
 
 export type DocxBlock = {
   kind: DocxBlockKind;
@@ -76,9 +76,9 @@ function parseShade(attrs: string): string | undefined {
 }
 
 /**
- * Sanitized entry HTML (our allowlist: p h2 h3 strong em s u code pre
- * blockquote ul ol li a mark br) to an intermediate block list. DOM-free
- * so it runs in Node tests and the browser alike.
+ * Sanitized entry HTML (our allowlist: p h1 h2 h3 strong em s u code
+ * pre blockquote ul ol li a mark br) to an intermediate block list.
+ * DOM-free so it runs in Node tests and the browser alike.
  */
 export function htmlToDocxBlocks(html: string): DocxBlock[] {
   const blocks: DocxBlock[] = [];
@@ -137,6 +137,9 @@ export function htmlToDocxBlocks(html: string): DocxBlock[] {
       switch (name) {
         case "p":
           openBlock("p");
+          break;
+        case "h1":
+          openBlock("h1");
           break;
         case "h2":
           openBlock("h2");
@@ -287,6 +290,8 @@ function blockToParagraph(block: DocxBlock): Paragraph | null {
   const children = toTextRuns(block.runs, undefined, block.kind === "quote" ? MUTED : undefined);
   if (children.length === 0) return null;
   switch (block.kind) {
+    case "h1":
+      return new Paragraph({ heading: HeadingLevel.HEADING_1, children });
     case "h2":
       return new Paragraph({ heading: HeadingLevel.HEADING_2, children });
     case "h3":

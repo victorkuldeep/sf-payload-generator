@@ -69,6 +69,21 @@ describe("decision rich text", () => {
     expect(sanitizeDecisionHtml('<p><span style="color: hotpink">x</span></p>')).toBe("<p>x</p>");
     expect(sanitizeDecisionHtml('<p><span style="color: #C0392B; margin: 1px">x</span></p>')).toBe("<p>x</p>");
     expect(sanitizeDecisionHtml("<p>stray</span> closer</p>")).toBe("<p>stray closer</p>");
+    expect(sanitizeDecisionHtml("<h1>Title</h1><h4>Small</h4>")).toBe("<h1>Title</h1>Small");
+    expect(sanitizeDecisionHtml('<h1 style="text-align: center">Mid</h1>')).toBe(
+      '<h1 style="text-align: center">Mid</h1>',
+    );
+    // System font stacks survive; anything else is void.
+    expect(sanitizeDecisionHtml('<p><span style="font-family: Georgia, \'Times New Roman\', serif">x</span></p>')).toBe(
+      '<p><span style="font-family: Georgia, \'Times New Roman\', serif">x</span></p>',
+    );
+    expect(sanitizeDecisionHtml('<p><span style="font-family: Impact, fantasy">x</span></p>')).toBe("<p>x</p>");
+    // Combined palette color + system font on one span survives intact.
+    expect(
+      sanitizeDecisionHtml('<p><span style="color: #722F37; font-family: Arial, Helvetica, sans-serif">x</span></p>')
+    ).toBe('<p><span style="color: #722F37; font-family: Arial, Helvetica, sans-serif">x</span></p>');
+    // One rogue declaration voids the whole style, never just itself.
+    expect(sanitizeDecisionHtml('<p><span style="color: #722F37; margin: 1px">x</span></p>')).toBe("<p>x</p>");
     expect(htmlToText('<p style="text-align: center">Mid <span style="color: #C0392B">red</span></p>')).toBe("Mid red");
   });
 });

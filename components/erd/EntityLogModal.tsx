@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { NoteEditor } from "../notes/NoteEditor";
+import { WordImportButton } from "../notes/WordImportButton";
+import type { DocxImport } from "@/lib/notes/docxImport";
 import { renderMarkdownLite } from "./notesMd";
 import { todoBodyToNote, todayIso, type CanvasTodo, type CanvasTodoStatus, type InboxAnchor, type InboxItemKind } from "@/lib/inbox/types";
-import type { NoteBody } from "@/lib/notes/notebody";
+import { commitNoteBody, type NoteBody } from "@/lib/notes/notebody";
 
 export const ENTRY_KINDS: { id: InboxItemKind; label: string }[] = [
   { id: "task", label: "Task" },
@@ -276,6 +278,7 @@ export function EntityLogModal({
   const [listOpen, setListOpen] = useState(true);
   const [topOpen, setTopOpen] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -319,6 +322,15 @@ export function EntityLogModal({
     setKindFilter("all");
     setSelectedId(id);
     setTopOpen(true);
+  };
+
+  /** Word import appends to the selected entry - existing content stays on top. */
+  const importWord = (imp: DocxImport) => {
+    if (!selected || !draft) return;
+    onBody(selected.id, commitNoteBody(draft, "md", [draft.md, imp.body.md].filter((s) => s.trim()).join("\n\n")));
+    if (imp.warnings.length > 0) {
+      setNotice(`${imp.warnings.length} element${imp.warnings.length === 1 ? "" : "s"} did not survive - ${imp.warnings[0]}`);
+    }
   };
 
   const exportSelected = async () => {
@@ -571,7 +583,13 @@ export function EntityLogModal({
                       <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
                     </svg>
                   </button>
+                  <WordImportButton label="Import" onImport={importWord} onError={setNotice} />
                 </div>
+                {notice && (
+                  <p role="status" className="mb-1.5 shrink-0 truncate rounded-lg border border-[#E0C491] bg-[#F3EADB] px-2.5 py-1 text-[11px] text-[#9A5B13]" title={notice}>
+                    {notice}
+                  </p>
+                )}
                 {topOpen && (
                   <EntryTop
                     apiName={apiName}

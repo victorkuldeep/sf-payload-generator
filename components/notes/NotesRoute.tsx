@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Button from "../ui/Button";
 import { InventoryAside } from "../ui/InventoryAside";
 import { RichTextEditor } from "./RichTextEditor";
+import { WordImportButton } from "./WordImportButton";
+import type { DocxImport } from "@/lib/notes/docxImport";
 import { findDeepRecord, useDeepParam } from "@/lib/deep/deep";
 import { CONSOLE_STATUSES, CONSOLE_STATUS_LABELS } from "@/lib/console/model";
 import { noteDocxFilename, noteToDocxBlob } from "@/lib/notes/docxExport";
@@ -30,6 +32,7 @@ export function NotesRoute() {
   const [q, setQ] = useState("");
   const [exporting, setExporting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const all = await listStdNotes();
@@ -69,6 +72,21 @@ export function NotesRoute() {
     setActiveId(all.some((n) => n.id === note.id) ? note.id : (all[0]?.id ?? null));
     setConfirmDelete(false);
   }, [refresh]);
+
+  /** Word import becomes its own note, titled from the file name. */
+  const importWord = useCallback(
+    async (imp: DocxImport) => {
+      const note = { ...newStdNote(imp.title), ...bodyToStdNote(imp.body), status: "open" as const };
+      await saveStdNote(note);
+      const all = await refresh();
+      setActiveId(all.some((n) => n.id === note.id) ? note.id : (all[0]?.id ?? null));
+      setConfirmDelete(false);
+      if (imp.warnings.length > 0) {
+        setNotice(`${imp.warnings.length} element${imp.warnings.length === 1 ? "" : "s"} did not survive - ${imp.warnings[0]}`);
+      }
+    },
+    [refresh],
+  );
 
   const patch = useCallback(
     async (id: string, p: Partial<StdNote>) => {
@@ -201,6 +219,12 @@ export function NotesRoute() {
               <Button size="sm" variant="ghost" onClick={() => void exportWord()} disabled={exporting} title="Export this note as Word (.docx)">
                 {exporting ? "Exporting…" : "Word"}
               </Button>
+              <WordImportButton onImport={(imp) => void importWord(imp)} onError={setNotice} />
+              {notice && (
+                <span role="status" className="max-w-[260px] truncate text-[11px] text-[#9A5B13]" title={notice}>
+                  {notice}
+                </span>
+              )}
               {confirmDelete ? (
                 <span className="flex gap-1.5">
                   <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(false)}>

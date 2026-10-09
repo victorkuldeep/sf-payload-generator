@@ -40,6 +40,7 @@ describe("html to docx blocks", () => {
     );
     expect(blocks[0]).toMatchObject({ kind: "h2" });
     expect(blocks[0].runs[0]).toMatchObject({ text: "Goal" });
+    expect(htmlToDocxBlocks("<h1>Top</h1>")[0]).toMatchObject({ kind: "h1" });
     const body = blocks[1];
     expect(body.kind).toBe("p");
     const byText = Object.fromEntries(body.runs.map((r) => [r.text.trim(), r]));

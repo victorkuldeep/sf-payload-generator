@@ -214,7 +214,7 @@ export interface LegacyEntityNoteInput {
 function entryTitleFromText(text: string, fallback: string, max = 80): string {
   const line = text
     .split("\n")
-    .map((l) => l.trim().replace(/^#{1,3}\s+|^[-*]\s+(\[[ xX]\]\s+)?|^\d+[.)]\s+/, ""))
+    .map((l) => l.trim().replace(/^#{1,3}\s+|^[-*]\s+(\[[ xX]\]\s+)?|^\d+[.)]\s+|^\d+(?:\.\d+)+[.)]\s+/, ""))
     .find((l) => l.length > 0) ?? "";
   if (!line) return fallback;
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;

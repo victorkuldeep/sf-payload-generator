@@ -50,8 +50,10 @@ Required MIT notice (Octicons):
 ## Tiptap (ADR Decision rich-text editor)
 
 - Packages: `@tiptap/react` + `@tiptap/starter-kit` +
-  `@tiptap/extension-highlight` (exact pin `3.31.4`, see `package.json` /
-  `package-lock.json`)
+  `@tiptap/extension-highlight` + `@tiptap/extension-underline` +
+  `@tiptap/extension-text-align` + `@tiptap/extension-text-style` +
+  `@tiptap/extension-color` + `@tiptap/extension-font-family` (exact pin
+  `3.31.4`, see `package.json` / `package-lock.json`)
 - License: **MIT** (as declared in the packages' `package.json`)
 - Source: <https://github.com/ueberdosis/tiptap>
 - Integrated as unmodified npm dependencies rendered through our own
@@ -64,3 +66,22 @@ Required MIT notice (Tiptap):
 > "THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 > IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 > FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT."
+
+## Mammoth (Word .docx import)
+
+- Package: `mammoth` (exact pin `1.13.0`, see `package.json` /
+  `package-lock.json`)
+- License: **BSD-2-Clause** (as declared in the package's `package.json`)
+- Source: <https://github.com/mwilliamson/mammoth.js>
+- Integrated as an unmodified npm dependency behind our own
+  `lib/notes/docxImport.ts`. It lazy-loads in the import chunk only when
+  the architect picks a file - never in the main bundle. Converted HTML
+  passes through the same `lib/decisions/richtext.ts` allowlist as pasted
+  content before it becomes a note.
+
+Required BSD-2-Clause notice (Mammoth):
+
+> THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+> AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+> IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+> ARE DISCLAIMED.

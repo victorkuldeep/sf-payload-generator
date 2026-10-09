@@ -51,17 +51,52 @@ function mdInlineToHtml(escaped: string): string {
     .replace(/(^|[^*\w])\*([^*\n]+)\*/g, "$1<em>$2</em>");
 }
 
-function mdToHtmlListBlock(lines: string[], ordered: boolean): string {
-  const tag = ordered ? "ol" : "ul";
-  const items = lines.map((l) => {
-    const task = /^\s*(?:[-*]|\d+[.)])\s+\[([ xX])\]\s+(.*)$/.exec(l);
+const BULLET_RE = /^\s*[-*]\s+/;
+/**
+ * Ordered markers include dotted hierarchy (1.1., 2.1) - depth follows the
+ * dots. Multi-segment markers need their closing dot/paren, so a line
+ * starting with a bare decimal ("3.14 pi") stays a paragraph.
+ */
+const ORDERED_RE = /^\s*(?:\d+[.)]|\d+(?:\.\d+)+[.)])\s+/;
+
+interface ListNode {
+  html: string;
+  children: ListNode[];
+}
+
+function mdListItems(lines: string[], ordered: boolean): { depth: number; html: string }[] {
+  return lines.map((l) => {
+    const m = ordered ? /^\s*(\d+[.)]|\d+(?:\.\d+)+[.)])\s+([\s\S]*)$/.exec(l) : /^\s*[-*]\s+([\s\S]*)$/.exec(l);
+    const marker = ordered ? (m?.[1] ?? "") : "";
+    const rest = (ordered ? m?.[2] : m?.[1]) ?? l;
+    const depth = ordered ? marker.replace(/[.)]$/, "").split(".").length - 1 : 0;
+    const task = /^\[([ xX])\]\s+([\s\S]*)$/.exec(rest);
     if (task) {
       const box = task[1] === " " ? "☐" : "☑";
-      return `<li>${box} ${mdInlineToHtml(escapeHtml(task[2]))}</li>`;
+      return { depth, html: `${box} ${mdInlineToHtml(escapeHtml(task[2]))}` };
     }
-    return `<li>${mdInlineToHtml(escapeHtml(l.replace(/^\s*(?:[-*]|\d+[.)])\s+/, "")))}</li>`;
+    return { depth, html: mdInlineToHtml(escapeHtml(rest)) };
   });
-  return `<${tag}>${items.join("")}</${tag}>`;
+}
+
+function mdToHtmlListBlock(lines: string[], ordered: boolean): string {
+  const items = mdListItems(lines, ordered);
+  if (!ordered) {
+    return `<ul>${items.map((i) => `<li>${i.html}</li>`).join("")}</ul>`;
+  }
+  // Nest by dotted depth so 1.1. survives as structure, not a paragraph.
+  const root: ListNode[] = [];
+  const stack: { depth: number; node: ListNode }[] = [];
+  for (const item of items) {
+    const node: ListNode = { html: item.html, children: [] };
+    while (stack.length > 0 && stack[stack.length - 1].depth >= item.depth) stack.pop();
+    if (stack.length === 0) root.push(node);
+    else stack[stack.length - 1].node.children.push(node);
+    stack.push({ depth: item.depth, node });
+  }
+  const render = (nodes: ListNode[]): string =>
+    `<ol>${nodes.map((n) => `<li>${n.html}${n.children.length > 0 ? render(n.children) : ""}</li>`).join("")}</ol>`;
+  return render(root);
 }
 
 /** Markdown-lite → sanitized HTML (the shared subset). */
@@ -81,7 +116,7 @@ export function mdToHtml(md: string): string {
     }
     const h = /^(#{1,3})\s+(.*)$/.exec(line);
     if (h) {
-      const tag = h[1].length >= 3 ? "h3" : "h2";
+      const tag = h[1].length === 1 ? "h1" : h[1].length === 2 ? "h2" : "h3";
       out.push(`<${tag}>${mdInlineToHtml(escapeHtml(h[2]))}</${tag}>`);
       i++;
       continue;
@@ -99,15 +134,15 @@ export function mdToHtml(md: string): string {
       out.push(`<blockquote>${q.join("<br>")}</blockquote>`);
       continue;
     }
-    if (/^\s*[-*]\s+/.test(line)) {
+    if (BULLET_RE.test(line)) {
       const buf: string[] = [];
-      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) buf.push(lines[i]), i++;
+      while (i < lines.length && BULLET_RE.test(lines[i])) buf.push(lines[i]), i++;
       out.push(mdToHtmlListBlock(buf, false));
       continue;
     }
-    if (/^\s*\d+[.)]\s+/.test(line)) {
+    if (ORDERED_RE.test(line)) {
       const buf: string[] = [];
-      while (i < lines.length && /^\s*\d+[.)]\s+/.test(lines[i])) buf.push(lines[i]), i++;
+      while (i < lines.length && ORDERED_RE.test(lines[i])) buf.push(lines[i]), i++;
       out.push(mdToHtmlListBlock(buf, true));
       continue;
     }
@@ -120,7 +155,7 @@ export function mdToHtml(md: string): string {
     while (
       i < lines.length &&
       lines[i].trim() !== "" &&
-      !/^(#{1,3}\s|```|---+\s*$|\s*>\s?|(\s*)[-*]\s|(\s*)\d+[.)]\s)/.test(lines[i])
+      !/^(#{1,3}\s|```|---+\s*$|\s*>\s?|(\s*)[-*]\s|(\s*)(?:\d+[.)]|\d+(?:\.\d+)+[.)])\s)/.test(lines[i])
     ) {
       buf.push(mdInlineToHtml(escapeHtml(lines[i])));
       i++;
@@ -160,6 +195,29 @@ export function htmlToMd(html: string): string {
     para = [];
   };
 
+  // Emit the pending <li> text as a numbered/bullet markdown line. Used on
+  // </li> - and when a nested list opens: the parent's own line must ship
+  // before the sublist, or parents with children lose their number.
+  const emitPendingItem = () => {
+    const ctx = listStack[listStack.length - 1];
+    let text = para.join("").trim();
+    para = [];
+    if (!text) return;
+    if (!ctx) {
+      pushBlock(text);
+      return;
+    }
+    const indent = "  ".repeat(Math.max(0, listStack.length - 1));
+    const box = text.startsWith("☐ ") ? "[ ] " : text.startsWith("☑ ") ? "[x] " : "";
+    if (box) text = text.slice(2);
+    if (ctx.ordered && !box) {
+      ctx.n++;
+      pushBlock(`${indent}${ctx.n}. ${text}`);
+    } else {
+      pushBlock(`${indent}- ${box}${text}`);
+    }
+  };
+
   // Inline stack: an opener records where its run starts, the closer wraps
   // every run since - nesting stays correct.
   const inlineStack: { name: string; start: number; href?: string }[] = [];
@@ -193,11 +251,12 @@ export function htmlToMd(html: string): string {
       continue;
     }
     if (pre) continue;
-    if ((name === "p" || name === "h2" || name === "h3") && closing) {
+    if ((name === "p" || name === "h1" || name === "h2" || name === "h3") && closing) {
       const text = para.join("").trim();
       para = [];
       if (!text) continue;
-      pushBlock(name === "p" ? text : name === "h2" ? `## ${text}` : `### ${text}`);
+      const hashes = name === "p" ? "" : name === "h1" ? "# " : name === "h2" ? "## " : "### ";
+      pushBlock(`${hashes}${text}`);
       continue;
     }
     if (name === "blockquote" && !closing) {
@@ -211,7 +270,8 @@ export function htmlToMd(html: string): string {
       continue;
     }
     if ((name === "ul" || name === "ol") && !closing) {
-      flushPara();
+      if (listStack.length > 0) emitPendingItem();
+      else flushPara();
       listStack.push({ ordered: name === "ol", n: 0 });
       continue;
     }
@@ -221,19 +281,7 @@ export function htmlToMd(html: string): string {
       continue;
     }
     if (name === "li" && closing) {
-      const ctx = listStack[listStack.length - 1];
-      let text = para.join("").trim();
-      para = [];
-      if (!text) continue;
-      const indent = "  ".repeat(Math.max(0, listStack.length - 1));
-      const box = text.startsWith("☐ ") ? "[ ] " : text.startsWith("☑ ") ? "[x] " : "";
-      if (box) text = text.slice(2);
-      if (ctx?.ordered && !box) {
-        ctx.n++;
-        pushBlock(`${indent}${ctx.n}. ${text}`);
-      } else {
-        pushBlock(`${indent}- ${box}${text}`);
-      }
+      emitPendingItem();
       continue;
     }
     if (name === "br") {

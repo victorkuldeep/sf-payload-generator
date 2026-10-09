@@ -259,12 +259,8 @@ export function ArchitectureInbox({
   };
 
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="inbox-title" onClick={onClose}>
-      <div
-        className="modal-card max-w-5xl flex flex-col"
-        style={{ maxHeight: "90vh" }}
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="modal-overlay modal-notes" role="dialog" aria-modal="true" aria-labelledby="inbox-title" onClick={onClose}>
+      <div className="modal-card flex h-full flex-col" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-start justify-between gap-3 px-6 pt-5 pb-4 border-b border-[var(--color-line-soft)] shrink-0">
           <div className="min-w-0">
@@ -447,7 +443,7 @@ export function ArchitectureInbox({
           </div>
 
           {selected && (
-            <div className="flex w-[320px] shrink-0 flex-col overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)]">
+            <div className="flex w-[380px] shrink-0 flex-col overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] xl:w-[440px]">
               <div className="border-b border-[var(--color-line-soft)] p-3">
                 <div className="flex items-center gap-1.5">
                   <KindPill kind={selected.kind} />
@@ -643,13 +639,14 @@ export function ArchitectureInbox({
               </>
               )}
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto p-3">
+              <div className={editing ? "flex min-h-0 flex-1 flex-col overflow-y-auto p-3" : "min-h-0 flex-1 overflow-y-auto p-3"}>
                 {editing ? (
                   <NoteEditor
                     draft={draft}
                     onDraft={setDraft}
                     label="Body"
                     textareaRows={10}
+                    fill={editing}
                     renderPreview={(md) => renderMarkdownLite(md)}
                   />
                 ) : selected.bodyFormat === "rich" && selected.bodyHtml?.trim() ? (
