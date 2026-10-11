@@ -22,6 +22,7 @@ import { HowItWorksModal } from "@/components/HowItWorksModal";
 import { SessionExpiredModal } from "@/components/SessionExpiredModal";
 import { BootLoader } from "@/components/BootLoader";
 import { CollectionDrawer } from "@/components/CollectionDrawer";
+import { CollectionTrayButton } from "@/components/CollectionTrayButton";
 import { CollectionPicker } from "@/components/CollectionPicker";
 import { HomeZigZag, type ZigZagTarget } from "@/components/HomeZigZag";
 import { PrivacyBanner } from "@/components/PrivacyBanner";
@@ -1812,6 +1813,7 @@ export default function Home() {
                 >
                   + New request
                 </Button>
+                <CollectionTrayButton count={collection.length} onOpen={() => setShowCollection(true)} />
               </div>
               <section id="builder" aria-label="Object and Field Selection" className="scroll-mt-20">
                 <div className="flex gap-1">
@@ -1910,8 +1912,11 @@ export default function Home() {
                   </section>
                   )}
 
-                  {/* Step 4: Export */}
-                  {draft.generatedPayload && builderTestOpen && (
+                  {/* Step 4: Export + save to collection - visible as soon as a
+                      payload exists. Deliberately NOT gated on the Test toggle:
+                      collapsing Test used to hide the only "+ Collection" save
+                      button in the builder. */}
+                  {draft.generatedPayload && (
                   <section aria-label="Export">
                     <ExportPanel generatedPayload={draft.generatedPayload} onAddToCollection={requestAddToCollection} collectionCount={collection.length} onOpenCollection={() => setShowCollection(true)} />
                   </section>

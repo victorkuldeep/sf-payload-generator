@@ -23,6 +23,7 @@ import StudioRequests, { type StudioRequestActions } from "./composite-studio/St
 import StudioGraph from "./composite-studio/StudioGraph";
 import StudioPayloadView from "./composite-studio/StudioPayload";
 import Button from "./ui/Button";
+import { CollectionTrayButton } from "./CollectionTrayButton";
 import { loadAutosave, queueAutosave } from "@/lib/workspace/autosave";
 
 interface CompositePanelProps {
@@ -771,6 +772,7 @@ export default function CompositePanel({
           <Button size="sm" onClick={handleGenerate} disabled={doc.requests.length === 0}>
             Generate Payload
           </Button>
+          <CollectionTrayButton count={collectionCount} onOpen={onOpenCollection} />
           <button
             onClick={() => setScreen("payload")}
             title="Open validation"
