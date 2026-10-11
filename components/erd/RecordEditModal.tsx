@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Button from "../ui/Button";
 import { FieldInput, formatCellValue, type RecordFieldMeta } from "./RecordPopover";
+import { LookupPickerModal, type LookupHit } from "./LookupPickerModal";
 import { serializeDraftValue } from "@/lib/erd/recordWalk";
 import type { ObjectLayout } from "@/lib/salesforce/layouts";
 
@@ -16,6 +17,10 @@ export interface EditModalData {
   layouts: ObjectLayout[];
   layoutsLoading: boolean;
   layoutsError: string | null;
+  /** Object labels for picker tabs, e.g. User -> "User". */
+  objectLabelOf: (apiName: string) => string;
+  /** Search target records for the lookup picker. */
+  onLookupSearch: (apiName: string, query: string) => Promise<LookupHit[]>;
 }
 
 type Draft = Record<string, string | boolean>;
@@ -48,35 +53,120 @@ export function computeChanges(
 const isEditable = (meta: RecordFieldMeta | undefined, layoutEditable = true): boolean =>
   !!meta && meta.updateable && meta.name !== "Id" && layoutEditable;
 
+function LookupSearchButton({ label, onOpen }: { label: string; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      title={`Search records for ${label} - or type the Id by hand`}
+      aria-label={`Search records for ${label}`}
+      className="shrink-0 rounded-md border border-[var(--color-line)] bg-white p-1.5 text-ivory-500 hover:text-bronze-600 hover:border-bronze-400 transition-colors cursor-pointer"
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-3.5-3.5" />
+      </svg>
+    </button>
+  );
+}
+
 function FieldRow({
   meta,
   apiName,
   value,
   draftValue,
   onDraft,
+  onLookupPicker,
 }: {
   meta: RecordFieldMeta | undefined;
   apiName: string;
   value: unknown;
   draftValue: string | boolean | undefined;
   onDraft: (v: string | boolean) => void;
+  onLookupPicker: ((meta: RecordFieldMeta) => void) | null;
 }) {
   const editable = isEditable(meta);
+  const targets = meta?.type === "reference" ? (meta.refs ?? []) : [];
   return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border border-transparent px-2 py-1.5 hover:border-[var(--color-line-soft)]">
-      <span className="min-w-0">
+    <div className="flex min-h-[52px] items-center justify-between gap-3 rounded-lg border border-transparent px-2 py-1.5 hover:border-[var(--color-line-soft)]">
+      <span className="min-w-0 flex-1">
         <span className="block truncate text-[12px] font-semibold text-ivory-950" title={meta?.label ?? apiName}>
           {meta?.label ?? apiName}
+          {meta?.required && <span className="ml-0.5 text-red-600" title="Required">*</span>}
         </span>
         <span className="block truncate font-mono text-[10px] text-ivory-500" title={apiName}>
           {apiName}{meta && !meta.updateable ? " · read-only" : ""}
         </span>
       </span>
-      <span className="shrink-0">
+      <span className="w-[220px] shrink-0">
         {editable ? (
-          <FieldInput meta={meta} value={draftValue ?? (typeof value === "boolean" ? value : String(value ?? ""))} onChange={onDraft} />
+          <span className="flex items-center gap-1">
+            <span className="min-w-0 flex-1">
+              <FieldInput meta={meta} value={draftValue ?? (typeof value === "boolean" ? value : String(value ?? ""))} onChange={onDraft} />
+            </span>
+            {onLookupPicker && meta && targets.length > 0 && (
+              <LookupSearchButton label={meta.label} onOpen={() => onLookupPicker(meta)} />
+            )}
+          </span>
         ) : (
-          <span className="block min-w-0 max-w-[260px] break-all text-right font-mono text-[11px] text-ivory-400" title={formatCellValue(value)}>
+          <span className="block break-all text-right font-mono text-[11px] text-ivory-400" title={formatCellValue(value)}>
+            {formatCellValue(value)}
+          </span>
+        )}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Premium aligned cell for the All-fields tab: fixed 220px input column so
+ * every control lines up across the 2-col grid, no matter the label length.
+ * Edited cells get a bronze wash so progress is visible while scrolling.
+ */
+function FieldCell({
+  meta,
+  apiName,
+  value,
+  draftValue,
+  edited,
+  onDraft,
+  onLookupPicker,
+}: {
+  meta: RecordFieldMeta | undefined;
+  apiName: string;
+  value: unknown;
+  draftValue: string | boolean | undefined;
+  edited: boolean;
+  onDraft: (v: string | boolean) => void;
+  onLookupPicker: ((meta: RecordFieldMeta) => void) | null;
+}) {
+  const editable = isEditable(meta);
+  const targets = meta?.type === "reference" ? (meta.refs ?? []) : [];
+  return (
+    <div className={`flex min-h-[56px] items-center justify-between gap-3 rounded-xl border px-3 py-2 transition-colors ${
+      edited ? "border-bronze-400 bg-bronze-100/60" : "border-[var(--color-line-soft)] bg-white"
+    }`}>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[12px] font-semibold text-ivory-950" title={meta?.label ?? apiName}>
+          {meta?.label ?? apiName}
+          {meta?.required && <span className="ml-0.5 text-red-600" title="Required">*</span>}
+        </span>
+        <span className="block truncate font-mono text-[10px] text-ivory-500" title={apiName}>
+          {apiName}{meta && !meta.updateable ? " · read-only" : ""}
+        </span>
+      </span>
+      <span className="w-[210px] shrink-0">
+        {editable ? (
+          <span className="flex items-center gap-1">
+            <span className="min-w-0 flex-1">
+              <FieldInput meta={meta} value={draftValue ?? (typeof value === "boolean" ? value : String(value ?? ""))} onChange={onDraft} />
+            </span>
+            {onLookupPicker && meta && targets.length > 0 && (
+              <LookupSearchButton label={meta.label} onOpen={() => onLookupPicker(meta)} />
+            )}
+          </span>
+        ) : (
+          <span className="block break-all text-right font-mono text-[11px] text-ivory-400" title={formatCellValue(value)}>
             {formatCellValue(value)}
           </span>
         )}
@@ -101,6 +191,7 @@ export function RecordEditModal({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [pickerFor, setPickerFor] = useState<RecordFieldMeta | null>(null);
 
   // Fresh record, fresh draft.
   useEffect(() => {
@@ -111,6 +202,7 @@ export function RecordEditModal({
     setSaving(false);
     setSaveError(null);
     setConfirmDiscard(false);
+    setPickerFor(null);
   }, [data.apiName, data.recordId]);
 
   useEffect(() => {
@@ -128,6 +220,7 @@ export function RecordEditModal({
     for (const c of changes) Object.assign(body, c.body);
     return body;
   }, [changes]);
+  const changedSet = useMemo(() => new Set(changes.map((c) => c.field)), [changes]);
   const dirty = Object.keys(draft).length > 0;
   const editableCount = data.metas.filter((m) => m.updateable && m.name !== "Id").length;
 
@@ -291,15 +384,17 @@ export function RecordEditModal({
               {editableCount === 0 && (
                 <p className="px-1 py-2 text-[12px] text-ivory-600">No updateable fields on this record - everything is read-only.</p>
               )}
-              <div className="divide-y divide-[var(--color-line-soft)]">
+              <div className="grid items-start gap-2 sm:grid-cols-2">
                 {allFields.map((m) => (
-                  <FieldRow
+                  <FieldCell
                     key={m.name}
                     meta={m}
                     apiName={m.name}
                     value={data.rawFields[m.name]}
                     draftValue={draft[m.name]}
+                    edited={changedSet.has(m.name)}
                     onDraft={(v) => setDraft((p) => ({ ...p, [m.name]: v }))}
+                    onLookupPicker={(meta) => setPickerFor(meta)}
                   />
                 ))}
               </div>
@@ -329,6 +424,7 @@ export function RecordEditModal({
                                 value={data.rawFields[item.apiName]}
                                 draftValue={draft[item.apiName]}
                                 onDraft={(v) => setDraft((p) => ({ ...p, [item.apiName]: v }))}
+                                onLookupPicker={(m) => setPickerFor(m)}
                               />
                               {!meta && (
                                 <p className="px-2 pb-1 font-mono text-[10px] text-ivory-500">Not in describe - saved as-is.</p>
@@ -372,6 +468,19 @@ export function RecordEditModal({
           )}
         </div>
       </div>
+      {pickerFor && (pickerFor.refs ?? []).length > 0 && (
+        <LookupPickerModal
+          fieldLabel={pickerFor.label}
+          targets={pickerFor.refs ?? []}
+          targetLabelOf={data.objectLabelOf}
+          onSearch={data.onLookupSearch}
+          onPick={(id) => {
+            setDraft((p) => ({ ...p, [pickerFor.name]: id }));
+            setPickerFor(null);
+          }}
+          onClose={() => setPickerFor(null)}
+        />
+      )}
     </div>
   );
 }

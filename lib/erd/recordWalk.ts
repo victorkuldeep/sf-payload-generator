@@ -125,6 +125,27 @@ export function buildLabelQuery(apiName: string, keyField: string, id: string): 
   return `SELECT Id, ${keyField} FROM ${apiName} WHERE Id = '${escapeSoqlString(id.trim())}' LIMIT 1`;
 }
 
+/**
+ * Lookup picker search: up to 20 candidates with a human name. Empty text
+ * browses (LIKE '%%'). Group (queues) always pulls Type alongside Name so
+ * the picker can tell queues apart. displayField null = Id-only object:
+ * LIKE is illegal on Id fields, so empty text browses without a WHERE and
+ * typed text matches by exact Id.
+ */
+export function buildLookupSearchQuery(apiName: string, displayField: string | null, query: string, limit = 20): string {
+  const q = `%${escapeSoqlString(query.trim())}%`;
+  if (apiName === "Group") {
+    return `SELECT Id, Name, Type FROM Group WHERE Name LIKE '${q}' LIMIT ${limit}`;
+  }
+  if (!displayField || displayField === "Id") {
+    const id = escapeSoqlString(query.trim());
+    return id === ""
+      ? `SELECT Id FROM ${apiName} LIMIT ${limit}`
+      : `SELECT Id FROM ${apiName} WHERE Id = '${id}' LIMIT ${limit}`;
+  }
+  return `SELECT Id, ${displayField} FROM ${apiName} WHERE ${displayField} LIKE '${q}' LIMIT ${limit}`;
+}
+
 /** Read the label back out of a label-query row (type-checked, null-safe). */
 export function labelFromRow(row: Record<string, unknown> | undefined, keyField: string): string | null {
   if (!row) return null;

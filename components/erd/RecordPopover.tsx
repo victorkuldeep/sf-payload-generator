@@ -8,6 +8,10 @@ export interface RecordFieldMeta {
   label: string;
   type: string;
   updateable: boolean;
+  /** Required (!nillable) - red asterisk in the edit modal. */
+  required?: boolean;
+  /** Lookup targets for reference fields - picker search in the edit modal. */
+  refs?: string[];
   picklistValues?: { label: string; value: string }[];
 }
 
@@ -87,13 +91,15 @@ export function FieldInput({
   }
   if (meta.type === "boolean") {
     return (
-      <input
-        type="checkbox"
-        checked={value === true}
-        onChange={(e) => onChange(e.target.checked)}
-        className="h-3.5 w-3.5 cursor-pointer accent-bronze-600"
-        aria-label={meta.label}
-      />
+      <span className="flex justify-end">
+        <input
+          type="checkbox"
+          checked={value === true}
+          onChange={(e) => onChange(e.target.checked)}
+          className="h-3.5 w-3.5 cursor-pointer accent-bronze-600"
+          aria-label={meta.label}
+        />
+      </span>
     );
   }
   if (meta.type === "picklist" && meta.picklistValues && meta.picklistValues.length > 0) {
@@ -102,7 +108,7 @@ export function FieldInput({
         value={typeof value === "string" ? value : ""}
         onChange={(e) => onChange(e.target.value)}
         aria-label={meta.label}
-        className="max-w-[170px] cursor-pointer rounded-md border border-[var(--color-line)] bg-white px-1.5 py-1 font-mono text-[11px] text-ivory-950"
+        className="w-full cursor-pointer rounded-md border border-[var(--color-line)] bg-white px-1.5 py-1 font-mono text-[11px] text-ivory-950"
       >
         <option value="">—</option>
         {meta.picklistValues.map((p) => (
@@ -120,7 +126,7 @@ export function FieldInput({
         value={typeof value === "string" ? value.slice(0, 10) : ""}
         onChange={(e) => onChange(e.target.value)}
         aria-label={meta.label}
-        className="max-w-[170px] rounded-md border border-[var(--color-line)] bg-white px-1.5 py-1 font-mono text-[11px] text-ivory-950"
+        className="w-full rounded-md border border-[var(--color-line)] bg-white px-1.5 py-1 font-mono text-[11px] text-ivory-950"
       />
     );
   }
@@ -131,7 +137,7 @@ export function FieldInput({
         value={typeof value === "string" ? value.slice(0, 16) : ""}
         onChange={(e) => onChange(e.target.value)}
         aria-label={meta.label}
-        className="max-w-[170px] rounded-md border border-[var(--color-line)] bg-white px-1.5 py-1 font-mono text-[11px] text-ivory-950"
+        className="w-full rounded-md border border-[var(--color-line)] bg-white px-1.5 py-1 font-mono text-[11px] text-ivory-950"
       />
     );
   }
@@ -142,7 +148,7 @@ export function FieldInput({
         value={typeof value === "string" ? value : ""}
         onChange={(e) => onChange(e.target.value)}
         aria-label={meta.label}
-        className="max-w-[170px] rounded-md border border-[var(--color-line)] bg-white px-1.5 py-1 font-mono text-[11px] text-ivory-950"
+        className="w-full rounded-md border border-[var(--color-line)] bg-white px-1.5 py-1 font-mono text-[11px] text-ivory-950"
       />
     );
   }
@@ -153,7 +159,7 @@ export function FieldInput({
       onChange={(e) => onChange(e.target.value)}
       aria-label={meta.label}
       spellCheck={false}
-      className="max-w-[170px] rounded-md border border-[var(--color-line)] bg-white px-1.5 py-1 font-mono text-[11px] text-ivory-950"
+      className="w-full rounded-md border border-[var(--color-line)] bg-white px-1.5 py-1 font-mono text-[11px] text-ivory-950"
     />
   );
 }

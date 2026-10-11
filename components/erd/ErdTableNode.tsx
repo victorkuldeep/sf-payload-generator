@@ -824,11 +824,13 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
           </p>
           {peekEditing && peek.editId && peek.editMeta && (
             <div className="mt-1.5 space-y-1.5">
-              <FieldInput
-                meta={peek.editMeta}
-                value={peekDraft ?? ""}
-                onChange={(nv) => setPeekDraft(nv)}
-              />
+              <div className="w-[180px]">
+                <FieldInput
+                  meta={peek.editMeta}
+                  value={peekDraft ?? ""}
+                  onChange={(nv) => setPeekDraft(nv)}
+                />
+              </div>
               {peekSaveError && (
                 <p className="rounded-md border border-red-300 bg-red-50 px-1.5 py-1 text-[10px] text-red-700" role="alert">
                   {peekSaveError}

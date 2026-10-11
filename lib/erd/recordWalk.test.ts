@@ -18,6 +18,7 @@ import {
   kindForId,
   queueLabelFromRow,
   buildLabelQuery,
+  buildLookupSearchQuery,
   labelFromRow,
   emptyLoadedState,
   type LoadedState,
@@ -209,5 +210,22 @@ describe("record walk engine", () => {
     expect(queueLabelFromRow({ Name: "Ops", Type: "Queue" })).toBe("Ops (queue)");
     expect(queueLabelFromRow({ Name: "Ops", Type: "Regular" })).toBe("Ops");
     expect(queueLabelFromRow({ Id: "00G1" })).toBeNull();
+  });
+
+  it("builds lookup picker searches with escaped text", () => {
+    expect(buildLookupSearchQuery("Account", "Name", "acme")).toBe(
+      "SELECT Id, Name FROM Account WHERE Name LIKE '%acme%' LIMIT 20"
+    );
+    expect(buildLookupSearchQuery("Account", "Name", "")).toContain("LIKE '%%'");
+    expect(buildLookupSearchQuery("Account", "Name", "o'brien")).toContain("o\\'brien");
+    expect(buildLookupSearchQuery("Group", null, "ops")).toBe(
+      "SELECT Id, Name, Type FROM Group WHERE Name LIKE '%ops%' LIMIT 20"
+    );
+    expect(buildLookupSearchQuery("Weird__c", null, "")).toBe(
+      "SELECT Id FROM Weird__c LIMIT 20"
+    );
+    expect(buildLookupSearchQuery("Weird__c", null, "001xx")).toBe(
+      "SELECT Id FROM Weird__c WHERE Id = '001xx' LIMIT 20"
+    );
   });
 });

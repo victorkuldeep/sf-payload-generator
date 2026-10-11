@@ -48,6 +48,7 @@ import {
 } from "@/lib/notes/notebody";
 import { RecordPopover, type RecordPopData, type RecordFieldMeta } from "./erd/RecordPopover";
 import { RecordEditModal } from "./erd/RecordEditModal";
+import type { LookupHit } from "./erd/LookupPickerModal";
 import { parseLayouts, type ObjectLayout } from "@/lib/salesforce/layouts";
 import {
   isValidRecordId,
@@ -61,6 +62,7 @@ import {
   targetApiForId,
   kindForId,
   keyFieldFor,
+  buildLookupSearchQuery,
   resolveTarget,
   nodeRecordState,
   selectedRecordId,
@@ -1597,6 +1599,8 @@ export default function SchemaPanel({
       label: f.label,
       type: f.type,
       updateable: f.updateable,
+      required: !f.nillable,
+      refs: f.referenceTo ?? [],
       picklistValues: (f.picklistValues ?? []).map((p) => ({ label: p.label ?? p.value, value: p.value })),
     }));
   }, [describes]);
@@ -2631,6 +2635,44 @@ export default function SchemaPanel({
       return next;
     });
   }, []);
+
+  /** Lookup picker search for the edit modal: display field per object,
+   * Group (queues) included with Type context. Throws for the modal to show.
+   * Picker targets often aren't on the canvas, so their describe resolves
+   * through the side cache - never merged (merging would pop boxes). */
+  const lookupDescribeCacheRef = useRef(new Map<string, SalesforceDescribeResult | null>());
+  const searchLookupRecords = useCallback(async (
+    apiName: string,
+    query: string,
+  ): Promise<LookupHit[]> => {
+    let d: SalesforceDescribeResult | undefined = describes.get(apiName);
+    if (!d && !lookupDescribeCacheRef.current.has(apiName)) {
+      const fetched = await describeCached(apiName);
+      lookupDescribeCacheRef.current.set(apiName, fetched);
+      d = fetched ?? undefined;
+    } else if (!d) {
+      d = lookupDescribeCacheRef.current.get(apiName) ?? undefined;
+    }
+    const display = apiName === "Group"
+      ? "Name"
+      : keyFieldFor((d?.fields ?? []).map((f) => ({ name: f.name, type: f.type, referenceTo: f.referenceTo ?? [], nameField: f.nameField })));
+    const rows = await runRecordQuery(buildLookupSearchQuery(apiName, display, query));
+    const hits: LookupHit[] = [];
+    for (const r of rows) {
+      if (typeof r.Id !== "string" || !r.Id) continue;
+      const name = apiName === "Group"
+        ? (queueLabelFromRow(r) ?? r.Id)
+        : (display && typeof r[display] === "string" && r[display]
+          ? (r[display] as string)
+          : r.Id);
+      hits.push({
+        id: r.Id,
+        name,
+        extra: apiName === "Group" && typeof r.Type === "string" ? r.Type : undefined,
+      });
+    }
+    return hits;
+  }, [describes, runRecordQuery, describeCached]);
 
   // ── Canvas autosave (per org, IndexedDB): full describes + curation persist
   // as the live layer under manual snapshots. Restored as-is on the next
@@ -6336,6 +6378,8 @@ export default function SchemaPanel({
               layouts: layoutCacheRef.current.get(editModal.apiName) ?? [],
               layoutsLoading: ls.loading,
               layoutsError: ls.error,
+              objectLabelOf: (api) => labels.get(api) ?? api,
+              onLookupSearch: (api, q) => searchLookupRecords(api, q),
             }}
             onClose={() => setEditModal(null)}
             onSave={(api, id, changes) => saveRecordEdit(api, id, changes)}
