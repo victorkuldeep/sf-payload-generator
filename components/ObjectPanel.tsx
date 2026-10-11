@@ -51,8 +51,8 @@ export default function ObjectPanel({
   }
 
   return (
-    <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)]">
-      <div className="border-b border-ivory-400 p-4">
+    <div className="flex h-full min-h-0 flex-col rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)]">
+      <div className="shrink-0 border-b border-ivory-400 p-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-ivory-900">Select Object</h2>
           <span className="text-xs text-ivory-600">{filtered.length} / {objects.length}</span>
@@ -65,7 +65,7 @@ export default function ObjectPanel({
         />
       </div>
 
-      <div className="max-h-[340px] overflow-y-auto" role="listbox" aria-label="Salesforce objects">
+      <div className="min-h-0 flex-1 overflow-y-auto" role="listbox" aria-label="Salesforce objects">
         {filtered.length === 0 ? (
           <p className="p-4 text-sm text-ivory-600">No objects found matching &quot;{search}&quot;</p>
         ) : (

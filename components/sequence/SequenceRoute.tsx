@@ -136,35 +136,9 @@ export function SequenceRoute() {
     : items;
 
   return (
-    <div className="space-y-3">
-      <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] px-4 py-3">
-        {!active ? (
-          <>
-            <svg width="430" height="150" viewBox="0 0 430 150" fill="none" aria-hidden="true" className="mx-auto mt-1 h-auto w-full max-w-[400px]">
-              <line x1="90" y1="18" x2="90" y2="132" stroke="#9A7653" strokeWidth="1.5" />
-              <line x1="215" y1="18" x2="215" y2="132" stroke="#9A7653" strokeWidth="1.5" />
-              <line x1="340" y1="18" x2="340" y2="132" stroke="#9A7653" strokeWidth="1.5" />
-              <rect x="58" y="8" width="64" height="18" rx="9" fill="#27241F" />
-              <rect x="183" y="8" width="64" height="18" rx="9" fill="#27241F" />
-              <rect x="308" y="8" width="64" height="18" rx="9" fill="#27241F" />
-              <line x1="90" y1="48" x2="208" y2="48" stroke="#C9A86A" strokeWidth="1.5" />
-              <path d="M202 43 L210 48 L202 53" stroke="#C9A86A" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-              <line x1="215" y1="76" x2="333" y2="76" stroke="#C9A86A" strokeWidth="1.5" strokeDasharray="5 3" />
-              <path d="M327 71 L335 76 L327 81" stroke="#C9A86A" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-              <line x1="340" y1="104" x2="222" y2="104" stroke="#C9A86A" strokeWidth="1.5" />
-              <path d="M228 99 L220 104 L228 109" stroke="#C9A86A" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-              <text x="215" y="148" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="10" fontWeight="700" fill="#A39B8E">DESCRIBE · SEE · PROVE</text>
-            </svg>
-            <h2 className="mt-1 text-center text-[15px] font-semibold text-[#27241F]">Sequence Studio</h2>
-            <p className="mx-auto mt-1 max-w-xl text-center text-xs text-[#777168]">
-              Describe the interaction, see the architecture: sync, response and async messages with
-              loop, condition, parallel, retry and note blocks. The diagram is a projection; the model is the truth.
-            </p>
-            <p className="mt-2 text-center font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">
-              Interaction · System bridge · Build
-            </p>
-          </>
-        ) : (
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {active && (
+      <div className="shrink-0 rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] px-4 py-3">
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" variant="ghost" onClick={() => setActiveId(null)} title="Back to the library">
               ← Library
@@ -254,12 +228,13 @@ export function SequenceRoute() {
               Console
             </a>
           </div>
-        )}
       </div>
+      )}
 
       {!active && (
-        <div className="grid items-stretch gap-3 lg:grid-cols-[300px_minmax(0,1fr)]">
+        <div className="grid min-h-0 flex-1 items-stretch gap-3 overflow-y-auto lg:grid-cols-[300px_minmax(0,1fr)]">
           <InventoryAside
+            fill
             title="Sequences"
             count={items.length}
             query={q}
@@ -310,6 +285,31 @@ export function SequenceRoute() {
             </ul>
           </InventoryAside>
           <div className="min-w-0 space-y-3">
+            <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
+              <svg width="430" height="150" viewBox="0 0 430 150" fill="none" aria-hidden="true" className="mx-auto mt-1 h-auto w-full max-w-[400px]">
+                <line x1="90" y1="18" x2="90" y2="132" stroke="#9A7653" strokeWidth="1.5" />
+                <line x1="215" y1="18" x2="215" y2="132" stroke="#9A7653" strokeWidth="1.5" />
+                <line x1="340" y1="18" x2="340" y2="132" stroke="#9A7653" strokeWidth="1.5" />
+                <rect x="58" y="8" width="64" height="18" rx="9" fill="#27241F" />
+                <rect x="183" y="8" width="64" height="18" rx="9" fill="#27241F" />
+                <rect x="308" y="8" width="64" height="18" rx="9" fill="#27241F" />
+                <line x1="90" y1="48" x2="208" y2="48" stroke="#C9A86A" strokeWidth="1.5" />
+                <path d="M202 43 L210 48 L202 53" stroke="#C9A86A" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                <line x1="215" y1="76" x2="333" y2="76" stroke="#C9A86A" strokeWidth="1.5" strokeDasharray="5 3" />
+                <path d="M327 71 L335 76 L327 81" stroke="#C9A86A" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                <line x1="340" y1="104" x2="222" y2="104" stroke="#C9A86A" strokeWidth="1.5" />
+                <path d="M228 99 L220 104 L228 109" stroke="#C9A86A" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                <text x="215" y="148" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="10" fontWeight="700" fill="#A39B8E">DESCRIBE · SEE · PROVE</text>
+              </svg>
+              <h2 className="mt-1 text-center text-[15px] font-semibold text-[#27241F]">Sequence Studio</h2>
+              <p className="mx-auto mt-1 max-w-xl text-center text-xs text-[#777168]">
+                Describe the interaction, see the architecture: sync, response and async messages with
+                loop, condition, parallel, retry and note blocks. The diagram is a projection; the model is the truth.
+              </p>
+              <p className="mt-2 text-center font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">
+                Interaction · System bridge · Build
+              </p>
+            </div>
             <div className="rounded-xl border border-[#E8E2D8] bg-white p-4">
               <div className="flex gap-1.5">
                 <input
@@ -365,9 +365,9 @@ export function SequenceRoute() {
       )}
 
       {active && (
-        <>
+        <div className="flex min-h-0 flex-1 flex-col gap-3">
           {problems.length > 0 && (
-            <ul className="max-w-2xl space-y-1 rounded-xl border border-red-200 bg-white px-3 py-2">
+            <ul className="max-w-2xl shrink-0 space-y-1 rounded-xl border border-red-200 bg-white px-3 py-2">
               {problems.slice(0, 8).map((p) => (
                 <li key={p} className="text-[11px] text-red-700">⚠ {p}</li>
               ))}
@@ -378,7 +378,7 @@ export function SequenceRoute() {
             document={active}
             onSaved={(next) => setItems((prev) => prev.map((i) => (i.id === next.id ? next : i)))}
           />
-        </>
+        </div>
       )}
 
       {pendingDelete && (

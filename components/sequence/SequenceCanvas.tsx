@@ -6,19 +6,28 @@ import { toPng } from "html-to-image";
 import Button from "../ui/Button";
 import { DraftDialog, type DraftConfirmation } from "../draw/DraftDialog";
 import { SYSTEM_DRAFT_KEY, buildSystemProject, type TopologyDraft } from "@/lib/draw/toSystemDraft";
-import { parseStatements, printStatements } from "@/lib/sequence/dsl";
+import { formatStatement, parseStatements, printStatements } from "@/lib/sequence/dsl";
 import { registerSeqBridge, seqSnapshotOf } from "@/lib/ai/seqBridge";
 import { sequenceToDraft } from "@/lib/sequence/systemBridge";
 import { seqPngFileName } from "@/lib/sequence/seqExport";
 import { SystemImportDialog } from "./SystemImportDialog";
 import { findNode } from "@/lib/sequence/edit";
 import { patchNode, removeNode } from "@/lib/sequence/edit";
-import type { SequenceDocument, SeqNode } from "@/lib/sequence/model";
+import type { MessageKind, SequenceDocument, SeqNode } from "@/lib/sequence/model";
 import { saveSequence } from "@/lib/sequence/store";
 import { SequenceDiagram } from "./SequenceDiagram";
 import { SequenceInspector } from "./SequenceInspector";
 
 const SAVE_DEBOUNCE_MS = 800;
+
+/** One-click block templates appended to the statements. */
+const SNIPPETS: { label: string; title: string; text: string }[] = [
+  { label: "Loop", title: "Insert a loop block", text: "loop each \n\nend\n" },
+  { label: "If", title: "Insert a condition block", text: "if \n\nend\n" },
+  { label: "Parallel", title: "Insert a parallel block", text: "parallel \n\nend\n" },
+  { label: "Retry", title: "Insert a retry block", text: "retry 3 times\n\nend\n" },
+  { label: "Note", title: "Insert a note", text: "note \n" },
+];
 
 /**
  * Sequence canvas (EPIC 03): statement editor + diagram, two-way synced.
@@ -66,6 +75,35 @@ export function SequenceCanvas({ document, onSaved }: { document: SequenceDocume
 
   const parsed = parseStatements(text);
   const valid = parsed.errors.length === 0;
+
+  // Quick-add bar: build A -> B -> C chains without typing raw DSL.
+  const [qaFrom, setQaFrom] = useState("");
+  const [qaKind, setQaKind] = useState<MessageKind>("sync");
+  const [qaTo, setQaTo] = useState("");
+  const [qaLabel, setQaLabel] = useState("");
+  const [qaChain, setQaChain] = useState(true);
+  const qaLabelRef = useRef<HTMLInputElement | null>(null);
+
+  const qaReady = qaFrom.trim() !== "" && qaTo.trim() !== "" && qaLabel.trim() !== "";
+
+  const quickAdd = () => {
+    if (!qaReady) return;
+    const line = formatStatement(qaFrom, qaKind, qaTo, qaLabel);
+    const base = text.replace(/\s+$/, "");
+    onEdit(base ? `${base}\n${line}` : line);
+    if (qaChain) {
+      setQaFrom(qaTo.trim());
+      setQaLabel("");
+      window.setTimeout(() => qaLabelRef.current?.focus(), 0);
+    } else {
+      setQaLabel("");
+    }
+  };
+
+  const insertSnippet = (snippet: string) => {
+    const base = text.replace(/\s+$/, "");
+    onEdit(base ? `${base}\n${snippet}` : snippet);
+  };
 
   const onEdit = (next: string) => {
     setText(next);
@@ -157,8 +195,8 @@ export function SequenceCanvas({ document, onSaved }: { document: SequenceDocume
   };
 
   return (
-    <div className="flex flex-col gap-3 lg:flex-row">
-      <div className="flex w-full flex-col rounded-xl border border-[#E8E2D8] bg-white lg:max-w-md">
+    <div className="flex min-h-0 flex-1 flex-col gap-1 lg:flex-row">
+      <div className="flex min-h-0 w-full flex-col rounded-xl border border-[#E8E2D8] bg-white lg:max-w-md">
         <div className="flex items-center justify-between gap-1.5 border-b border-[#EFE9DC] px-3 py-2">
           <p className="min-w-0 flex-1 truncate font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">
             Statements · {valid ? `${parsed.nodes.length} top-level` : "fix errors to save"}
@@ -173,16 +211,94 @@ export function SequenceCanvas({ document, onSaved }: { document: SequenceDocume
             Format
           </Button>
         </div>
+        <p className="shrink-0 border-b border-[#EFE9DC] px-3 py-1 font-mono text-[10px] leading-relaxed text-[#A39B8E]">
+          A -&gt; B: label · --&gt; response · -&gt;&gt; async · one message per line
+        </p>
+        <div className="shrink-0 border-b border-[#EFE9DC] px-3 py-2">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              quickAdd();
+            }}
+            className="flex flex-wrap items-center gap-1.5"
+          >
+            <datalist id="seq-parts">
+              {parsed.participants.map((p) => (
+                <option key={p.id} value={p.name} />
+              ))}
+            </datalist>
+            <input
+              value={qaFrom}
+              onChange={(e) => setQaFrom(e.target.value)}
+              list="seq-parts"
+              placeholder="From"
+              aria-label="From participant"
+              spellCheck={false}
+              className="w-24 rounded-lg border border-[#E8E2D8] px-2 py-1 text-[12px] text-[#27241F] placeholder-[#C9BFAE] focus:border-[#C9A86A] focus:outline-none"
+            />
+            <select
+              value={qaKind}
+              onChange={(e) => setQaKind(e.target.value as MessageKind)}
+              aria-label="Message kind"
+              title="call draws solid · return draws dashed · async draws an event arrow"
+              className="cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-1.5 py-1 text-[12px] font-semibold text-[#27241F] focus:border-[#C9A86A] focus:outline-none"
+            >
+              <option value="sync">call →</option>
+              <option value="response">return ⇢</option>
+              <option value="async">async »</option>
+            </select>
+            <input
+              value={qaTo}
+              onChange={(e) => setQaTo(e.target.value)}
+              list="seq-parts"
+              placeholder="To"
+              aria-label="To participant"
+              spellCheck={false}
+              className="w-24 rounded-lg border border-[#E8E2D8] px-2 py-1 text-[12px] text-[#27241F] placeholder-[#C9BFAE] focus:border-[#C9A86A] focus:outline-none"
+            />
+            <input
+              ref={qaLabelRef}
+              value={qaLabel}
+              onChange={(e) => setQaLabel(e.target.value)}
+              placeholder="Message label, Enter adds it"
+              aria-label="Message label"
+              spellCheck={false}
+              className="min-w-[8rem] flex-1 rounded-lg border border-[#E8E2D8] px-2 py-1 text-[12px] text-[#27241F] placeholder-[#C9BFAE] focus:border-[#C9A86A] focus:outline-none"
+            />
+            <label
+              className="flex cursor-pointer items-center gap-1 text-[11px] font-semibold text-[#777168]"
+              title="Chain: the next From starts as this To, so Enter walks A to B to C"
+            >
+              <input
+                type="checkbox"
+                checked={qaChain}
+                onChange={(e) => setQaChain(e.target.checked)}
+                className="cursor-pointer accent-[#722F37]"
+              />
+              chain
+            </label>
+            <Button size="sm" type="submit" disabled={!qaReady} title="Append this message to the statements">
+              Add
+            </Button>
+          </form>
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {SNIPPETS.map((s) => (
+              <Button key={s.label} size="sm" variant="ghost" onClick={() => insertSnippet(s.text)} title={s.title}>
+                {s.label}
+              </Button>
+            ))}
+          </div>
+        </div>
         <textarea
           value={text}
           onChange={(e) => onEdit(e.target.value)}
           spellCheck={false}
           aria-label="Sequence statements"
           placeholder={"Salesforce -> Middleware: Create Order\nloop each order.lines\nend"}
-          className="min-h-[420px] w-full flex-1 resize-y rounded-b-xl bg-white px-3 py-2 font-mono text-[12px] leading-[1.7] text-[#27241F] placeholder-[#C9BFAE] focus:outline-none"
+          className="min-h-[240px] w-full flex-1 resize-y rounded-b-xl bg-white px-3 py-2 font-mono text-[12px] leading-[1.7] text-[#27241F] placeholder-[#C9BFAE] focus:outline-none [font-variant-ligatures:none] lg:min-h-0"
         />
         {parsed.errors.length > 0 && (
-          <ul className="max-h-32 space-y-0.5 overflow-y-auto border-t border-[#EFE9DC] px-3 py-2">
+          <ul className="max-h-32 shrink-0 space-y-0.5 overflow-y-auto border-t border-[#EFE9DC] px-3 py-2">
             {parsed.errors.slice(0, 20).map((e, i) => (
               <li key={`${e.line}-${i}`} className="font-mono text-[11px] text-red-700">
                 line {e.line}: {e.message}
@@ -192,8 +308,8 @@ export function SequenceCanvas({ document, onSaved }: { document: SequenceDocume
         )}
       </div>
 
-      <div className="min-w-0 flex-1 overflow-auto rounded-xl border border-[#E8E2D8] bg-white">
-        <div className="flex items-center justify-between gap-1.5 border-b border-[#EFE9DC] px-3 py-2">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-[#E8E2D8] bg-white">
+        <div className="flex shrink-0 items-center justify-between gap-1.5 border-b border-[#EFE9DC] px-3 py-2">
           <p className="font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">Diagram</p>
           <div className="flex gap-1.5">
             <Button
@@ -215,7 +331,7 @@ export function SequenceCanvas({ document, onSaved }: { document: SequenceDocume
           </div>
         </div>
         {exportError && <p className="px-3 pt-1 text-[11px] text-red-700">{exportError}</p>}
-        <div ref={diagramRef} className="bg-white p-3">
+        <div ref={diagramRef} className="min-h-0 flex-1 overflow-auto bg-white p-3">
           <SequenceDiagram doc={doc} selectedId={selId} onSelect={(id) => setSelId(id)} />
         </div>
       </div>

@@ -54,6 +54,8 @@ const ELSE = /^else(?:\s+(.+?))?\s*$/i;
 const PARALLEL = /^parallel(?:\s+(.+?))?\s*$/i;
 const RETRY = /^retry(?:\s+(\d+)\s+times?)?(?:\s+wait\s+(\d+(?:\.\d+)?)s?)?(?:\s+(.+?))?\s*$/i;
 const NOTE = /^note\s+(.+?)\s*$/i;
+const BARE_ARROW = /^(.+?)\s*(-->|->>|->)\s*(.+?)\s*$/;
+const CHAINED_ARROW = /(-->|->>|->)/;
 
 function kindOf(op: string): MessageKind {
   return op === "-->" ? "response" : op === "->>" ? "async" : "sync";
@@ -182,7 +184,14 @@ export function parseStatements(text: string): ParseResult {
         label: m[4].trim(), kind: kindOf(m[2]),
       };
       if (!msg.label) errors.push({ line: lineNo, message: "Message needs a label after the colon." });
+      else if (CHAINED_ARROW.test(msg.label)) {
+        errors.push({ line: lineNo, message: "One message per line - put the part after the second arrow on the next line." });
+      }
       target().push(msg);
+      return;
+    }
+    if (line.match(BARE_ARROW)) {
+      errors.push({ line: lineNo, message: `Message needs a label after a colon - e.g. "${line}: Describe it".` });
       return;
     }
     errors.push({ line: lineNo, message: `Not a statement - want "A -> B: label", a block opener, "else" or "end".` });
@@ -240,6 +249,15 @@ export function printStatements(participants: Participant[], nodes: SeqNode[]): 
   };
   walk(nodes);
   return L.join("\n");
+}
+
+/**
+ * Build one canonical statement line (quick-add bar). The result always
+ * parses cleanly - the grammar stays one-message-per-line.
+ */
+export function formatStatement(from: string, kind: MessageKind, to: string, label: string): string {
+  const arrow = kind === "response" ? "-->" : kind === "async" ? "->>" : "->";
+  return `${from.trim()} ${arrow} ${to.trim()}: ${label.trim()}`;
 }
 
 export function blockTypeOf(s: string): BlockType | null {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseStatements, printStatements } from "./dsl";
+import { formatStatement, parseStatements, printStatements } from "./dsl";
 
 const SAMPLE = `participant Salesforce system
 participant Middleware
@@ -66,6 +66,33 @@ describe("parseStatements", () => {
     expect(r.errors.map((e) => e.message).join("\n")).toMatch(/end without/);
     expect(r.errors.map((e) => e.message).join("\n")).toMatch(/needs a label/);
     expect(r.errors.map((e) => e.message).join("\n")).toMatch(/never closed/);
+  });
+
+  it("guides a bare arrow toward the colon form", () => {
+    const r = parseStatements("Salesforce -> Middleware\n");
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0].line).toBe(1);
+    expect(r.errors[0].message).toMatch(/colon/);
+    expect(r.errors[0].message).toMatch(/Salesforce -> Middleware: /);
+  });
+
+  it("guides chained arrows onto separate lines", () => {
+    const r = parseStatements("SF -> M: create order->D:ji3jr\n");
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0].line).toBe(1);
+    expect(r.errors[0].message).toMatch(/one message per line/i);
+  });
+
+  it("formats quick-add statements that parse cleanly", () => {
+    for (const kind of ["sync", "response", "async"] as const) {
+      const line = formatStatement("Middleware", kind, "ServiceNow", "Create Fulfillment");
+      const r = parseStatements(line);
+      expect(r.errors).toEqual([]);
+      expect(r.nodes).toHaveLength(1);
+    }
+    expect(formatStatement("A", "sync", "B", "hi")).toBe("A -> B: hi");
+    expect(formatStatement("A", "response", "B", "hi")).toBe("A --> B: hi");
+    expect(formatStatement("A", "async", "B", "hi")).toBe("A ->> B: hi");
   });
 
   it("prefers messages over keywords", () => {

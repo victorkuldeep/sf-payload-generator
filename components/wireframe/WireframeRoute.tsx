@@ -205,44 +205,10 @@ export function WireframeRoute() {
     : items;
 
   return (
-    <div className="space-y-3">
-      <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] px-4 py-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {(active || !loaded || items.length > 0) && (
+      <div className="shrink-0 rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] px-4 py-3">
         {!active ? (
-          loaded && items.length === 0 ? (
-          <>
-            <svg
-              width="430"
-              height="150"
-              viewBox="0 0 430 150"
-              fill="none"
-              aria-hidden="true"
-              className="mx-auto mt-1 h-auto w-full max-w-[400px]"
-            >
-              <rect x="115" y="14" width="200" height="122" rx="12" fill="#FFFFFF" stroke="#9A7653" strokeWidth="1.5" />
-              <rect x="115" y="14" width="200" height="22" rx="11" fill="#F5F1E8" stroke="#9A7653" strokeWidth="1.5" />
-              <circle cx="131" cy="25" r="3" fill="#C9A86A" />
-              <circle cx="141" cy="25" r="3" fill="#C9A86A" />
-              <circle cx="151" cy="25" r="3" fill="#C9A86A" />
-              <rect x="129" y="48" width="120" height="10" rx="5" fill="#27241F" />
-              <rect x="129" y="64" width="172" height="8" rx="4" fill="#E3D9C6" />
-              <rect x="129" y="78" width="80" height="26" rx="6" fill="#FFFFFF" stroke="#9A7653" strokeWidth="1.5" />
-              <rect x="217" y="78" width="80" height="26" rx="6" fill="#FFFFFF" stroke="#E3D9C6" strokeWidth="1.5" />
-              <rect x="129" y="110" width="172" height="14" rx="7" fill="#C9A86A" />
-              <line x1="315" y1="75" x2="352" y2="75" stroke="#C9A86A" strokeWidth="1.5" strokeDasharray="4 4" />
-              <circle cx="352" cy="75" r="9" fill="#27241F" />
-              <path d="M348 75 L351.5 78.5 L357 71.5" stroke="#C9A86A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              <text x="215" y="148" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="10" fontWeight="700" fill="#A39B8E">SCREEN · BIND · SHIP</text>
-            </svg>
-            <h2 className="mt-1 text-center text-[15px] font-semibold text-[#27241F]">Wireframe Studio</h2>
-            <p className="mx-auto mt-1 max-w-xl text-center text-xs text-[#777168]">
-              Schema-aware experience modeling: screens composed of structured, composable assets bound to Salesforce
-              schema - existing, proposed or external. The canvas is a view; the model is the truth.
-            </p>
-            <p className="mt-2 text-center font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">
-              Experience · Schema · API · Build
-            </p>
-          </>
-          ) : (
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <h2 className="text-[15px] font-semibold text-[#27241F]">Wireframe Studio</h2>
             <p className="font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">
@@ -252,7 +218,6 @@ export function WireframeRoute() {
               {items.length} experience{items.length === 1 ? "" : "s"}
             </span>
           </div>
-          )
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" variant="ghost" onClick={() => setActiveId(null)} title="Back to the library">
@@ -341,10 +306,12 @@ export function WireframeRoute() {
           </div>
         )}
       </div>
+      )}
 
       {!active && (
-        <div className="grid items-stretch gap-3 lg:grid-cols-[300px_minmax(0,1fr)]">
+        <div className="grid min-h-0 flex-1 items-stretch gap-3 overflow-y-auto lg:grid-cols-[300px_minmax(0,1fr)]">
           <InventoryAside
+            fill
             title="Experiences"
             count={items.length}
             query={q}
@@ -410,6 +377,39 @@ export function WireframeRoute() {
             </ul>
           </InventoryAside>
           <div className="min-w-0 space-y-3">
+            <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
+              <svg
+                width="430"
+                height="150"
+                viewBox="0 0 430 150"
+                fill="none"
+                aria-hidden="true"
+                className="mx-auto mt-1 h-auto w-full max-w-[400px]"
+              >
+                <rect x="115" y="14" width="200" height="122" rx="12" fill="#FFFFFF" stroke="#9A7653" strokeWidth="1.5" />
+                <rect x="115" y="14" width="200" height="22" rx="11" fill="#F5F1E8" stroke="#9A7653" strokeWidth="1.5" />
+                <circle cx="131" cy="25" r="3" fill="#C9A86A" />
+                <circle cx="141" cy="25" r="3" fill="#C9A86A" />
+                <circle cx="151" cy="25" r="3" fill="#C9A86A" />
+                <rect x="129" y="48" width="120" height="10" rx="5" fill="#27241F" />
+                <rect x="129" y="64" width="172" height="8" rx="4" fill="#E3D9C6" />
+                <rect x="129" y="78" width="80" height="26" rx="6" fill="#FFFFFF" stroke="#9A7653" strokeWidth="1.5" />
+                <rect x="217" y="78" width="80" height="26" rx="6" fill="#FFFFFF" stroke="#E3D9C6" strokeWidth="1.5" />
+                <rect x="129" y="110" width="172" height="14" rx="7" fill="#C9A86A" />
+                <line x1="315" y1="75" x2="352" y2="75" stroke="#C9A86A" strokeWidth="1.5" strokeDasharray="4 4" />
+                <circle cx="352" cy="75" r="9" fill="#27241F" />
+                <path d="M348 75 L351.5 78.5 L357 71.5" stroke="#C9A86A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                <text x="215" y="148" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="10" fontWeight="700" fill="#A39B8E">SCREEN · BIND · SHIP</text>
+              </svg>
+              <h2 className="mt-1 text-center text-[15px] font-semibold text-[#27241F]">Wireframe Studio</h2>
+              <p className="mx-auto mt-1 max-w-xl text-center text-xs text-[#777168]">
+                Schema-aware experience modeling: screens composed of structured, composable assets bound to Salesforce
+                schema - existing, proposed or external. The canvas is a view; the model is the truth.
+              </p>
+              <p className="mt-2 text-center font-mono text-[10px] uppercase tracking-[2px] text-[#A39B8E]">
+                Experience · Schema · API · Build
+              </p>
+            </div>
             <div className="rounded-xl border border-[#E8E2D8] bg-white p-4">
               <div className="flex gap-1.5">
                 <input
@@ -465,11 +465,13 @@ export function WireframeRoute() {
       )}
 
       {active && (
+        <div className="min-h-0 flex-1 overflow-y-auto">
         <WireCanvas
           key={`${active.id}:${rev}`}
           experience={active}
           onSaved={(next) => setItems((prev) => prev.map((i) => (i.id === next.id ? next : i)))}
         />
+        </div>
       )}
       {draft && (
         <DraftDialog

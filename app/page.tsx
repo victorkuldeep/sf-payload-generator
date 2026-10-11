@@ -13,9 +13,10 @@ import { generateSampleValues, getSampleValueForField } from "@/lib/payload/samp
 import { getWritableFields, isRequiredField } from "@/lib/salesforce/metadata";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import { apiFetch } from "@/lib/api";
+import { builderGridClass } from "@/lib/builder/panels";
+import { BuilderRail } from "@/components/BuilderRail";
 import { AppShell } from "@/components/layout/AppShell";
 import { Stepper } from "@/components/Stepper";
-import { EmptyState } from "@/components/EmptyState";
 import { WelcomeModal } from "@/components/WelcomeModal";
 import { HowItWorksModal } from "@/components/HowItWorksModal";
 import { SessionExpiredModal } from "@/components/SessionExpiredModal";
@@ -517,6 +518,8 @@ export default function Home() {
   const [queryLang, setQueryLang] = useState<"soql" | "sosl">("soql");
   const [builderLeftOpen, setBuilderLeftOpen] = useState(true);
   const [builderRightOpen, setBuilderRightOpen] = useState(true);
+  const [builderPayloadOpen, setBuilderPayloadOpen] = useState(true);
+  const [builderTestOpen, setBuilderTestOpen] = useState(true);
   // Org key for workspace autosave: resolved from the live session after
   // login (org id, host fallback). Never derived from - or containing - tokens.
   const [orgKey, setOrgKey] = useState<string | null>(null);
@@ -1563,7 +1566,7 @@ export default function Home() {
         ) : null
       }
     >
-      <main className={`mx-auto w-full space-y-5 ${state.mode === "schema" ? "px-0.5 pt-0.5 pb-0.5" : "px-5 pt-3 pb-0.5"}`}>
+      <main className={`mx-auto w-full space-y-5 ${state.mode === "schema" ? "px-1 pt-1 pb-1" : "px-5 pt-3 pb-1"}`}>
         {!state.connected ? (
           <>
             <HomeHero
@@ -1811,115 +1814,125 @@ export default function Home() {
                 </Button>
               </div>
               <section id="builder" aria-label="Object and Field Selection" className="scroll-mt-20">
-                <div className={`grid gap-4 ${builderLeftOpen && builderRightOpen ? "lg:grid-cols-2" : builderLeftOpen || builderRightOpen ? "lg:grid-cols-[1fr_auto]" : ""}`}>
-                  <div className={builderLeftOpen ? "" : "lg:w-10"}>
-                    <button
-                      type="button"
-                      onClick={() => setBuilderLeftOpen((v) => !v)}
-                      aria-expanded={builderLeftOpen}
-                      title={builderLeftOpen ? "Collapse object panel" : "Expand object panel"}
-                      className={`mb-2 flex w-full items-center gap-1.5 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[13px] font-semibold text-ivory-950 hover:border-bronze-500 transition-colors cursor-pointer ${builderLeftOpen ? "" : "lg:flex-col lg:py-3"}`}
-                    >
-                      <span className={`transition-transform ${builderLeftOpen ? "" : "lg:rotate-90"}`} aria-hidden="true">›</span>
-                      {builderLeftOpen ? "Select object" : <span className="lg:[writing-mode:vertical-rl]">Select object</span>}
-                    </button>
-                    {builderLeftOpen && (
-                    <ObjectPanel
-                      objects={state.objects}
-                      selectedObject={draft.selectedObject}
-                      loading={loading.objects}
-                      error={errors.objects}
-                      onSelect={handleObjectSelect}
-                    />
-                    )}
-                  </div>
+                <div className="flex gap-1">
+                  <BuilderRail
+                    items={[
+                      { id: "object", label: "Object", open: builderLeftOpen, onToggle: () => setBuilderLeftOpen((v) => !v) },
+                      { id: "fields", label: "Fields", open: builderRightOpen, onToggle: () => setBuilderRightOpen((v) => !v) },
+                      { id: "payload", label: "Payload", open: builderPayloadOpen, onToggle: () => setBuilderPayloadOpen((v) => !v) },
+                      { id: "test", label: "Test", open: builderTestOpen, onToggle: () => setBuilderTestOpen((v) => !v) },
+                    ]}
+                    payloadAvailable={state.connected && selectedFields.length > 0}
+                    testAvailable={Boolean(draft.generatedPayload)}
+                  />
+                  <div className="min-w-0 flex-1 space-y-5">
+                  {(builderLeftOpen || builderRightOpen) && (
+                    <div className={`grid min-h-0 gap-1 ${builderGridClass(builderLeftOpen, builderRightOpen)}`}>
+                    <div className="flex min-h-0 flex-col">
+                      {builderLeftOpen && (
+                      <div className="flex min-h-0 flex-1 flex-col">
+                      <ObjectPanel
+                        objects={state.objects}
+                        selectedObject={draft.selectedObject}
+                        loading={loading.objects}
+                        error={errors.objects}
+                        onSelect={handleObjectSelect}
+                      />
+                      </div>
+                      )}
+                    </div>
 
-                  <div className={builderRightOpen ? "" : "lg:w-10"}>
-                    <button
-                      type="button"
-                      onClick={() => setBuilderRightOpen((v) => !v)}
-                      aria-expanded={builderRightOpen}
-                      title={builderRightOpen ? "Collapse field panel" : "Expand field panel"}
-                      className={`mb-2 flex w-full items-center gap-1.5 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[13px] font-semibold text-ivory-950 hover:border-bronze-500 transition-colors cursor-pointer ${builderRightOpen ? "" : "lg:flex-col lg:py-3"}`}
-                    >
-                      <span className={`transition-transform ${builderRightOpen ? "" : "lg:rotate-90"}`} aria-hidden="true">›</span>
-                      {builderRightOpen ? "Select fields" : <span className="lg:[writing-mode:vertical-rl]">Select fields</span>}
-                    </button>
-                    {builderRightOpen && (
-                    <>
-                  {draft.selectedObject ? (
-                    <FieldPanel
-                      fields={draft.describe?.fields ?? []}
-                      selectedFieldNames={draft.selectedFieldNames}
-                      operation={draft.operation}
-                      loading={loading.describe}
-                      error={errors.describe}
-                      objectName={draft.selectedObject.name}
-                      objectLabel={draft.selectedObject.label}
-                      onToggleField={handleToggleField}
-                      onSelectAll={handleSelectAll}
-                      onClearAll={handleClearAll}
-                    />
-                  ) : (
-                    <EmptyState
-                      icon={
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                          <rect x="3" y="4" width="18" height="16" rx="2" />
-                          <path d="M3 9h18M8 4v5" />
+                    <div className="flex min-h-0 flex-col">
+                      {builderRightOpen && (
+                      <div className="flex min-h-0 flex-1 flex-col">
+                    {draft.selectedObject ? (
+                      <FieldPanel
+                        fields={draft.describe?.fields ?? []}
+                        selectedFieldNames={draft.selectedFieldNames}
+                        operation={draft.operation}
+                        loading={loading.describe}
+                        error={errors.describe}
+                        objectName={draft.selectedObject.name}
+                        objectLabel={draft.selectedObject.label}
+                        onToggleField={handleToggleField}
+                        onSelectAll={handleSelectAll}
+                        onClearAll={handleClearAll}
+                      />
+                    ) : (
+                      <div className="arch-card flex h-full min-h-0 flex-1 flex-col items-center justify-center px-6 py-8 text-center">
+                        <svg width="300" height="132" viewBox="0 0 300 132" fill="none" aria-hidden="true" className="h-auto w-[280px] max-w-full">
+                          <rect x="14" y="26" width="92" height="80" rx="10" fill="#FAF8F2" stroke="#722F37" strokeWidth="2" />
+                          <line x1="28" y1="48" x2="92" y2="48" stroke="#722F37" strokeWidth="5" strokeLinecap="round" />
+                          <line x1="28" y1="64" x2="92" y2="64" stroke="#C9A86A" strokeWidth="5" strokeLinecap="round" />
+                          <line x1="28" y1="80" x2="78" y2="80" stroke="#C9A86A" strokeWidth="5" strokeLinecap="round" />
+                          <line x1="106" y1="46" x2="150" y2="30" stroke="#A98450" strokeWidth="1.5" strokeDasharray="4 3" />
+                          <line x1="106" y1="66" x2="150" y2="66" stroke="#A98450" strokeWidth="1.5" strokeDasharray="4 3" />
+                          <line x1="106" y1="86" x2="150" y2="102" stroke="#A98450" strokeWidth="1.5" strokeDasharray="4 3" />
+                          <rect x="150" y="18" width="136" height="24" rx="12" fill="#FFFFFF" stroke="#C9A86A" strokeWidth="1.5" />
+                          <circle cx="164" cy="30" r="4" fill="#4E342E" />
+                          <line x1="174" y1="30" x2="272" y2="30" stroke="#E3D9C6" strokeWidth="5" strokeLinecap="round" />
+                          <rect x="150" y="54" width="136" height="24" rx="12" fill="#FFFFFF" stroke="#C9A86A" strokeWidth="1.5" />
+                          <circle cx="164" cy="66" r="4" fill="#722F37" />
+                          <line x1="174" y1="66" x2="272" y2="66" stroke="#E3D9C6" strokeWidth="5" strokeLinecap="round" />
+                          <rect x="150" y="90" width="136" height="24" rx="12" fill="#FFFFFF" stroke="#C9A86A" strokeWidth="1.5" />
+                          <circle cx="164" cy="102" r="4" fill="#4E342E" />
+                          <line x1="174" y1="102" x2="258" y2="102" stroke="#E3D9C6" strokeWidth="5" strokeLinecap="round" />
                         </svg>
-                      }
-                      title="Select an object to describe its fields"
-                      description="Pick any standard or custom sObject - or press ⌘K to jump straight to it. Field types, picklists and writability load live from your org."
-                      action={
-                        <Button variant="secondary" size="sm" onClick={() => setShowSearch(true)}>
-                          Find objects ⌘K
-                        </Button>
-                      }
-                    />
-                  )}
-                    </>
+                        <h3 className="mt-4 text-sm font-semibold text-ivory-950">Select an object to describe its fields</h3>
+                        <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-ivory-600">Pick any standard or custom sObject - or press ⌘K to jump straight to it. Field types, picklists and writability load live from your org.</p>
+                        <div className="mt-4">
+                          <Button variant="secondary" size="sm" onClick={() => setShowSearch(true)}>
+                            Find objects ⌘K
+                          </Button>
+                        </div>
+                      </div>
                     )}
+                      </div>
+                      )}
+                    </div>
+                    </div>
+                    )}
+
+                  {/* Step 3: Payload values */}
+                  {state.connected && selectedFields.length > 0 && builderPayloadOpen && (
+                  <section aria-label="Payload Configuration">
+                    <PayloadPanel
+                      selectedFields={selectedFields}
+                      fieldValues={draft.fieldValues}
+                      operation={draft.operation}
+                      recordId={draft.recordId}
+                      onFieldValueChange={handleFieldValueChange}
+                      onOperationChange={handleOperationChange}
+                      onRecordIdChange={handleRecordIdChange}
+                      onGeneratePayload={handleGeneratePayload}
+                      onGenerateSamples={handleGenerateSamples}
+                    />
+                  </section>
+                  )}
+
+                  {/* Step 4: Export */}
+                  {draft.generatedPayload && builderTestOpen && (
+                  <section aria-label="Export">
+                    <ExportPanel generatedPayload={draft.generatedPayload} onAddToCollection={requestAddToCollection} collectionCount={collection.length} onOpenCollection={() => setShowCollection(true)} />
+                  </section>
+                  )}
+
+                  {/* Step 5: Test request */}
+                  {draft.generatedPayload && builderTestOpen && (
+                  <section aria-label="Test Request">
+                    <RequestPanel
+                      key={activeBuilderTab.tabId}
+                      generatedPayload={draft.generatedPayload}
+                      instanceUrl={state.instanceUrl}
+                      apiVersion={state.apiVersion}
+                      getToken={() => tokenRef.current}
+                      onSessionExpired={handleSessionExpired}
+                    />
+                  </section>
+                  )}
                   </div>
                 </div>
               </section>
-
-              {/* Step 3: Payload values */}
-              {state.connected && selectedFields.length > 0 && (
-              <section aria-label="Payload Configuration">
-                <PayloadPanel
-                  selectedFields={selectedFields}
-                  fieldValues={draft.fieldValues}
-                  operation={draft.operation}
-                  recordId={draft.recordId}
-                  onFieldValueChange={handleFieldValueChange}
-                  onOperationChange={handleOperationChange}
-                  onRecordIdChange={handleRecordIdChange}
-                  onGeneratePayload={handleGeneratePayload}
-                  onGenerateSamples={handleGenerateSamples}
-                />
-              </section>
-              )}
-
-              {/* Step 4: Export */}
-              {draft.generatedPayload && (
-              <section aria-label="Export">
-                <ExportPanel generatedPayload={draft.generatedPayload} onAddToCollection={requestAddToCollection} collectionCount={collection.length} onOpenCollection={() => setShowCollection(true)} />
-              </section>
-              )}
-
-              {/* Step 5: Test request */}
-              {draft.generatedPayload && (
-              <section aria-label="Test Request">
-                <RequestPanel
-                  key={activeBuilderTab.tabId}
-                  generatedPayload={draft.generatedPayload}
-                  instanceUrl={state.instanceUrl}
-                  apiVersion={state.apiVersion}
-                  getToken={() => tokenRef.current}
-                  onSessionExpired={handleSessionExpired}
-                />
-              </section>
-              )}
               </div>
             )}
           </>
