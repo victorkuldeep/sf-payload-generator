@@ -100,6 +100,33 @@ describe("parseStatements", () => {
     expect(r.errors).toEqual([]);
     expect(r.nodes[0].nodeType).toBe("message");
   });
+
+  it("accepts a bare loop each opener waiting for its iterator", () => {
+    const r = parseStatements("loop each\nA -> B: hi\nend\n");
+    expect(r.errors).toEqual([]);
+    const loop = r.nodes[0];
+    expect(loop.nodeType).toBe("block");
+    if (loop.nodeType === "block") {
+      expect(loop.type).toBe("loop");
+      expect(loop.iterator).toBe("");
+    }
+  });
+
+  it("splits a loop label after the colon and round-trips it", () => {
+    const r = parseStatements("loop each order.lines : retry failed items\nA -> B: hi\nend\n");
+    expect(r.errors).toEqual([]);
+    const loop = r.nodes[0];
+    expect(loop.nodeType).toBe("block");
+    if (loop.nodeType === "block") {
+      expect(loop.iterator).toBe("order.lines");
+      expect(loop.title).toBe("retry failed items");
+    }
+    const printed = printStatements(r.participants, r.nodes);
+    expect(printed).toMatch(/loop each order\.lines : retry failed items/);
+    const twice = parseStatements(printed);
+    expect(twice.errors).toEqual([]);
+    expect(printStatements(twice.participants, twice.nodes)).toBe(printed);
+  });
 });
 
 describe("round-trip", () => {

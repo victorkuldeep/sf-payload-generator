@@ -180,9 +180,18 @@ export function validateSequence(doc: SequenceDocument): string[] {
       if (n.nodeType === "message") {
         if (!resolveParticipant(doc, n.from)) problems.push(`${path}Message "${n.label || n.id}": unknown source "${n.from}".`);
         if (!resolveParticipant(doc, n.to)) problems.push(`${path}Message "${n.label || n.id}": unknown target "${n.to}".`);
-        if (!n.label.trim()) problems.push(`${path}Message ${n.id} has no label.`);
+        if (!n.label.trim()) problems.push(`${path}A message has no label - write "A -> B: describe it".`);
       } else {
-        if (n.type !== "note" && n.children.length === 0) problems.push(`${path}${n.type} block "${n.title || n.id}" is empty.`);
+        // Name the block by what the author wrote, never by an internal id.
+        const name =
+          n.type === "loop" ? n.iterator || n.title
+          : n.type === "condition" ? n.condition || n.title
+          : n.title;
+        if (n.type !== "note" && n.children.length === 0 && (n.elseChildren ?? []).length === 0) {
+          problems.push(
+            `${path}${name ? `${n.type} "${name}" is empty - add a message between the opener and "end".` : `A ${n.type} block is empty - add a message between the opener and "end".`}`,
+          );
+        }
         walk(n.children, `${path}${n.type} > `);
       }
     }

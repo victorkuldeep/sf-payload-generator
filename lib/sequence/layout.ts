@@ -10,6 +10,8 @@ export const COL_W = 220;
 export const ROW_H = 46;
 export const HEAD_H = 30;
 export const FOOT_H = 14;
+/** Breathing room between sibling blocks so stacked frames never touch. */
+export const BLOCK_GAP = 18;
 export const TOP_PAD = 70;
 export const SIDE_PAD = 40;
 export const BOTTOM_PAD = 30;
@@ -36,6 +38,8 @@ export interface Frame {
   y0: number;
   y1: number;
   depth: number;
+  /** True when the block holds no messages - the renderer hints at the fix. */
+  empty: boolean;
 }
 
 export interface SequenceLayout {
@@ -78,7 +82,11 @@ export function layoutSequence(participants: Participant[], nodes: SeqNode[]): S
         }
         rows.push({ kind: "block-end", node: n, y });
         y += FOOT_H;
-        frames.push({ id: n.id, type: n.type, title: blockTitle(n), y0, y1: y, depth });
+        const empty = n.children.length === 0 && (n.elseChildren ?? []).length === 0;
+        frames.push({ id: n.id, type: n.type, title: blockTitle(n), y0, y1: y, depth, empty });
+        // Gap after the frame (not inside it) so consecutive top-level
+        // blocks read as separate cards instead of one glued slab.
+        y += BLOCK_GAP;
       }
     }
   };

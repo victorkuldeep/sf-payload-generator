@@ -81,6 +81,11 @@ export function SequenceDiagram({
             <text x={x0 + 10} y={f.y0 + 14} fontSize="10" fontWeight="700" fill={sel ? "#FFFFFF" : INK} fontFamily="ui-monospace, monospace">
               {(f.title || f.type).slice(0, 40)}
             </text>
+            {f.empty && (
+              <text x={x0 + 10} y={f.y0 + 36} fontSize="10" fontStyle="italic" fill={MUTED}>
+                empty — click the statements and type messages between the opener and end
+              </text>
+            )}
           </g>
         );
       })}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { blockTitle, layoutSequence } from "./layout";
+import { BLOCK_GAP, blockTitle, layoutSequence } from "./layout";
 import type { SeqNode } from "./model";
 
 const participants = [
@@ -56,11 +56,27 @@ describe("layoutSequence", () => {
     expect(l.rows).toEqual([]);
     expect(l.height).toBeGreaterThan(0);
   });
+
+  it("leaves breathing room between sibling blocks and flags empties", () => {
+    const empty = (id: string): SeqNode => ({ nodeType: "block", id, type: "parallel", title: "", children: [] });
+    const l = layoutSequence(participants, [empty("b1"), empty("b2")]);
+    const [f1, f2] = l.frames;
+    expect(f1.empty).toBe(true);
+    expect(f2.empty).toBe(true);
+    expect(f2.y0 - f1.y1).toBe(BLOCK_GAP);
+    const full = layoutSequence(participants, [
+      { nodeType: "block", id: "b3", type: "loop", title: "", iterator: "lines", children: [msg("m1", "p1", "p2", "Hi")] },
+    ]);
+    expect(full.frames[0].empty).toBe(false);
+  });
 });
 
 describe("blockTitle", () => {
   it("labels each block type", () => {
     expect(blockTitle({ nodeType: "block", id: "x", type: "loop", title: "", iterator: "lines", children: [] })).toBe("LOOP: lines");
+    expect(blockTitle({ nodeType: "block", id: "x", type: "loop", title: "retry failed", iterator: "lines", children: [] })).toBe(
+      "LOOP: lines - retry failed",
+    );
     expect(blockTitle({ nodeType: "block", id: "x", type: "retry", title: "", attempts: 3, children: [] })).toBe("RETRY 3×");
     expect(blockTitle({ nodeType: "block", id: "x", type: "parallel", title: "", children: [] })).toBe("PARALLEL");
   });

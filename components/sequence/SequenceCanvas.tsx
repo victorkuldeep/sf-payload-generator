@@ -20,13 +20,14 @@ import { SequenceInspector } from "./SequenceInspector";
 
 const SAVE_DEBOUNCE_MS = 800;
 
-/** One-click block templates appended to the statements. */
+/** One-click block templates. Each parses cleanly on insert; the cursor lands
+ * on the blank line inside so content goes between the opener and `end`. */
 const SNIPPETS: { label: string; title: string; text: string }[] = [
-  { label: "Loop", title: "Insert a loop block", text: "loop each \n\nend\n" },
-  { label: "If", title: "Insert a condition block", text: "if \n\nend\n" },
-  { label: "Parallel", title: "Insert a parallel block", text: "parallel \n\nend\n" },
-  { label: "Retry", title: "Insert a retry block", text: "retry 3 times\n\nend\n" },
-  { label: "Note", title: "Insert a note", text: "note \n" },
+  { label: "Loop", title: "Insert a loop: loop each <items> : <label> … end — type messages inside", text: "loop each order.lines\n\nend\n" },
+  { label: "If", title: "Insert a condition: if <condition> … end — type messages inside", text: "if condition\n\nend\n" },
+  { label: "Parallel", title: "Insert a parallel block: parallel <label> … end — type messages inside", text: "parallel description\n\nend\n" },
+  { label: "Retry", title: "Insert a retry block: retry 3 times … end — type messages inside", text: "retry 3 times\n\nend\n" },
+  { label: "Note", title: "Insert a note: note <text>", text: "note write something\n" },
 ];
 
 /**
@@ -45,24 +46,59 @@ export function SequenceCanvas({ document, onSaved }: { document: SequenceDocume
   const [text, setText] = useState(() => printStatements(document.participants, document.nodes));
   const [selId, setSelId] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Canonical model string of the last persisted/committed state — never raw
+  // editor text. Raw text may carry trailing newlines/spaces or blank lines
+  // that are semantically empty; comparing raw strings is what used to wipe
+  // in-progress lines ~800ms after every keystroke (the save echo).
   const committedRef = useRef<string>(printStatements(document.participants, document.nodes));
+  const docIdRef = useRef<string>(document.id);
 
-  // External change (restore, AI apply): re-seed the editor.
-  useEffect(() => {
+  // Switched to a different sequence document: hard re-seed.
+  if (docIdRef.current !== document.id) {
+    docIdRef.current = document.id;
     const printed = printStatements(document.participants, document.nodes);
-    if (printed !== committedRef.current) {
-      committedRef.current = printed;
+    committedRef.current = printed;
+    // Render-phase setState is intentional here (React allows it for
+    // prop-change reseeds) and avoids a flash of the previous doc's text.
+    setDoc(document);
+    setText(printed);
+    setSelId(null);
+  }
+
+  // External change (restore, AI apply, other tab): re-seed only when the
+  // incoming MODEL differs from the last committed model. Parent save-echoes
+  // (same canonical model, newer updatedAt) must never clobber in-progress /
+  // invalid text the user is still typing. committedRef is always kept equal
+  // to canonical(doc), so comparing against it alone is sufficient and avoids
+  // reading live doc state here (which would race with our own persists).
+  useEffect(() => {
+    if (document.id !== docIdRef.current) return; // handled above
+    const incoming = printStatements(document.participants, document.nodes);
+    if (incoming === committedRef.current) {
+      // Echo of our own persist (or no-op refresh): sync metadata silently,
+      // keep the user's raw text (trailing newlines/spaces/partial lines).
       setDoc(document);
-      setText(printed);
-      setSelId(null);
+      return;
     }
+    committedRef.current = incoming;
+    setDoc(document);
+    setText(incoming);
+    setSelId(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [document]);
 
+  // Flush any pending debounced save on unmount so no edit is lost.
+  useEffect(
+    () => () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    },
+    [],
+  );
+
   const persist = useCallback(
-    (next: SequenceDocument, printed: string) => {
+    (next: SequenceDocument, canonical: string) => {
       setDoc(next);
-      committedRef.current = printed;
+      committedRef.current = canonical;
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
         void saveSequence(next).then((ok) => {
@@ -83,6 +119,7 @@ export function SequenceCanvas({ document, onSaved }: { document: SequenceDocume
   const [qaLabel, setQaLabel] = useState("");
   const [qaChain, setQaChain] = useState(true);
   const qaLabelRef = useRef<HTMLInputElement | null>(null);
+  const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const qaReady = qaFrom.trim() !== "" && qaTo.trim() !== "" && qaLabel.trim() !== "";
 
@@ -100,20 +137,77 @@ export function SequenceCanvas({ document, onSaved }: { document: SequenceDocume
     }
   };
 
+  /** Snippets insert at the cursor (or append) and land the caret on the
+   * blank line inside the block, so adding content means just typing. */
   const insertSnippet = (snippet: string) => {
-    const base = text.replace(/\s+$/, "");
-    onEdit(base ? `${base}\n${snippet}` : snippet);
+    const el = textAreaRef.current;
+    const at = el?.selectionStart ?? text.length;
+    const end = el?.selectionEnd ?? text.length;
+    const before = text.slice(0, at);
+    const after = text.slice(end);
+    const clean = snippet.replace(/^\n+/, "");
+    const insertStart = before.length + (before !== "" && !before.endsWith("\n") ? 1 : 0);
+    const next = before + (insertStart > before.length ? "\n" : "") + clean + after;
+    onEdit(next);
+    // Caret: first blank line inside the block, else end of insertion.
+    const blank = clean.indexOf("\n\n");
+    const caret = insertStart + (blank >= 0 ? blank + 1 : clean.length);
+    requestAnimationFrame(() => {
+      const ta = textAreaRef.current;
+      if (!ta) return;
+      ta.focus();
+      try {
+        ta.setSelectionRange(caret, caret);
+      } catch {
+        /* non-editable state - selection stays */
+      }
+    });
   };
 
   const onEdit = (next: string) => {
     setText(next);
     const r = parseStatements(next);
-    if (r.errors.length > 0) return; // keep the last good model live
-    if (next === committedRef.current) return;
-    persist(
-      { ...doc, participants: r.participants, nodes: r.nodes },
-      next,
-    );
+    // Invalid / partial line (e.g. mid-typing "sf -" on a fresh line):
+    // keep it on screen, keep the last good model live. Crucially do NOT
+    // persist and do NOT touch committedRef, so the debounced save-echo of
+    // an earlier valid state can never wipe this in-progress line.
+    if (r.errors.length > 0) return;
+    const canonical = printStatements(r.participants, r.nodes);
+    // Semantically empty change (Enter, trailing space, blank line, comment
+    // spacing): leave the model, ids, timers and parent store alone. This is
+    // the core of the cursor-jump fix — every Enter used to persist a new
+    // doc with fresh random ids, and the 800ms save echo then reprinted the
+    // canonical text and yanked the cursor back to the previous line.
+    if (canonical === committedRef.current) return;
+    // Reuse existing participant ids by case-insensitive name so the diagram
+    // and selection don't churn on every keystroke; fresh parses mint new
+    // random ids that would otherwise invalidate refs and trigger needless
+    // saves/rerenders.
+    const prevByName = new Map(doc.participants.map((p) => [p.name.toLowerCase(), p]));
+    const idMap = new Map<string, string>();
+    const participants = r.participants.map((p) => {
+      const prev = prevByName.get(p.name.toLowerCase());
+      if (prev) {
+        idMap.set(p.id, prev.id);
+        return { ...prev, name: p.name, kind: p.kind };
+      }
+      return p;
+    });
+    const remapNodes = (list: SequenceDocument["nodes"]): SequenceDocument["nodes"] =>
+      list.map((n) => {
+        if (n.nodeType === "message") {
+          return { ...n, from: idMap.get(n.from) ?? n.from, to: idMap.get(n.to) ?? n.to };
+        }
+        return {
+          ...n,
+          children: remapNodes(n.children),
+          elseChildren: n.elseChildren ? remapNodes(n.elseChildren) : n.elseChildren,
+        };
+      });
+    const nodes = remapNodes(r.nodes);
+    const nextCanonical = printStatements(participants, nodes);
+    setSelId(null);
+    persist({ ...doc, participants, nodes }, nextCanonical);
   };
 
   const format = () => {
@@ -212,7 +306,7 @@ export function SequenceCanvas({ document, onSaved }: { document: SequenceDocume
           </Button>
         </div>
         <p className="shrink-0 border-b border-[#EFE9DC] px-3 py-1 font-mono text-[10px] leading-relaxed text-[#A39B8E]">
-          A -&gt; B: label · --&gt; response · -&gt;&gt; async · one message per line
+          A -&gt; B: label · --&gt; response · -&gt;&gt; async · loop each items : label … end · messages go inside
         </p>
         <div className="shrink-0 border-b border-[#EFE9DC] px-3 py-2">
           <form
@@ -290,6 +384,7 @@ export function SequenceCanvas({ document, onSaved }: { document: SequenceDocume
           </div>
         </div>
         <textarea
+          ref={textAreaRef}
           value={text}
           onChange={(e) => onEdit(e.target.value)}
           spellCheck={false}

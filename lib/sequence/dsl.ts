@@ -18,12 +18,18 @@ import {
  *   Middleware --> Salesforce: Order Created
  *   Salesforce ->> EventBus: OrderCreated
  *   loop each order.lines
+ *   loop each order.lines : why we repeat
+ *   loop Retry failed items
  *   if Serviceable
  *   else Not serviceable
  *   parallel Fulfillment fan-out
  *   retry 3 times wait 5s
  *   note Review with the client
  *   end
+ *
+ * Loop labels ride after a colon so the iterator stays addressable:
+ * `loop each order.lines : retry failed items`. Messages live between the
+ * opener and its `end` - one message per line, blank lines are fine.
  *
  * Participants spring into existence on first mention (kind system);
  * `participant` lines declare or retype them. The printer emits canonical
@@ -48,7 +54,8 @@ interface Frame {
 
 const ARROW = /^(.+?)\s*(-->|->>|->)\s*(.+?)\s*:\s*(.*)$/;
 const PARTICIPANT = /^participant\s+([A-Za-z0-9_][A-Za-z0-9_ ]*?)(?:\s+(system|service|actor|bus|store))?\s*$/i;
-const LOOP = /^loop(?:\s+each\s+(.+))?\s*(.*?)\s*$/i;
+const LOOP_HEAD = /^loop\b\s*(.*)$/i;
+const EACH_HEAD = /^each\b\s*(.*)$/i;
 const IF = /^if\s+(.+?)\s*$/i;
 const ELSE = /^else(?:\s+(.+?))?\s*$/i;
 const PARALLEL = /^parallel(?:\s+(.+?))?\s*$/i;
@@ -117,13 +124,34 @@ export function parseStatements(text: string): ParseResult {
       stack.pop();
       return;
     }
-    if (!ARROW.test(line) && (m = line.match(LOOP))) {
-      const iterator = m[1]?.trim() || undefined;
-      const extra = m[2]?.trim() || undefined;
+    // Loop heads: `loop`, `loop <title>`, `loop each`, `loop each <items>`,
+    // `loop each <items> : <label>`. The colon keeps the iterator
+    // addressable when a human label rides along. A bare `loop each` is a
+    // valid opener waiting for its iterator - it never means title "each".
+    if (!ARROW.test(line) && LOOP_HEAD.test(line)) {
+      const rest = line.replace(/^loop\b\s*/i, "");
+      let iterator: string | undefined;
+      let title = "";
+      const each = rest.match(EACH_HEAD);
+      if (/^each\b/i.test(rest) && each) {
+        const afterEach = (each[1] ?? "").trim();
+        if (!afterEach) {
+          iterator = "";
+        } else {
+          const colon = afterEach.indexOf(":");
+          if (colon >= 0) {
+            iterator = afterEach.slice(0, colon).trim();
+            title = afterEach.slice(colon + 1).trim();
+          } else {
+            iterator = afterEach;
+          }
+        }
+      } else if (rest) {
+        title = rest.replace(/^:\s*/, "").trim();
+      }
       const block: SeqBlock = {
         nodeType: "block", id: newId("blk"), type: "loop",
-        title: extra ?? "",
-        iterator, children: [],
+        title, iterator, children: [],
       };
       target().push(block);
       stack.push({ block, elseBranch: false });
@@ -222,7 +250,12 @@ export function printStatements(participants: Participant[], nodes: SeqNode[]): 
       } else if (n.type === "note") {
         L.push(`note ${n.title}`);
       } else if (n.type === "loop") {
-        L.push(n.iterator ? `loop each ${n.iterator}` : `loop${n.title ? ` ${n.title}` : ""}`);
+        if (n.iterator !== undefined) {
+          const head = n.iterator ? `loop each ${n.iterator}` : "loop each";
+          L.push(n.title ? `${head} : ${n.title}` : head);
+        } else {
+          L.push(n.title ? `loop ${n.title}` : "loop");
+        }
         walk(n.children);
         L.push("end");
       } else if (n.type === "condition") {
