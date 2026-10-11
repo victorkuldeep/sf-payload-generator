@@ -11,12 +11,27 @@ export interface ErdPickValue {
 
 export interface ErdFieldRow {
   name: string;
+  /** UI label from describe (falls back to API name). */
+  label: string;
   type: string;
+  /** Length for text-ish types; precision/scale for number-ish ones. */
+  length: number;
+  precision: number;
+  scale: number;
+  /** inlineHelpText - tooltip description, null when absent. */
+  description: string | null;
+  unique: boolean;
+  externalId: boolean;
+  calculated: boolean;
+  updateable: boolean;
   isId: boolean;
   isName: boolean;
   /** All declared lookup targets, e.g. ["Account", "Opportunity"].
    * Never canvas-filtered: lookup jumps resolve off-canvas. */
   refs: string[];
+  /** Resolved at build time from the targets' childRelationships:
+   * master-detail when the link cascades deletes, lookup otherwise. */
+  refKind?: "lookup" | "master-detail";
   required: boolean;
   /** Picklist options (picklist/multipicklist only, capped). */
   pickValues: ErdPickValue[];
@@ -99,6 +114,14 @@ export interface ErdNodeData extends Record<string, unknown> {
     fieldName: string,
     anchor: { x: number; y: number; width: number; height: number }
   ) => void;
+  /** Peek-panel single-field edit: resolve the visualized record id + field
+   * meta for an updateable field, or null when the field is read-only here. */
+  getPeekEdit?: (fieldName: string) => {
+    id: string;
+    meta: { name: string; label: string; type: string; updateable: boolean; picklistValues?: { label: string; value: string }[] };
+  } | null;
+  /** PATCH one field from the peek panel, then refresh like any save. */
+  onSavePeekField?: (apiName: string, id: string, changes: Record<string, unknown>) => Promise<void>;
 }
 
 export const ERD_NODE_WIDTH = 300;
@@ -201,10 +224,20 @@ export function assignBubbleTags(apiNames: string[]): Map<string, string> {
 function toRow(
   f: {
     name: string;
+    label: string;
     type: string;
+    length: number;
+    precision: number;
+    scale: number;
+    inlineHelpText: string | null;
+    unique: boolean;
+    externalId: boolean;
+    calculated: boolean;
+    updateable: boolean;
     nillable: boolean;
     nameField: boolean;
     referenceTo: string[];
+    refKind?: "lookup" | "master-detail";
     picklistValues?: { label: string; value: string; active: boolean; defaultValue: boolean }[] | null;
   },
   targetLabels: Map<string, string>
@@ -212,12 +245,22 @@ function toRow(
   const isPick = f.type === "picklist" || f.type === "multipicklist";
   return {
     name: f.name,
+    label: f.label || f.name,
     type: f.type,
+    length: f.length,
+    precision: f.precision,
+    scale: f.scale,
+    description: f.inlineHelpText?.trim() ? f.inlineHelpText.trim() : null,
+    unique: f.unique,
+    externalId: f.externalId,
+    calculated: f.calculated,
+    updateable: f.updateable,
     isId: f.name === "Id",
     isName: !!f.nameField,
     /** All declared lookup targets (NOT canvas-filtered): lookup jumps work
      * even when the target object is off-canvas. */
     refs: [...(f.referenceTo ?? [])],
+    refKind: f.refKind,
     required: !f.nillable,
     pickValues:
       isPick && Array.isArray(f.picklistValues)
@@ -308,6 +351,16 @@ export function buildErdElements(
 ): ErdElements {
   const nodes: Node<ErdNodeData>[] = [];
 
+  // Index cascade-deletes once: "ChildObject::field" -> master-detail?
+  // Lets reference rows report Lookup vs Master-Detail in tooltips.
+  const mdIndex = new Map<string, boolean>();
+  for (const parent of describes.values()) {
+    for (const rel of parent.childRelationships ?? []) {
+      if (!rel.relationshipName || !rel.field) continue;
+      mdIndex.set(`${rel.childSObject}::${rel.field}`, rel.cascadeDelete);
+    }
+  }
+
   // Pass 1 - nodes (edges are built centrally by buildEdges below)
   for (const [apiName, describe] of describes) {
     const allRows = orderRows(
@@ -315,10 +368,25 @@ export function buildErdElements(
         toRow(
           {
             name: f.name,
+            label: f.label,
             type: f.type,
+            length: f.length,
+            precision: f.precision,
+            scale: f.scale,
+            inlineHelpText: f.inlineHelpText ?? null,
+            unique: f.unique,
+            externalId: f.externalId,
+            calculated: f.calculated,
+            updateable: f.updateable,
             nillable: f.nillable,
             nameField: f.nameField,
             referenceTo: f.referenceTo ?? [],
+            refKind:
+              f.type === "reference" && (f.referenceTo ?? []).length > 0
+                ? mdIndex.get(`${apiName}::${f.name}`) === true
+                  ? "master-detail"
+                  : "lookup"
+                : undefined,
             picklistValues: f.picklistValues ?? null,
           },
           labels

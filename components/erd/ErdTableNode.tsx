@@ -3,8 +3,11 @@
 import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
-import type { ErdNodeData } from "@/lib/erd/graph";
+import type { ErdFieldRow, ErdNodeData } from "@/lib/erd/graph";
 import { formatWalkValue } from "@/lib/erd/recordWalk";
+import { serializeDraftValue } from "@/lib/erd/recordWalk";
+import { fieldFlags, fieldTypeDetail } from "@/lib/erd/fieldDetail";
+import { FieldInput } from "./RecordPopover";
 import { ERD_MAX_ROWS, ERD_HEADER_H, ERD_FOOTER_H, parentExitHandleId, childEntryHandleId, loopOutHandleId, loopInHandleId, OBJECT_KIND_LABEL } from "@/lib/erd/graph";
 
 function KeyIcon() {
@@ -90,19 +93,48 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
   const [query, setQuery] = useState("");
   const [sortAZ, setSortAZ] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [peek, setPeek] = useState<{ field: string; x: number; y: number } | null>(null);
+  const [peek, setPeek] = useState<{
+    field: string; x: number; y: number;
+    editId: string | null;
+    editMeta: { name: string; label: string; type: string; updateable: boolean; picklistValues?: { label: string; value: string }[] } | null;
+  } | null>(null);
   const [copiedValue, setCopiedValue] = useState(false);
+  const [peekEditing, setPeekEditing] = useState(false);
+  const [peekDraft, setPeekDraft] = useState<string | boolean | undefined>(undefined);
+  const [peekSaving, setPeekSaving] = useState(false);
+  const [peekSaveError, setPeekSaveError] = useState<string | null>(null);
   const peekRef = useRef<HTMLDivElement>(null);
+  // Hover datatype tooltip (label · type · flags · description). Delayed so
+  // scanning rows stays quiet; portal because the node clips overflow.
+  const [tip, setTip] = useState<{ label: string; api: string; detail: string; flags: string[]; desc: string | null; x: number; y: number } | null>(null);
+  const tipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const hideTip = () => {
+    if (tipTimer.current) clearTimeout(tipTimer.current);
+    tipTimer.current = null;
+    setTip(null);
+  };
+  const armTip = (r: ErdFieldRow, anchor: HTMLElement) => {
+    if (tipTimer.current) clearTimeout(tipTimer.current);
+    tipTimer.current = setTimeout(() => {
+      const rect = anchor.getBoundingClientRect();
+      setTip({ label: r.label, api: r.name, detail: fieldTypeDetail(r), flags: fieldFlags(r), desc: r.description, x: rect.right + 8, y: rect.top });
+    }, 400);
+  };
   // One peek panel for BOTH field kinds: reference jumps land here when they
   // carry a resolved label + Id; plain fields open it directly. Header (with
   // close), body (value), footer (context) - same chrome everywhere.
   const openPeek = (field: string, value: string, context: string, anchor: HTMLElement) => {
     const rect = anchor.getBoundingClientRect();
-    setPeek({ field, x: rect.right + 8, y: rect.top });
+    const edit = data.getPeekEdit?.(field) ?? null;
+    hideTip();
+    setPeek({ field, x: rect.right + 8, y: rect.top, editId: edit?.id ?? null, editMeta: edit && edit.meta.updateable ? edit.meta : null });
     setPeekValue(value);
     setPeekContext(context);
     setCopiedValue(false);
+    setPeekEditing(false);
+    setPeekDraft(undefined);
+    setPeekSaveError(null);
   };
   const [peekValue, setPeekValue] = useState("");
   const [peekContext, setPeekContext] = useState("");
@@ -117,10 +149,13 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
         | undefined;
       if (!d || typeof d.field !== "string") return;
       if (typeof d.nodeApi === "string" && d.nodeApi !== data.apiName) return;
-      setPeek({ field: d.field, x: typeof d.x === "number" ? d.x : window.innerWidth / 2 - 120, y: typeof d.y === "number" ? d.y : 120 });
+      setPeek({ field: d.field, x: typeof d.x === "number" ? d.x : window.innerWidth / 2 - 120, y: typeof d.y === "number" ? d.y : 120, editId: null, editMeta: null });
       setPeekValue(typeof d.value === "string" ? d.value : "");
       setPeekContext(typeof d.context === "string" ? d.context : "");
       setCopiedValue(false);
+      setPeekEditing(false);
+      setPeekDraft(undefined);
+      setPeekSaveError(null);
     };
     window.addEventListener("erd-peek-at", onPeekAt);
     return () => window.removeEventListener("erd-peek-at", onPeekAt);
@@ -131,7 +166,10 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
   useEffect(() => {
     if (!peek) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setPeek(null);
+      if (e.key === "Escape") {
+        setPeek(null);
+        hideTip();
+      }
     };
     const onDown = (e: PointerEvent) => {
       if (peekRef.current && !peekRef.current.contains(e.target as globalThis.Node)) setPeek(null);
@@ -142,7 +180,30 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
       window.removeEventListener("keydown", onKey);
       document.removeEventListener("pointerdown", onDown, true);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [peek]);
+
+  // Hover tooltip is position-pinned: any scroll, zoom-wheel or canvas
+  // pointerdown retires it (hover again to reshow).
+  useEffect(() => {
+    if (!tip) return;
+    const hide = () => hideTip();
+    window.addEventListener("wheel", hide, true);
+    document.addEventListener("pointerdown", hide, true);
+    return () => {
+      window.removeEventListener("wheel", hide, true);
+      document.removeEventListener("pointerdown", hide, true);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tip]);
+
+  // Pending hover timer never fires after unmount.
+  useEffect(
+    () => () => {
+      if (tipTimer.current) clearTimeout(tipTimer.current);
+    },
+    []
+  );
 
   const liveValues = data.recordValues ?? null;
   const peekLabel = (field: string): string => {
@@ -577,13 +638,22 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
                   height: rect.height,
                 });
               }}
+              onMouseEnter={(e) => armTip(r, e.currentTarget)}
+              onMouseLeave={hideTip}
+              onFocus={(e) => armTip(r, e.currentTarget)}
+              onBlur={hideTip}
               title={`${r.name} - click to view ${r.pickValues.length} picklist values`}
               className={`nodrag group flex w-full cursor-pointer items-center gap-1.5 px-3 py-[3px] text-left transition-colors ${r.pending ? "bg-amber-50" : "hover:bg-bronze-100"}`}
             >
               {inner}
             </button>
           ) : (
-            <div key={r.name} className={`group flex items-center gap-1.5 px-3 py-[3px] ${r.pending ? "bg-amber-50" : "hover:bg-ivory-200"}`}>
+            <div
+              key={r.name}
+              onMouseEnter={(e) => armTip(r, e.currentTarget)}
+              onMouseLeave={hideTip}
+              className={`group flex items-center gap-1.5 px-3 py-[3px] ${r.pending ? "bg-amber-50" : "hover:bg-ivory-200"}`}
+            >
               {inner}
             </div>
           );
@@ -699,6 +769,25 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
             <p className="min-w-0 flex-1 truncate font-mono text-[10px] font-bold uppercase tracking-wider text-ivory-600" title={peek.field}>
               {peek.field}
             </p>
+            {peek.editId && peek.editMeta && !peekEditing && (
+              <button
+                type="button"
+                onClick={() => {
+                  const raw = liveValues?.[peek.field];
+                  setPeekDraft(typeof raw === "boolean" ? raw : String(raw ?? ""));
+                  setPeekSaveError(null);
+                  setPeekEditing(true);
+                }}
+                title={`Edit ${peek.field} on this record`}
+                aria-label={`Edit ${peek.field}`}
+                className="shrink-0 rounded p-0.5 text-ivory-400 hover:text-bronze-600 hover:bg-ivory-200 transition-colors cursor-pointer"
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                  <path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3Z" />
+                  <path d="m13.5 6.5 3 3" />
+                </svg>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -733,9 +822,105 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
           <p className="mt-1 break-all font-mono text-[11px] leading-relaxed text-ivory-950">
             {peekValue}
           </p>
+          {peekEditing && peek.editId && peek.editMeta && (
+            <div className="mt-1.5 space-y-1.5">
+              <FieldInput
+                meta={peek.editMeta}
+                value={peekDraft ?? ""}
+                onChange={(nv) => setPeekDraft(nv)}
+              />
+              {peekSaveError && (
+                <p className="rounded-md border border-red-300 bg-red-50 px-1.5 py-1 text-[10px] text-red-700" role="alert">
+                  {peekSaveError}
+                </p>
+              )}
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  disabled={peekSaving}
+                  onClick={() => {
+                    const editId = peek.editId;
+                    const meta = peek.editMeta;
+                    if (!editId || !meta || !data.onSavePeekField) return;
+                    const raw = liveValues?.[peek.field];
+                    const origStr = typeof raw === "boolean" ? raw : String(raw ?? "");
+                    const v = peekDraft;
+                    if (v === undefined || v === origStr || (v === "" && (raw === null || raw === undefined || raw === ""))) {
+                      setPeek(null);
+                      return;
+                    }
+                    const serialized = serializeDraftValue(meta.type, v);
+                    if (serialized === undefined) {
+                      setPeek(null);
+                      return;
+                    }
+                    setPeekSaving(true);
+                    setPeekSaveError(null);
+                    void data
+                      .onSavePeekField(data.apiName, editId, { [peek.field]: serialized })
+                      .then(() => setPeek(null))
+                      .catch((err: unknown) => {
+                        setPeekSaveError(err instanceof Error ? err.message : "Save failed.");
+                        setPeekSaving(false);
+                      });
+                  }}
+                  className="flex-1 rounded-md bg-ivory-950 px-2 py-1 text-[11px] font-semibold text-ivory-100 hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50"
+                >
+                  {peekSaving ? "Saving…" : "Save"}
+                </button>
+                <button
+                  type="button"
+                  disabled={peekSaving}
+                  onClick={() => {
+                    setPeekEditing(false);
+                    setPeekDraft(undefined);
+                    setPeekSaveError(null);
+                  }}
+                  className="rounded-md px-2 py-1 text-[11px] font-semibold text-ivory-600 hover:text-ivory-950 hover:bg-ivory-200 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
           <p className="mt-1 truncate font-mono text-[10px] text-ivory-500" title={peekContext}>
             {peekContext}
           </p>
+        </div>,
+        document.body
+      )}
+      {tip && createPortal(
+        <div
+          role="tooltip"
+          className="pointer-events-none fixed z-[95] w-[250px] rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-2.5 shadow-[0_16px_48px_-12px_rgba(24,20,12,0.4)]"
+          style={{
+            left: Math.min(Math.max(8, tip.x), Math.max(8, window.innerWidth - 258)),
+            top: Math.min(Math.max(8, tip.y), Math.max(8, window.innerHeight - 180)),
+          }}
+        >
+          <p className="truncate text-[11px] font-bold text-ivory-950" title={tip.label}>
+            {tip.label}
+          </p>
+          <p className="truncate font-mono text-[10px] text-ivory-500" title={tip.api}>
+            {tip.api}
+          </p>
+          <p className="mt-1 font-mono text-[11px] font-bold text-bronze-700">
+            {tip.detail}
+          </p>
+          {tip.flags.length > 0 && (
+            <p className="mt-1 flex flex-wrap gap-1">
+              {tip.flags.map((f) => (
+                <span key={f} className="rounded-full border border-bronze-300 bg-bronze-100 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-bronze-700">
+                  {f}
+                </span>
+              ))}
+            </p>
+          )}
+          {tip.desc && (
+            <p className="mt-1 line-clamp-4 text-[10px] italic leading-relaxed text-ivory-600" title={tip.desc}>
+              {tip.desc}
+            </p>
+          )}
         </div>,
         document.body
       )}

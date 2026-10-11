@@ -31,6 +31,7 @@ import type { ErdNodeData, GraphBubbleData } from "@/lib/erd/graph";
 import { ErdTableNode } from "./ErdTableNode";
 import { ErdEdge } from "./ErdEdge";
 import { GraphBubbleNode } from "./GraphBubbleNode";
+import { LaserLayer } from "../laser/LaserLayer";
 import { useAmplifiedPinch } from "../canvas/useAmplifiedPinch";
 
 const nodeTypes = { erdTable: ErdTableNode, graphBubble: GraphBubbleNode } as const;
@@ -68,11 +69,6 @@ interface ErdCanvasProps {
   onOobLockChange?: (locked: boolean) => void;
   /** Field dictionary export (ERD view) - parent owns describes + download. */
   onExportDictionary?: () => void | Promise<void>;
-}
-
-interface Stroke {
-  id: number;
-  pts: { x: number; y: number }[];
 }
 
 function downloadDataUrl(dataUrl: string, fileName: string) {
@@ -142,10 +138,6 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
   );
 
   const [laser, setLaser] = useState(false);
-  const [strokes, setStrokes] = useState<Stroke[]>([]);
-  const [pencil, setPencil] = useState<{ x: number; y: number } | null>(null);
-  const strokeId = useRef(0);
-  const drawing = useRef(false);
   const overlayRef = useRef<SVGSVGElement | null>(null);
 
   // Laser overlay covers the canvas, so the wheel never reaches React Flow.
@@ -319,42 +311,6 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
     [nodes]
   );
 
-  const relPos = useCallback((e: React.PointerEvent) => {
-    const rect = containerRef.current?.getBoundingClientRect();
-    return { x: e.clientX - (rect?.left ?? 0), y: e.clientY - (rect?.top ?? 0) };
-  }, []);
-
-  const startStroke = useCallback(
-    (e: React.PointerEvent) => {
-      if (!laser) return;
-      drawing.current = true;
-      (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-      const id = ++strokeId.current;
-      const p = relPos(e);
-      setPencil(p);
-      setStrokes((prev) => [...prev.slice(-11), { id, pts: [p] }]);
-      window.setTimeout(() => {
-        setStrokes((prev) => prev.filter((s) => s.id !== id));
-      }, 1600);
-    },
-    [laser, relPos]
-  );
-
-  const extendStroke = useCallback(
-    (e: React.PointerEvent) => {
-      if (!laser) return;
-      const p = relPos(e);
-      if (e.pointerType === "mouse" || e.pointerType === "pen") setPencil(p);
-      if (!drawing.current) return;
-      setStrokes((prev) => {
-        if (prev.length === 0) return prev;
-        const last = prev[prev.length - 1];
-        return [...prev.slice(0, -1), { ...last, pts: [...last.pts, p].slice(-120) }];
-      });
-    },
-    [laser, relPos]
-  );
-
   return (
     <div
       ref={containerRef}
@@ -401,50 +357,14 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
         <Controls position="bottom-left" showInteractive={!nodesLocked} />
       </ReactFlow>
 
-      {laser && (
-        <svg
-          ref={overlayRef}
-          className="erd-laser-layer absolute inset-0 h-full w-full touch-none"
-          style={{ cursor: "none", zIndex: 20 }}
-          onPointerDown={startStroke}
-          onPointerMove={extendStroke}
-          onPointerUp={() => {
-            drawing.current = false;
-          }}
-          onPointerLeave={() => {
-            drawing.current = false;
-            setPencil(null);
-          }}
-        >
-          {pencil && (
-            <g transform={`translate(${pencil.x} ${pencil.y}) rotate(45)`} pointerEvents="none">
-              <rect x="-3" y="-19" width="6" height="12" rx="1" fill="#A98450" />
-              <polygon points="-3,-7 3,-7 0,0" fill="#E8DCC8" />
-              <circle cx="0" cy="-1.5" r="1.6" fill="#ef4444" />
-            </g>
-          )}
-          {strokes.map((s) => (
-            <g key={s.id}>
-              <polyline
-                points={s.pts.map((p) => `${p.x},${p.y}`).join(" ")}
-                fill="none"
-                stroke="#ef4444"
-                strokeWidth="3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              {s.pts.length > 0 && (
-                <circle
-                  cx={s.pts[s.pts.length - 1].x}
-                  cy={s.pts[s.pts.length - 1].y}
-                  r="5"
-                  fill="#ef4444"
-                />
-              )}
-            </g>
-          ))}
-        </svg>
-      )}
+      {/* Shared laser layer: hover paints, tail melts, canvas never re-renders.
+          Keeps the erd-laser-layer class so PNG export keeps filtering it. */}
+      <LaserLayer
+        active={laser}
+        className="erd-laser-layer absolute inset-0 h-full w-full touch-none"
+        zIndex={20}
+        svgRef={overlayRef}
+      />
 
       {/* Empty canvas: guidance card (pan still works around it) */}
       {propNodes.length === 0 && (

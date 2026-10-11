@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import Button from "../ui/Button";
-import { serializeDraftValue } from "@/lib/erd/recordWalk";
 
 export interface RecordFieldMeta {
   name: string;
@@ -63,9 +62,14 @@ const cell = (v: unknown): string => {
   return s.length > 60 ? `${s.slice(0, 59)}…` : s;
 };
 
+/** Shared by the peek panel and the full-screen edit modal. */
+export { cell as formatCellValue };
+
 const NUMBER_TYPES = new Set(["int", "double", "currency", "percent", "long", "number"]);
 
-function FieldInput({
+/** Type-aware cell editor shared by the peek panel and the edit modal.
+ * Read-only span when the field has no updateable meta. */
+export function FieldInput({
   meta,
   value,
   onChange,
@@ -156,38 +160,29 @@ function FieldInput({
 
 function SectionRows({
   rows,
-  metas,
-  editingId,
-  draft,
-  onDraft,
-  onEditRow,
   selectedId,
   onSelectRow,
+  onEditRow,
 }: {
   rows: Record<string, unknown>[];
-  metas: RecordFieldMeta[];
-  editingId: string | null;
-  draft: Record<string, string | boolean>;
-  onDraft: (field: string, v: string | boolean) => void;
-  onEditRow: (id: string) => void;
   selectedId: string | null;
   onSelectRow?: (id: string) => void;
+  /** Open the full-screen edit modal for this exact record. */
+  onEditRow?: (id: string) => void;
 }) {
   return (
     <ul className="space-y-1">
       {rows.map((r, i) => {
         const id = typeof r.Id === "string" ? r.Id : String(i);
-        const isEditing = editingId === id;
         const isSelected = selectedId === id;
-        const metaOf = (k: string) => metas.find((m) => m.name === k);
         return (
           <li
             key={id}
-            onClick={onSelectRow && !isEditing ? () => onSelectRow(id) : undefined}
-            title={onSelectRow && !isEditing ? "Visualize this record in the entity box" : undefined}
+            onClick={onSelectRow ? () => onSelectRow(id) : undefined}
+            title={onSelectRow ? "Visualize this record in the entity box" : undefined}
             className={`rounded-lg border px-2 py-1.5 bg-[var(--color-canvas)] ${
               isSelected ? "border-bronze-500 ring-1 ring-bronze-500" : "border-[var(--color-line-soft)]"
-            } ${onSelectRow && !isEditing ? "cursor-pointer hover:border-bronze-400" : ""}`}
+            } ${onSelectRow ? "cursor-pointer hover:border-bronze-400" : ""}`}
           >
             {isSelected && onSelectRow && (
               <p className="pb-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-bronze-700">
@@ -195,34 +190,28 @@ function SectionRows({
               </p>
             )}
             {Object.entries(r).map(([k, v]) => {
-              const meta = metaOf(k);
-              const editable = isEditing && !!meta?.updateable && k !== "Id";
+              // The REST envelope's attributes block ({type, url}) is noise
+              // on a card - the header already names the object.
+              if (k === "attributes") return null;
               return (
                 <p key={k} className="flex items-baseline justify-between gap-2">
                   <span className="shrink-0 font-mono text-[10px] text-ivory-500">{k}</span>
-                  {editable ? (
-                    <FieldInput meta={meta} value={draft[k] ?? (typeof v === "boolean" ? v : String(v ?? ""))} onChange={(nv) => onDraft(k, nv)} />
-                  ) : (
-                    <span className="min-w-0 break-all text-right font-mono text-[11px] text-ivory-950">{cell(v)}</span>
-                  )}
+                  <span className="min-w-0 break-all text-right font-mono text-[11px] text-ivory-950">{cell(v)}</span>
                 </p>
               );
             })}
-            {!isEditing && metas.some((m) => m.updateable && m.name !== "Id") && (
+            {onEditRow && typeof r.Id === "string" && (
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onEditRow(id);
+                  onEditRow(r.Id as string);
                 }}
-                aria-label="Edit this row"
-                title="Edit this row"
-                className="mt-1 rounded p-1 text-ivory-400 hover:text-bronze-600 hover:bg-ivory-200 transition-colors cursor-pointer"
+                aria-label="Edit this record full-screen"
+                title="Edit this record full-screen"
+                className="mt-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-bronze-600 hover:text-bronze-700 hover:bg-bronze-100 transition-colors cursor-pointer"
               >
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-                  <path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3Z" />
-                  <path d="m13.5 6.5 3 3" />
-                </svg>
+                Edit
               </button>
             )}
           </li>
@@ -234,43 +223,36 @@ function SectionRows({
 
 export function RecordPopover({
   pop,
-  fieldMeta,
-  sectionFieldMeta,
   onClose,
   onLoadMore,
   onFetchMissing,
   onClear,
   onRefresh,
   refreshing,
-  onSave,
   onSelectRecord,
   onModeChange,
   onCopyLookup,
+  onEditRecord,
+  onInspectRecord,
 }: {
   pop: RecordPopData;
-  /** Editable metadata for the single record's object (null = read-only). */
-  fieldMeta: RecordFieldMeta[] | null;
-  /** Editable metadata per child object apiName. */
-  sectionFieldMeta: Record<string, RecordFieldMeta[]>;
   onClose: () => void;
   onLoadMore: (sectionKey: string) => void;
   onFetchMissing: (apiName: string) => void;
   onClear: () => void;
   onRefresh: () => void;
   refreshing: boolean;
-  onSave: (apiName: string, id: string, changes: Record<string, unknown>) => Promise<void>;
   /** Visualize an aboard record in the entity box (picker + section rows). */
   onSelectRecord: (apiName: string, id: string) => void;
   onModeChange: (mode: "picker" | "record" | "lookup") => void;
   /** Copy a lookup's target label + Id for the row it came from. */
   onCopyLookup: (value: string) => void;
+  /** Open the full-screen edit modal for a record of any aboard object. */
+  onEditRecord: (apiName: string, id: string) => void;
+  /** Visualize a candidate AND jump straight to its record view. */
+  onInspectRecord: (apiName: string, id: string) => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const [editingSingle, setEditingSingle] = useState(false);
-  const [editingRow, setEditingRow] = useState<{ sectionKey: string; id: string } | null>(null);
-  const [draft, setDraft] = useState<Record<string, string | boolean>>({});
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
   const [copiedLookup, setCopiedLookup] = useState(false);
 
   useEffect(() => {
@@ -290,57 +272,14 @@ export function RecordPopover({
     };
   }, [onClose]);
 
-  // Reset edit state whenever a different node or panel opens.
+  // Reset transient state whenever a different node or panel opens.
   useEffect(() => {
-    setEditingSingle(false);
-    setEditingRow(null);
-    setDraft({});
-    setSaveError(null);
     setCopiedLookup(false);
   }, [pop.apiName, pop.mode, pop.lookup?.targetId]);
 
   const W = 320;
   const left = Math.min(Math.max(8, pop.x), Math.max(8, window.innerWidth - W - 8));
   const top = Math.min(Math.max(8, pop.y), Math.max(8, window.innerHeight - 420));
-
-  const startSingleEdit = () => {
-    setDraft({});
-    setSaveError(null);
-    setEditingSingle(true);
-  };
-
-  const doSave = async (apiName: string, id: string, source: Record<string, unknown>) => {
-    const metas = apiName === pop.apiName ? (fieldMeta ?? []) : (sectionFieldMeta[apiName] ?? []);
-    const changes: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(draft)) {
-      const meta = metas.find((m) => m.name === k);
-      const original = source[k];
-      const origStr = typeof original === "boolean" ? original : String(original ?? "");
-      const draftStr = typeof v === "boolean" ? v : v;
-      if (draftStr === origStr || (draftStr === "" && (original === null || original === undefined || original === ""))) continue;
-      const serialized = serializeDraftValue(meta?.type, v);
-      if (serialized !== undefined) changes[k] = serialized;
-    }
-    if (Object.keys(changes).length === 0) {
-      setEditingSingle(false);
-      setEditingRow(null);
-      return;
-    }
-    setSaving(true);
-    setSaveError(null);
-    try {
-      await onSave(apiName, id, changes);
-      setEditingSingle(false);
-      setEditingRow(null);
-      setDraft({});
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Save failed.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const singleEditable = !!fieldMeta?.some((m) => m.updateable && m.name !== "Id");
 
   // Lookup mode shows a live status line: resolving, then the key field (or
   // raw-Id fallback). Never a silent empty panel.
@@ -454,12 +393,12 @@ export function RecordPopover({
               <path d="M18 4v4h-4M6 20v-4h4" />
             </svg>
           </button>
-          {pop.single && singleEditable && !editingSingle && (
+          {pop.singleId && (
             <button
               type="button"
-              onClick={startSingleEdit}
-              aria-label="Edit this record"
-              title="Edit this record"
+              onClick={() => onEditRecord(pop.apiName, pop.singleId!)}
+              aria-label="Edit this record full-screen"
+              title="Edit this record full-screen"
               className="rounded p-1 text-ivory-500 hover:text-bronze-600 hover:bg-ivory-200 transition-colors cursor-pointer"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
@@ -489,11 +428,6 @@ export function RecordPopover({
             {pop.error}
           </p>
         )}
-        {saveError && (
-          <p className="rounded-lg border border-red-300 bg-red-50 px-2 py-1.5 text-[11px] text-red-700" role="alert">
-            {saveError}
-          </p>
-        )}
         {pop.blockedHint && (
           <div className="px-1 py-1">
             <p className="text-[11px] leading-relaxed text-ivory-700">{pop.blockedHint}</p>
@@ -518,19 +452,27 @@ export function RecordPopover({
                 {pop.candidates.map((c) => {
                   const active = pop.selectedId === c.id;
                   return (
-                    <li key={c.id}>
+                    <li key={c.id} className={`rounded-lg border px-2 py-1.5 transition-colors ${
+                      active
+                        ? "border-bronze-500 bg-bronze-100 ring-1 ring-bronze-500"
+                        : "border-[var(--color-line-soft)] bg-[var(--color-canvas)]"
+                    }`}>
                       <button
                         type="button"
                         onClick={() => onSelectRecord(pop.apiName, c.id)}
                         title={active ? "Visualizing in the entity box" : "Visualize in the entity box"}
-                        className={`w-full rounded-lg border px-2 py-1.5 text-left transition-colors cursor-pointer ${
-                          active
-                            ? "border-bronze-500 bg-bronze-100 ring-1 ring-bronze-500"
-                            : "border-[var(--color-line-soft)] bg-[var(--color-canvas)] hover:border-bronze-400"
-                        }`}
+                        className="w-full text-left cursor-pointer"
                       >
                         <p className="truncate text-[11px] font-bold text-ivory-950">{c.name}</p>
                         <p className="truncate font-mono text-[10px] text-ivory-500">{c.id}</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onInspectRecord(pop.apiName, c.id)}
+                        title="Visualize and open this record for inspection"
+                        className="mt-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-bronze-600 hover:text-bronze-700 hover:bg-bronze-100 transition-colors cursor-pointer"
+                      >
+                        Inspect →
                       </button>
                     </li>
                   );
@@ -556,55 +498,16 @@ export function RecordPopover({
           </div>
         )}
         {pop.mode === "record" && pop.single && (
-          editingSingle ? (
-            <div>
-              <dl className="divide-y divide-[var(--color-line-soft)]">
-                {pop.single.map((row) => (
-                  <div key={row.label} className="flex items-center justify-between gap-2 px-1 py-1">
-                    <dt className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-ivory-500">{row.label}</dt>
-                    <dd className="min-w-0">
-                      <FieldInput
-                        meta={fieldMeta?.find((m) => m.name === row.label)}
-                        value={draft[row.label] ?? row.value}
-                        onChange={(nv) => setDraft((p) => ({ ...p, [row.label]: nv }))}
-                      />
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-              <div className="mt-1.5 flex gap-1.5">
-                <Button
-                  size="sm"
-                  className="flex-1"
-                  disabled={saving}
-                  onClick={() => {
-                    if (!pop.singleId) return;
-                    const source: Record<string, unknown> = {};
-                    for (const r of pop.single!) source[r.label] = r.value;
-                    void doSave(pop.apiName, pop.singleId, source);
-                  }}
-                >
-                  {saving ? "Saving…" : "Save"}
-                </Button>
-                <Button size="sm" variant="ghost" disabled={saving} onClick={() => { setEditingSingle(false); setDraft({}); setSaveError(null); }}>
-                  Cancel
-                </Button>
+          <dl className="divide-y divide-[var(--color-line-soft)]">
+            {pop.single.map((row) => (
+              <div key={row.label} className="flex items-baseline justify-between gap-2 px-1 py-1">
+                <dt className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-ivory-500">{row.label}</dt>
+                <dd className="min-w-0 break-all text-right font-mono text-[11px] text-ivory-950">{row.value}</dd>
               </div>
-            </div>
-          ) : (
-            <dl className="divide-y divide-[var(--color-line-soft)]">
-              {pop.single.map((row) => (
-                <div key={row.label} className="flex items-baseline justify-between gap-2 px-1 py-1">
-                  <dt className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-ivory-500">{row.label}</dt>
-                  <dd className="min-w-0 break-all text-right font-mono text-[11px] text-ivory-950">{row.value}</dd>
-                </div>
-              ))}
-            </dl>
-          )
+            ))}
+          </dl>
         )}
         {pop.sections.map((s) => {
-          const metas = sectionFieldMeta[s.childApi] ?? [];
-          const rowEditingId = editingRow?.sectionKey === s.key ? editingRow.id : null;
           return (
             <div key={s.key} className="mb-2 last:mb-0">
               <p className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
@@ -612,40 +515,11 @@ export function RecordPopover({
               </p>
               <SectionRows
                 rows={s.rows}
-                metas={metas}
-                editingId={rowEditingId}
-                draft={draft}
-                onDraft={(field, v) => setDraft((p) => ({ ...p, [field]: v }))}
                 selectedId={pop.selectedId}
                 onSelectRow={(id) => onSelectRecord(s.childApi, id)}
-                onEditRow={(id) => {
-                  setDraft({});
-                  setSaveError(null);
-                  setEditingRow({ sectionKey: s.key, id });
-                }}
+                onEditRow={(id) => onEditRecord(s.childApi, id)}
               />
-              {rowEditingId && (
-                <div className="mt-1.5 flex gap-1.5">
-                  <Button
-                    size="sm"
-                    className="flex-1"
-                    disabled={saving}
-                    onClick={() => {
-                      const row = s.rows.find((r) => String(r.Id ?? "") === rowEditingId);
-                      if (!row) return;
-                      const source: Record<string, unknown> = {};
-                      for (const [k, v] of Object.entries(row)) source[k] = typeof v === "boolean" ? v : String(v ?? "");
-                      void doSave(s.childApi, rowEditingId, source);
-                    }}
-                  >
-                    {saving ? "Saving…" : "Save row"}
-                  </Button>
-                  <Button size="sm" variant="ghost" disabled={saving} onClick={() => { setEditingRow(null); setDraft({}); setSaveError(null); }}>
-                    Cancel
-                  </Button>
-                </div>
-              )}
-              {!s.exhausted && !rowEditingId && (
+              {!s.exhausted && (
                 <Button
                   size="sm"
                   variant="ghost"

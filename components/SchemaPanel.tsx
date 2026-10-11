@@ -47,6 +47,8 @@ import {
   type NoteFormat,
 } from "@/lib/notes/notebody";
 import { RecordPopover, type RecordPopData, type RecordFieldMeta } from "./erd/RecordPopover";
+import { RecordEditModal } from "./erd/RecordEditModal";
+import { parseLayouts, type ObjectLayout } from "@/lib/salesforce/layouts";
 import {
   isValidRecordId,
   displayFieldNames,
@@ -1083,6 +1085,15 @@ export default function SchemaPanel({
   const [recordError, setRecordError] = useState<string | null>(null);
   const [recordPop, setRecordPop] = useState<{ apiName: string; x: number; y: number; mode: "picker" | "record" | "lookup" } | null>(null);
   const [recordPopError, setRecordPopError] = useState<string | null>(null);
+  /** Full-screen edit modal target (any aboard record, any object). */
+  const [editModal, setEditModal] = useState<{ apiName: string; id: string } | null>(null);
+  /** Page-layout cache per object + fetch status for the open modal. */
+  const layoutCacheRef = useRef(new Map<string, ObjectLayout[]>());
+  const [layoutState, setLayoutState] = useState<{ key: string; loading: boolean; error: string | null }>({
+    key: "",
+    loading: false,
+    error: null,
+  });
   const [recordMoreBusy, setRecordMoreBusy] = useState<string | null>(null);
   /** Explicit per-node visualized record. Absent = first child row, else first single. */
   const [recordSel, setRecordSel] = useState<Record<string, string>>({});
@@ -1523,6 +1534,61 @@ export default function SchemaPanel({
     setNotice(`${apiName} saved - box refreshed from the server.`);
   }, [instanceUrl, apiVersion, getToken, onSessionExpired, pullSingle]);
 
+  /** Raw (typed) fields for any aboard record: full singles first, then child pages. */
+  const editRawFields = useCallback((apiName: string, id: string): Record<string, unknown> | null => {
+    const single = recordStore.singles.get(apiName)?.get(id)?.fields;
+    if (single) return single;
+    for (const page of recordStore.children.values()) {
+      if (page.childApi !== apiName) continue;
+      const row = page.rows.find((r) => r.Id === id);
+      if (row) return row;
+    }
+    return null;
+  }, [recordStore]);
+
+  /** Human name for the modal header: Name/Subject/… cascade, else the Id. */
+  const editRecordName = useCallback((apiName: string, id: string): string => {
+    const fields = editRawFields(apiName, id);
+    if (fields) {
+      for (const k of ["Name", "Subject", "DeveloperName", "Title", "Label"]) {
+        const v = fields[k];
+        if (typeof v === "string" && v) return v;
+      }
+    }
+    return id;
+  }, [editRawFields]);
+
+  /** Open the full-screen edit modal and warm its page-layout tabs. */
+  const openEditModal = useCallback((apiName: string, id: string) => {
+    setEditModal({ apiName, id });
+    if (layoutCacheRef.current.has(apiName)) return;
+    setLayoutState({ key: apiName, loading: true, error: null });
+    const token = getToken();
+    if (!token) {
+      setLayoutState({ key: apiName, loading: false, error: "Session token unavailable." });
+      return;
+    }
+    const ver = apiVersion.startsWith("v") ? apiVersion : `v${apiVersion}`;
+    void apiFetch("/api/salesforce/rest", {
+      instanceUrl, token, scope: "org", method: "GET",
+      path: `/services/data/${ver}/sobjects/${apiName}/describe/layouts`,
+      auth: { type: "bearer", token },
+    })
+      .then(async (response) => {
+        const data = (await response.json()) as { success?: boolean; status?: number; body?: unknown; error?: string };
+        if (!response.ok || data.success === false) {
+          throw new Error(typeof data.error === "string" && data.error ? data.error : `Layouts failed (${data.status ?? response.status}).`);
+        }
+        layoutCacheRef.current.set(apiName, parseLayouts(data.body).layouts);
+        setLayoutState((prev) => (prev.key === apiName ? { key: apiName, loading: false, error: null } : prev));
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : "Layouts failed.";
+        if (isSessionExpiredMessage(message)) onSessionExpired?.();
+        setLayoutState((prev) => (prev.key === apiName ? { key: apiName, loading: false, error: message } : prev));
+      });
+  }, [instanceUrl, apiVersion, getToken, onSessionExpired]);
+
   const recordFieldMeta = useCallback((apiName: string): RecordFieldMeta[] | null => {
     const d = describes.get(apiName);
     if (!d) return null;
@@ -1680,6 +1746,13 @@ export default function SchemaPanel({
       ) => {
         void openNodeRecord(api, anchor);
       },
+      getPeekEdit: (fieldName: string) => {
+        if (!selId || fieldName === "Id") return null;
+        const meta = recordFieldMeta(apiName)?.find((m) => m.name === fieldName);
+        if (!meta || !meta.updateable) return null;
+        return { id: selId, meta };
+      },
+      onSavePeekField: (api: string, id: string, changes: Record<string, unknown>) => saveRecordEdit(api, id, changes),
       onLookupClick: (
         sourceApi: string,
         fieldName: string,
@@ -1688,7 +1761,7 @@ export default function SchemaPanel({
         void openLookupTarget(sourceApi, fieldName, anchor);
       },
     };
-  }, [recordStore, recordSel, recordCtx, openNodeRecord, openLookupTarget, refLabelsFor]);
+  }, [recordStore, recordSel, recordCtx, openNodeRecord, openLookupTarget, refLabelsFor, recordFieldMeta, saveRecordEdit]);
 
   const buildRecordPop = useCallback((apiName: string, x: number, y: number): RecordPopData => {
     const label = labels.get(apiName) ?? apiName;
@@ -2619,7 +2692,16 @@ export default function SchemaPanel({
         ...rows,
         ...extra.map((s) => ({
           name: s.fieldApi,
+          label: s.fieldApi,
           type: describeTypeFor(s.designType),
+          length: 0,
+          precision: 0,
+          scale: 0,
+          description: null,
+          unique: false,
+          externalId: false,
+          calculated: false,
+          updateable: true,
           isId: false,
           isName: false,
           refs: s.referenceTo ? [s.referenceTo] : [],
@@ -6201,12 +6283,10 @@ export default function SchemaPanel({
         />
       )}
 
-      {/* Record Walk popover */}
+      {/* Record Walk popover (view-only: all edits go through the full-screen modal) */}
       {recordPop && (
         <RecordPopover
           pop={buildRecordPop(recordPop.apiName, recordPop.x, recordPop.y)}
-          fieldMeta={recordFieldMeta(recordPop.apiName)}
-          sectionFieldMeta={{ [recordPop.apiName]: recordFieldMeta(recordPop.apiName) ?? [] }}
           onClose={() => {
             setRecordPop(null);
             setRecordPopError(null);
@@ -6220,7 +6300,6 @@ export default function SchemaPanel({
           onClear={() => clearNodeRecordData(recordPop.apiName)}
           onRefresh={() => void refreshNodeRecord(recordPop.apiName)}
           refreshing={recordBusy !== null}
-          onSave={(api, id, changes) => saveRecordEdit(api, id, changes)}
           onSelectRecord={(api, id) => void selectNodeRecord(api, id)}
           onModeChange={(mode) => setRecordPop((prev) => (prev ? { ...prev, mode } : prev))}
           onCopyLookup={(value) => {
@@ -6232,8 +6311,37 @@ export default function SchemaPanel({
               }
             })();
           }}
+          onEditRecord={(api, id) => openEditModal(api, id)}
+          onInspectRecord={(api, id) => {
+            void selectNodeRecord(api, id);
+            setRecordPop((prev) => (prev ? { ...prev, apiName: api, mode: "record" } : prev));
+          }}
         />
       )}
+
+      {/* Full-screen record edit modal: All fields + page-layout tabs, review then save */}
+      {editModal && (() => {
+        const raw = editRawFields(editModal.apiName, editModal.id);
+        if (!raw) return null;
+        const ls = layoutState.key === editModal.apiName ? layoutState : { loading: false, error: null as string | null };
+        return (
+          <RecordEditModal
+            data={{
+              apiName: editModal.apiName,
+              objectLabel: labels.get(editModal.apiName) ?? editModal.apiName,
+              recordId: editModal.id,
+              recordName: editRecordName(editModal.apiName, editModal.id),
+              rawFields: raw,
+              metas: recordFieldMeta(editModal.apiName) ?? [],
+              layouts: layoutCacheRef.current.get(editModal.apiName) ?? [],
+              layoutsLoading: ls.loading,
+              layoutsError: ls.error,
+            }}
+            onClose={() => setEditModal(null)}
+            onSave={(api, id, changes) => saveRecordEdit(api, id, changes)}
+          />
+        );
+      })()}
 
       {/* Record Walk entry */}
       {recordModalOpen && (
