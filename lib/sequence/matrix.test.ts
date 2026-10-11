@@ -25,8 +25,8 @@ describe("sequence matrix", () => {
     expect(flat.map((f) => [f.message.id, f.path])).toEqual([["m1", ""], ["m2", "loop: each line"]]);
   });
 
-  it("resolves participant names with retry and timeout columns", () => {
-    const wb = buildSequenceMatrixWorkbook(doc());
+  it("resolves participant names with retry and timeout columns", async () => {
+    const wb = await buildSequenceMatrixWorkbook(doc());
     expect(wb.worksheets.map((w) => w.name)).toEqual(["Summary", "Participants", "Messages"]);
     const msgs = wb.getWorksheet("Messages")!;
     expect(msgs.getRow(2).values).toEqual([undefined, 1, "Salesforce", "Middleware", "sync", "Create Order", "", 30, "", "", ""]);

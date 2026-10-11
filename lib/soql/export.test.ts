@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { buildQueryResultWorkbook } from "./export";
 
 describe("query result export", () => {
-  it("covers the run and the full grid", () => {
-    const wb = buildQueryResultWorkbook({
+  it("covers the run and the full grid", async () => {
+    const wb = await buildQueryResultWorkbook({
       columns: ["Id", "Name"],
       rows: [["001x", "Acme"]],
       totalSize: 1,

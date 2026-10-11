@@ -77,10 +77,10 @@ export function buildGovernanceSheets(decisions: Decision[]): ExcelSheetDef[] {
   ];
 }
 
-export function buildGovernanceWorkbook(decisions: Decision[]): ExcelJS.Workbook {
+export async function buildGovernanceWorkbook(decisions: Decision[]): Promise<ExcelJS.Workbook> {
   return buildExcelWorkbook(buildGovernanceSheets(decisions));
 }
 
 export async function downloadGovernancePack(decisions: Decision[], filename: string): Promise<void> {
-  await downloadExcelWorkbook(buildGovernanceWorkbook(decisions), filename);
+  await downloadExcelWorkbook(await buildGovernanceWorkbook(decisions), filename);
 }

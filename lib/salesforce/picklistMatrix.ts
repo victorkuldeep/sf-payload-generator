@@ -62,11 +62,11 @@ export function buildPicklistMatrixSheets(
   ];
 }
 
-export function buildPicklistMatrixWorkbook(
+export async function buildPicklistMatrixWorkbook(
   objectLabel: string,
   fields: MatrixField[],
   rts: MatrixRt[],
-): ExcelJS.Workbook {
+): Promise<ExcelJS.Workbook> {
   return buildExcelWorkbook(buildPicklistMatrixSheets(objectLabel, fields, rts));
 }
 
@@ -76,5 +76,5 @@ export async function downloadPicklistMatrix(
   rts: MatrixRt[],
   filename: string,
 ): Promise<void> {
-  await downloadExcelWorkbook(buildPicklistMatrixWorkbook(objectLabel, fields, rts), filename);
+  await downloadExcelWorkbook(await buildPicklistMatrixWorkbook(objectLabel, fields, rts), filename);
 }

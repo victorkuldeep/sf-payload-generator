@@ -42,10 +42,10 @@ export function buildImpactSheets(summary: ImpactSummary): ExcelSheetDef[] {
   ];
 }
 
-export function buildImpactWorkbook(summary: ImpactSummary): ExcelJS.Workbook {
+export async function buildImpactWorkbook(summary: ImpactSummary): Promise<ExcelJS.Workbook> {
   return buildExcelWorkbook(buildImpactSheets(summary));
 }
 
 export async function downloadImpactAnalysis(summary: ImpactSummary, filename: string): Promise<void> {
-  await downloadExcelWorkbook(buildImpactWorkbook(summary), filename);
+  await downloadExcelWorkbook(await buildImpactWorkbook(summary), filename);
 }

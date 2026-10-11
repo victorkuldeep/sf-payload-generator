@@ -62,10 +62,10 @@ export function buildTraceabilitySheets(
   ];
 }
 
-export function buildTraceabilityWorkbook(
+export async function buildTraceabilityWorkbook(
   reqs: Requirement[],
   coverage: Map<string, RequirementCoverage>,
-): ExcelJS.Workbook {
+): Promise<ExcelJS.Workbook> {
   return buildExcelWorkbook(buildTraceabilitySheets(reqs, coverage));
 }
 
@@ -74,5 +74,5 @@ export async function downloadTraceabilityMatrix(
   coverage: Map<string, RequirementCoverage>,
   filename: string,
 ): Promise<void> {
-  await downloadExcelWorkbook(buildTraceabilityWorkbook(reqs, coverage), filename);
+  await downloadExcelWorkbook(await buildTraceabilityWorkbook(reqs, coverage), filename);
 }

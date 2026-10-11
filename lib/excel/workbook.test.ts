@@ -27,7 +27,7 @@ describe("excel engine", () => {
   });
 
   it("builds frozen, filtered sheets with bold headers", async () => {
-    const wb = buildExcelWorkbook([
+    const wb = await buildExcelWorkbook([
       { name: "First", header: ["A", "B"], rows: [["a1", 1]], widths: [20, 10] },
       { name: "KV", rows: [["K", "V"]] },
     ]);

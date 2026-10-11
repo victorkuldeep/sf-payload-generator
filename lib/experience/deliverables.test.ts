@@ -32,7 +32,7 @@ describe("deliverables", () => {
       "Data Requirements", "Backend Dependencies", "Integration References",
       "Decisions", "Assumptions", "Coverage Findings", "Change Log",
     ];
-    const wb = buildExperienceWorkbook(project());
+    const wb = await buildExperienceWorkbook(project());
     expect(wb.worksheets.map((w) => w.name)).toEqual(names);
     const buf = await wb.xlsx.writeBuffer();
     expect(buf.byteLength).toBeGreaterThan(1000);

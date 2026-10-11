@@ -92,10 +92,10 @@ export function buildFieldDictionarySheets(
   return sheets;
 }
 
-export function buildFieldDictionaryWorkbook(
+export async function buildFieldDictionaryWorkbook(
   describes: Iterable<SalesforceDescribeResult>,
   opts: { org?: string; exportedAt?: string } = {},
-): ExcelJS.Workbook {
+): Promise<ExcelJS.Workbook> {
   return buildExcelWorkbook(buildFieldDictionarySheets(describes, opts));
 }
 
@@ -104,5 +104,5 @@ export async function downloadFieldDictionary(
   filename: string,
   opts: { org?: string; exportedAt?: string } = {},
 ): Promise<void> {
-  await downloadExcelWorkbook(buildFieldDictionaryWorkbook(describes, opts), filename);
+  await downloadExcelWorkbook(await buildFieldDictionaryWorkbook(describes, opts), filename);
 }

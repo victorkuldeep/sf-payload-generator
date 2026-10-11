@@ -49,7 +49,7 @@ export function buildTaskSheets(tasks: ConsoleTask[], attachCounts: Record<strin
   ];
 }
 
-export function buildTaskWorkbook(tasks: ConsoleTask[], attachCounts: Record<string, number> = {}): ExcelJS.Workbook {
+export async function buildTaskWorkbook(tasks: ConsoleTask[], attachCounts: Record<string, number> = {}): Promise<ExcelJS.Workbook> {
   return buildExcelWorkbook(buildTaskSheets(tasks, attachCounts));
 }
 
@@ -58,5 +58,5 @@ export async function downloadTaskList(
   attachCounts: Record<string, number>,
   filename: string,
 ): Promise<void> {
-  await downloadExcelWorkbook(buildTaskWorkbook(tasks, attachCounts), filename);
+  await downloadExcelWorkbook(await buildTaskWorkbook(tasks, attachCounts), filename);
 }

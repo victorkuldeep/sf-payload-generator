@@ -52,11 +52,11 @@ export function buildRiskRegisterSheets(
   ];
 }
 
-export function buildRiskRegisterWorkbook(
+export async function buildRiskRegisterWorkbook(
   projectName: string,
   findings: RiskFinding[],
   proofs: Map<string, ProofState> = new Map(),
-): ExcelJS.Workbook {
+): Promise<ExcelJS.Workbook> {
   return buildExcelWorkbook(buildRiskRegisterSheets(projectName, findings, proofs));
 }
 
@@ -66,5 +66,5 @@ export async function downloadRiskRegister(
   proofs: Map<string, ProofState>,
   filename: string,
 ): Promise<void> {
-  await downloadExcelWorkbook(buildRiskRegisterWorkbook(projectName, findings, proofs), filename);
+  await downloadExcelWorkbook(await buildRiskRegisterWorkbook(projectName, findings, proofs), filename);
 }

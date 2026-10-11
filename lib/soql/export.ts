@@ -42,10 +42,10 @@ export function buildQueryResultSheets(r: QueryResultExport): ExcelSheetDef[] {
   ];
 }
 
-export function buildQueryResultWorkbook(r: QueryResultExport): ExcelJS.Workbook {
+export async function buildQueryResultWorkbook(r: QueryResultExport): Promise<ExcelJS.Workbook> {
   return buildExcelWorkbook(buildQueryResultSheets(r));
 }
 
 export async function downloadQueryResult(r: QueryResultExport, filename: string): Promise<void> {
-  await downloadExcelWorkbook(buildQueryResultWorkbook(r), filename);
+  await downloadExcelWorkbook(await buildQueryResultWorkbook(r), filename);
 }

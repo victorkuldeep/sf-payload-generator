@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { buildPicklistMatrixWorkbook } from "./picklistMatrix";
 
 describe("picklist matrix", () => {
-  it("marks per-RT availability with master showing everything", () => {
-    const wb = buildPicklistMatrixWorkbook(
+  it("marks per-RT availability with master showing everything", async () => {
+    const wb = await buildPicklistMatrixWorkbook(
       "Account",
       [{ label: "Industry", apiName: "Industry", values: [{ label: "Tech", value: "Tech" }, { label: "Bank", value: "Bank" }] }],
       [

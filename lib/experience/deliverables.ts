@@ -239,7 +239,7 @@ export async function buildWordPack(
 
 // ---------- Excel ----------
 
-export function buildExperienceWorkbook(scope: DocScope, cross?: DocCross): ExcelJS.Workbook {
+export async function buildExperienceWorkbook(scope: DocScope, cross?: DocCross): Promise<ExcelJS.Workbook> {
   const sheets: ExcelSheetDef[] = [];
   const exp = scope.experience;
   const ops = new Map((scope.apiCatalog?.operations ?? []).map((o) => [o.id, o]));
@@ -327,7 +327,7 @@ export function buildExperienceWorkbook(scope: DocScope, cross?: DocCross): Exce
 
 export async function downloadExperienceWorkbook(scope: DocScope, cross?: DocCross): Promise<void> {
   const safe = scope.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
-  await downloadExcelWorkbook(buildExperienceWorkbook(scope, cross), `${safe}-experience.xlsx`);
+  await downloadExcelWorkbook(await buildExperienceWorkbook(scope, cross), `${safe}-experience.xlsx`);
 }
 
 // ---------- CSV / TSV ----------

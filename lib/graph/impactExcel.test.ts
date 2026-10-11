@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { buildImpactWorkbook } from "./impactExcel";
 
 describe("impact export", () => {
-  it("flattens groups and dangling refs into sheets", () => {
-    const wb = buildImpactWorkbook({
+  it("flattens groups and dangling refs into sheets", async () => {
+    const wb = await buildImpactWorkbook({
       target: { key: "schema:Account", kind: "schema-object", surface: "schema", name: "Account" },
       groups: [
         {

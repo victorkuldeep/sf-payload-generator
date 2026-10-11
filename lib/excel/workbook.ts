@@ -4,7 +4,18 @@
  * sheet style. Callers declare sheets, the engine builds the workbook.
  */
 
-import ExcelJS from "exceljs";
+import type ExcelJS from "exceljs";
+
+/**
+ * exceljs evaluates Node-only requires (`fs`) at its entry, which throws in
+ * Cloudflare Workers at SSR time while working fine in Node dev - every page
+ * bundling this module 500s in production. It must only ever load in the
+ * browser download path, so every runtime touch goes through this lazy
+ * loader. Type positions keep using `import type` (erased, zero runtime).
+ */
+async function loadExcelJS(): Promise<typeof ExcelJS> {
+  return (await import("exceljs")).default as typeof ExcelJS;
+}
 
 export const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -50,8 +61,9 @@ export function excelCell(v: unknown): ExcelJS.CellValue {
   }
 }
 
-export function buildExcelWorkbook(sheets: ExcelSheetDef[]): ExcelJS.Workbook {
-  const wb = new ExcelJS.Workbook();
+export async function buildExcelWorkbook(sheets: ExcelSheetDef[]): Promise<ExcelJS.Workbook> {
+  const Excel = await loadExcelJS();
+  const wb = new Excel.Workbook();
   const used = new Set<string>();
   for (const def of sheets) {
     const ws = wb.addWorksheet(safeSheetName(def.name, used));

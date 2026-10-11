@@ -72,7 +72,7 @@ function mappingSheet(project: MappingProject): unknown[][] {
   return rows;
 }
 
-export function buildWorkbook(project: MappingProject, findings: Diagnostic[], exportedAt: string): ExcelJS.Workbook {
+export async function buildWorkbook(project: MappingProject, findings: Diagnostic[], exportedAt: string): Promise<ExcelJS.Workbook> {
   const counts = handoffCounts(project, findings);
   const sheets: ExcelSheetDef[] = [];
 
@@ -140,7 +140,7 @@ export function buildWorkbook(project: MappingProject, findings: Diagnostic[], e
 }
 
 export async function downloadWorkbook(project: MappingProject, findings: Diagnostic[]): Promise<void> {
-  const wb = buildWorkbook(project, findings, new Date().toISOString());
+  const wb = await buildWorkbook(project, findings, new Date().toISOString());
   const safe = project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "mapping";
   await downloadExcelWorkbook(wb, `${safe}-handoff.xlsx`);
 }

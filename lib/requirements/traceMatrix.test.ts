@@ -3,14 +3,14 @@ import { buildTraceabilityWorkbook } from "./traceMatrix";
 import { newRequirement } from "./model";
 
 describe("traceability matrix", () => {
-  it("lays requirements against per-surface links and derived coverage", () => {
+  it("lays requirements against per-surface links and derived coverage", async () => {
     const a = newRequirement("Order confirmation", "REQ-102", 1);
     a.links = [
       { surface: "wireframe", recordId: "w1", label: "Customer Detail" },
       { surface: "sequence", recordId: "s1", label: "Order Create" },
     ];
     const b = newRequirement("Orphaned intent", "REQ-103", 2);
-    const wb = buildTraceabilityWorkbook(
+    const wb = await buildTraceabilityWorkbook(
       [a, b],
       new Map([
         [a.id, { id: a.id, number: a.number, covered: true, liveLinks: 2, danglingLinks: 0 }],

@@ -3,14 +3,14 @@ import { buildGovernanceWorkbook } from "./adrLog";
 import { newDecision } from "./model";
 
 describe("governance pack", () => {
-  it("flattens decisions to plain text with fill-in checklists", () => {
+  it("flattens decisions to plain text with fill-in checklists", async () => {
     const d = newDecision("Middleware owns orchestration", "ADR-042", 1);
     d.status = "accepted";
     d.context = "<p>Two buses compete.</p>";
     d.decision = "<p>Middleware wins.</p>";
     d.alternatives = [{ title: "Point to point", note: "Spaghetti" }];
     d.links = [{ surface: "system", recordId: "s1", label: "Middleware" }];
-    const wb = buildGovernanceWorkbook([d]);
+    const wb = await buildGovernanceWorkbook([d]);
     expect(wb.worksheets.map((w) => w.name)).toEqual(["ADR Log", "NFR Checklist", "Deployment Checklist"]);
     const log = wb.getWorksheet("ADR Log")!;
     expect(log.getRow(2).values).toEqual([

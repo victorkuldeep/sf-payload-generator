@@ -73,10 +73,10 @@ export function buildSequenceMatrixSheets(doc: SequenceDocument): ExcelSheetDef[
   ];
 }
 
-export function buildSequenceMatrixWorkbook(doc: SequenceDocument): ExcelJS.Workbook {
+export async function buildSequenceMatrixWorkbook(doc: SequenceDocument): Promise<ExcelJS.Workbook> {
   return buildExcelWorkbook(buildSequenceMatrixSheets(doc));
 }
 
 export async function downloadSequenceMatrix(doc: SequenceDocument, filename: string): Promise<void> {
-  await downloadExcelWorkbook(buildSequenceMatrixWorkbook(doc), filename);
+  await downloadExcelWorkbook(await buildSequenceMatrixWorkbook(doc), filename);
 }

@@ -72,8 +72,8 @@ describe("field dictionary", () => {
     field({ name: "AccountId", label: "Account ID", type: "reference", referenceTo: ["Account"], relationshipName: "Account" }),
   ]);
 
-  it("covers the canvas with summary, relationships, and one sheet per object", () => {
-    const wb = buildFieldDictionaryWorkbook(new Map([["Account", account], ["Contact", contact]]).values(), {
+  it("covers the canvas with summary, relationships, and one sheet per object", async () => {
+    const wb = await buildFieldDictionaryWorkbook(new Map([["Account", account], ["Contact", contact]]).values(), {
       org: "demo@org",
       exportedAt: "2026-01-01",
     });

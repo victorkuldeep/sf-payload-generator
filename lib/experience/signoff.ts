@@ -52,10 +52,10 @@ export function buildSignoffSheets(name: string, exp: ExperienceModule): ExcelSh
   ];
 }
 
-export function buildSignoffWorkbook(name: string, exp: ExperienceModule): ExcelJS.Workbook {
+export async function buildSignoffWorkbook(name: string, exp: ExperienceModule): Promise<ExcelJS.Workbook> {
   return buildExcelWorkbook(buildSignoffSheets(name, exp));
 }
 
 export async function downloadSignoff(name: string, exp: ExperienceModule, filename: string): Promise<void> {
-  await downloadExcelWorkbook(buildSignoffWorkbook(name, exp), filename);
+  await downloadExcelWorkbook(await buildSignoffWorkbook(name, exp), filename);
 }

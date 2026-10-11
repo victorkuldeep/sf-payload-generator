@@ -53,7 +53,7 @@ export function buildApiInventorySheets(name: string, catalog: Pick<ApiCatalog, 
   ];
 }
 
-export function buildApiInventoryWorkbook(name: string, catalog: Pick<ApiCatalog, "operations" | "dependencies">): ExcelJS.Workbook {
+export async function buildApiInventoryWorkbook(name: string, catalog: Pick<ApiCatalog, "operations" | "dependencies">): Promise<ExcelJS.Workbook> {
   return buildExcelWorkbook(buildApiInventorySheets(name, catalog));
 }
 
@@ -62,5 +62,5 @@ export async function downloadApiInventory(
   catalog: Pick<ApiCatalog, "operations" | "dependencies">,
   filename: string,
 ): Promise<void> {
-  await downloadExcelWorkbook(buildApiInventoryWorkbook(name, catalog), filename);
+  await downloadExcelWorkbook(await buildApiInventoryWorkbook(name, catalog), filename);
 }

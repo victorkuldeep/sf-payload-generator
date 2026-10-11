@@ -3,7 +3,7 @@ import { buildTaskWorkbook } from "./taskExport";
 import { consoleTaskKey, newConsoleTask } from "./model";
 
 describe("task export", () => {
-  it("lists tasks with keys, labels, and attachment counts", () => {
+  it("lists tasks with keys, labels, and attachment counts", async () => {
     const t = newConsoleTask("Prove the timeout", 1);
     t.kind = "question";
     t.owner = "kul";
@@ -12,7 +12,7 @@ describe("task export", () => {
     t.body = "Run the scenario.";
     t.links = [{ surface: "system", recordId: "p1", label: "Middleware" }];
     t.notes = [{ id: "n1", at: 2, text: "Waiting on VPN." }];
-    const wb = buildTaskWorkbook([t], { [t.id]: 2 });
+    const wb = await buildTaskWorkbook([t], { [t.id]: 2 });
     expect(wb.worksheets.map((w) => w.name)).toEqual(["Summary", "Tasks"]);
     const tasks = wb.getWorksheet("Tasks")!;
     const row = tasks.getRow(2).values as unknown[];
