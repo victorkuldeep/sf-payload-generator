@@ -9,6 +9,8 @@ import { SfExplorer } from "./SfExplorer";
 import { FieldInspector } from "./FieldInspector";
 import { MappingTable } from "./MappingTable";
 import { MappingGrid } from "./MappingGrid";
+import { MappingGraph } from "./MappingGraph";
+import { SourceJsonModal } from "./SourceJsonModal";
 import { ConstantsModal } from "./ConstantsModal";
 import { SuggestModal } from "./SuggestModal";
 import { CoverageModal } from "./CoverageModal";
@@ -66,6 +68,7 @@ export function MappingRoute() {
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showReview, setShowReview] = useState(false);
+  const [sourceJsonOpen, setSourceJsonOpen] = useState(false);
   const [showChildWizard, setShowChildWizard] = useState(false);
   const [childWizardMode, setChildWizardMode] = useState<"attached" | "standalone">("attached");
   const startChildWizard = (mode: "attached" | "standalone", tab: "paste" | "openapi" = "paste") => {
@@ -275,7 +278,7 @@ export function MappingRoute() {
   };
 
   // ---- child mapping actions (integration workspace) ----
-  const [mapMode, setMapMode] = useState<"guide" | "grid">("guide");
+  const [mapMode, setMapMode] = useState<"guide" | "grid" | "graph">("guide");
   const [sourceOpen, setSourceOpen] = useState(true);
   const [sfOpen, setSfOpen] = useState(true);
   const [showSuggest, setShowSuggest] = useState(false);
@@ -445,10 +448,46 @@ export function MappingRoute() {
     </span>
   );
 
+  // New-mapping wizard: shared by every view (start, library, workspace).
+  // It used to live inside the workspace return only, so the buttons on
+  // Start/Library silently did nothing - fully local, no connection needed.
+  // openChildStandalone is a hoisted function declaration, safe to call here.
+  const childWizardModal = showChildWizard && (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-4 sm:p-8" role="dialog" aria-modal="true" aria-label="New integration mapping">
+      <ProjectWizard
+        title={childWizardMode === "standalone" ? "New standalone mapping" : "New integration mapping"}
+        initialSourceTab={wizardTab}
+        contextName={childWizardMode === "attached" && studio ? studio.name : undefined}
+        onCreate={(p) => {
+          void (async () => {
+            await saveProject(p).catch(() => undefined);
+            if (childWizardMode === "attached" && studio) {
+              const next = attachMapping(studio, p.id, new Date().toISOString());
+              await persistStudio(next);
+              setStudio(next);
+            } else {
+              // Standalone birth: open it direct - no umbrella needed.
+              setShowChildWizard(false);
+              refreshAll();
+              await openChildStandalone(p.id);
+              return;
+            }
+            setChildMaps((prev) => [...prev, p]);
+            setShowChildWizard(false);
+            refreshAll();
+          })();
+        }}
+        onCancel={() => setShowChildWizard(false)}
+      />
+    </div>
+  );
+
   // ================= start screen: inventory left, action right =================
-  if (!studio) {
+  // NOTE: child-first - a standalone mapping has no studio by design, so the
+  // workspace branch below must win over this one or opens silently no-op.
+  if (!studio && !child) {
     return (
-      <div className="grid items-stretch gap-3 lg:grid-cols-[300px_minmax(0,1fr)]">
+      <div className="grid min-h-0 flex-1 items-stretch gap-3 lg:grid-cols-[300px_minmax(0,1fr)]">
         <aside className="flex h-full max-h-[calc(100vh-140px)] min-h-[420px] flex-col rounded-xl border border-[#E8E2D8] bg-white p-3" aria-label="Projects inventory">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">Projects · {studios.length}</p>
@@ -675,6 +714,7 @@ export function MappingRoute() {
             }}
           />
         )}
+        {childWizardModal}
         </div>
       </div>
     );
@@ -693,11 +733,11 @@ export function MappingRoute() {
   if (child) {
     const inWorkspace = studio?.mappingIds.includes(child.id) ?? false;
     return (
-      <div className="space-y-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
           <div className="min-w-0">
             <p className="font-mono text-[10px] text-[#A39B8E]">
-              {inWorkspace ? studio.name : "standalone"} / integration mapping
+              {inWorkspace && studio ? studio.name : "standalone"} / integration mapping
             </p>
             <p className="truncate text-[14px] font-semibold text-[#27241F]">{child.name}</p>
             <p className="font-mono text-[10px] text-[#A39B8E]">
@@ -736,7 +776,7 @@ export function MappingRoute() {
                 Delete
               </Button>
             )}
-            <Button size="sm" variant="ghost" onClick={() => { setChild(null); setConfirmDeleteChild(false); }}>
+            <Button size="sm" variant="ghost" onClick={() => { setChild(null); setConfirmDeleteChild(false); if (!inWorkspace) setView("library"); }}>
               {inWorkspace ? "← Mappings" : "← Close"}
             </Button>
           </div>
@@ -802,7 +842,7 @@ export function MappingRoute() {
 
         <div
           id="mapping-workspace"
-          className={'grid items-start gap-3 ' + (sourceOpen ? (sfOpen ? 'xl:grid-cols-[23%_52%_25%] lg:grid-cols-[280px_minmax(0,1fr)]' : 'xl:grid-cols-[25%_minmax(0,1fr)_48px] lg:grid-cols-[280px_minmax(0,1fr)]') : sfOpen ? 'xl:grid-cols-[48px_minmax(0,1fr)_25%] lg:grid-cols-[48px_minmax(0,1fr)]' : 'xl:grid-cols-[48px_minmax(0,1fr)_48px] lg:grid-cols-[48px_minmax(0,1fr)]')}
+          className={'grid min-h-0 flex-1 items-stretch gap-3 ' + (sourceOpen ? (sfOpen ? 'xl:grid-cols-[23%_52%_25%] lg:grid-cols-[280px_minmax(0,1fr)]' : 'xl:grid-cols-[25%_minmax(0,1fr)_48px] lg:grid-cols-[280px_minmax(0,1fr)]') : sfOpen ? 'xl:grid-cols-[48px_minmax(0,1fr)_25%] lg:grid-cols-[48px_minmax(0,1fr)]' : 'xl:grid-cols-[48px_minmax(0,1fr)_48px] lg:grid-cols-[48px_minmax(0,1fr)]')}
         >
           {sourceOpen ? (
           <div className="rounded-xl border border-[#E8E2D8] bg-white p-3">
@@ -881,7 +921,7 @@ export function MappingRoute() {
             </div>
             <div className="mb-2 flex items-center gap-2">
               <div className="flex rounded-lg border border-[#E8E2D8] bg-white p-0.5" role="tablist" aria-label="Mapping surface">
-                {(["guide", "grid"] as const).map((m) => (
+                {(["guide", "grid", "graph"] as const).map((m) => (
                   <button
                     key={m}
                     type="button"
@@ -892,12 +932,16 @@ export function MappingRoute() {
                       mapMode === m ? "bg-[#211F1B] text-white" : "text-[#777168] hover:text-[#27241F]"
                     }`}
                   >
-                    {m === "guide" ? "Guide" : "Grid"}
+                    {m === "guide" ? "Guide" : m === "grid" ? "Grid" : "Graph"}
                   </button>
                 ))}
               </div>
               <p className="font-mono text-[10px] text-[#A39B8E]">
-                {mapMode === "grid" ? "Spreadsheet editing - same rows, click any cell to type." : "Guided mapping - pick a source, then a target field."}
+                {mapMode === "grid"
+                  ? "Spreadsheet editing - same rows, click any cell to type."
+                  : mapMode === "graph"
+                    ? "Left-to-right flow: JSON source and constants into sObject fields. Click the circle for the JSON."
+                    : "Guided mapping - pick a source, then a target field."}
               </p>
               <Button
                 size="sm"
@@ -932,7 +976,7 @@ export function MappingRoute() {
                 onUpdateRow={(id, patch) => mutateChild((p) => ({ ...p, mappings: p.mappings.map((m) => (m.id === id ? { ...m, ...patch, updatedAt: new Date().toISOString() } : m)) }))}
                 onRemoveRow={(id) => mutateChild((p) => ({ ...p, mappings: p.mappings.filter((m) => m.id !== id) }))}
               />
-            ) : (
+            ) : mapMode === "grid" ? (
               <MappingGrid
                 project={child}
                 planId={activePlanId}
@@ -943,6 +987,8 @@ export function MappingRoute() {
                 onImportPaste={importPaste}
                 onOpenConstants={() => setConstantsOpen(true)}
               />
+            ) : (
+              <MappingGraph project={child} onOpenSource={() => setSourceJsonOpen(true)} />
             )}
           </div>
 
@@ -1052,11 +1098,23 @@ export function MappingRoute() {
             }}
           />
         )}
+
+        {sourceJsonOpen && child.source && (
+          <SourceJsonModal
+            name={child.source.name}
+            origin={child.sourceApi ?? child.sourceSystem ?? null}
+            text={child.source.originalText}
+            onClose={() => setSourceJsonOpen(false)}
+          />
+        )}
       </div>
     );
   }
 
   // ================= workspace root =================
+  // studio is non-null here (null studio exits at the start screen or the
+  // child workspace above) - the guard is for the type checker.
+  if (!studio) return null;
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
@@ -1196,41 +1254,13 @@ export function MappingRoute() {
         />
       )}
 
-      {showChildWizard && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-4 sm:p-8" role="dialog" aria-modal="true" aria-label="New integration mapping">
-        <ProjectWizard
-          title={childWizardMode === "standalone" ? "New standalone mapping" : "New integration mapping"}
-          initialSourceTab={wizardTab}
-          contextName={childWizardMode === "attached" && studio ? studio.name : undefined}
-          onCreate={(p) => {
-            void (async () => {
-              await saveProject(p).catch(() => undefined);
-              if (childWizardMode === "attached" && studio) {
-                const next = attachMapping(studio, p.id, new Date().toISOString());
-                await persistStudio(next);
-                setStudio(next);
-              } else {
-                // Standalone birth: open it direct - no umbrella needed.
-                setShowChildWizard(false);
-                refreshAll();
-                await openChildStandalone(p.id);
-                return;
-              }
-              setChildMaps((prev) => [...prev, p]);
-              setShowChildWizard(false);
-              refreshAll();
-            })();
-          }}
-          onCancel={() => setShowChildWizard(false)}
-        />
-        </div>
-      )}
+      {childWizardModal}
     </div>
   );
 
 }
 
-function MappingsTab({
+  function MappingsTab({
   studio,
   items,
   library,
@@ -1396,7 +1426,7 @@ function LibraryList({
       {library.length === 0 && (
         <div className="py-6 text-center">
           <p className="text-[13px] text-[#A39B8E]">No saved mappings yet - map one payload direct, no project needed.</p>
-          <Button size="sm" onClick={onNew}>
+          <Button size="sm" className="mt-3" onClick={onNew}>
             Create the first one
           </Button>
         </div>
