@@ -366,3 +366,7 @@ body.sf-present #main-content > main {
 /* Scrollable rails without a visible scrollbar (scroll still works). */
 .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Diagram Studio palette: relax the shared System glyphs (fixed 2px
+   strokes) to lean 1.5px strokes here only - System itself is untouched. */
+.studio-palette-lean svg { width: 17px; height: 17px; stroke-width: 1.5; }

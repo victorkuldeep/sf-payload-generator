@@ -607,14 +607,14 @@ export function StudioCanvas({
   return (
     <div className="flex min-h-0 flex-1 items-stretch gap-[2px]">
       {palOpen ? (
-        <div className="no-scrollbar flex w-16 shrink-0 flex-col items-center gap-1 overflow-y-auto rounded-xl border border-[#E8E2D8] bg-white p-1.5" role="toolbar" aria-label="Sketch palette">
+        <div className="no-scrollbar studio-palette-lean flex w-16 shrink-0 flex-col items-center gap-1 overflow-y-auto rounded-xl border border-[#E8E2D8] bg-white p-1.5" role="toolbar" aria-label="Sketch palette">
           <button type="button" onClick={() => setPalOpen(false)} aria-label="Collapse palette" title="Collapse palette"
             className="rounded-md p-1 text-[#A39B8E] hover:text-[#27241F] cursor-pointer">
             <ChevronLeft size={14} aria-hidden="true" />
           </button>
           {showSystems && (
             <>
-              <p className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#A39B8E]">Sys</p>
+              <p className="font-mono text-[9px] font-medium uppercase tracking-wide text-[#B7AE9E]">Sys</p>
               {SYSTEM_TEMPLATES.map((t) => (
                 <button
                   key={t.systemType}
@@ -631,7 +631,7 @@ export function StudioCanvas({
           )}
           {showFlows && (
             <>
-              <p className="mt-1 font-mono text-[9px] font-bold uppercase tracking-wider text-[#A39B8E]">Flow</p>
+              <p className="mt-1 font-mono text-[9px] font-medium uppercase tracking-wide text-[#B7AE9E]">Flow</p>
               {SHAPE_BUTTONS.map(({ kind, label, Icon }) => (
                 <button
                   key={kind}
@@ -641,19 +641,19 @@ export function StudioCanvas({
                   onClick={() => place(kind)}
                   className="rounded-lg border border-transparent p-1.5 text-[#777168] hover:border-[#E8E2D8] hover:text-[#27241F] transition-colors cursor-pointer"
                 >
-                  <Icon size={15} aria-hidden="true" />
+                  <Icon size={14} strokeWidth={1.5} aria-hidden="true" />
                 </button>
               ))}
             </>
           )}
-          <p className="mt-1 font-mono text-[9px] font-bold uppercase tracking-wider text-[#A39B8E]">Edit</p>
+          <p className="mt-1 font-mono text-[9px] font-medium uppercase tracking-wide text-[#B7AE9E]">Edit</p>
           <button type="button" title="Undo (Ctrl+Z)" aria-label="Undo" onClick={undo} disabled={past.length === 0}
             className="rounded-lg border border-transparent p-1.5 text-[#777168] hover:border-[#E8E2D8] hover:text-[#27241F] transition-colors cursor-pointer disabled:opacity-40">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path d="M9 14 4 9l5-5" /><path d="M4 9h10a6 6 0 0 1 0 12h-3" /></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M9 14 4 9l5-5" /><path d="M4 9h10a6 6 0 0 1 0 12h-3" /></svg>
           </button>
           <button type="button" title="Redo (Ctrl+Y)" aria-label="Redo" onClick={redo} disabled={future.length === 0}
             className="rounded-lg border border-transparent p-1.5 text-[#777168] hover:border-[#E8E2D8] hover:text-[#27241F] transition-colors cursor-pointer disabled:opacity-40">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path d="m15 14 5-5-5-5" /><path d="M20 9H10a6 6 0 0 0 0 12h3" /></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m15 14 5-5-5-5" /><path d="M20 9H10a6 6 0 0 0 0 12h3" /></svg>
           </button>
         </div>
       ) : (
