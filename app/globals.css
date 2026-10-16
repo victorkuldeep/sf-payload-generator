@@ -358,3 +358,7 @@ body.sf-present #main-content > main {
    viewport controls so the exported PNG shows only boxes and links. */
 .studio-preview .react-flow__handle { display: none; }
 .studio-preview .react-flow__controls { display: none; }
+
+/* Diagram Studio: the selected link draws in bronze so the inspector
+   target is always visible on canvas. Scoped to studio only. */
+.studio-canvas .react-flow__edge.selected .react-flow__edge-path { stroke: #A98450; }

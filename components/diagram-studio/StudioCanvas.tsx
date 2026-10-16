@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Background, Controls, ReactFlow, useNodesState, useReactFlow, type Edge, type Node } from "@xyflow/react";
+import { Background, Controls, ReactFlow, useEdgesState, useNodesState, useReactFlow, type Edge, type EdgeChange, type Node, type NodeChange } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { ChevronLeft, ChevronRight, Diamond, RectangleHorizontal, Square, StickyNote, X } from "lucide-react";
 import { SystemGlyph } from "@/components/system-design/SystemNode";
@@ -29,9 +29,10 @@ import Button from "../ui/Button";
  * the System glyphs (sketches already look like System); flowchart shapes
  * are studio-only. Links are static - no animation, no run state.
  *
- * Selection loop guard: React Flow re-fires onSelectionChange whenever its
- * node array is replaced, so the handler bails on identical id sets -
- * otherwise setSel -> render -> replace -> fire loops forever.
+ * Selection is controlled: the sketch mirror (sel) is the single writer and
+ * selected flags echo back into the RF arrays, so a clicked link cannot be
+ * cleared by a second racing handler. Select events arrive through the RF
+ * change pipeline; identical id sets bail out to avoid render churn.
  */
 
 const SYSTEM_BUTTONS: { systemType: SystemType; label: string }[] = [
@@ -348,11 +349,13 @@ export function StudioCanvas({
     () =>
       sketch.nodes.map((n): Node => {
         const position = { x: n.x, y: n.y };
+        const selected = sel.nodes.includes(n.id);
         if (n.kind === "system") {
           return {
             id: n.id,
             type: "system",
             position,
+            selected,
             data: { name: n.label, systemType: n.systemType ?? "custom", iconKey: iconOf(n.systemType), draft: true },
           };
         }
@@ -361,6 +364,7 @@ export function StudioCanvas({
             id: n.id,
             type: "note",
             position,
+            selected,
             data: {
               text: n.label,
               editing: editingId === n.id,
@@ -370,9 +374,9 @@ export function StudioCanvas({
             },
           };
         }
-        return { id: n.id, type: `flow-${n.kind}`, position, data: { label: n.label } };
+        return { id: n.id, type: `flow-${n.kind}`, position, selected, data: { label: n.label } };
       }),
-    [sketch, editingId, commitNote]
+    [sketch, editingId, commitNote, sel]
   );
 
   const rfEdges: Edge[] = useMemo(
@@ -381,6 +385,7 @@ export function StudioCanvas({
         id: e.id,
         source: e.sourceId,
         target: e.targetId,
+        selected: sel.edges.includes(e.id),
         sourceHandle: e.sourceHandle ?? undefined,
         targetHandle: e.targetHandle ?? undefined,
         type: e.kind && e.kind !== "bezier" ? e.kind : undefined,
@@ -398,23 +403,63 @@ export function StudioCanvas({
           strokeLinecap: e.dash === "dotted" ? "round" : undefined,
         },
       })),
-    [sketch]
+    [sketch, sel]
   );
 
   // Live drag state: nodes render FROM here so picks track the pointer;
   // the sketch commits once on drag stop. Replaced wholesale on sketch
-  // commits while nobody is dragging.
+  // commits while nobody is dragging. Edges mirror the same pattern so
+  // link selection is controlled too.
   const [nodes, setNodes, onNodesChange] = useNodesState(rfNodes);
   useEffect(() => {
     if (!draggingRef.current) setNodes(rfNodes);
   }, [rfNodes, setNodes]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(rfEdges);
+  useEffect(() => {
+    setEdges(rfEdges);
+  }, [rfEdges, setEdges]);
 
-  const onSelChange = useCallback((nodesSel: string[], edgesSel: string[]) => {
-    setSel((prev) => {
-      const next = { nodes: nodesSel, edges: edgesSel };
-      return sameSel(prev, next) ? prev : next;
-    });
-  }, []);
+  // Single selection writer: RF select events update the mirror, every
+  // other change (drag, dimensions) passes through untouched.
+  const handleNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      const picks = changes.filter((c) => c.type === "select");
+      if (picks.length > 0) {
+        setSel((prev) => {
+          const ids = new Set(prev.nodes);
+          for (const c of picks) {
+            if (c.type !== "select") continue;
+            if (c.selected) ids.add(c.id);
+            else ids.delete(c.id);
+          }
+          const next = { nodes: [...ids], edges: prev.edges };
+          return sameSel(prev, next) ? prev : next;
+        });
+      }
+      onNodesChange(changes);
+    },
+    [onNodesChange]
+  );
+
+  const handleEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      const picks = changes.filter((c) => c.type === "select");
+      if (picks.length > 0) {
+        setSel((prev) => {
+          const ids = new Set(prev.edges);
+          for (const c of picks) {
+            if (c.type !== "select") continue;
+            if (c.selected) ids.add(c.id);
+            else ids.delete(c.id);
+          }
+          const next = { nodes: prev.nodes, edges: [...ids] };
+          return sameSel(prev, next) ? prev : next;
+        });
+      }
+      onEdgesChange(changes);
+    },
+    [onEdgesChange]
+  );
 
   const place = useCallback((kind: SketchNodeKind, systemType?: SystemType, label?: string) => {
     const rect = containerRef.current?.getBoundingClientRect();
@@ -627,20 +672,18 @@ export function StudioCanvas({
           containerRef.current = el;
           shotRef.current = el;
         }}
-        className={`relative min-h-[420px] min-w-0 flex-1 overflow-hidden rounded-xl border border-[#E8E2D8] bg-[#FAF8F2]${preview ? " studio-preview" : ""}`}
+        className={`studio-canvas relative min-h-[420px] min-w-0 flex-1 overflow-hidden rounded-xl border border-[#E8E2D8] bg-[#FAF8F2]${preview ? " studio-preview" : ""}`}
       >
         <ReactFlow
           nodes={nodes}
-          edges={rfEdges}
+          edges={edges}
           nodeTypes={allNodeTypes}
           nodesConnectable={!preview}
-          onNodesChange={onNodesChange}
-          onNodeClick={(_, node) => onSelChange([node.id], [])}
-          onEdgeClick={(_, edge) => onSelChange([], [edge.id])}
+          onNodesChange={handleNodesChange}
+          onEdgesChange={handleEdgesChange}
           onConnect={(c) => {
             if (c.source && c.target) onConnectCommit(c.source, c.target, c.sourceHandle, c.targetHandle);
           }}
-          onSelectionChange={({ nodes: sn, edges: se }) => onSelChange(sn.map((n) => n.id), se.map((e) => e.id))}
           onNodeDragStart={() => {
             draggingRef.current = true;
           }}
