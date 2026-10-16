@@ -27,11 +27,20 @@ function FourSides({ prefix }: { prefix: string }) {
   );
 }
 
-/** System box: shared view inside, studio connectors outside. */
+/**
+ * System box: the shared view already owns Left-target + Right-source, so
+ * the studio only adds the missing dots - no stacked duplicates fighting
+ * over the same grab point.
+ */
 export function StudioSystemView(props: NodeProps) {
   return (
     <div className="relative">
-      <FourSides prefix="sys" />
+      <Handle id="sys-top-source" type="source" position={Position.Top} title="Drag from here to another box to link" style={DOT} />
+      <Handle id="sys-top-target" type="target" position={Position.Top} title="Drop a link here" style={DOT} />
+      <Handle id="sys-bottom-source" type="source" position={Position.Bottom} title="Drag from here to another box to link" style={DOT} />
+      <Handle id="sys-bottom-target" type="target" position={Position.Bottom} title="Drop a link here" style={DOT} />
+      <Handle id="sys-left-source" type="source" position={Position.Left} title="Drag from here to another box to link" style={DOT} />
+      <Handle id="sys-right-target" type="target" position={Position.Right} title="Drop a link here" style={DOT} />
       <SystemNodeView {...(props as NodeProps<Node<SystemNodeData>>)} />
     </div>
   );

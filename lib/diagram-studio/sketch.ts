@@ -28,10 +28,15 @@ export interface SketchNode {
 
 export type SketchEdgeKind = "bezier" | "straight" | "step" | "smoothstep";
 
+export type SketchSide = "top" | "right" | "bottom" | "left";
+
 export interface SketchEdge {
   id: string;
   sourceId: string;
   targetId: string;
+  /** Exact connector dots used. Absent = auto. */
+  sourceHandle?: string;
+  targetHandle?: string;
   label: string;
   /** Link routing. Defaults to bezier. */
   kind?: SketchEdgeKind;
@@ -84,6 +89,30 @@ export function blankSketchNode(kind: SketchNodeKind, at: { x: number; y: number
     x: Math.round(at.x),
     y: Math.round(at.y),
   };
+}
+
+/** Connector-dot prefix per box kind (mirrors the studio node views). */
+export function handlePrefix(kind: SketchNodeKind): string {
+  if (kind === "system") return "sys";
+  if (kind === "note") return "note";
+  if (kind === "process") return "proc";
+  if (kind === "decision") return "dec";
+  return "term";
+}
+
+export function handleId(kind: SketchNodeKind, side: SketchSide, end: "source" | "target"): string {
+  return `${handlePrefix(kind)}-${side}-${end}`;
+}
+
+/** Best connector sides from box positions (inspector Auto links). */
+export function bestSides(
+  from: { x: number; y: number },
+  to: { x: number; y: number }
+): { from: SketchSide; to: SketchSide } {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? { from: "right", to: "left" } : { from: "left", to: "right" };
+  return dy >= 0 ? { from: "bottom", to: "top" } : { from: "top", to: "bottom" };
 }
 
 /** Flow-shape prefix carried into promoted notes so logic survives. */

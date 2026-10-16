@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  bestSides,
   blankSketch,
   blankSketchNode,
+  handleId,
   sketchToSystemProject,
   type StudioSketch,
 } from "./sketch";
@@ -29,6 +31,20 @@ describe("blankSketch", () => {
     expect(blankSketch("X").flavor).toBe("hybrid");
     expect(blankSketch("X", "flow").flavor).toBe("flow");
     expect(blankSketch("X", "system").flavor).toBe("system");
+  });
+});
+
+describe("connector dots", () => {
+  it("names handles per box kind", () => {
+    expect(handleId("system", "right", "source")).toBe("sys-right-source");
+    expect(handleId("note", "top", "target")).toBe("note-top-target");
+    expect(handleId("decision", "left", "source")).toBe("dec-left-source");
+  });
+
+  it("picks facing sides from box positions", () => {
+    expect(bestSides({ x: 0, y: 0 }, { x: 400, y: 20 })).toEqual({ from: "right", to: "left" });
+    expect(bestSides({ x: 400, y: 0 }, { x: 0, y: 20 })).toEqual({ from: "left", to: "right" });
+    expect(bestSides({ x: 0, y: 0 }, { x: 20, y: 400 })).toEqual({ from: "bottom", to: "top" });
   });
 });
 

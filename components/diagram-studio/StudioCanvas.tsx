@@ -1,17 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Background, ReactFlow, useNodesState, useReactFlow, type Edge, type Node } from "@xyflow/react";
+import { Background, Controls, ReactFlow, useNodesState, useReactFlow, type Edge, type Node } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { ChevronLeft, ChevronRight, Diamond, RectangleHorizontal, Square, StickyNote, X } from "lucide-react";
 import { SystemGlyph } from "@/components/system-design/SystemNode";
 import { SYSTEM_TEMPLATES, type SystemType } from "@/lib/system-design/model";
 import {
+  bestSides,
   blankSketchNode,
+  handleId,
   sketchId,
   type SketchEdge,
   type SketchEdgeKind,
   type SketchNodeKind,
+  type SketchSide,
   type StudioSketch,
 } from "@/lib/diagram-studio/sketch";
 
@@ -82,12 +85,21 @@ function NodeLinks({
   addLink: (
     fromId: string,
     toId: string,
-    opts: { label: string; kind: SketchEdgeKind; dash: EdgeDash; weight: EdgeWeight }
+    opts: {
+      label: string;
+      kind: SketchEdgeKind;
+      dash: EdgeDash;
+      weight: EdgeWeight;
+      sourceHandle?: string;
+      targetHandle?: string;
+    }
   ) => void;
   dropEdge: (id: string) => void;
 }) {
   const [targetId, setTargetId] = useState("");
   const [dir, setDir] = useState<"out" | "in">("out");
+  const [fromSide, setFromSide] = useState<SketchSide | "auto">("auto");
+  const [toSide, setToSide] = useState<SketchSide | "auto">("auto");
   const [label, setLabel] = useState("");
   const [kind, setKind] = useState<SketchEdgeKind>("bezier");
   const [dash, setDash] = useState<EdgeDash>("solid");
@@ -97,13 +109,41 @@ function NodeLinks({
   const linked = sketch.edges.filter((e) => e.sourceId === nodeId || e.targetId === nodeId);
   const nameOf = (id: string) => sketch.nodes.find((n) => n.id === id)?.label ?? "?";
 
+  const sideOptions: { id: SketchSide | "auto"; label: string }[] = [
+    { id: "auto", label: "Auto" },
+    { id: "top", label: "Top" },
+    { id: "right", label: "Right" },
+    { id: "bottom", label: "Bottom" },
+    { id: "left", label: "Left" },
+  ];
+
+  const submitLink = () => {
+    if (!targetId) return;
+    const fromId = dir === "out" ? nodeId : targetId;
+    const toId = dir === "out" ? targetId : nodeId;
+    const from = sketch.nodes.find((n) => n.id === fromId)!;
+    const to = sketch.nodes.find((n) => n.id === toId)!;
+    const auto = bestSides({ x: from.x, y: from.y }, { x: to.x, y: to.y });
+    const fs = fromSide === "auto" ? auto.from : fromSide;
+    const ts = toSide === "auto" ? auto.to : toSide;
+    addLink(fromId, toId, {
+      label: label.trim(),
+      kind,
+      dash,
+      weight,
+      sourceHandle: handleId(from.kind, fs, "source"),
+      targetHandle: handleId(to.kind, ts, "target"),
+    });
+    setLabel("");
+  };
+
   return (
     <div className="border-t border-[#EFE9DC] pt-2">
       <p className="font-mono text-[10px] font-bold uppercase tracking-[1.4px] text-[#A39B8E]">
         Links · {linked.length}
       </p>
       {linked.length > 0 && (
-        <ul className="mt-1.5 space-y-1">
+        <ul className="mt-1.5 max-h-36 space-y-1 overflow-y-auto pr-0.5">
           {linked.map((e) => {
             const out = e.sourceId === nodeId;
             const other = out ? e.targetId : e.sourceId;
@@ -144,6 +184,28 @@ function NodeLinks({
               </select>
             </label>
           </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <label className="block text-[11px] font-semibold text-[#27241F]">
+              From dot
+              <select value={fromSide} onChange={(e) => setFromSide(e.target.value as SketchSide | "auto")} className={fieldCls}>
+                {sideOptions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-[11px] font-semibold text-[#27241F]">
+              To dot
+              <select value={toSide} onChange={(e) => setToSide(e.target.value as SketchSide | "auto")} className={fieldCls}>
+                {sideOptions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <label className="block text-[11px] font-semibold text-[#27241F]">
             Label
             <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Create Order" className={fieldCls} />
@@ -176,17 +238,7 @@ function NodeLinks({
               </select>
             </label>
           </div>
-          <Button
-            size="sm"
-            onClick={() => {
-              if (!targetId) return;
-              if (dir === "out") addLink(nodeId, targetId, { label: label.trim(), kind, dash, weight });
-              else addLink(targetId, nodeId, { label: label.trim(), kind, dash, weight });
-              setLabel("");
-            }}
-            disabled={!targetId}
-            title="Add link without dragging"
-          >
+          <Button size="sm" onClick={submitLink} disabled={!targetId} title="Add link without dragging">
             + Link
           </Button>
         </div>
@@ -229,6 +281,7 @@ export function StudioCanvas({
   const [sel, setSel] = useState<Sel>({ nodes: [], edges: [] });
   const [past, setPast] = useState<StudioSketch[]>([]);
   const [future, setFuture] = useState<StudioSketch[]>([]);
+  const [rfInstance, setRfInstance] = useState<{ fitView: (opts?: { padding?: number }) => void } | null>(null);
   const [palOpen, setPalOpen] = useState(true);
   const [inspOpen, setInspOpen] = useState(true);
   const draggingRef = useRef(false);
@@ -256,6 +309,11 @@ export function StudioCanvas({
     setPast((p) => [...p, sketchRef.current]);
     onChangeRef.current(next);
   }, [future]);
+
+  // Fit once per sketch: never refit on edits, so committed moves stay put.
+  useEffect(() => {
+    rfInstance?.fitView({ padding: 0.2 });
+  }, [rfInstance, sketch.id]);
 
   // AI bridge: the agent draws through the same commit path (undoable).
   useEffect(() => {
@@ -318,7 +376,11 @@ export function StudioCanvas({
         id: e.id,
         source: e.sourceId,
         target: e.targetId,
+        sourceHandle: e.sourceHandle ?? undefined,
+        targetHandle: e.targetHandle ?? undefined,
         type: e.kind && e.kind !== "bezier" ? e.kind : undefined,
+        // Fat hit area: thin links are hard to click.
+        interactionWidth: 20,
         label: e.label || undefined,
         labelBgPadding: [6, 3] as [number, number],
         labelBgBorderRadius: 6,
@@ -364,13 +426,26 @@ export function StudioCanvas({
     commit({ ...sketchRef.current, nodes: [...sketchRef.current.nodes, node] });
   }, [commit, screenToFlowPosition]);
 
-  const onConnectCommit = useCallback((sourceId: string, targetId: string) => {
-    if (sourceId === targetId) return;
-    commit({
-      ...sketchRef.current,
-      edges: [...sketchRef.current.edges, { id: sketchId("ske"), sourceId, targetId, label: "" }],
-    });
-  }, [commit]);
+  const onConnectCommit = useCallback(
+    (sourceId: string, targetId: string, sourceHandle?: string | null, targetHandle?: string | null) => {
+      if (sourceId === targetId) return;
+      commit({
+        ...sketchRef.current,
+        edges: [
+          ...sketchRef.current.edges,
+          {
+            id: sketchId("ske"),
+            sourceId,
+            targetId,
+            sourceHandle: sourceHandle ?? undefined,
+            targetHandle: targetHandle ?? undefined,
+            label: "",
+          },
+        ],
+      });
+    },
+    [commit]
+  );
 
   const removeSelection = useCallback(() => {
     const cur = sketchRef.current;
@@ -439,7 +514,14 @@ export function StudioCanvas({
   const addLink = (
     fromId: string,
     toId: string,
-    opts: { label: string; kind: SketchEdgeKind; dash: EdgeDash; weight: EdgeWeight }
+    opts: {
+      label: string;
+      kind: SketchEdgeKind;
+      dash: EdgeDash;
+      weight: EdgeWeight;
+      sourceHandle?: string;
+      targetHandle?: string;
+    }
   ) => {
     if (fromId === toId) return;
     const cur = sketchRef.current;
@@ -452,6 +534,8 @@ export function StudioCanvas({
           id: sketchId("ske"),
           sourceId: fromId,
           targetId: toId,
+          sourceHandle: opts.sourceHandle,
+          targetHandle: opts.targetHandle,
           label: opts.label,
           kind: opts.kind === "bezier" ? undefined : opts.kind,
           dash: opts.dash === "solid" ? undefined : opts.dash,
@@ -540,7 +624,7 @@ export function StudioCanvas({
           nodeTypes={allNodeTypes}
           onNodesChange={onNodesChange}
           onConnect={(c) => {
-            if (c.source && c.target) onConnectCommit(c.source, c.target);
+            if (c.source && c.target) onConnectCommit(c.source, c.target, c.sourceHandle, c.targetHandle);
           }}
           onSelectionChange={({ nodes: sn, edges: se }) => onSelChange(sn.map((n) => n.id), se.map((e) => e.id))}
           onNodeDragStart={() => {
@@ -558,16 +642,16 @@ export function StudioCanvas({
               nodes: sketchRef.current.nodes.map((n) => (n.id === node.id ? { ...n, x: Math.round(pos.x), y: Math.round(pos.y) } : n)),
             });
           }}
-          fitView
-          fitViewOptions={{ padding: 0.2 }}
+          onInit={(inst) => setRfInstance(inst)}
           minZoom={0.2}
         >
           <Background gap={22} size={1.2} color="#DDD3BC" bgColor="#FAF8F2" />
+          <Controls position="bottom-left" showInteractive={false} />
         </ReactFlow>
       </div>
 
       {inspOpen ? (
-        <aside className="flex w-60 shrink-0 flex-col gap-2 overflow-y-auto rounded-xl border border-[#E8E2D8] bg-white p-3" aria-label="Sketch inspector">
+        <aside className="flex w-72 shrink-0 flex-col gap-2 overflow-y-auto rounded-xl border border-[#E8E2D8] bg-white p-3" aria-label="Sketch inspector">
           <button type="button" onClick={() => setInspOpen(false)} aria-label="Collapse inspector" title="Collapse inspector"
             className="self-end rounded-md p-1 text-[#A39B8E] hover:text-[#27241F] cursor-pointer">
             <ChevronRight size={14} aria-hidden="true" />
