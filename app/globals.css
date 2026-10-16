@@ -362,3 +362,7 @@ body.sf-present #main-content > main {
 /* Diagram Studio: the selected link draws in bronze so the inspector
    target is always visible on canvas. Scoped to studio only. */
 .studio-canvas .react-flow__edge.selected .react-flow__edge-path { stroke: #A98450; }
+
+/* Scrollable rails without a visible scrollbar (scroll still works). */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }

@@ -607,7 +607,7 @@ export function StudioCanvas({
   return (
     <div className="flex min-h-0 flex-1 items-stretch gap-[2px]">
       {palOpen ? (
-        <div className="flex w-16 shrink-0 flex-col items-center gap-1 overflow-y-auto rounded-xl border border-[#E8E2D8] bg-white p-1.5" role="toolbar" aria-label="Sketch palette">
+        <div className="no-scrollbar flex w-16 shrink-0 flex-col items-center gap-1 overflow-y-auto rounded-xl border border-[#E8E2D8] bg-white p-1.5" role="toolbar" aria-label="Sketch palette">
           <button type="button" onClick={() => setPalOpen(false)} aria-label="Collapse palette" title="Collapse palette"
             className="rounded-md p-1 text-[#A39B8E] hover:text-[#27241F] cursor-pointer">
             <ChevronLeft size={14} aria-hidden="true" />
