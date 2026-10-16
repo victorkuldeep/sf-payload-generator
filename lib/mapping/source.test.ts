@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ELEMENT_SCAN_LIMIT, extractPaths, parseSourceJson, reconcilePaths } from "./source";
+import { ELEMENT_SCAN_LIMIT, diffSourceCatalog, extractPaths, parseSourceJson, reconcilePaths } from "./source";
 
 describe("parseSourceJson", () => {
   it("parses valid JSON", () => {
@@ -112,5 +112,15 @@ describe("reconcilePaths", () => {
   it("splits live vs orphaned mappings without deleting", () => {
     const catalog = extractPaths({ a: 1 });
     expect(reconcilePaths(["$.a", "$.gone"], catalog)).toEqual({ live: ["$.a"], orphaned: ["$.gone"] });
+  });
+});
+
+describe("diffSourceCatalog", () => {
+  it("reports added and removed path ids", () => {
+    expect(diffSourceCatalog(["$.a", "$.gone"], ["$.a", "$.b"])).toEqual({ added: ["$.b"], removed: ["$.gone"] });
+  });
+
+  it("is empty when the catalog is unchanged", () => {
+    expect(diffSourceCatalog(["$.a"], ["$.a"])).toEqual({ added: [], removed: [] });
   });
 });

@@ -225,3 +225,16 @@ export function reconcilePaths(
   }
   return { live, orphaned };
 }
+
+/** Catalog-vs-catalog diff for source replace: added + removed path ids. */
+export function diffSourceCatalog(
+  oldIds: string[],
+  newIds: string[]
+): { added: string[]; removed: string[] } {
+  const before = new Set(oldIds);
+  const after = new Set(newIds);
+  return {
+    added: newIds.filter((id) => !before.has(id)),
+    removed: oldIds.filter((id) => !after.has(id)),
+  };
+}

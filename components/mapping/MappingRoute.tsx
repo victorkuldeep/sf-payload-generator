@@ -28,11 +28,12 @@ import { SnapshotsPanel } from "@/components/experience/SnapshotsPanel";
 import { WorkspaceDeliverables } from "@/components/experience/WorkspaceDeliverables";
 import { useMappingMetadata } from "./useMappingMetadata";
 import { buildSnapshot } from "@/lib/mapping/snapshot";
+import { extractPaths, parseSourceJson } from "@/lib/mapping/source";
 import { mergePasteRows, type PasteRow } from "@/lib/mapping/grid";
 import { freeConstants, mapLeafToConstant, upsertConstant } from "@/lib/mapping/constants";
 import { deleteProject, duplicateProject, listProjects, loadProject, saveProject, type ProjectSummary } from "@/lib/mapping/store";
 import { validateImport } from "@/lib/mapping/exchange";
-import type { MappingProject, MappingRow, RecordPlan, RelationshipDef, SnapshotField, SnapshotObject } from "@/lib/mapping/types";
+import type { MappingProject, MappingRow, RecordPlan, RelationshipDef, SnapshotField, SnapshotObject, SourceSnapshot } from "@/lib/mapping/types";
 import { attachMapping, detachMapping, upgradeToWorkspace } from "@/lib/studio/upgrade";
 import { blankStudio, type StudioProject } from "@/lib/studio/types";
 import { deleteStudio, listStudios, loadStudio, saveStudio, type StudioSummary } from "@/lib/studio/store";
@@ -372,6 +373,25 @@ export function MappingRoute() {
     } finally {
       setSnapshotBusy(false);
     }
+  };
+
+  // Source replace (Edit & Replace in the source modal): rebuild the path
+  // catalog from edited JSON. Mappings stay keyed by sourcePath, so rows
+  // pointing at removed paths are kept as-is - the preview calls them
+  // out before anything is applied.
+  const applySourceReplace = (newText: string) => {
+    if (!child?.source) return;
+    const parsed = parseSourceJson(newText);
+    if (!parsed.ok) return;
+    const snapshot: SourceSnapshot = {
+      kind: child.source.kind,
+      name: child.source.name,
+      originalText: newText,
+      paths: extractPaths(parsed.value),
+      capturedAt: new Date().toISOString(),
+    };
+    mutateChild((x) => ({ ...x, source: snapshot }));
+    setSourceJsonOpen(false);
   };
 
   const switchModule = (m: Module) => {
@@ -1104,6 +1124,9 @@ export function MappingRoute() {
             name={child.source.name}
             origin={child.sourceApi ?? child.sourceSystem ?? null}
             text={child.source.originalText}
+            pathIds={child.source.paths.map((x) => x.id)}
+            mappingPaths={[...new Set(child.mappings.map((m) => m.sourcePath))]}
+            onApplySource={applySourceReplace}
             onClose={() => setSourceJsonOpen(false)}
           />
         )}
