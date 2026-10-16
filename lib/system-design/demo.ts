@@ -187,3 +187,230 @@ export function buildGroqSampleProject(): SystemProject {
   ].join("\n");
   return project;
 }
+
+/**
+ * Sample topology: a TMF-style product order fans out through middleware to
+ * billing and fulfillment in parallel lanes. Every hop is mocked, so the full
+ * fan-out runs as-is: the 202 mock bodies ARE the downstream acks (each one
+ * carries ackTo + the order id back toward Salesforce). Add explicit return
+ * edges later to trace acks as lanes; the response pattern here is the
+ * cheaper, honest default.
+ */
+export function buildOrderFanoutProject(): SystemProject {
+  const project = newProject("Sample: TMF order → middleware fan-out → acks");
+  const by = (type: string) => SYSTEM_TEMPLATES.find((t) => t.systemType === type)!;
+  const sf = { ...newSystemFromTemplate(by("salesforce"), { x: 80, y: 260 }, 1), name: "Salesforce", id: "sys_fan_sf" };
+  const mw = { ...newSystemFromTemplate(by("middleware"), { x: 520, y: 260 }, 1), name: "Middleware Hub", id: "sys_fan_mw" };
+  const bill = { ...newSystemFromTemplate(by("billing"), { x: 960, y: 120 }, 1), name: "Billing", id: "sys_fan_bill" };
+  const fulf = { ...newSystemFromTemplate(by("servicenow"), { x: 960, y: 400 }, 1), name: "Fulfillment", id: "sys_fan_fulf" };
+  project.systems = [sf, mw, bill, fulf];
+  project.interfaces = [
+    { id: "iface_fan_sf", systemId: sf.id, name: "Order API", protocol: "REST", basePath: "/services/apexrest" },
+    { id: "iface_fan_mw", systemId: mw.id, name: "Hub API", protocol: "REST", basePath: "" },
+    { id: "iface_fan_bill", systemId: bill.id, name: "Invoices", protocol: "REST", basePath: "/v1" },
+    { id: "iface_fan_fulf", systemId: fulf.id, name: "Orders", protocol: "REST", basePath: "/api" },
+  ];
+  const orderBody = '{ "id": "00000238", "state": "acknowledged", "orderTotalPrice": 1499.0 }';
+  const ackBody = (system: string) => `{ "status": "accepted", "ackTo": "salesforce", "via": "${system}", "orderId": "00000238" }`;
+  project.operations = [
+    {
+      id: "op_fan_get", interfaceId: "iface_fan_sf", name: "Get product order",
+      method: "GET", path: "/tmf/productOrder/00000238", version: "v1",
+      mock: { status: 200, body: orderBody, latencyMs: 120 },
+    },
+    {
+      id: "op_fan_fwd", interfaceId: "iface_fan_mw", name: "Forward order as-is",
+      method: "POST", path: "/productOrder", version: "v1",
+      mock: { status: 202, body: '{ "status": "accepted", "lane": "as-is" }', latencyMs: 80 },
+    },
+    {
+      id: "op_fan_evt", interfaceId: "iface_fan_mw", name: "Publish order event",
+      method: "POST", path: "/topic/order-events/event", version: "v1",
+      mock: { status: 202, body: '{ "status": "accepted", "lane": "event" }', latencyMs: 80 },
+    },
+    {
+      id: "op_fan_bill", interfaceId: "iface_fan_bill", name: "Create invoice",
+      method: "POST", path: "/v1/invoices", version: "v1",
+      mock: { status: 202, body: ackBody("billing"), latencyMs: 150 },
+    },
+    {
+      id: "op_fan_fulf", interfaceId: "iface_fan_fulf", name: "Create fulfillment",
+      method: "POST", path: "/api/fulfillment", version: "v1",
+      mock: { status: 202, body: ackBody("fulfillment"), latencyMs: 200 },
+    },
+  ];
+  project.connections = [
+    {
+      id: "conn_fan_1", sourceId: sf.id, targetId: mw.id, label: "Order as-is",
+      status: "draft" as const, sourceOperationId: "op_fan_get", targetOperationId: "op_fan_fwd",
+      mapping: { mode: "passthrough" as const, template: "" },
+    },
+    {
+      id: "conn_fan_2", sourceId: sf.id, targetId: mw.id, label: "Order as event",
+      status: "draft" as const, sourceOperationId: "op_fan_get", targetOperationId: "op_fan_evt",
+      mapping: {
+        mode: "template" as const,
+        template: '{\n  "event": {\n    "productOrder": {{response}}\n  }\n}',
+      },
+    },
+    {
+      id: "conn_fan_3", sourceId: mw.id, targetId: bill.id, label: "Bill it",
+      status: "draft" as const, targetOperationId: "op_fan_bill",
+      mapping: { mode: "template" as const, template: "{{request}}" },
+    },
+    {
+      id: "conn_fan_4", sourceId: mw.id, targetId: fulf.id, label: "Fulfill it",
+      status: "draft" as const, targetOperationId: "op_fan_fulf",
+      mapping: { mode: "template" as const, template: "{{request}}" },
+    },
+  ];
+  project.environments = [{ id: "env_fan", name: "Sandbox", baseUrl: "", baseUrlOverrides: {} }];
+  project.activeEnvironmentId = "env_fan";
+  project.notes = [
+    "## TMF order fan-out (2 lanes × 2 branches)",
+    "",
+    "Salesforce order → middleware (as-is + wrapped event) → billing and",
+    "fulfillment in parallel. Every hop is mocked: the 202 bodies are the",
+    "downstream acks flowing back toward Salesforce.",
+    "",
+    "Run it:",
+    "",
+    "1. Select either Salesforce edge → Run chain from here.",
+    "2. Uncheck a lane to simulate one path (as-is vs event).",
+    "3. Replace a mock with a live URL + Credentials to go live per hop.",
+  ].join("\n");
+  return project;
+}
+
+/**
+ * Sample topology: headless Revenue Cloud quote-to-cash. Quote approval in
+ * Salesforce seeds the flow, middleware enriches (pricing/tax), billing
+ * invoices. All mocked - the shape is the deliverable, not the data.
+ */
+export function buildRevenueCloudProject(): SystemProject {
+  const project = newProject("Sample: Revenue Cloud quote → cash");
+  const by = (type: string) => SYSTEM_TEMPLATES.find((t) => t.systemType === type)!;
+  const sf = { ...newSystemFromTemplate(by("salesforce"), { x: 80, y: 200 }, 1), name: "Revenue Cloud", id: "sys_rev_sf" };
+  const mw = { ...newSystemFromTemplate(by("middleware"), { x: 520, y: 200 }, 1), name: "Middleware Hub", id: "sys_rev_mw" };
+  const bill = { ...newSystemFromTemplate(by("billing"), { x: 960, y: 200 }, 1), name: "Billing", id: "sys_rev_bill" };
+  project.systems = [sf, mw, bill];
+  project.interfaces = [
+    { id: "iface_rev_sf", systemId: sf.id, name: "Quote API", protocol: "REST", basePath: "/services/data/v66.0" },
+    { id: "iface_rev_mw", systemId: mw.id, name: "Enrichment", protocol: "REST", basePath: "" },
+    { id: "iface_rev_bill", systemId: bill.id, name: "Invoices", protocol: "REST", basePath: "/v1" },
+  ];
+  project.operations = [
+    {
+      id: "op_rev_quote", interfaceId: "iface_rev_sf", name: "Quote approved",
+      method: "EVENT", path: "/events/quote-approved", version: "v1",
+      sampleBody: '{ "quoteId": "Q-1042", "accountId": "001xx000003DGbP", "amount": 24999.0, "currency": "USD" }',
+    },
+    {
+      id: "op_rev_enrich", interfaceId: "iface_rev_mw", name: "Enrich order",
+      method: "POST", path: "/enrich/order", version: "v1",
+      mock: { status: 200, body: '{ "quoteId": "Q-1042", "tax": 1999.92, "total": 26998.92 }', latencyMs: 140 },
+    },
+    {
+      id: "op_rev_invoice", interfaceId: "iface_rev_bill", name: "Create invoice",
+      method: "POST", path: "/v1/invoices", version: "v1",
+      mock: { status: 202, body: '{ "status": "accepted", "ackTo": "salesforce", "invoiceId": "INV-8817" }', latencyMs: 180 },
+    },
+  ];
+  project.connections = [
+    {
+      id: "conn_rev_1", sourceId: sf.id, targetId: mw.id, label: "Approved quote",
+      status: "draft" as const, sourceOperationId: "op_rev_quote", targetOperationId: "op_rev_enrich",
+      mapping: { mode: "passthrough" as const, template: "" },
+    },
+    {
+      id: "conn_rev_2", sourceId: mw.id, targetId: bill.id, label: "Bill enriched total",
+      status: "draft" as const, targetOperationId: "op_rev_invoice",
+      mapping: { mode: "template" as const, template: "{{request}}" },
+    },
+  ];
+  project.environments = [{ id: "env_rev", name: "Sandbox", baseUrl: "", baseUrlOverrides: {} }];
+  project.activeEnvironmentId = "env_rev";
+  project.notes = [
+    "## Revenue Cloud quote → cash (single chain)",
+    "",
+    "Quote approval seeds the flow; middleware enriches with tax; billing",
+    "invoices. Swap the seed body for a real Quote ID and go live per hop.",
+    "",
+    "Run it: select the Revenue Cloud edge → Run chain from here.",
+  ].join("\n");
+  return project;
+}
+
+/**
+ * Sample topology: Salesforce change events stream through middleware into a
+ * warehouse and human alerts in parallel. The CDC fan-out shape behind most
+ * Salesforce-to-data-platform syncs.
+ */
+export function buildCdcSyncProject(): SystemProject {
+  const project = newProject("Sample: Salesforce CDC → warehouse + alerts");
+  const by = (type: string) => SYSTEM_TEMPLATES.find((t) => t.systemType === type)!;
+  const sf = { ...newSystemFromTemplate(by("salesforce"), { x: 80, y: 260 }, 1), name: "Salesforce", id: "sys_cdc_sf" };
+  const mw = { ...newSystemFromTemplate(by("middleware"), { x: 520, y: 260 }, 1), name: "Middleware Hub", id: "sys_cdc_mw" };
+  const wh = { ...newSystemFromTemplate(by("warehouse"), { x: 960, y: 120 }, 1), name: "Warehouse", id: "sys_cdc_wh" };
+  const nt = { ...newSystemFromTemplate(by("notify"), { x: 960, y: 400 }, 1), name: "Alerts", id: "sys_cdc_nt" };
+  project.systems = [sf, mw, wh, nt];
+  project.interfaces = [
+    { id: "iface_cdc_sf", systemId: sf.id, name: "Change Events", protocol: "Events", basePath: "/data/ChangeEvents" },
+    { id: "iface_cdc_mw", systemId: mw.id, name: "Sync intake", protocol: "REST", basePath: "" },
+    { id: "iface_cdc_wh", systemId: wh.id, name: "Ingest", protocol: "REST", basePath: "/v1" },
+    { id: "iface_cdc_nt", systemId: nt.id, name: "Notify", protocol: "REST", basePath: "/hooks" },
+  ];
+  project.operations = [
+    {
+      id: "op_cdc_change", interfaceId: "iface_cdc_sf", name: "Account change",
+      method: "EVENT", path: "/data/ChangeEvents/Account", version: "v1",
+      sampleBody: '{ "object": "Account", "changeType": "UPDATE", "recordIds": ["001xx000003DGbP"], "fields": ["AnnualRevenue"] }',
+    },
+    {
+      id: "op_cdc_upsert", interfaceId: "iface_cdc_mw", name: "Normalize change",
+      method: "POST", path: "/sync/upsert", version: "v1",
+      mock: { status: 200, body: '{ "upserted": 1, "object": "Account" }', latencyMs: 110 },
+    },
+    {
+      id: "op_cdc_wh", interfaceId: "iface_cdc_wh", name: "Warehouse ingest",
+      method: "POST", path: "/v1/ingest/accounts", version: "v1",
+      mock: { status: 202, body: '{ "status": "accepted", "rows": 1 }', latencyMs: 160 },
+    },
+    {
+      id: "op_cdc_alert", interfaceId: "iface_cdc_nt", name: "Post change alert",
+      method: "POST", path: "/hooks/sync-alerts", version: "v1",
+      mock: { status: 200, body: '{ "status": "posted", "channel": "sync-alerts" }', latencyMs: 90 },
+    },
+  ];
+  project.connections = [
+    {
+      id: "conn_cdc_1", sourceId: sf.id, targetId: mw.id, label: "Change captured",
+      status: "draft" as const, sourceOperationId: "op_cdc_change", targetOperationId: "op_cdc_upsert",
+      mapping: { mode: "template" as const, template: "{{request}}" },
+    },
+    {
+      id: "conn_cdc_2", sourceId: mw.id, targetId: wh.id, label: "Sync rows",
+      status: "draft" as const, targetOperationId: "op_cdc_wh",
+      mapping: { mode: "template" as const, template: "{{request}}" },
+    },
+    {
+      id: "conn_cdc_3", sourceId: mw.id, targetId: nt.id, label: "Alert humans",
+      status: "draft" as const, targetOperationId: "op_cdc_alert",
+      mapping: {
+        mode: "template" as const,
+        template: '{\n  "text": "Sync upserted {{request.upserted}} {{request.object}} record(s)"\n}',
+      },
+    },
+  ];
+  project.environments = [{ id: "env_cdc", name: "Sandbox", baseUrl: "", baseUrlOverrides: {} }];
+  project.activeEnvironmentId = "env_cdc";
+  project.notes = [
+    "## CDC sync fan-out (1 chain × 2 branches)",
+    "",
+    "Account change → normalize → warehouse ingest + human alert in parallel.",
+    "The alert branch shows a hand-written template reading {{request}} fields.",
+    "",
+    "Run it: select the Salesforce edge → Run chain from here.",
+  ].join("\n");
+  return project;
+}

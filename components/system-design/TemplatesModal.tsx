@@ -12,12 +12,18 @@ export function TemplatesModal({
   onLoadDemo,
   onLoadGroq,
   onLoadTmf,
+  onLoadFanout,
+  onLoadRevenue,
+  onLoadCdc,
 }: {
   open: boolean;
   onClose: () => void;
   onLoadDemo: () => void;
   onLoadGroq: () => void;
   onLoadTmf: () => void;
+  onLoadFanout: () => void;
+  onLoadRevenue: () => void;
+  onLoadCdc: () => void;
 }) {
   if (!open) return null;
 
@@ -29,15 +35,17 @@ export function TemplatesModal({
     action: () => void,
     actionLabel: string
   ) => (
-    <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-3.5">
-      <p className="text-[10px] font-semibold uppercase tracking-[2px] text-[var(--color-accent-dark)]">{eyebrow}</p>
-      <p className="mt-1 text-sm font-bold text-ivory-950">{title}</p>
-      <p className="mt-1 text-xs leading-relaxed text-ivory-600">{body}</p>
-      <p className="mt-2 font-mono text-[10px] text-ivory-500">Needs: {needs}</p>
+    <div className="flex h-full max-h-96 flex-col overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-3.5">
+      <p className="shrink-0 text-[10px] font-semibold uppercase tracking-[2px] text-[var(--color-accent-dark)]">{eyebrow}</p>
+      <p className="mt-1 shrink-0 text-sm font-bold text-ivory-950">{title}</p>
+      <div className="mt-1 min-h-0 flex-1 overflow-y-auto">
+        <p className="text-xs leading-relaxed text-ivory-600">{body}</p>
+        <p className="mt-2 font-mono text-[10px] text-ivory-500">Needs: {needs}</p>
+      </div>
       <Button
         size="sm"
         variant="secondary"
-        className="mt-2.5 w-full"
+        className="mt-2.5 w-full shrink-0"
         onClick={() => {
           action();
           onClose();
@@ -51,7 +59,7 @@ export function TemplatesModal({
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="tpl-title" onClick={onClose}>
       <div
-        className="modal-card max-w-md flex flex-col"
+        className="modal-card max-w-3xl w-[calc(100vw-3rem)] flex flex-col"
         style={{ maxHeight: "88vh" }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -75,7 +83,7 @@ export function TemplatesModal({
             </svg>
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4 space-y-2.5">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4 grid gap-2.5 sm:grid-cols-3">
           {card(
             "Topology tour · 5 systems",
             "Demo: Lead triage flow",
@@ -99,6 +107,30 @@ export function TemplatesModal({
             "Hub base URLs + HUB_TOKEN in Credentials",
             onLoadTmf,
             "Load order-flow sample"
+          )}
+          {card(
+            "TMF fan-out · 4 systems",
+            "Sample: TMF order → middleware fan-out → acks",
+            "A TMF-style product order crosses middleware as-is and as a wrapped event, then fans out to billing and fulfillment in parallel. Every hop is mocked: the 202 bodies are the downstream acks flowing back toward Salesforce.",
+            "nothing - every hop is mocked",
+            onLoadFanout,
+            "Load fan-out sample"
+          )}
+          {card(
+            "Quote-to-cash · 3 systems",
+            "Sample: Revenue Cloud quote → cash",
+            "Headless commerce in one chain: quote approval seeds the flow, middleware enriches with tax, billing invoices. The event-seed shape behind every Salesforce-triggered flow.",
+            "nothing - every hop is mocked",
+            onLoadRevenue,
+            "Load Revenue Cloud sample"
+          )}
+          {card(
+            "CDC sync · 4 systems",
+            "Sample: Salesforce CDC → warehouse + alerts",
+            "Account change events normalize in middleware, then fan out to warehouse ingest and human alerts in parallel - including a hand-written alert template reading {{request}} fields.",
+            "nothing - every hop is mocked",
+            onLoadCdc,
+            "Load CDC sync sample"
           )}
         </div>
       </div>

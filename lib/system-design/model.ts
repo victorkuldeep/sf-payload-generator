@@ -153,6 +153,42 @@ export interface SystemEnvironment {
   isProduction?: boolean;
 }
 
+/** Free-text sticky note pinned to the canvas (double-click). Position is
+ * flow coordinates. */
+export interface SystemCanvasNote {
+  id: string;
+  position: { x: number; y: number };
+  text: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export const CANVAS_NOTE_TEXT_MAX = 10000;
+
+/** Pasted screenshot/diagram pinned to the canvas. The project carries
+ * metadata only - bytes live in the system-blobs IndexedDB store under
+ * blobId, so export/import stay light. A missing blob renders a placeholder. */
+export interface SystemCanvasImage {
+  id: string;
+  position: { x: number; y: number };
+  width: number;
+  height: number;
+  blobId: string;
+  name: string;
+  createdAt: number;
+}
+
+export const CANVAS_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+
+/** Canvas group (Ctrl+G): member nodes move together. Member ids reference
+ * systems, sticky notes, or pasted images. */
+export interface SystemCanvasGroup {
+  id: string;
+  memberIds: string[];
+}
+
+export const CANVAS_IMAGE_MIMES = ["image/png", "image/jpeg", "image/webp", "image/gif"] as const;
+
 /** Effective base URL for one system under an environment: this env's
  * override, else the system's own URL, else the legacy env fallback. */
 export function resolveSystemBaseUrl(
@@ -241,6 +277,15 @@ export interface SystemProject {
   flows: FlowDef[];
   scenarios: ScenarioDef[];
   settings: SystemProjectSettings;
+  /** Sticky notes + pasted images pinned to the canvas (double-click /
+   * paste). Absent on vintage records - default to []. Images carry
+   * metadata only; bytes live in the blobs store. Exported/imported with
+   * the project. */
+  canvasNotes: SystemCanvasNote[];
+  canvasImages: SystemCanvasImage[];
+  /** Canvas groups (Ctrl+G moves members together). Absent on vintage
+   * records - default to []. */
+  groups: SystemCanvasGroup[];
 }
 
 export interface SystemTemplate {
@@ -314,10 +359,29 @@ export function newProject(name = "Untitled architecture"): SystemProject {
     activeEnvironmentId: null,
     notes: "",
     todos: [],
+    canvasNotes: [],
+    canvasImages: [],
+    groups: [],
     flows: [],
     scenarios: [],
     settings: { retentionDays: 30 },
   };
+}
+
+/** Default interface every system carries, so the API Catalog and edge
+ * binding never meet a system with nowhere to put operations. */
+export function defaultInterfaceFor(systemId: string): SystemInterface {
+  return { id: newId("iface"), systemId, name: "REST API", protocol: "REST", basePath: "" };
+}
+
+/** Backfill a default interface for systems that have none (vintage
+ * projects, imports, templates). Systems that already have interfaces are
+ * untouched, so this never duplicates. */
+export function ensureDefaultInterfaces(project: SystemProject): SystemProject {
+  const covered = new Set(project.interfaces.map((f) => f.systemId));
+  const missing = project.systems.filter((sys) => !covered.has(sys.id));
+  if (missing.length === 0) return project;
+  return { ...project, interfaces: [...project.interfaces, ...missing.map((sys) => defaultInterfaceFor(sys.id))] };
 }
 
 /**
@@ -345,6 +409,96 @@ export function coerceFlows(raw: unknown): FlowDef[] {
     out.push({ id: r.id, name: r.name, startEdgeId: r.startEdgeId, lanes, opByEdge });
   }
   return out;
+}
+
+/** Coerce canvas sticky notes (drop, never fail - canvas intent must not
+ * invalidate an imported project). */
+export function coerceCanvasNotes(raw: unknown): SystemCanvasNote[] {
+  if (!Array.isArray(raw)) return [];
+  const out: SystemCanvasNote[] = [];
+  const seen = new Set<string>();
+  for (const n of raw) {
+    if (!n || typeof n !== "object") continue;
+    const r = n as Record<string, unknown>;
+    if (typeof r.id !== "string" || !r.id || seen.has(r.id)) continue;
+    const pos = r.position as { x?: unknown; y?: unknown } | null | undefined;
+    if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y)) continue;
+    if (typeof r.text !== "string") continue;
+    seen.add(r.id);
+    const now = Date.now();
+    out.push({
+      id: r.id,
+      position: { x: pos.x as number, y: pos.y as number },
+      text: r.text.slice(0, CANVAS_NOTE_TEXT_MAX),
+      createdAt: typeof r.createdAt === "number" ? r.createdAt : now,
+      updatedAt: typeof r.updatedAt === "number" ? r.updatedAt : now,
+    });
+  }
+  return out;
+}
+
+/** Coerce canvas images (drop, never fail). Blob presence is NOT checked
+ * here - a missing blob renders a placeholder at runtime. */
+export function coerceCanvasImages(raw: unknown): SystemCanvasImage[] {
+  if (!Array.isArray(raw)) return [];
+  const out: SystemCanvasImage[] = [];
+  const seen = new Set<string>();
+  for (const n of raw) {
+    if (!n || typeof n !== "object") continue;
+    const r = n as Record<string, unknown>;
+    if (typeof r.id !== "string" || !r.id || seen.has(r.id)) continue;
+    const pos = r.position as { x?: unknown; y?: unknown } | null | undefined;
+    if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y)) continue;
+    if (typeof r.blobId !== "string" || !r.blobId) continue;
+    const w = r.width;
+    const h = r.height;
+    if (!Number.isFinite(w) || !Number.isFinite(h) || (w as number) < 16 || (h as number) < 16) continue;
+    seen.add(r.id);
+    out.push({
+      id: r.id,
+      position: { x: pos.x as number, y: pos.y as number },
+      width: Math.min(w as number, 4000),
+      height: Math.min(h as number, 4000),
+      blobId: r.blobId,
+      name: typeof r.name === "string" ? r.name.slice(0, 200) : "Pasted image",
+      createdAt: typeof r.createdAt === "number" ? r.createdAt : Date.now(),
+    });
+  }
+  return out;
+}
+
+/** Coerce canvas groups (drop, never fail - shape only; membership is
+ * pruned against live ids by pruneCanvasGroups). */
+export function coerceCanvasGroups(raw: unknown): SystemCanvasGroup[] {
+  if (!Array.isArray(raw)) return [];
+  const out: SystemCanvasGroup[] = [];
+  const seen = new Set<string>();
+  for (const g of raw) {
+    if (!g || typeof g !== "object") continue;
+    const r = g as Record<string, unknown>;
+    if (typeof r.id !== "string" || !r.id || seen.has(r.id)) continue;
+    if (!Array.isArray(r.memberIds)) continue;
+    const memberIds = [...new Set(r.memberIds.filter((m): m is string => typeof m === "string" && !!m))];
+    if (memberIds.length === 0) continue;
+    seen.add(r.id);
+    out.push({ id: r.id, memberIds });
+  }
+  return out;
+}
+
+/** Drop group members that no longer exist; drop groups left with fewer
+ * than two members (a solo group is invisible). */
+export function pruneCanvasGroups(project: SystemProject): SystemProject {
+  const live = new Set([
+    ...project.systems.map((x) => x.id),
+    ...project.canvasNotes.map((x) => x.id),
+    ...project.canvasImages.map((x) => x.id),
+  ]);
+  const groups = project.groups
+    .map((g) => ({ ...g, memberIds: g.memberIds.filter((m) => live.has(m)) }))
+    .filter((g) => g.memberIds.length >= 2);
+  if (groups.length === project.groups.length && groups.every((g, i) => g.memberIds.length === project.groups[i].memberIds.length)) return project;
+  return { ...project, groups };
 }
 
 /** Coerce scenarios (drop, never fail). */
@@ -813,6 +967,9 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
       flows: coerceFlows((p as Record<string, unknown>).flows),
       scenarios: coerceScenarios((p as Record<string, unknown>).scenarios),
       settings: coerceSettings((p as Record<string, unknown>).settings),
+      canvasNotes: coerceCanvasNotes((p as Record<string, unknown>).canvasNotes),
+      canvasImages: coerceCanvasImages((p as Record<string, unknown>).canvasImages),
+      groups: coerceCanvasGroups((p as Record<string, unknown>).groups),
     },
     issues: [],
   };
@@ -821,7 +978,9 @@ export function validateProject(raw: unknown): { project: SystemProject | null; 
 /** Export envelope: manifest + project. Notes/TODOs travel with the project
  * (user-authored design text). Secrets must never reach here - environments
  * carry base URLs only, tokens are never stored anywhere in this module.
- * Operation headers DO export: keep values as $env.NAME refs, never literals. */
+ * Operation headers DO export: keep values as $env.NAME refs, never literals.
+ * Canvas notes export in full; canvas images export metadata only - bytes
+ * stay in this browser (imported images without blobs show a placeholder). */
 export function exportProject(project: SystemProject): { kind: string; version: number; exportedAt: number; project: SystemProject } {
   return {
     kind: "gravenx-system-design",

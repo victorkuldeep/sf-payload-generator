@@ -8,7 +8,8 @@
 export const DB_NAME = "gravenx-studio";
 // v23: additive heal - recreates any store missing from an already-upgraded
 // DB (e.g. decision-records), so a stuck browser self-repairs on next open.
-export const DB_VERSION = 24;
+// v25: canvas image blobs for System Design pasted screenshots.
+export const DB_VERSION = 25;
 
 export const STORES = {
   items: "request-collection",
@@ -25,6 +26,7 @@ export const STORES = {
   workspaces: "workspace-autosave",
   systemProjects: "system-projects",
   systemRuns: "system-runs",
+  systemBlobs: "system-blobs",
   drawScenes: "draw-scenes",
   aiSessions: "ai-sessions",
   wireframes: "wireframes",

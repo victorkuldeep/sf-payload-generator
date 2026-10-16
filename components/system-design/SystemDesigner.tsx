@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Camera, Download, Expand, FlaskConical, IdCard, Layers, Map as MapIcon, Maximize, Play, Plug, Save, Settings, Shuffle, SquareTerminal, Terminal, Trash2, TriangleAlert, Upload, LayoutTemplate, Plus, Zap, Undo2, Redo2, List } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -8,6 +10,7 @@ import {
   MiniMap,
   Controls,
   useReactFlow,
+  useNodesState,
   getViewportForBounds,
   MarkerType,
   ConnectionMode,
@@ -26,6 +29,9 @@ import {
   SYSTEM_TEMPLATES,
   newProject,
   newSystemFromTemplate,
+  defaultInterfaceFor,
+  ensureDefaultInterfaces,
+  pruneCanvasGroups,
   newId,
   validateProject,
   exportProject,
@@ -37,6 +43,8 @@ import {
   systemNotesToNote,
   type SystemNode,
   type SystemConnection,
+  type SystemCanvasImage,
+  type SystemCanvasNote,
   type SystemProject,
   type SystemTemplate,
   type SystemInterface,
@@ -51,7 +59,8 @@ import {
   loadSystemProject,
   deleteSystemProject,
 } from "@/lib/system-design/store";
-import { buildDemoProject, buildGroqSampleProject, buildTmfSampleProject } from "@/lib/system-design/demo";
+import { buildCdcSyncProject, buildDemoProject, buildGroqSampleProject, buildOrderFanoutProject, buildRevenueCloudProject, buildTmfSampleProject } from "@/lib/system-design/demo";
+import { deleteCanvasBlob, isPastesableImage, newBlobId, probeImageSize, putCanvasBlob } from "@/lib/system-design/blobStore";
 import { SYSTEM_DRAFT_KEY } from "@/lib/draw/toSystemDraft";
 import { SystemNodeView, SystemGlyph, type SystemNodeData } from "./SystemNode";
 import { TestRunner } from "./TestRunner";
@@ -68,6 +77,7 @@ import { ProjectNotesModal } from "./ProjectNotesModal";
 import { CredentialsModal } from "./CredentialsModal";
 import { RenameProjectModal } from "./RenameProjectModal";
 import { registerSystemBridge, snapshotOf } from "@/lib/ai/systemBridge";
+import { CanvasImageView, CanvasNoteView } from "./CanvasMarks";
 import { TemplatesModal } from "./TemplatesModal";
 import { RisksDialog } from "../risks/RisksDialog";
 import { ViewsDialog } from "../c4/ViewsDialog";
@@ -116,28 +126,32 @@ function loadCredVault(): CredVault {
 }
 import type { CanvasTodo } from "@/lib/inbox/types";
 
-const nodeTypes = { system: SystemNodeView } as const;
+const nodeTypes = { system: SystemNodeView, note: CanvasNoteView, "canvas-image": CanvasImageView } as const;
 
 type SubTab = "canvas" | "flow" | "api" | "transform" | "scenarios" | "runs" | "settings";
 
-const SUB_TABS: { id: SubTab; label: string }[] = [
-  { id: "canvas", label: "Canvas" },
-  { id: "flow", label: "Flow Lab" },
-  { id: "api", label: "API Catalog" },
-  { id: "transform", label: "Transformations" },
-  { id: "scenarios", label: "Scenarios" },
-  { id: "runs", label: "Runs & Observability" },
-  { id: "settings", label: "Settings" },
+const SUB_TABS: { id: SubTab; label: string; icon: LucideIcon }[] = [
+  { id: "canvas", label: "Canvas", icon: Expand },
+  { id: "flow", label: "Flow Lab", icon: Play },
+  { id: "api", label: "API Catalog", icon: Plug },
+  { id: "transform", label: "Transformations", icon: Shuffle },
+  { id: "scenarios", label: "Scenarios", icon: FlaskConical },
+  { id: "runs", label: "Runs & Observability", icon: SquareTerminal },
+  { id: "settings", label: "Settings", icon: Settings },
 ];
 
 interface Snapshot {
   systems: SystemNode[];
   connections: SystemConnection[];
+  canvasNotes: SystemCanvasNote[]
+  canvasImages: SystemCanvasImage[]
 }
 
 const snapOf = (p: SystemProject): Snapshot => ({
   systems: JSON.parse(JSON.stringify(p.systems)) as SystemNode[],
   connections: JSON.parse(JSON.stringify(p.connections)) as SystemConnection[],
+  canvasNotes: JSON.parse(JSON.stringify(p.canvasNotes)) as SystemCanvasNote[],
+  canvasImages: JSON.parse(JSON.stringify(p.canvasImages)) as SystemCanvasImage[],
 });
 
 function toFlowNodes(project: SystemProject): Node<SystemNodeData>[] {
@@ -183,7 +197,6 @@ function DesignerCanvas({
   onDragStartNode,
   onConnectSystems,
   onSelect,
-  selNodeId,
   selEdgeId,
   onDropTemplate,
   emptyAction,
@@ -195,13 +208,22 @@ function DesignerCanvas({
   onOpenRisks,
   onOpenViews,
   hiddenIds,
+  editingNoteId,
+  selNoteId,
+  selIds,
+  onBeginNoteEdit,
+  onCommitNoteText,
+  onCancelNoteEdit,
+  onWriteAt,
+  onPasteImage,
+  onResizeImage,
+  onToggleSelect,
 }: {
   project: SystemProject;
   onMoveSystems: (moves: { id: string; x: number; y: number }[]) => void;
   onDragStartNode: () => void;
   onConnectSystems: (sourceId: string, targetId: string) => void;
   onSelect: (nodeId: string | null, edgeId: string | null) => void;
-  selNodeId: string | null;
   selEdgeId: string | null;
   onDropTemplate: (t: SystemTemplate, at: { x: number; y: number }) => void;
   emptyAction: () => void;
@@ -213,6 +235,16 @@ function DesignerCanvas({
   onOpenRisks: () => void;
   onOpenViews: () => void;
   hiddenIds: Set<string>;
+  editingNoteId: string | null;
+  selNoteId: string | null;
+  selIds: string[];
+  onBeginNoteEdit: (id: string) => void;
+  onCommitNoteText: (id: string, text: string) => void;
+  onCancelNoteEdit: (id: string) => void;
+  onWriteAt: (pos: { x: number; y: number }, initial: string) => void;
+  onPasteImage: (file: File, pos: { x: number; y: number }) => void;
+  onResizeImage: (id: string, width: number, height: number) => void;
+  onToggleSelect: (id: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition, fitView, getNodes, getNodesBounds } = useReactFlow();
@@ -223,15 +255,58 @@ function DesignerCanvas({
   }, [rfInstance]);
   // 4x-feel pinch zoom (trackpad + touch); the native 1x handler stays off.
   useAmplifiedPinch(containerRef, { instanceRef: rfRef, minZoom: 0.15, maxZoom: 4 });
-  const nodes = useMemo(
-    () => toFlowNodes(project).map((n) => (hiddenIds.has(n.id) ? { ...n, hidden: true } : n)),
-    [project, hiddenIds]
-  );
-  // Selection is derived from parent state so inspector and canvas agree.
-  const selNodes = useMemo(
-    () => nodes.map((n) => ({ ...n, selected: n.id === selNodeId })),
-    [nodes, selNodeId]
-  );
+  // ERD pattern: nodes live in React Flow local state (useNodesState) so
+  // drags track the pointer with zero global churn; the project commits
+  // once on drag stop. baseNodes rebuilds from the project; the sync
+  // below applies it whenever we are not mid-drag.
+  const baseNodes = useMemo(() => {
+    const base = toFlowNodes(project).map((n) => (hiddenIds.has(n.id) ? { ...n, hidden: true } : n));
+    const marks = [
+      ...project.canvasNotes.map((n) => ({
+        id: n.id,
+        type: 'note',
+        position: n.position,
+        data: {
+          text: n.text,
+          editing: n.id === editingNoteId,
+          onBeginEdit: () => onBeginNoteEdit(n.id),
+          onCommit: (text: string) => onCommitNoteText(n.id, text),
+          onCancel: () => onCancelNoteEdit(n.id),
+        },
+        selected: n.id === selNoteId,
+      })),
+      ...project.canvasImages.map((g) => ({
+        id: g.id,
+        type: 'canvas-image',
+        position: g.position,
+        width: g.width,
+        height: g.height,
+        data: {
+          blobId: g.blobId,
+          name: g.name,
+          onResize: (width: number, height: number) => onResizeImage(g.id, width, height),
+        },
+        selected: g.id === selNoteId,
+      })),
+    ];
+    return [...base, ...marks].map((n) => ({ ...n, selected: selIds.includes(n.id) }));
+  }, [project, hiddenIds, editingNoteId, selNoteId, selIds, onBeginNoteEdit, onCommitNoteText, onCancelNoteEdit, onResizeImage]);
+  const [nodes, setNodes, onNodesChange] = useNodesState(baseNodes);
+  const draggingRef = useRef(false);
+  useEffect(() => {
+    if (draggingRef.current) return;
+    setNodes((prev) => {
+      if (prev.length !== baseNodes.length) return baseNodes;
+      for (let i = 0; i < prev.length; i++) {
+        const a = prev[i];
+        const b = baseNodes[i];
+        const ah = (a as { hidden?: unknown }).hidden;
+        const bh = (b as { hidden?: unknown }).hidden;
+        if (a.id !== b.id || a.selected !== b.selected || a.position !== b.position || ah !== bh) return baseNodes;
+      }
+      return prev;
+    });
+  }, [baseNodes, setNodes]);
   const edges = useMemo(
     () => toFlowEdges(project, runVis).filter((e) => !hiddenIds.has(e.source) && !hiddenIds.has(e.target)),
     [project, runVis, hiddenIds]
@@ -250,6 +325,75 @@ function DesignerCanvas({
       }),
     [edges, selEdgeId]
   );
+
+  // draw.io entry: the pointer rests anywhere on the canvas and the first
+  // keystroke opens a text box there with that character already inside.
+  const mouseRef = useRef<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    const onKeyWrite = (e: KeyboardEvent) => {
+      if (editingNoteId) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key.length !== 1) return;
+      if (document.querySelector('[role=dialog]')) return;
+      e.preventDefault();
+      const rect = containerRef.current?.getBoundingClientRect();
+      const m = mouseRef.current ?? (rect ? { x: rect.width / 2, y: rect.height / 2 } : { x: 400, y: 300 });
+      onWriteAt(screenToFlowPosition({ x: m.x, y: m.y }), e.key);
+    };
+    window.addEventListener('keydown', onKeyWrite);
+    return () => window.removeEventListener('keydown', onKeyWrite);
+  }, [editingNoteId, onWriteAt, screenToFlowPosition]);
+
+  // Pasting a screenshot drops it at the viewport center. Text fields
+  // keep the paste; open dialogs defer to the dialog.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      if (document.querySelector('[role=dialog]')) return;
+      const file = Array.from(e.clipboardData?.files ?? []).find((f) => isPastesableImage(f));
+      if (!file) return;
+      e.preventDefault();
+      const rect = containerRef.current?.getBoundingClientRect();
+      const cx = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
+      const cy = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
+      onPasteImage(file, screenToFlowPosition({ x: cx - (rect?.left ?? 0), y: cy - (rect?.top ?? 0) }));
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [onPasteImage, screenToFlowPosition]);
+
+  // Groups: member id -> whole member list, for live move-together.
+  const groupOf = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const g of project.groups) for (const id of g.memberIds) m.set(id, g.memberIds);
+    return m;
+  }, [project.groups]);
+
+  // Dragging one member shifts its siblings by the same delta, live in
+  // local state; the project commits on drag stop (see below).
+  const groupedOnChange: typeof onNodesChange = (changes) => {
+    const extra: Parameters<typeof onNodesChange>[0] = [];
+    for (const c of changes) {
+      if (c.type !== 'position' || !c.position || !c.dragging) continue;
+      const members = groupOf.get(c.id);
+      if (!members || members.length < 2) continue;
+      const cur = nodes.find((n) => n.id === c.id);
+      if (!cur) continue;
+      const dx = c.position.x - cur.position.x;
+      const dy = c.position.y - cur.position.y;
+      if (dx === 0 && dy === 0) continue;
+      for (const mid of members) {
+        if (mid === c.id) continue;
+        const mcur = nodes.find((n) => n.id === mid);
+        if (!mcur) continue;
+        extra.push({ type: 'position', id: mid, position: { x: mcur.position.x + dx, y: mcur.position.y + dy }, dragging: true });
+      }
+    }
+    onNodesChange(extra.length > 0 ? [...changes, ...extra] : changes);
+  };
 
   // Snapshot PNG export — ported from ErdCanvas.
   // Uses the React Flow instance's getNodesBounds (resolves through nodeLookup
@@ -339,27 +483,25 @@ function DesignerCanvas({
       }}
       onDragOver={(e) => {
         e.preventDefault();
-        e.dataTransfer.dropEffect = "copy";
+        e.dataTransfer.dropEffect = 'copy';
+      }}
+      onMouseMove={(e) => {
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (rect) mouseRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
       }}
     >
       <ReactFlow
-        nodes={selNodes}
+        nodes={nodes}
         edges={selEdges}
         nodeTypes={nodeTypes}
         connectionMode={ConnectionMode.Loose}
-        onNodesChange={(changes) => {          const moves: { id: string; x: number; y: number }[] = [];
-          for (const c of changes) {
-            if (c.type === "position" && c.position && !c.dragging) {
-              moves.push({ id: c.id, x: c.position.x, y: c.position.y });
-            }
-          }
-          if (moves.length > 0) onMoveSystems(moves);
-        }}
-        onNodeDragStart={onDragStartNode}
+        onNodesChange={groupedOnChange}
+        onNodeDragStart={() => { draggingRef.current = true; onDragStartNode(); }}
+        onNodeDragStop={(_, node) => { draggingRef.current = false; const members = groupOf.get(node.id) ?? [node.id]; const live = new Map(getNodes().map((n) => [n.id, n.position])); const moves: { id: string; x: number; y: number }[] = []; for (const id of members) { const pos = live.get(id); if (pos) moves.push({ id, x: pos.x, y: pos.y }); } if (moves.length > 0) onMoveSystems(moves); }}
         onConnect={(c: Connection) => {
           if (c.source && c.target && c.source !== c.target) onConnectSystems(c.source, c.target);
         }}
-        onNodeClick={(_, node) => onSelect(node.id, null)}
+        onNodeClick={(e, node) => { if (e.shiftKey) onToggleSelect(node.id); else onSelect(node.id, null); }}
         onEdgeClick={(_, edge) => onSelect(null, edge.id)}
         onPaneClick={() => onSelect(null, null)}
         minZoom={0.15}
@@ -422,13 +564,6 @@ function DesignerCanvas({
         </div>
       )}
       <div className="absolute right-3 top-3 z-10 flex items-center gap-1.5">
-        <span
-          className="hidden sm:flex items-center gap-1 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2 py-1.5 text-[10px] text-ivory-600"
-          title="Draft edges are static; fully-bound edges flow. Bind operations in the inspector."
-        >
-          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" /> draft
-          <span className="ml-1 h-1.5 w-1.5 rounded-full bg-[#32815B]" aria-hidden="true" /> ready
-        </span>
         <button
           type="button"
           onClick={onTogglePresent}
@@ -450,18 +585,20 @@ function DesignerCanvas({
           type="button"
           onClick={() => fitView({ padding: 0.18, maxZoom: 1 })}
           title="Fit canvas to view"
-          className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer"
+          aria-label="Fit view"
+          className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-1.5 text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer"
         >
-          Fit view
+          <Maximize size={13} aria-hidden="true" />
         </button>
         <button
           type="button"
           onClick={onToggleMiniMap}
           aria-pressed={miniMapOn}
           title={miniMapOn ? "Hide the overview map" : "Show the overview map"}
-          className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors cursor-pointer ${miniMapOn ? "border-bronze-500 bg-bronze-100 text-bronze-700" : "border-[var(--color-line)] bg-[var(--color-surface)] text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950"}`}
+          aria-label="Map"
+          className={`rounded-lg border p-1.5 transition-colors cursor-pointer ${miniMapOn ? "border-bronze-500 bg-bronze-100 text-bronze-700" : "border-[var(--color-line)] bg-[var(--color-surface)] text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950"}`}
         >
-          Map
+          <MapIcon size={13} aria-hidden="true" />
         </button>
         {exportError && (
           <span className="rounded-lg border border-red-300 bg-red-50 px-2 py-1.5 text-[11px] text-red-700" role="alert">
@@ -473,41 +610,46 @@ function DesignerCanvas({
           onClick={() => doExport(2)}
           disabled={exporting || nodes.length === 0}
           title="Download the full diagram as PNG (2x)"
-          className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer disabled:opacity-40"
+          aria-label="Snapshot PNG"
+          className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-1.5 text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer disabled:opacity-40"
         >
-          {exporting ? "Exporting…" : "Snapshot PNG"}
+          {exporting ? "Exporting…" : <Camera size={13} aria-hidden="true" />}
         </button>
         <button
           type="button"
           onClick={() => doExport(3)}
           disabled={exporting || nodes.length === 0}
           title="Download the full diagram as hi-res PNG (3x) for decks"
-          className="rounded-lg border border-ivory-950 bg-ivory-950 px-2.5 py-1.5 text-[11px] font-semibold text-ivory-100 hover:bg-bronze-600 hover:border-bronze-600 transition-colors cursor-pointer disabled:opacity-40"
+          aria-label="3x Hi-Res"
+          className="rounded-lg border border-ivory-950 bg-ivory-950 p-1.5 text-ivory-100 hover:bg-bronze-600 hover:border-bronze-600 transition-colors cursor-pointer disabled:opacity-40"
         >
-          3x Hi-Res
+          <Download size={13} aria-hidden="true" />
         </button>
         <a
           href="/console"
           title="Open Console - track this design as tasks with two-way TODO sync"
-          className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer"
+          aria-label="Console"
+          className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-1.5 text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer"
         >
-          Console
+          <Terminal size={13} aria-hidden="true" />
         </a>
         <button
           type="button"
           onClick={onOpenViews}
           title="C4 views - context, container, component projections of this canvas"
-          className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer"
+          aria-label="Views"
+          className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-1.5 text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer"
         >
-          Views
+          <Layers size={13} aria-hidden="true" />
         </button>
         <button
           type="button"
           onClick={onOpenRisks}
           title="Risk lens - deterministic findings over this design"
-          className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer"
+          aria-label="Risks"
+          className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-1.5 text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer"
         >
-          Risks
+          <TriangleAlert size={13} aria-hidden="true" />
         </button>
       </div>
       {project.systems.length > 0 && project.connections.length === 0 && (
@@ -521,12 +663,58 @@ function DesignerCanvas({
   );
 }
 
+/** Collapsed-inspector jump targets. Missing groups fall back to panel top. */
+type InspectorSection = "identity" | "connect" | "operations" | "test" | "mock" | "mapping";
+const INSPECTOR_JUMP: Record<InspectorSection, { node: string; edge: string }> = {
+  identity: { node: "identity", edge: "identity" },
+  connect: { node: "connect", edge: "connect" },
+  // Test buttons live on operation rows, so node test lands on operations.
+  operations: { node: "operations", edge: "connect" },
+  test: { node: "operations", edge: "test" },
+  // Mocks are per-operation; edges have none and fall back to panel top.
+  mock: { node: "mock", edge: "mock" },
+  mapping: { node: "mapping", edge: "mapping" },
+};
+const INSPECTOR_ICONS: Record<InspectorSection, typeof Zap> = {
+  identity: IdCard,
+  connect: Plug,
+  operations: Zap,
+  test: Play,
+  mock: FlaskConical,
+  mapping: Shuffle,
+};
+const INSPECTOR_STRIP: { id: InspectorSection; label: string; title: string }[] = [
+  { id: "identity", label: "Identity", title: "Identity - expand and jump to it" },
+  { id: "connect", label: "Connect", title: "Connect - expand and jump to it" },
+  { id: "operations", label: "Operations", title: "Operations - expand and jump to them" },
+  { id: "test", label: "Test", title: "Test - expand and jump to it" },
+  { id: "mock", label: "Mock", title: "Mock - expand and jump to it" },
+  { id: "mapping", label: "Mapping", title: "Mapping - expand and jump to it" },
+];
+/** Resolve a jump anchor, seeing through display:contents wrappers. */
+function resolveJumpBox(el: Element | null): Element | null {
+  if (!el) return null;
+  if (el instanceof HTMLElement && getComputedStyle(el).display === "contents") return el.firstElementChild;
+  return el;
+}
+
+/** Validate a stored record, then backfill default interfaces for systems
+ * that have none - vintage projects open with a working catalog. Every
+ * load path uses this instead of validateProject directly. */
+function validateStoredProject(raw: unknown): ReturnType<typeof validateProject> {
+  const { project, issues } = validateProject(raw);
+  return { project: project ? pruneCanvasGroups(ensureDefaultInterfaces(project)) : null, issues };
+}
+
 export function SystemDesigner() {
   const [project, setProject] = useState<SystemProject | null>(null);
   const [past, setPast] = useState<Snapshot[]>([]);
   const [future, setFuture] = useState<Snapshot[]>([]);
   const [selNodeId, setSelNodeId] = useState<string | null>(null);
   const [selEdgeId, setSelEdgeId] = useState<string | null>(null);
+  const [selNoteId, setSelNoteId] = useState<string | null>(null);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [selIds, setSelIds] = useState<string[]>([]);
   const [subTab, setSubTab] = useState<SubTab>("canvas");
   /** Catalog "Bind" flow: operation picked in API Catalog, awaiting an edge click. */
   const [pendingBindOpId, setPendingBindOpId] = useState<string | null>(null);
@@ -575,6 +763,7 @@ export function SystemDesigner() {
   }, [present]);
   const [inventoryOpen, setInventoryOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(true);
+  const inspectorBodyRef = useRef<HTMLDivElement | null>(null);
   const [risksOpen, setRisksOpen] = useState(false);
   const [viewsOpen, setViewsOpen] = useState(false);
   const [c4View, setC4View] = useState<C4View>("all");
@@ -600,7 +789,7 @@ export function SystemDesigner() {
         const raw = sessionStorage.getItem(SYSTEM_DRAFT_KEY);
         if (raw) {
           sessionStorage.removeItem(SYSTEM_DRAFT_KEY);
-          const { project: valid } = validateProject(JSON.parse(raw));
+          const { project: valid } = validateStoredProject(JSON.parse(raw));
           if (valid) {
             setProject({ ...valid, updatedAt: Date.now() });
             setPast([]);
@@ -629,7 +818,7 @@ export function SystemDesigner() {
       if (deepProject && list.some((p) => p.id === deepProject)) {
         const deepLoaded = await loadSystemProject(deepProject);
         if (deepLoaded) {
-          const { project: deepValid } = validateProject(deepLoaded);
+          const { project: deepValid } = validateStoredProject(deepLoaded);
           if (deepValid) {
             setProject(deepValid);
             if (deepSelect) {
@@ -648,7 +837,7 @@ export function SystemDesigner() {
       if (list.length > 0) {
         const loaded = await loadSystemProject(list[0].id);
         if (loaded) {
-          const { project: valid, issues } = validateProject(loaded);
+          const { project: valid, issues } = validateStoredProject(loaded);
           if (valid) {
             setProject(valid);
             return;
@@ -801,10 +990,12 @@ export function SystemDesigner() {
       if (prevPast.length === 0 || !project) return prevPast;
       setFuture((prevFuture) => [snapOf(project), ...prevFuture].slice(0, 50));
       const last = prevPast[prevPast.length - 1];
-      setProject((prev) => (prev ? { ...prev, systems: last.systems, connections: last.connections } : prev));
+      setProject((prev) => (prev ? { ...prev, systems: last.systems, connections: last.connections, canvasNotes: last.canvasNotes, canvasImages: last.canvasImages } : prev));
       setSaveState("dirty");
       setSelNodeId(null);
       setSelEdgeId(null);
+      setSelNoteId(null);
+      setEditingNoteId(null);
       return prevPast.slice(0, -1);
     });
   }, [project]);
@@ -814,10 +1005,12 @@ export function SystemDesigner() {
       if (prevFuture.length === 0 || !project) return prevFuture;
       setPast((prevPast) => [...prevPast.slice(-49), snapOf(project)]);
       const [next, ...rest] = prevFuture;
-      setProject((prev) => (prev ? { ...prev, systems: next.systems, connections: next.connections } : prev));
+      setProject((prev) => (prev ? { ...prev, systems: next.systems, connections: next.connections, canvasNotes: next.canvasNotes, canvasImages: next.canvasImages } : prev));
       setSaveState("dirty");
       setSelNodeId(null);
       setSelEdgeId(null);
+      setSelNoteId(null);
+      setEditingNoteId(null);
       return rest;
     });
   }, [project]);
@@ -838,44 +1031,195 @@ export function SystemDesigner() {
         redo();
         return;
       }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "g" && !e.shiftKey) {
+        e.preventDefault();
+        const members = selIds.filter((id) => project?.systems.some((x) => x.id === id) || project?.canvasNotes.some((x) => x.id === id) || project?.canvasImages.some((x) => x.id === id));
+        if (members.length >= 2) {
+          const dupe = project?.groups.some((g) => members.every((m) => g.memberIds.includes(m)) && g.memberIds.length === members.length);
+          if (!dupe) mutate((p) => ({ ...p, groups: [...p.groups, { id: newId("group"), memberIds: members }] }));
+        }
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && ((e.key.toLowerCase() === "g" && e.shiftKey) || (e.shiftKey && e.key.toLowerCase() === "u"))) {
+        e.preventDefault();
+        mutate((p) => ({ ...p, groups: p.groups.filter((g) => !g.memberIds.some((m) => selIds.includes(m))) }));
+        return;
+      }
       if (e.key === "Escape") {
         setSelNodeId(null);
         setSelEdgeId(null);
+        setSelNoteId(null);
+        setEditingNoteId(null);
         return;
       }
-      if ((e.key === "Delete" || e.key === "Backspace") && (selNodeId || selEdgeId)) {
+      if ((e.key === "Delete" || e.key === "Backspace") && (selNodeId || selEdgeId || selNoteId || selIds.length > 0)) {
         e.preventDefault();
-        const nid = selNodeId;
+        // Multi-delete: every selected node goes; edges touching them go too.
+        const sysDel = new Set(selIds.filter((id) => project?.systems.some((x) => x.id === id)));
+        if (selNodeId) sysDel.add(selNodeId);
         const eid = selEdgeId;
-        mutate((p) => ({
-          ...p,
-          systems: nid ? p.systems.filter((s) => s.id !== nid) : p.systems,
-          connections: eid
-            ? p.connections.filter((c) => c.id !== eid)
-            : p.connections.filter((c) => c.sourceId !== nid && c.targetId !== nid),
-        }));
+        const markDel = new Set(
+          selIds.filter(
+            (id) => project?.canvasNotes.some((n) => n.id === id) || project?.canvasImages.some((g) => g.id === id)
+          )
+        );
+        if (selNoteId) markDel.add(selNoteId);
+        const doomedBlobs = project?.canvasImages.filter((g) => markDel.has(g.id)).map((g) => g.blobId) ?? [];
+        mutate((p) =>
+          pruneCanvasGroups({
+            ...p,
+            systems: p.systems.filter((x) => !sysDel.has(x.id)),
+            connections: p.connections.filter(
+              (c) => c.id !== eid && !sysDel.has(c.sourceId) && !sysDel.has(c.targetId)
+            ),
+            canvasNotes: p.canvasNotes.filter((n) => !markDel.has(n.id)),
+            canvasImages: p.canvasImages.filter((g) => !markDel.has(g.id)),
+          })
+        );
+        for (const b of doomedBlobs) void deleteCanvasBlob(b);
+        setSelIds([]);
         setSelNodeId(null);
         setSelEdgeId(null);
+        setSelNoteId(null);
+        setEditingNoteId(null);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selNodeId, selEdgeId, mutate, undo, redo]);
+  }, [selNodeId, selEdgeId, selNoteId, selIds, mutate, undo, redo, project]);
+
+  const expandGroup = useCallback((id: string): string[] => {
+    const g = project?.groups.find((gg) => gg.memberIds.includes(id));
+    return g ? [...g.memberIds] : [id];
+  }, [project]);
 
   const handleSelect = useCallback((nodeId: string | null, edgeId: string | null) => {
-    setSelNodeId(nodeId);
+    if (!project) {
+      setSelIds([]); setSelNodeId(null); setSelEdgeId(null); setSelNoteId(null);
+      return;
+    }
+    if (nodeId) {
+      // Clicking a grouped member selects the whole group.
+      const ids = [...new Set([nodeId, ...expandGroup(nodeId)])];
+      setSelIds(ids);
+      const sysFirst = ids.find((x) => project.systems.some((x2) => x2.id === x)) ?? null;
+      setSelNodeId(sysFirst);
+      setSelEdgeId(null);
+      setSelNoteId(sysFirst ? null : (ids[0] ?? null));
+      if (sysFirst) setInspectorOpen(true);
+      return;
+    }
+    setSelIds([]);
+    setSelNoteId(null);
+    setSelNodeId(null);
     setSelEdgeId(edgeId);
-    // A collapsed inspector must never swallow selection: picking a canvas
-    // node or edge reopens it so APIs stay one click away.
-    if (nodeId || edgeId) setInspectorOpen(true);
-  }, []);
+    // A collapsed inspector must never swallow selection: picking an edge
+    // reopens it so APIs stay one click away.
+    if (edgeId) setInspectorOpen(true);
+  }, [project, expandGroup]);
+
+  /** Shift-click toggles one node in the id set (group-aware): the only
+   * multi-select writer. Nothing reads selection back, so no echo loop. */
+  const toggleMultiSelect = useCallback((id: string) => {
+    if (!project) return;
+    const next = selIds.includes(id) ? selIds.filter((x) => x !== id) : [...selIds, ...expandGroup(id)];
+    const uniq = [...new Set(next)];
+    setSelIds(uniq);
+    const sysFirst = uniq.find((x) => project.systems.some((x2) => x2.id === x)) ?? null;
+    setSelNodeId(sysFirst);
+    setSelEdgeId(null);
+    const markFirst = uniq.find((x) => project.canvasNotes.some((x2) => x2.id === x) || project.canvasImages.some((x2) => x2.id === x)) ?? null;
+    setSelNoteId(sysFirst ? null : markFirst);
+  }, [project, selIds, expandGroup]);
+
+  /** Expand a collapsed inspector and jump to a section (or panel top). */
+  const jumpInspector = (section: InspectorSection) => {
+    setInspectorOpen(true);
+    const target = INSPECTOR_JUMP[section][selEdgeId ? "edge" : "node"];
+    window.setTimeout(() => {
+      const root = inspectorBodyRef.current;
+      if (!root) return;
+      const box = resolveJumpBox(root.querySelector(`[data-insp="${target}"]`));
+      (box ?? root).scrollIntoView({ block: "start", behavior: "smooth" });
+    }, 30);
+  };
 
   const addSystem = useCallback((t: SystemTemplate, at?: { x: number; y: number }) => {
     mutate((p) => {
       const n = p.systems.filter((s) => s.systemType === t.systemType).length + 1;
       const pos = at ?? { x: 120 + (p.systems.length % 5) * 60, y: 120 + (p.systems.length % 5) * 60 };
-      return { ...p, systems: [...p.systems, newSystemFromTemplate(t, pos, n)] };
+      // A dropped system is immediately operable: it carries a default
+      // REST interface so the catalog and edge binding just work.
+      const sys = newSystemFromTemplate(t, pos, n);
+      return { ...p, systems: [...p.systems, sys], interfaces: [...p.interfaces, defaultInterfaceFor(sys.id)] };
     });
+  }, [mutate]);
+
+  /** Canvas marks: double-click writes, paste drops images. Marks ride
+   * mutate (autosave + undo) exactly like systems. */
+  const writeNoteAt = useCallback((pos: { x: number; y: number }, initial: string) => {
+    // Note body is w-52 (~208px): land its center on the cursor, not its corner.
+    const id = newId('note');
+    const now = Date.now();
+    mutate((p) => ({ ...p, canvasNotes: [...p.canvasNotes, { id, position: { x: pos.x - 104, y: pos.y - 20 }, text: initial, createdAt: now, updatedAt: now }] }));
+    setSelNoteId(id);
+    setSelNodeId(null);
+    setSelEdgeId(null);
+    setEditingNoteId(id);
+  }, [mutate]);
+
+  const beginNoteEdit = useCallback((id: string) => {
+    setSelNoteId(id);
+    setSelNodeId(null);
+    setSelEdgeId(null);
+    setEditingNoteId(id);
+  }, []);
+
+  const commitNoteText = useCallback((id: string, text: string) => {
+    setEditingNoteId(null);
+    // Blank saves remove the note so abandoned doubles never litter.
+    mutate((p) => ({
+      ...p,
+      canvasNotes: text.trim()
+        ? p.canvasNotes.map((n) => (n.id === id ? { ...n, text, updatedAt: Date.now() } : n))
+        : p.canvasNotes.filter((n) => n.id !== id),
+    }));
+    if (!text.trim()) setSelNoteId(null);
+  }, [mutate]);
+
+  const cancelNoteEdit = useCallback((id: string) => {
+    setEditingNoteId(null);
+    if (project?.canvasNotes.some((n) => n.id === id && n.text === '')) {
+      mutate((p) => ({ ...p, canvasNotes: p.canvasNotes.filter((n) => n.id !== id) }));
+      setSelNoteId(null);
+    }
+  }, [mutate, project]);
+
+  const resizeCanvasImage = useCallback((id: string, width: number, height: number) => {
+    mutate((p) => ({ ...p, canvasImages: p.canvasImages.map((g) => (g.id === id ? { ...g, width, height } : g)) }));
+  }, [mutate]);
+
+  const pasteImageAt = useCallback((file: File, pos: { x: number; y: number }) => {
+    if (!isPastesableImage(file)) return;
+    void (async () => {
+      try {
+        const dims = await probeImageSize(file);
+        const width = Math.min(Math.max(16, dims.width), 560);
+        const height = Math.max(16, Math.round((dims.height * width) / Math.max(1, dims.width)));
+        const blobId = newBlobId();
+        await putCanvasBlob({ id: blobId, mime: file.type, bytes: file, width: dims.width, height: dims.height, createdAt: Date.now() });
+        const id = newId('cimg');
+        mutate((p) => ({
+          ...p,
+          canvasImages: [...p.canvasImages, { id, position: pos, width, height, blobId, name: file.name || 'Pasted image', createdAt: Date.now() }],
+        }));
+        setSelNoteId(id);
+        setSelNodeId(null);
+        setSelEdgeId(null);
+      } catch {
+        // Quota or unreadable file - canvas unchanged.
+      }
+    })();
   }, [mutate]);
 
   const connectSystems = useCallback((sourceId: string, targetId: string) => {
@@ -904,8 +1248,19 @@ export function SystemDesigner() {
         changed = true;
         return { ...s, position: { x: m.x, y: m.y } };
       });
+      // Canvas marks drag exactly like systems (same end-of-drag commit).
+      const moveMark = <T extends { id: string; position: { x: number; y: number } }>(arr: T[]): T[] =>
+        arr.map((m) => {
+          const mv = byId.get(m.id);
+          if (!mv) return m;
+          if (m.position.x === mv.x && m.position.y === mv.y) return m;
+          changed = true;
+          return { ...m, position: { x: mv.x, y: mv.y } };
+        });
+      const canvasNotes = moveMark(prev.canvasNotes);
+      const canvasImages = moveMark(prev.canvasImages);
       if (!changed) return prev;
-      return { ...prev, systems };
+      return { ...prev, systems, canvasNotes, canvasImages };
     });
     setSaveState("dirty");
   }, []);
@@ -974,6 +1329,21 @@ export function SystemDesigner() {
     setSaveState("dirty");
   }, [project, saveState]);
 
+  const loadSample = useCallback((label: string, build: () => SystemProject) => {
+    if (project && (project.systems.length > 0 || saveState === "dirty")) {
+      if (!window.confirm(`Replace the current canvas with ${label}? Unsaved work will be lost.`)) return;
+    }
+    setProject(build());
+    setPast([]);
+    setFuture([]);
+    setSelNodeId(null);
+    setSelEdgeId(null);
+    setSaveState("dirty");
+  }, [project, saveState]);
+  const loadFanoutSample = useCallback(() => loadSample("the TMF fan-out sample", buildOrderFanoutProject), [loadSample]);
+  const loadRevenueSample = useCallback(() => loadSample("the Revenue Cloud sample", buildRevenueCloudProject), [loadSample]);
+  const loadCdcSample = useCallback(() => loadSample("the CDC sync sample", buildCdcSyncProject), [loadSample]);
+
   const newCanvas = useCallback(() => {
     if (project && (project.systems.length > 0 || saveState === "dirty")) {
       if (!window.confirm("Start a blank canvas? Unsaved work will be lost.")) return;
@@ -989,7 +1359,7 @@ export function SystemDesigner() {
   const openProject = useCallback(async (id: string) => {
     const loaded = await loadSystemProject(id);
     if (!loaded) return;
-    const { project: valid } = validateProject(loaded);
+    const { project: valid } = validateStoredProject(loaded);
     if (!valid) return;
     setProject(valid);
     setPast([]);
@@ -1000,18 +1370,20 @@ export function SystemDesigner() {
   }, []);
 
   const removeProject = useCallback(async (id: string) => {
-    const target = projectList.find((p) => p.id === id);
-    if (!window.confirm(`Delete project "${target?.name ?? id}"? This cannot be undone.`)) return;
     await deleteSystemProject(id);
     const list = await listSystemProjects();
     setProjectList(list);
     if (project?.id === id) {
-      setProject(list.length > 0 ? (await loadSystemProject(list[0].id)) ?? newProject() : newProject());
+      const next = list.length > 0 ? await loadSystemProject(list[0].id) : null;
+      setProject(next ? validateStoredProject(next).project ?? newProject() : newProject());
       setPast([]);
       setFuture([]);
       setSaveState("saved");
     }
-  }, [projectList, project]);
+  }, [project]);
+
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const confirmDeleteName = confirmDeleteId ? projectList.find((x) => x.id === confirmDeleteId)?.name ?? "this project" : null;
 
   const doExport = useCallback(() => {
     if (!project) return;
@@ -1028,7 +1400,8 @@ export function SystemDesigner() {
     setImportIssues(null);
     try {
       const raw = JSON.parse(await file.text());
-      const { project: valid, issues } = importProject(raw);
+      const { project: imported, issues } = importProject(raw);
+      const valid = imported ? ensureDefaultInterfaces(imported) : null;
       if (!valid) {
         setImportIssues(issues.map((i) => `${i.path}: ${i.message}`));
         return;
@@ -1152,20 +1525,32 @@ export function SystemDesigner() {
             aria-label={saveState === "saved" ? "Saved" : "Unsaved changes"}
             className={`h-2 w-2 rounded-full ${saveState === "saved" ? "bg-green-600" : saveState === "error" ? "bg-red-600" : saveState === "saving" ? "bg-amber-500 animate-pulse" : "bg-amber-500"}`}
           />
-          <Button size="sm" onClick={() => void save()} disabled={saveState === "saving"}>
-            {saveState === "saving" ? "Saving…" : "Save"}
+          <Button size="sm" onClick={() => void save()} disabled={saveState === "saving"} style={{ fontSize: 11 }}>
+            {saveState === "saving" ? "Saving…" : (<span className="inline-flex items-center gap-1.5"><Save size={12} aria-hidden="true" /> Save</span>)}
           </Button>
-          <Button size="sm" variant="secondary" onClick={newCanvas} title="Start a blank canvas">
-            New
+          <Button size="sm" variant="secondary" onClick={newCanvas} title="Start a blank canvas" style={{ fontSize: 11 }}>
+            <span className="inline-flex items-center gap-1.5">
+              <Plus size={12} aria-hidden="true" />
+              New
+            </span>
           </Button>
-          <Button size="sm" variant="secondary" onClick={() => setTplOpen(true)} title="Browse starter canvases - demo architecture and runnable samples">
-            Templates
+          <Button size="sm" variant="secondary" onClick={() => setTplOpen(true)} title="Browse starter canvases - demo architecture and runnable samples" style={{ fontSize: 11 }}>
+            <span className="inline-flex items-center gap-1.5">
+              <LayoutTemplate size={12} aria-hidden="true" />
+              Templates
+            </span>
           </Button>
-          <Button size="sm" variant="secondary" onClick={doExport} title="Download the project as portable JSON (no secrets exist in this slice)">
-            Export
+          <Button size="sm" variant="secondary" onClick={doExport} title="Download the project as portable JSON (no secrets exist in this slice)" style={{ fontSize: 11 }}>
+            <span className="inline-flex items-center gap-1.5">
+              <Upload size={12} aria-hidden="true" />
+              Export
+            </span>
           </Button>
-          <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()} title="Import a project file - validated before anything changes">
-            Import
+          <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()} title="Import a project file - validated before anything changes" style={{ fontSize: 11 }}>
+            <span className="inline-flex items-center gap-1.5">
+              <Download size={12} aria-hidden="true" />
+              Import
+            </span>
           </Button>
           <input
             ref={fileRef}
@@ -1181,15 +1566,8 @@ export function SystemDesigner() {
           />
           <Button
             size="sm"
-            variant="ghost"
-            onClick={() => void removeProject(project.id)}
-            title="Delete this saved project"
-          >
-            Delete
-          </Button>
-          <Button
-            size="sm"
             variant="secondary"
+            style={{ fontSize: 11 }}
             onClick={() => setCredOpen(true)}
             title="Session credentials ($env.NAME) - one-time setup, kept for this tab only"
           >
@@ -1209,6 +1587,7 @@ export function SystemDesigner() {
           <Button
             size="sm"
             variant="secondary"
+            style={{ fontSize: 11 }}
             onClick={() => setNotesOpen(true)}
             title="Project design notes and TODOs (markdown, autosaved with the project)"
           >
@@ -1227,9 +1606,23 @@ export function SystemDesigner() {
               ) : null}
             </span>
           </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            onClick={() => setConfirmDeleteId(project.id)}
+            title="Delete this saved project"
+            style={{ fontSize: 11 }}>
+            <span className="inline-flex items-center gap-1.5">
+              <Trash2 size={12} aria-hidden="true" />
+              Delete
+            </span>
+          </Button>
           <span className="flex-1" />
-          <Button size="sm" variant="ghost" onClick={undo} disabled={past.length === 0} title="Undo (Ctrl+Z)">
-            Undo
+          <Button size="sm" variant="ghost" onClick={undo} disabled={past.length === 0} title="Undo (Ctrl+Z)" style={{ fontSize: 11 }}>
+            <span className="inline-flex items-center gap-1.5">
+              <Undo2 size={12} aria-hidden="true" />
+              Undo
+            </span>
           </Button>
           <Button
             size="sm"
@@ -1237,17 +1630,22 @@ export function SystemDesigner() {
             onClick={redo}
             disabled={future.length === 0}
             title="Redo (Ctrl+Shift+Z)"
+            style={{ fontSize: 11 }}
           >
-            Redo
+            <span className="inline-flex items-center gap-1.5">
+              <Redo2 size={12} aria-hidden="true" />
+              Redo
+            </span>
           </Button>
           <Button
             size="sm"
             variant="ghost"
+            style={{ fontSize: 11 }}
             onClick={() => setShowList((v) => !v)}
             aria-pressed={showList}
             title="Toggle an accessible list view of systems and connections"
           >
-            {showList ? "Canvas" : "List"}
+            {showList ? (<span className="inline-flex items-center gap-1.5"><Expand size={12} aria-hidden="true" /> Canvas</span>) : (<span className="inline-flex items-center gap-1.5"><List size={12} aria-hidden="true" /> List</span>)}
           </Button>
         </div>
         {saveState === "error" && saveError && (
@@ -1281,10 +1679,11 @@ export function SystemDesigner() {
               onClick={() => setSubTab(t.id)}
               className={
                 active
-                  ? "rounded-lg border border-ivory-950 bg-ivory-950 px-3 py-1.5 text-[12px] font-semibold text-ivory-100"
-                  : "rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] font-medium text-ivory-600 hover:border-bronze-500 hover:text-ivory-950 cursor-pointer"
+                  ? "inline-flex items-center gap-1.5 rounded-lg border border-ivory-950 bg-ivory-950 px-3 py-1.5 text-[12px] font-semibold text-ivory-100"
+                  : "inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] font-medium text-ivory-600 hover:border-bronze-500 hover:text-ivory-950 cursor-pointer"
               }
             >
+              <t.icon size={12} aria-hidden="true" />
               {t.label}
             </button>
           );
@@ -1373,23 +1772,40 @@ export function SystemDesigner() {
             </div>
           </aside>
         ) : (
-          <div className="flex w-10 shrink-0 flex-col items-center gap-2 rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] py-3">
+          <div className="flex w-10 shrink-0 flex-col items-center overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] py-2" aria-label="Inventory collapsed">
             <button
               type="button"
               onClick={() => setInventoryOpen(true)}
               aria-label="Expand inventory"
               title="Expand inventory"
-              className="rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer"
+              className="shrink-0 rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
                 <path d="m10 6 6 6-6 6" />
               </svg>
             </button>
-            <span className="text-[10px] font-bold text-ivory-500" style={{ writingMode: "vertical-rl" }}>
-              Inventory
-            </span>
+            <div className="h-px w-6 shrink-0 bg-[var(--color-line-soft)]" aria-hidden="true" />
+            <div className="flex min-h-0 flex-1 flex-col items-center gap-0.5 overflow-y-auto scroll-smooth px-1 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {SYSTEM_TEMPLATES.map((t) => (
+                <button
+                  key={t.systemType}
+                  type="button"
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData("application/sd-system", t.systemType);
+                    e.dataTransfer.effectAllowed = "copy";
+                  }}
+                  onClick={() => addSystem(t)}
+                  aria-label={`Add ${t.name} to canvas`}
+                  title={`${t.name} - click to add, drag onto canvas`}
+                  className="shrink-0 rounded-lg p-1.5 text-bronze-700 hover:bg-bronze-100 transition-colors cursor-grab active:cursor-grabbing"
+                >
+                  <SystemGlyph iconKey={t.iconKey} />
+                </button>
+              ))}
+            </div>
           </div>
-        )}
+          )}
 
         <div className="min-w-0 min-h-0 flex-1">
           <ReactFlowProvider>
@@ -1408,7 +1824,7 @@ export function SystemDesigner() {
                           <span className="min-w-0 flex-1 truncate text-xs font-semibold text-ivory-950">
                             {s.name} <span className="font-mono font-normal text-ivory-500">· {s.systemType}</span>
                           </span>
-                          <Button size="sm" variant="ghost" onClick={() => { setSelNodeId(s.id); setSelEdgeId(null); }}>
+                          <Button size="sm" variant="ghost" onClick={() => handleSelect(s.id, null)}>
                             Select
                           </Button>
                         </li>
@@ -1433,7 +1849,7 @@ export function SystemDesigner() {
                           <Badge variant={connectionReadiness(c, project) === "ready" ? "success" : connectionReadiness(c, project) === "partial" ? "warning" : "default"}>
                             {connectionReadiness(c, project)}
                           </Badge>
-                          <Button size="sm" variant="ghost" onClick={() => { setSelEdgeId(c.id); setSelNodeId(null); }}>
+                          <Button size="sm" variant="ghost" onClick={() => handleSelect(null, c.id)}>
                             Select
                           </Button>
                         </li>
@@ -1449,7 +1865,6 @@ export function SystemDesigner() {
                 onDragStartNode={() => pushHistory(project)}
                 onConnectSystems={connectSystems}
                 onSelect={handleSelect}
-                selNodeId={selNodeId}
                 selEdgeId={selEdgeId}
                 onDropTemplate={(t, at) => addSystem(t, at)}
                 emptyAction={() => setTplOpen(true)}
@@ -1461,6 +1876,16 @@ export function SystemDesigner() {
                 onOpenRisks={() => setRisksOpen(true)}
                 onOpenViews={() => setViewsOpen(true)}
                 hiddenIds={hiddenIds}
+                editingNoteId={editingNoteId}
+                selNoteId={selNoteId}
+                selIds={selIds}
+                onBeginNoteEdit={beginNoteEdit}
+                onCommitNoteText={commitNoteText}
+                onCancelNoteEdit={cancelNoteEdit}
+                onWriteAt={writeNoteAt}
+                onPasteImage={pasteImageAt}
+                onResizeImage={resizeCanvasImage}
+                onToggleSelect={toggleMultiSelect}
               />
             )}
           </ReactFlowProvider>
@@ -1487,7 +1912,25 @@ export function SystemDesigner() {
               </svg>
             </button>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-3.5">
+          {(() => {
+            const conns = project.connections;
+            const ready = conns.filter((c) => connectionReadiness(c, project) === "ready").length;
+            return (
+              <div className="flex shrink-0 items-center gap-1.5 border-b border-[var(--color-line-soft)] px-3.5 py-1.5 font-mono text-[10px] text-ivory-600" aria-label="Link status">
+                {conns.length === 0 ? (
+                  <span>No links yet</span>
+                ) : (
+                  <>
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+                    <span>{ready} ready</span>
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                    <span>{conns.length - ready} draft</span>
+                  </>
+                )}
+              </div>
+            );
+          })()}
+          <div className="min-h-0 flex-1 overflow-y-auto p-3.5" ref={inspectorBodyRef}>
             {selNode ? (
               <NodeInspector
                 node={selNode}
@@ -1499,26 +1942,46 @@ export function SystemDesigner() {
                 onTestOperation={(opId) => openTestOp(opId)}
                 onConnectTo={(targetId) => connectSystems(selNode.id, targetId)}
                 onDuplicate={() => {
-                  mutate((p) => ({
-                    ...p,
-                    systems: [
-                      ...p.systems,
-                      { ...selNode, id: newId("sys"), name: `${selNode.name} copy`, position: { x: selNode.position.x + 120, y: selNode.position.y + 80 } },
-                    ],
-                  }));
+                  mutate((p) => {
+                    const sysId = newId("sys");
+                    // Interfaces (and their operations) belong to the new
+                    // copy under fresh ids - edge bindings stay with the original.
+                    const ifaceMap = new Map<string, string>();
+                    const interfaces = [...p.interfaces];
+                    for (const f of p.interfaces.filter((f) => f.systemId === selNode.id)) {
+                      const nid = newId("iface");
+                      ifaceMap.set(f.id, nid);
+                      interfaces.push({ ...f, id: nid, systemId: sysId });
+                    }
+                    const operations = [...p.operations];
+                    for (const o of p.operations.filter((o) => ifaceMap.has(o.interfaceId))) {
+                      const ni = ifaceMap.get(o.interfaceId);
+                      if (!ni) continue;
+                      operations.push({ ...o, id: newId("op"), interfaceId: ni });
+                    }
+                    return {
+                      ...p,
+                      systems: [
+                        ...p.systems,
+                        { ...selNode, id: sysId, name: `${selNode.name} copy`, position: { x: selNode.position.x + 120, y: selNode.position.y + 80 } },
+                      ],
+                      interfaces,
+                      operations,
+                    };
+                  });
                 }}
                 onDelete={() => {
-                  mutate((p) => ({
-                    ...p,
-                    systems: p.systems.filter((s) => s.id !== selNode.id),
-                    connections: p.connections.filter((c) => c.sourceId !== selNode.id && c.targetId !== selNode.id),
-                  }));
+                  mutate((p) =>
+                    pruneCanvasGroups({
+                      ...p,
+                      systems: p.systems.filter((s) => s.id !== selNode.id),
+                      connections: p.connections.filter((c) => c.sourceId !== selNode.id && c.targetId !== selNode.id),
+                    })
+                  );
+                  setSelIds([]);
                   setSelNodeId(null);
                 }}
-                onSelectEdge={(edgeId) => {
-                  setSelNodeId((prev) => (prev === null ? prev : null));
-                  setSelEdgeId((prev) => (prev === edgeId ? prev : edgeId));
-                }}
+                onSelectEdge={(edgeId) => handleSelect(null, edgeId)}
               />
             ) : selEdge ? (
               <EdgeInspector
@@ -1599,14 +2062,14 @@ export function SystemDesigner() {
                     </button>
                   </div>
                   {project.environments.length === 0 ? (
-                    <p className="text-[11px] text-ivory-500">No environments - runs target named environments in Phase 3.</p>
+                    <p className="text-[11px] text-ivory-500">No environments - runs use each system URL as stored on its node.</p>
                   ) : (
                     <div className="space-y-1.5">
                       <select
                         value={project.activeEnvironmentId ?? ""}
                         onChange={(e) => mutate((p) => ({ ...p, activeEnvironmentId: e.target.value || null }))}
                         aria-label="Active environment"
-                        title="Active environment - test runs target this in Phase 3"
+                        title="Active environment - runs resolve every system URL through this"
                         className="w-full cursor-pointer rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas)] px-2 py-1.5 text-xs font-semibold text-ivory-950"
                       >
                         <option value="">No active environment</option>
@@ -1615,7 +2078,8 @@ export function SystemDesigner() {
                         ))}
                       </select>
                       {project.environments.map((e) => (
-                        <div key={e.id} className="flex items-center gap-1">
+                        <div key={e.id} className="space-y-1">
+                          <div className="flex items-center gap-1">
                           <input
                             value={e.name}
                             onChange={(ev) => mutate((p) => ({
@@ -1652,9 +2116,44 @@ export function SystemDesigner() {
                               <path d="M6 6l12 12M18 6 6 18" />
                             </svg>
                           </button>
+                          </div>
+                          {project.systems.length > 0 && (
+                            <details className="rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-canvas)] px-2 py-1">
+                              <summary
+                                className="cursor-pointer text-[10px] font-semibold text-ivory-600 hover:text-ivory-950"
+                                title="Per-system URLs for this environment win over each system's own URL - empty falls through to the system URL, then the environment fallback"
+                              >
+                                Per-system URLs · {Object.keys(e.baseUrlOverrides ?? {}).length} set
+                              </summary>
+                              <div className="mt-1 space-y-1 pb-1">
+                                {project.systems.map((sys) => (
+                                  <label key={sys.id} className="block text-[10px] font-semibold text-ivory-600">
+                                    {sys.name}
+                                    <input
+                                      value={(e.baseUrlOverrides ?? {})[sys.id] ?? ""}
+                                      onChange={(ev) => mutate((pr) => ({
+                                        ...pr,
+                                        environments: pr.environments.map((x) => {
+                                          if (x.id !== e.id) return x;
+                                          const next = { ...(x.baseUrlOverrides ?? {}) };
+                                          if (ev.target.value.trim()) next[sys.id] = ev.target.value;
+                                          else delete next[sys.id];
+                                          return { ...x, baseUrlOverrides: next };
+                                        }),
+                                      }))}
+                                      placeholder={sys.baseUrl?.trim() || e.baseUrl.trim() || "https://…"}
+                                      spellCheck={false}
+                                      aria-label={`${sys.name} URL in ${e.name}`}
+                                      className="mt-0.5 w-full rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2 py-1 font-mono text-[10px] text-ivory-800 placeholder-ivory-400 focus:border-bronze-500 focus:outline-none"
+                                    />
+                                  </label>
+                                ))}
+                              </div>
+                            </details>
+                          )}
                         </div>
                       ))}
-                      <p className="text-[10px] text-ivory-500">Base URLs only - secrets are referenced at runtime, never stored (Phase 3).</p>
+                      <p className="text-[10px] text-ivory-500">Base URLs only - secrets are referenced at runtime, never stored. Switching environments retargets every system at once.</p>
                     </div>
                   )}
                 </div>
@@ -1663,23 +2162,38 @@ export function SystemDesigner() {
           </div>
         </aside>
         ) : (
-          <div className="flex w-10 shrink-0 flex-col items-center gap-2 rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] py-3">
+          <div className="flex w-10 shrink-0 flex-col items-center gap-1 overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] py-2" aria-label="Inspector collapsed">
             <button
               type="button"
               onClick={() => setInspectorOpen(true)}
               aria-label="Expand inspector"
               title="Expand inspector"
-              className="rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer"
+              className="shrink-0 rounded-md p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
                 <path d="m14 6-6 6 6 6" />
               </svg>
             </button>
-            <span className="text-[10px] font-bold text-ivory-500" style={{ writingMode: "vertical-rl" }}>
-              Inspector
-            </span>
+            <div className="h-px w-6 shrink-0 bg-[var(--color-line-soft)]" aria-hidden="true" />
+            <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto scroll-smooth px-1 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {INSPECTOR_STRIP.map((s) => {
+                const Icon = INSPECTOR_ICONS[s.id];
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => jumpInspector(s.id)}
+                    aria-label={s.label}
+                    title={s.title}
+                    className="shrink-0 rounded-lg p-1.5 text-ivory-500 hover:text-ivory-950 hover:bg-ivory-300 transition-colors cursor-pointer"
+                  >
+                    <Icon size={14} aria-hidden="true" />
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        )}
+          )}
       </div>
       ) : (
         project && (
@@ -1722,7 +2236,7 @@ export function SystemDesigner() {
         <RisksDialog
           project={project}
           onClose={() => setRisksOpen(false)}
-          onSelectNode={(id) => setSelNodeId(id)}
+          onSelectNode={(id) => handleSelect(id, null)}
           onAddScenario={(draft) =>
             mutate((p) => ({
               ...p,
@@ -1798,6 +2312,22 @@ export function SystemDesigner() {
         />
       )}
 
+      {confirmDeleteId && (
+        <div className="modal-overlay" onClick={() => setConfirmDeleteId(null)}>
+          <div className="modal-card max-w-sm flex flex-col" role="dialog" aria-modal="true" aria-label="Delete project" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 pt-5">
+              <p className="text-[10px] font-semibold uppercase tracking-[2px] text-[var(--color-accent-dark)]">Delete project</p>
+              <p className="mt-1 text-sm font-bold text-ivory-950">Delete {confirmDeleteName}?</p>
+              <p className="mt-1 text-xs leading-relaxed text-ivory-600">The canvas, runs, and credentials refs leave this browser. This cannot be undone.</p>
+            </div>
+            <div className="flex justify-end gap-2 px-6 py-4">
+              <Button size="sm" variant="secondary" onClick={() => setConfirmDeleteId(null)}>Cancel</Button>
+              <Button size="sm" variant="danger" onClick={() => { if (confirmDeleteId) void removeProject(confirmDeleteId); setConfirmDeleteId(null); }}>Delete</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {project && (
         <TemplatesModal
           open={tplOpen}
@@ -1805,6 +2335,9 @@ export function SystemDesigner() {
           onLoadDemo={loadDemo}
           onLoadGroq={loadGroqSample}
           onLoadTmf={loadTmfSample}
+          onLoadFanout={loadFanoutSample}
+          onLoadRevenue={loadRevenueSample}
+          onLoadCdc={loadCdcSample}
         />
       )}
 
@@ -1869,7 +2402,7 @@ function NodeInspector({
   const connectables = project.systems.filter((s) => s.id !== node.id);
   return (
     <div className="space-y-2.5">
-      <div className="flex items-center gap-2 rounded-xl border border-[var(--color-line-soft)] bg-[var(--color-canvas)] p-2.5">
+      <div data-insp="identity" className="flex items-center gap-2 rounded-xl border border-[var(--color-line-soft)] bg-[var(--color-canvas)] p-2.5">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-bronze-100 text-bronze-700">
           <SystemGlyph iconKey={node.iconKey} />
         </span>
@@ -1933,7 +2466,7 @@ function NodeInspector({
           Delete
         </Button>
       </div>
-      <div>
+      <div data-insp="connect">
         <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ivory-600" title="Or drag from the bronze dot on the node's right edge to another node">
           Connect to…
         </p>
@@ -1967,7 +2500,7 @@ function NodeInspector({
           </div>
         )}
       </div>
-      <div>
+      <div data-insp="operations">
         <div className="mb-1.5 flex items-center justify-between">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
             Interfaces · {groups.length} · {opCount} ops
@@ -2296,7 +2829,7 @@ function OperationHttpConfig({
             </div>
           </div>
           {!isEvent && (
-            <div>
+            <div data-insp="mock">
               <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-semibold text-ivory-800 select-none">
                 <input
                   type="checkbox"
@@ -2382,7 +2915,7 @@ function OperationHttpConfig({
             </div>
           )}
           {!isEvent && (
-            <div className="rounded-md bg-[var(--color-canvas)] px-2 py-1.5">
+            <div data-insp="mapping" className="rounded-md bg-[var(--color-canvas)] px-2 py-1.5">
               {incoming ? (
                 <button
                   type="button"
@@ -2517,7 +3050,7 @@ function EdgeInspector({
   );
   return (
     <div className="space-y-2.5">
-      <div className="rounded-xl border border-[var(--color-line-soft)] bg-[var(--color-canvas)] p-2.5 font-mono text-[11px] text-ivory-800">
+      <div data-insp="identity" className="rounded-xl border border-[var(--color-line-soft)] bg-[var(--color-canvas)] p-2.5 font-mono text-[11px] text-ivory-800">
         {sourceName} → {targetName}
       </div>
       <label className="block text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
@@ -2542,9 +3075,11 @@ function EdgeInspector({
               : "Not executable - bind operations to run this edge (Phase 2)."}
         </p>
       </div>
+      <div data-insp="connect" className="contents">
       {bindSelect("source", edge.sourceOperationId, sourceGroups, sourceName)}
       {bindSelect("target", edge.targetOperationId, targetGroups, targetName)}
-      <details className="rounded-xl border border-[var(--color-line-soft)] bg-[var(--color-canvas)]">
+      </div>
+      <details data-insp="mapping" className="rounded-xl border border-[var(--color-line-soft)] bg-[var(--color-canvas)]">
         <summary className="cursor-pointer px-2.5 py-2 text-[11px] font-semibold text-ivory-900 hover:text-ivory-950">
           Mapping {edge.mapping ? `· ${edge.mapping.mode}` : "· none (passthrough at run)"}
         </summary>
@@ -2603,6 +3138,7 @@ function EdgeInspector({
           </p>
         </div>
       </details>
+      <div data-insp="test" className="contents">
       <Button
         size="sm"
         onClick={onRun}
@@ -2622,9 +3158,11 @@ function EdgeInspector({
       >
         Run chain from here
       </Button>
+      </div>
       <Button size="sm" variant="ghost" onClick={onDelete} className="w-full">
         Delete connection
       </Button>
     </div>
   );
 }
+

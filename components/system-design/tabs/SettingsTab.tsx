@@ -159,11 +159,12 @@ export function SettingsTab({ project, mutate }: Props) {
           })}
         </ul>
         <div className="mt-1.5 flex gap-1.5">
-          <input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} placeholder="Name, e.g. UAT" spellCheck={false} aria-label="New environment name" className={`${textInput} w-40`} />
+          <input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} placeholder="Name, e.g. UAT" spellCheck={false} aria-label="New environment name" className={`${textInput} !w-44 shrink-0`} />
           <input value={draft.baseUrl} onChange={(e) => setDraft((d) => ({ ...d, baseUrl: e.target.value }))} placeholder="Fallback https://…" spellCheck={false} aria-label="New environment fallback URL" className={`${monoInput} min-w-52 flex-1`} />
           <Button
             size="sm"
             disabled={!draft.name.trim()}
+            className="shrink-0 whitespace-nowrap"
             onClick={() => {
               if (!draft.name.trim()) return;
               mutate((p) => ({ ...p, environments: [...p.environments, { id: newId("env"), name: draft.name.trim(), baseUrl: draft.baseUrl.trim(), baseUrlOverrides: {} }] }));
@@ -181,7 +182,7 @@ export function SettingsTab({ project, mutate }: Props) {
       <section aria-label="Retention" className="mt-4 border-t border-[var(--color-line-soft)] pt-3">
         <h3 className="text-xs font-bold text-ivory-950">Run evidence retention</h3>
         <div className="mt-1.5 flex items-center gap-2">
-          <label className="flex items-center gap-1.5 text-xs text-ivory-800">
+          <label className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs text-ivory-800">
             Keep runs for
             <input
               type="number"

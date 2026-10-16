@@ -4,6 +4,8 @@ import {
   coerceFlows,
   coerceScenarios,
   coerceSettings,
+  defaultInterfaceFor,
+  ensureDefaultInterfaces,
   exportProject,
   importProject,
   newProject,
@@ -156,6 +158,64 @@ describe("flows / scenarios / settings coercion", () => {
     expect(resolveSystemBaseUrl(systems, null, "ghost")).toBe("");
     // Blank overrides fall through instead of blanking the URL.
     expect(resolveSystemBaseUrl(systems, { baseUrl: "", baseUrlOverrides: { s1: "  " } }, "s1")).toBe("https://node.test");
+  });
+
+  it("switching environments retargets a fully-specified canvas via overrides", () => {
+    const systems = [
+      { id: "s1", baseUrl: "https://node-s1.test" },
+      { id: "s2", baseUrl: "https://node-s2.test" },
+    ];
+    const sandbox = { baseUrl: "", baseUrlOverrides: {} };
+    const prod = {
+      baseUrl: "",
+      baseUrlOverrides: { s1: "https://prod-s1.test", s2: "https://prod-s2.test" },
+    };
+    // Same node URLs, different active environment -> different targets.
+    expect(resolveSystemBaseUrl(systems, sandbox, "s1")).toBe("https://node-s1.test");
+    expect(resolveSystemBaseUrl(systems, prod, "s1")).toBe("https://prod-s1.test");
+    expect(resolveSystemBaseUrl(systems, prod, "s2")).toBe("https://prod-s2.test");
+    // Clearing one override drops just that system back to its own URL.
+    const partial = { baseUrl: "", baseUrlOverrides: { s1: "https://prod-s1.test" } };
+    expect(resolveSystemBaseUrl(systems, partial, "s2")).toBe("https://node-s2.test");
+  });
+
+  it("gives every system a default interface, never duplicating", () => {
+    const sys = (id: string) => ({ id, baseUrl: "" });
+    const withOne = {
+      systems: [sys("s1"), sys("s2")],
+      interfaces: [defaultInterfaceFor("s1")],
+    } as Parameters<typeof ensureDefaultInterfaces>[0];
+    const fixed = ensureDefaultInterfaces(withOne);
+    expect(fixed.interfaces.filter((f) => f.systemId === "s1")).toHaveLength(1);
+    expect(fixed.interfaces.filter((f) => f.systemId === "s2")).toHaveLength(1);
+    expect(fixed.interfaces.find((f) => f.systemId === "s2")).toMatchObject({
+      name: "REST API",
+      protocol: "REST",
+      basePath: "",
+    });
+    // Nothing missing -> same reference back, no churn.
+    expect(ensureDefaultInterfaces(fixed)).toBe(fixed);
+  });
+
+  it("validator preserves stored interfaces; the app layer backfills vintage projects", () => {
+    const vintage = {
+      id: "p",
+      name: "p",
+      schemaVersion: 1,
+      updatedAt: 1,
+      systems: [{ id: "s1", name: "S", systemType: "rest", position: { x: 0, y: 0 } }],
+      connections: [],
+      interfaces: [],
+      operations: [],
+      environments: [{ id: "e1", name: "E", baseUrl: "" }],
+    };
+    const { project, issues } = validateProject(vintage);
+    expect(issues).toEqual([]);
+    // Pure contract: the validator stores interfaces exactly as given.
+    expect(project?.interfaces).toEqual([]);
+    if (!project) throw new Error("expected a valid project");
+    // App-layer healing: every load path wraps with ensureDefaultInterfaces.
+    expect(ensureDefaultInterfaces(project).interfaces.map((f) => f.systemId)).toEqual(["s1"]);
   });
 
   it("defaults, validates, and prunes environment URL overrides", () => {

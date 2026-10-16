@@ -270,6 +270,11 @@ export function ApiCatalogTab({ project, mutate, onTest, onLocate, onBind }: Pro
           </Button>
         </div>
         {project.systems.length === 0 && <p className="mt-1 text-[11px] text-ivory-500">Add a system on the canvas first.</p>}
+        {project.systems.length > 0 && draftIfaces.length === 0 && (
+          <p className="mt-1 text-[11px] text-ivory-500">
+            {draftSystem ? `${draftSystem.name} has no interfaces yet - select it on the canvas, then Operations → + Interface.` : "Pick a system above."}
+          </p>
+        )}
       </div>
 
       <div className="mt-3 space-y-3">
