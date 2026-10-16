@@ -134,7 +134,7 @@ describe("system design model", () => {
     expect(vintage.issues).toEqual([]);
     expect(vintage.project?.notesFormat).toBeUndefined();
     expect(systemNotesToNote(vintage.project!).format).toBe("md");
-    expect(systemNotesToNote(vintage.project!).html).toContain("<h2>Plan</h2>");
+    expect(systemNotesToNote(vintage.project!).html).toContain("<h1>Plan</h1>");
     // Rich triple validates, round-trips, and rejects junk formats.
     const triple = noteToSystemNotes(noteBodyFromHtml("<p>Hi <strong>there</strong></p>"));
     const rich = validateProject({ ...base, notes: triple.notes, notesFormat: triple.notesFormat, notesHtml: triple.notesHtml });

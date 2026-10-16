@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Camera, Download, Expand, FlaskConical, IdCard, Layers, Map as MapIcon, Maximize, Play, Plug, Save, Settings, Shuffle, SquareTerminal, Terminal, Trash2, TriangleAlert, Upload, LayoutTemplate, Plus, Zap, Undo2, Redo2, List } from "lucide-react";
+import { Camera, Download, Expand, FlaskConical, IdCard, Layers, Map as MapIcon, Maximize, Play, Plug, Save, Settings, Shuffle, SquareTerminal, Terminal, Trash2, TriangleAlert, Upload, LayoutTemplate, Plus, Zap, Undo2, Redo2, List, MousePointer2, Hand, Group, Ungroup } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
   ReactFlow,
@@ -15,6 +15,7 @@ import {
   MarkerType,
   ConnectionMode,
   PanOnScrollMode,
+  SelectionMode,
   type ReactFlowInstance,
   type Node,
   type Edge,
@@ -215,9 +216,16 @@ function DesignerCanvas({
   onCommitNoteText,
   onCancelNoteEdit,
   onWriteAt,
+  appendTargetId,
+  onAppendChar,
   onPasteImage,
   onResizeImage,
   onToggleSelect,
+  onMarqueeSelect,
+  canGroup,
+  canUngroup,
+  onGroup,
+  onUngroup,
 }: {
   project: SystemProject;
   onMoveSystems: (moves: { id: string; x: number; y: number }[]) => void;
@@ -242,9 +250,16 @@ function DesignerCanvas({
   onCommitNoteText: (id: string, text: string) => void;
   onCancelNoteEdit: (id: string) => void;
   onWriteAt: (pos: { x: number; y: number }, initial: string) => void;
+  appendTargetId: string | null;
+  onAppendChar: (id: string, ch: string) => void;
   onPasteImage: (file: File, pos: { x: number; y: number }) => void;
   onResizeImage: (id: string, width: number, height: number) => void;
   onToggleSelect: (id: string) => void;
+  onMarqueeSelect: (ids: string[]) => void;
+  canGroup: boolean;
+  canUngroup: boolean;
+  onGroup: () => void;
+  onUngroup: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition, fitView, getNodes, getNodesBounds } = useReactFlow();
@@ -293,6 +308,11 @@ function DesignerCanvas({
   }, [project, hiddenIds, editingNoteId, selNoteId, selIds, onBeginNoteEdit, onCommitNoteText, onCancelNoteEdit, onResizeImage]);
   const [nodes, setNodes, onNodesChange] = useNodesState(baseNodes);
   const draggingRef = useRef(false);
+  const shiftSkipRef = useRef(0);
+  // draw.io tools: Select (click, marquee, shift adds) or Pan. Touch
+  // always pans - marquee is a mouse gesture.
+  const [tool, setTool] = useState<'select' | 'pan'>('select');
+  const isTouchOrPen = typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
   useEffect(() => {
     if (draggingRef.current) return;
     setNodes((prev) => {
@@ -337,6 +357,7 @@ function DesignerCanvas({
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key.length !== 1) return;
       if (document.querySelector('[role=dialog]')) return;
+      if (appendTargetId) { e.preventDefault(); onAppendChar(appendTargetId, e.key); return; }
       e.preventDefault();
       const rect = containerRef.current?.getBoundingClientRect();
       const m = mouseRef.current ?? (rect ? { x: rect.width / 2, y: rect.height / 2 } : { x: 400, y: 300 });
@@ -344,7 +365,7 @@ function DesignerCanvas({
     };
     window.addEventListener('keydown', onKeyWrite);
     return () => window.removeEventListener('keydown', onKeyWrite);
-  }, [editingNoteId, onWriteAt, screenToFlowPosition]);
+  }, [editingNoteId, onWriteAt, appendTargetId, onAppendChar, screenToFlowPosition]);
 
   // Pasting a screenshot drops it at the viewport center. Text fields
   // keep the paste; open dialogs defer to the dialog.
@@ -490,6 +511,51 @@ function DesignerCanvas({
         if (rect) mouseRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
       }}
     >
+      <div className='absolute left-3 top-3 z-10 flex gap-1 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-1 shadow-sm' role='toolbar' aria-label='Canvas tools'>
+        <button
+          type='button'
+          title='Select - click, drag a box, shift adds'
+          aria-pressed={tool === 'select'}
+          onClick={() => setTool('select')}
+          className={tool === 'select'
+            ? 'rounded-md border border-ivory-950 bg-ivory-950 p-1.5 text-ivory-100'
+            : 'rounded-md border border-transparent p-1.5 text-ivory-600 hover:border-[var(--color-line)] hover:text-ivory-950 cursor-pointer'}
+        >
+          <MousePointer2 size={13} aria-hidden='true' />
+        </button>
+        <button
+          type='button'
+          title='Pan - drag to move around'
+          aria-pressed={tool === 'pan'}
+          onClick={() => setTool('pan')}
+          className={tool === 'pan'
+            ? 'rounded-md border border-ivory-950 bg-ivory-950 p-1.5 text-ivory-100'
+            : 'rounded-md border border-transparent p-1.5 text-ivory-600 hover:border-[var(--color-line)] hover:text-ivory-950 cursor-pointer'}
+        >
+          <Hand size={13} aria-hidden='true' />
+        </button>
+        <span className='mx-0.5 w-px self-stretch bg-[var(--color-line)]' aria-hidden='true' />
+        <button
+          type='button'
+          title='Group selection (Ctrl+G)'
+          aria-label='Group selection'
+          onClick={onGroup}
+          disabled={!canGroup}
+          className='rounded-md border border-transparent p-1.5 text-ivory-600 hover:border-[var(--color-line)] hover:text-ivory-950 cursor-pointer disabled:cursor-default disabled:opacity-40 disabled:hover:border-transparent disabled:hover:text-ivory-600'
+        >
+          <Group size={13} aria-hidden='true' />
+        </button>
+        <button
+          type='button'
+          title='Ungroup selection (Ctrl+Shift+G)'
+          aria-label='Ungroup selection'
+          onClick={onUngroup}
+          disabled={!canUngroup}
+          className='rounded-md border border-transparent p-1.5 text-ivory-600 hover:border-[var(--color-line)] hover:text-ivory-950 cursor-pointer disabled:cursor-default disabled:opacity-40 disabled:hover:border-transparent disabled:hover:text-ivory-600'
+        >
+          <Ungroup size={13} aria-hidden='true' />
+        </button>
+      </div>
       <ReactFlow
         nodes={nodes}
         edges={selEdges}
@@ -501,14 +567,25 @@ function DesignerCanvas({
         onConnect={(c: Connection) => {
           if (c.source && c.target && c.source !== c.target) onConnectSystems(c.source, c.target);
         }}
-        onNodeClick={(e, node) => { if (e.shiftKey) onToggleSelect(node.id); else onSelect(node.id, null); }}
+        onNodeClick={(e, node) => { if (e.shiftKey) { shiftSkipRef.current = Date.now(); onToggleSelect(node.id); } else onSelect(node.id, null); }}
         onEdgeClick={(_, edge) => onSelect(null, edge.id)}
         onPaneClick={() => onSelect(null, null)}
+        onSelectionChange={({ nodes: sn }) => {
+          // Marquee is the only writer here: single clicks stay with the
+          // click handlers (no select-echo loop), shift-clicks with
+          // toggleMultiSelect for a beat after the click.
+          if (Date.now() - shiftSkipRef.current < 250) return;
+          const ids = sn.map((n) => n.id);
+          if (ids.length >= 2) onMarqueeSelect(ids);
+        }}
         minZoom={0.15}
         zoomOnScroll={false}
         panOnScroll
         panOnScrollMode={PanOnScrollMode.Free}
         zoomOnPinch={false}
+        panOnDrag={isTouchOrPen ? false : tool === 'select' ? [1, 2] : [0, 1, 2]}
+        selectionOnDrag={tool === 'select' && !isTouchOrPen}
+        selectionMode={SelectionMode.Partial}
         fitView
       >
         <Background gap={22} size={1.2} color="#DDD3BC" bgColor="#FAF8F2" />
@@ -1015,6 +1092,25 @@ export function SystemDesigner() {
     });
   }, [project]);
 
+  /** Group the current selection (buttons + Ctrl+G share this). */
+  const groupSelection = useCallback((): boolean => {
+    if (!project) return false;
+    const members = selIds.filter((id) => project.systems.some((x) => x.id === id) || project.canvasNotes.some((x) => x.id === id) || project.canvasImages.some((x) => x.id === id));
+    if (members.length < 2) return false;
+    const dupe = project.groups.some((g) => g.memberIds.length === members.length && members.every((m) => g.memberIds.includes(m)));
+    if (dupe) return false;
+    mutate((p) => ({ ...p, groups: [...p.groups, { id: newId('group'), memberIds: members }] }));
+    return true;
+  }, [project, selIds, mutate]);
+
+  /** Ungroup every group touching the selection (buttons + Ctrl+Shift+G/U). */
+  const ungroupSelection = useCallback((): boolean => {
+    if (!project) return false;
+    if (!project.groups.some((g) => g.memberIds.some((m) => selIds.includes(m)))) return false;
+    mutate((p) => ({ ...p, groups: p.groups.filter((g) => !g.memberIds.some((m) => selIds.includes(m))) }));
+    return true;
+  }, [project, selIds, mutate]);
+
   // Keyboard: delete selection, undo/redo, escape clears.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1033,19 +1129,16 @@ export function SystemDesigner() {
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "g" && !e.shiftKey) {
         e.preventDefault();
-        const members = selIds.filter((id) => project?.systems.some((x) => x.id === id) || project?.canvasNotes.some((x) => x.id === id) || project?.canvasImages.some((x) => x.id === id));
-        if (members.length >= 2) {
-          const dupe = project?.groups.some((g) => members.every((m) => g.memberIds.includes(m)) && g.memberIds.length === members.length);
-          if (!dupe) mutate((p) => ({ ...p, groups: [...p.groups, { id: newId("group"), memberIds: members }] }));
-        }
+        groupSelection();
         return;
       }
       if ((e.metaKey || e.ctrlKey) && ((e.key.toLowerCase() === "g" && e.shiftKey) || (e.shiftKey && e.key.toLowerCase() === "u"))) {
         e.preventDefault();
-        mutate((p) => ({ ...p, groups: p.groups.filter((g) => !g.memberIds.some((m) => selIds.includes(m))) }));
+        ungroupSelection();
         return;
       }
       if (e.key === "Escape") {
+        setSelIds([]);
         setSelNodeId(null);
         setSelEdgeId(null);
         setSelNoteId(null);
@@ -1086,7 +1179,7 @@ export function SystemDesigner() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selNodeId, selEdgeId, selNoteId, selIds, mutate, undo, redo, project]);
+  }, [selNodeId, selEdgeId, selNoteId, selIds, mutate, undo, redo, project, groupSelection, ungroupSelection]);
 
   const expandGroup = useCallback((id: string): string[] => {
     const g = project?.groups.find((gg) => gg.memberIds.includes(id));
@@ -1131,6 +1224,23 @@ export function SystemDesigner() {
     const markFirst = uniq.find((x) => project.canvasNotes.some((x2) => x2.id === x) || project.canvasImages.some((x2) => x2.id === x)) ?? null;
     setSelNoteId(sysFirst ? null : markFirst);
   }, [project, selIds, expandGroup]);
+
+  /** Marquee/box select adopts the React Flow set, group-aware, and
+   * opens the inspector multi panel. Single clicks never reach here,
+   * so the old select-echo loop cannot recur. */
+  const handleMarqueeSelect = useCallback((ids: string[]) => {
+    if (!project || ids.length < 2) return;
+    const expanded = [...new Set(ids.flatMap((id) => expandGroup(id)))];
+    setSelIds((prev) => (prev.length === expanded.length && expanded.every((id) => prev.includes(id)) ? prev : expanded));
+    const sysFirst = expanded.find((x) => project.systems.some((x2) => x2.id === x)) ?? null;
+    setSelNodeId(sysFirst);
+    setSelEdgeId(null);
+    const markFirst = expanded.find((x) => project.canvasNotes.some((x2) => x2.id === x) || project.canvasImages.some((x2) => x2.id === x)) ?? null;
+    setSelNoteId(sysFirst ? null : markFirst);
+    setInspectorOpen(true);
+  }, [project, expandGroup]);
+
+
 
   /** Expand a collapsed inspector and jump to a section (or panel top). */
   const jumpInspector = (section: InspectorSection) => {
@@ -1194,6 +1304,31 @@ export function SystemDesigner() {
       setSelNoteId(null);
     }
   }, [mutate, project]);
+
+  /** Delete one canvas mark (panel button mirrors the Del key). */
+  const deleteMark = useCallback((id: string) => {
+    const blob = project?.canvasImages.find((g) => g.id === id)?.blobId;
+    mutate((p) =>
+      pruneCanvasGroups({
+        ...p,
+        canvasNotes: p.canvasNotes.filter((n) => n.id !== id),
+        canvasImages: p.canvasImages.filter((g) => g.id !== id),
+      })
+    );
+    if (blob) void deleteCanvasBlob(blob);
+    setSelIds((prev) => prev.filter((x) => x !== id));
+    setSelNoteId(null);
+    setEditingNoteId(null);
+  }, [project, mutate]);
+
+  const appendTargetId = selNoteId && selIds.length === 1 && selIds[0] === selNoteId && project?.canvasNotes.some((n) => n.id === selNoteId) ? selNoteId : null;
+
+  /** Typing with exactly one note selected appends into it (draw.io)
+   * instead of spawning a new note. */
+  const appendNoteChar = useCallback((id: string, ch: string) => {
+    mutate((p) => ({ ...p, canvasNotes: p.canvasNotes.map((n) => (n.id === id ? { ...n, text: n.text + ch, updatedAt: Date.now() } : n)) }));
+    setEditingNoteId(id);
+  }, [mutate]);
 
   const resizeCanvasImage = useCallback((id: string, width: number, height: number) => {
     mutate((p) => ({ ...p, canvasImages: p.canvasImages.map((g) => (g.id === id ? { ...g, width, height } : g)) }));
@@ -1429,6 +1564,13 @@ export function SystemDesigner() {
 
   const selNode = project?.systems.find((s) => s.id === selNodeId) ?? null;
   const selEdge = project?.connections.find((c) => c.id === selEdgeId) ?? null;
+  const selNote = project?.canvasNotes.find((n) => n.id === selNoteId) ?? project?.canvasImages.find((g) => g.id === selNoteId) ?? null;
+  const selIsImage = selNote ? "blobId" in selNote : false;
+  const selNames = project ? selIds.map((id) => project.systems.find((x) => x.id === id)?.name ?? project.canvasNotes.find((x) => x.id === id)?.text.slice(0, 24) ?? project.canvasImages.find((x) => x.id === id)?.name ?? id) : [];
+  const touchingGroups = project?.groups.filter((g) => g.memberIds.some((m) => selIds.includes(m))) ?? [];
+  const exactGroup = touchingGroups.length === 1 && touchingGroups[0].memberIds.length === selIds.length && selIds.every((m) => touchingGroups[0].memberIds.includes(m));
+  const groupableCount = project ? selIds.filter((id) => project.systems.some((x) => x.id === id) || project.canvasNotes.some((x) => x.id === id) || project.canvasImages.some((x) => x.id === id)).length : 0;
+  const canGroupSelection = groupableCount >= 2 && !exactGroup;
   const edgeName = (id: string) => project?.systems.find((s) => s.id === id)?.name ?? id;
   const testOp = testOpId ? project?.operations.find((o) => o.id === testOpId) ?? null : null;
   const testIface = testOp ? project?.interfaces.find((i) => i.id === testOp.interfaceId) ?? null : null;
@@ -1883,9 +2025,16 @@ export function SystemDesigner() {
                 onCommitNoteText={commitNoteText}
                 onCancelNoteEdit={cancelNoteEdit}
                 onWriteAt={writeNoteAt}
+                appendTargetId={appendTargetId}
+                onAppendChar={appendNoteChar}
                 onPasteImage={pasteImageAt}
                 onResizeImage={resizeCanvasImage}
                 onToggleSelect={toggleMultiSelect}
+                onMarqueeSelect={handleMarqueeSelect}
+                canGroup={canGroupSelection}
+                canUngroup={touchingGroups.length > 0}
+                onGroup={() => { groupSelection(); }}
+                onUngroup={() => { ungroupSelection(); }}
               />
             )}
           </ReactFlowProvider>
@@ -1931,7 +2080,48 @@ export function SystemDesigner() {
             );
           })()}
           <div className="min-h-0 flex-1 overflow-y-auto p-3.5" ref={inspectorBodyRef}>
-            {selNode ? (
+            {selIds.length > 1 ? (
+              <div>
+                <p className="text-xs font-bold text-ivory-950">{selIds.length} selected</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-ivory-600">{selNames.slice(0, 6).join(" · ")}{selNames.length > 6 ? ` +${selNames.length - 6} more` : ""}</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {!exactGroup && (
+                    <Button size="sm" onClick={() => { groupSelection(); }} title="Group the selection (Ctrl+G)">
+                      <span className="inline-flex items-center gap-1.5"><Group size={12} aria-hidden="true" /> Group</span>
+                    </Button>
+                  )}
+                  {touchingGroups.length > 0 && (
+                    <Button size="sm" variant="secondary" onClick={() => { ungroupSelection(); }} title="Ungroup (Ctrl+Shift+G)">
+                      <span className="inline-flex items-center gap-1.5"><Ungroup size={12} aria-hidden="true" /> Ungroup</span>
+                    </Button>
+                  )}
+                  <Button size="sm" variant="ghost" onClick={() => handleSelect(null, null)}>Clear</Button>
+                </div>
+                <p className="mt-2 text-[10px] text-ivory-500">Shift+click adds · drag a box in Select mode · Del removes all</p>
+              </div>
+            ) : selNote ? (
+              <div>
+                <p className="text-xs font-bold text-ivory-950">{selIsImage ? "Canvas image" : "Canvas note"}</p>
+                {!selIsImage && (
+                  <textarea
+                    key={selNote.id}
+                    defaultValue={(selNote as SystemCanvasNote).text}
+                    onBlur={(e) => commitNoteText(selNote.id, e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Escape") { e.currentTarget.value = (selNote as SystemCanvasNote).text; e.currentTarget.blur(); } }}
+                    rows={5}
+                    aria-label="Canvas note text"
+                    className="mt-2 w-full rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2 py-1.5 text-xs text-ivory-950 focus:border-bronze-500 focus:outline-none"
+                  />
+                )}
+                {selIsImage && (
+                  <p className="mt-1 text-[11px] text-ivory-600">{(selNote as SystemCanvasImage).name} · {(selNote as SystemCanvasImage).width}×{(selNote as SystemCanvasImage).height}px</p>
+                )}
+                <div className="mt-2 flex gap-1.5">
+                  <Button size="sm" variant="ghost" onClick={() => deleteMark(selNote.id)}>Delete</Button>
+                </div>
+                <p className="mt-2 text-[10px] text-ivory-500">Double-click the canvas note to edit inline · Del removes</p>
+              </div>
+            ) : selNode ? (
               <NodeInspector
                 node={selNode}
                 project={project}                onPatch={(patch) => mutate((p) => ({
