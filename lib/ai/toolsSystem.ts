@@ -9,6 +9,7 @@ import { getSystemBridge } from "./systemBridge";
 import { JSON_TOOLS, STUDIO_TOOLS } from "./toolsStudio";
 import { WIREFRAME_TOOLS } from "./toolsWireframe";
 import { SEQUENCE_TOOLS } from "./toolsSequence";
+import { DIAGRAM_STUDIO_TOOLS } from "./toolsDiagramStudio";
 import { DRAW_TOOLS } from "./toolsDraw";
 import { CONSOLE_TOOLS } from "./toolsConsole";
 import { PMO_TOOLS } from "./toolsPmo";
@@ -192,6 +193,7 @@ export function toolsForSkill(skillName: string): AgentTool[] {
   if (skillName === "json") return JSON_TOOLS;
   if (skillName === "wireframe") return WIREFRAME_TOOLS;
   if (skillName === "sequence") return SEQUENCE_TOOLS;
+  if (skillName === "diagram-studio") return DIAGRAM_STUDIO_TOOLS;
   if (skillName === "draw") return DRAW_TOOLS;
   if (skillName === "console") return [...CONSOLE_TOOLS, ...PMO_TOOLS];
   if (skillName === "knowledge") return GRAPH_TOOLS;

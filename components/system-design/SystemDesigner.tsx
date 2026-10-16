@@ -12,13 +12,10 @@ import {
   useReactFlow,
   useNodesState,
   getViewportForBounds,
-  MarkerType,
   ConnectionMode,
   PanOnScrollMode,
   SelectionMode,
   type ReactFlowInstance,
-  type Node,
-  type Edge,
   type Connection,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -60,10 +57,10 @@ import {
   loadSystemProject,
   deleteSystemProject,
 } from "@/lib/system-design/store";
-import { buildCdcSyncProject, buildDemoProject, buildGroqSampleProject, buildOrderFanoutProject, buildRevenueCloudProject, buildTmfSampleProject } from "@/lib/system-design/demo";
+import { buildCdcSyncProject, buildDemoProject, buildGroqSampleProject, buildOrderFanoutProject, buildRetryFallbackProject, buildRevenueCloudProject, buildTmfSampleProject } from "@/lib/system-design/demo";
 import { deleteCanvasBlob, isPastesableImage, newBlobId, probeImageSize, putCanvasBlob } from "@/lib/system-design/blobStore";
 import { SYSTEM_DRAFT_KEY } from "@/lib/draw/toSystemDraft";
-import { SystemNodeView, SystemGlyph, type SystemNodeData } from "./SystemNode";
+import { SystemGlyph } from "./SystemNode";
 import { TestRunner } from "./TestRunner";
 import { RunEdgeDialog } from "./RunEdgeDialog";
 import { ChainRunDialog } from "./ChainRunDialog";
@@ -78,7 +75,8 @@ import { ProjectNotesModal } from "./ProjectNotesModal";
 import { CredentialsModal } from "./CredentialsModal";
 import { RenameProjectModal } from "./RenameProjectModal";
 import { registerSystemBridge, snapshotOf } from "@/lib/ai/systemBridge";
-import { CanvasImageView, CanvasNoteView } from "./CanvasMarks";
+import { systemNodeTypes } from "./flowRender";
+import { toFlowEdges, toFlowNodes } from "@/lib/system-design/flow";
 import { TemplatesModal } from "./TemplatesModal";
 import { RisksDialog } from "../risks/RisksDialog";
 import { ViewsDialog } from "../c4/ViewsDialog";
@@ -127,8 +125,6 @@ function loadCredVault(): CredVault {
 }
 import type { CanvasTodo } from "@/lib/inbox/types";
 
-const nodeTypes = { system: SystemNodeView, note: CanvasNoteView, "canvas-image": CanvasImageView } as const;
-
 type SubTab = "canvas" | "flow" | "api" | "transform" | "scenarios" | "runs" | "settings";
 
 const SUB_TABS: { id: SubTab; label: string; icon: LucideIcon }[] = [
@@ -154,43 +150,6 @@ const snapOf = (p: SystemProject): Snapshot => ({
   canvasNotes: JSON.parse(JSON.stringify(p.canvasNotes)) as SystemCanvasNote[],
   canvasImages: JSON.parse(JSON.stringify(p.canvasImages)) as SystemCanvasImage[],
 });
-
-function toFlowNodes(project: SystemProject): Node<SystemNodeData>[] {
-  return project.systems.map((s) => ({
-    id: s.id,
-    type: "system",
-    position: s.position,
-    data: { name: s.name, systemType: s.systemType, iconKey: s.iconKey, draft: true },
-  }));
-}
-
-function toFlowEdges(project: SystemProject, viz?: Record<string, "running" | "ok" | "failed">): Edge[] {
-  return project.connections.map((c) => {
-    const ready = connectionReadiness(c, project) === "ready";
-    const v = viz?.[c.id];
-    const color = v === "failed" ? "#B84C42" : v === "running" ? "#A98450" : v === "ok" || ready ? "#32815B" : undefined;
-    return {
-      id: c.id,
-      source: c.sourceId,
-      target: c.targetId,
-      label: c.label || undefined,
-      animated: !!v || ready,
-      // Fat invisible hit area: dashed links are one pixel wide visually.
-      interactionWidth: 40,
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        width: 18,
-        height: 18,
-        color: color ?? "#8A8070",
-      },
-      labelBgPadding: [6, 3] as [number, number],
-      labelBgBorderRadius: 6,
-      labelBgStyle: { fill: "#FFFFFF", fillOpacity: 0.92 },
-      labelStyle: { fontSize: 10, fontFamily: "monospace" },
-      style: { stroke: color ?? "#8A8070", strokeWidth: color ? 2 : 1 },
-    };
-  });
-}
 
 function DesignerCanvas({
   project,
@@ -559,7 +518,7 @@ function DesignerCanvas({
       <ReactFlow
         nodes={nodes}
         edges={selEdges}
-        nodeTypes={nodeTypes}
+        nodeTypes={systemNodeTypes}
         connectionMode={ConnectionMode.Loose}
         onNodesChange={groupedOnChange}
         onNodeDragStart={() => { draggingRef.current = true; onDragStartNode(); }}
@@ -1478,6 +1437,7 @@ export function SystemDesigner() {
   const loadFanoutSample = useCallback(() => loadSample("the TMF fan-out sample", buildOrderFanoutProject), [loadSample]);
   const loadRevenueSample = useCallback(() => loadSample("the Revenue Cloud sample", buildRevenueCloudProject), [loadSample]);
   const loadCdcSample = useCallback(() => loadSample("the CDC sync sample", buildCdcSyncProject), [loadSample]);
+  const loadFlowSample = useCallback(() => loadSample("the retry + fallback sample", buildRetryFallbackProject), [loadSample]);
 
   const newCanvas = useCallback(() => {
     if (project && (project.systems.length > 0 || saveState === "dirty")) {
@@ -2528,6 +2488,7 @@ export function SystemDesigner() {
           onLoadFanout={loadFanoutSample}
           onLoadRevenue={loadRevenueSample}
           onLoadCdc={loadCdcSample}
+      onLoadFlow={loadFlowSample}
         />
       )}
 

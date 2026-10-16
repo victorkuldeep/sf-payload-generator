@@ -345,6 +345,7 @@ export function AppHeader(props: AppHeaderProps) {
         { kind: "route", href: "/validate", label: "Validate", desc: "OpenAPI spec vs payload findings" },
         { kind: "route", href: "/architect", label: "Architect", desc: "Design custom APIs" },
         { kind: "route", href: "/mapping", label: "Mapping", desc: "Payload-to-object integration mapping" },
+        { kind: "route", href: "/studio", label: "Studio", desc: "Themed diagram packs - sequences + systems, PNG set export" },
       ],
     },
   ];

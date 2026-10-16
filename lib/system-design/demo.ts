@@ -414,3 +414,91 @@ export function buildCdcSyncProject(): SystemProject {
   ].join("\n");
   return project;
 }
+
+/**
+ * Flowchart starter: order placement with retry + fallback. The exception
+ * path is topology, not code - charge attempt, fallback charge and DLQ
+ * parking are labeled edges an architect can run, mock and replay per hop.
+ */
+export function buildRetryFallbackProject(): SystemProject {
+  const project = newProject("Sample: order charge with retry + fallback");
+  const by = (type: string) => SYSTEM_TEMPLATES.find((t) => t.systemType === type)!;
+  const sf = { ...newSystemFromTemplate(by("salesforce"), { x: 80, y: 260 }, 1), name: "Salesforce", id: "sys_rf_sf" };
+  const mw = { ...newSystemFromTemplate(by("middleware"), { x: 520, y: 260 }, 1), name: "Middleware Hub", id: "sys_rf_mw" };
+  const bill = { ...newSystemFromTemplate(by("saas"), { x: 960, y: 80 }, 1), name: "Billing (primary)", id: "sys_rf_bill" };
+  const fb = { ...newSystemFromTemplate(by("saas"), { x: 960, y: 260 }, 2), name: "Billing (fallback)", id: "sys_rf_fb" };
+  const dlq = { ...newSystemFromTemplate(by("queue"), { x: 960, y: 440 }, 1), name: "Dead-letter queue", id: "sys_rf_dlq" };
+  project.systems = [sf, mw, bill, fb, dlq];
+  project.interfaces = [
+    { id: "iface_rf_sf", systemId: sf.id, name: "Order events", protocol: "Events", basePath: "/data/ChangeEvents" },
+    { id: "iface_rf_mw", systemId: mw.id, name: "Orchestrate", protocol: "REST", basePath: "" },
+    { id: "iface_rf_bill", systemId: bill.id, name: "Charges", protocol: "REST", basePath: "/v1" },
+    { id: "iface_rf_fb", systemId: fb.id, name: "Charges", protocol: "REST", basePath: "/v1" },
+    { id: "iface_rf_dlq", systemId: dlq.id, name: "Park", protocol: "REST", basePath: "/v1" },
+  ];
+  project.operations = [
+    {
+      id: "op_rf_placed", interfaceId: "iface_rf_sf", name: "Order placed",
+      method: "EVENT", path: "/data/ChangeEvents/Order", version: "v1",
+      sampleBody: '{ "orderId": "801xx000001ABcD", "amount": 4200, "currency": "USD" }',
+    },
+    {
+      id: "op_rf_orchestrate", interfaceId: "iface_rf_mw", name: "Charge with fallback",
+      method: "POST", path: "/charge/orchestrate", version: "v1",
+      mock: { status: 200, body: '{ "strategy": "primary-first", "retries": 3 }', latencyMs: 120 },
+    },
+    {
+      id: "op_rf_charge", interfaceId: "iface_rf_bill", name: "Charge attempt",
+      method: "POST", path: "/v1/charges", version: "v1",
+      mock: { status: 200, body: '{ "id": "ch_9f2", "status": "succeeded" }', latencyMs: 210 },
+    },
+    {
+      id: "op_rf_fbcharge", interfaceId: "iface_rf_fb", name: "Fallback charge",
+      method: "POST", path: "/v1/charges", version: "v1",
+      mock: { status: 200, body: '{ "id": "ch_7a1", "status": "succeeded", "via": "fallback" }', latencyMs: 260 },
+    },
+    {
+      id: "op_rf_park", interfaceId: "iface_rf_dlq", name: "Park for replay",
+      method: "POST", path: "/v1/dlq/orders", version: "v1",
+      mock: { status: 202, body: '{ "status": "parked", "replayable": true }', latencyMs: 90 },
+    },
+  ];
+  project.connections = [
+    {
+      id: "conn_rf_1", sourceId: sf.id, targetId: mw.id, label: "Order captured",
+      status: "draft" as const, sourceOperationId: "op_rf_placed", targetOperationId: "op_rf_orchestrate",
+      mapping: { mode: "template" as const, template: "{{request}}" },
+    },
+    {
+      id: "conn_rf_2", sourceId: mw.id, targetId: bill.id, label: "Charge attempt",
+      status: "draft" as const, targetOperationId: "op_rf_charge",
+      mapping: { mode: "template" as const, template: "{{request}}" },
+    },
+    {
+      id: "conn_rf_3", sourceId: mw.id, targetId: fb.id, label: "Fallback charge",
+      status: "draft" as const, targetOperationId: "op_rf_fbcharge",
+      mapping: {
+        mode: "template" as const,
+        template: '{\n  "orderId": "{{request.orderId}}",\n  "amount": {{request.amount}},\n  "idempotencyKey": "{{request.orderId}}-fb"\n}',
+      },
+    },
+    {
+      id: "conn_rf_4", sourceId: mw.id, targetId: dlq.id, label: "Park for replay",
+      status: "draft" as const, targetOperationId: "op_rf_park",
+      mapping: { mode: "template" as const, template: "{{request}}" },
+    },
+  ];
+  project.environments = [{ id: "env_rf", name: "Sandbox", baseUrl: "", baseUrlOverrides: {} }];
+  project.activeEnvironmentId = "env_rf";
+  project.notes = [
+    "## Retry + fallback (1 trigger x 3 outcomes)",
+    "",
+    "Order placed -> orchestrate -> charge attempt. On failure the same payload",
+    "replays into Billing (fallback) with an idempotency key, and anything still",
+    "failing parks on the dead-letter queue for replay.",
+    "",
+    "Run it: select the Salesforce edge -> Run chain from here, then flip the",
+    "primary charge mock to a 500 to walk the fallback and DLQ branches.",
+  ].join("\n");
+  return project;
+}

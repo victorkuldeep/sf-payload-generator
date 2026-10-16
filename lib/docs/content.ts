@@ -447,7 +447,54 @@ export const DOC_SECTIONS: DocSection[] = [
         items: [
           "Blocks: loop, if/else, parallel/join, retry, timeout, try/catch, wait, note, event.",
           "Two-way System bridge: import a topology honestly (lossy where models differ — it says so), send flows back.",
-          "Export PNG 2x/3x, Mermaid (export-only), or full versioned packages.",
+          "Export PNG 2x/3x, Mermaid round-trip (export .mmd, import it back), or full versioned packages.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "studio",
+    group: "Design & simulate",
+    title: "Diagram Studio",
+    keywords: "studio pack deliverable theme png export set compose flow",
+    blocks: [
+      {
+        k: "p",
+        text: "One-offs stay on the Sequence tab; the studio is for complex, multi-diagram deliverables. A pack is an ordered set of Sequence diagrams, System canvases and flowchart views under one theme, exported as numbered PNGs. Packs reference canvases - they never copy them, so a canvas edit flows straight into the next export.",
+      },
+      {
+        k: "list",
+        items: [
+          "Add diagrams from the picker: live sequences, systems, or flows (a flow is a system canvas read as an exception path).",
+          "Per-item title overrides ride along into PNG filenames; the canvas name stays untouched.",
+          "Theme sets the export background; scale picks 2x or 3x. Export set downloads 01-, 02-, ... in order.",
+          "Deleted source? The slot degrades to relink-or-remove - the pack never breaks.",
+          "AI path: name your canvases on the Studio tab and ask for a pack - unmatched names fail honestly, never invented.",
+        ],
+      },
+      {
+        k: "routes",
+        items: [
+          { href: "/studio", label: "Studio", note: "Compose themed packs" },
+          { href: "/sequence", label: "Sequence", note: "Lightweight single diagrams" },
+          { href: "/system", label: "System", note: "Topologies and the retry + fallback starter" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "guide-deliverable-pack",
+    group: "Guides",
+    title: "Guide: deliver an RCA pack",
+    keywords: "guide pack deliverable rca review deck png theme",
+    blocks: [
+      {
+        k: "list",
+        items: [
+          "Sequence tab: Sample loads the RCA configure flow; shape it, or import a .mmd from a fellow dev.",
+          "System tab: Templates loads the retry + fallback starter; flip the primary mock to 500 and walk each branch.",
+          "Studio tab: new pack, add both, Studio cream theme, 2x.",
+          "Export set - two numbered PNGs ready for the review deck.",
         ],
       },
     ],
@@ -537,6 +584,7 @@ export const DOC_SECTIONS: DocSection[] = [
           "Draw+: describe board, place labeled boxes, notes, arrows.",
           "Studio home: build SOQL/SOSL, snapshot ERD. JSON: structural census.",
           "Mapping / Validate / Architect / Contracts: advisor mode — numbered plans, zero tool claims.",
+          "Diagram Studio: list/describe/inventory packs, compose from canvas names, switch themes.",
         ],
       },
       {

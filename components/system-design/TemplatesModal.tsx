@@ -15,6 +15,7 @@ export function TemplatesModal({
   onLoadFanout,
   onLoadRevenue,
   onLoadCdc,
+  onLoadFlow,
 }: {
   open: boolean;
   onClose: () => void;
@@ -24,6 +25,7 @@ export function TemplatesModal({
   onLoadFanout: () => void;
   onLoadRevenue: () => void;
   onLoadCdc: () => void;
+  onLoadFlow: () => void;
 }) {
   if (!open) return null;
 
@@ -131,6 +133,14 @@ export function TemplatesModal({
             "nothing - every hop is mocked",
             onLoadCdc,
             "Load CDC sync sample"
+          )}
+          {card(
+            "Flow starter · 5 systems",
+            "Sample: order charge with retry + fallback",
+            "Order placement walks the exception path as topology: charge attempt, idempotent fallback charge, and dead-letter parking - flip the primary mock to a 500 and run each branch.",
+            "nothing - every hop is mocked",
+            onLoadFlow,
+            "Load retry + fallback sample"
           )}
         </div>
       </div>

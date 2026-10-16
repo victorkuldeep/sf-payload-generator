@@ -17,6 +17,7 @@ import {
 } from "@/lib/sequence/model";
 import { deleteSequence, listSequences, saveSequence } from "@/lib/sequence/store";
 import { importSequenceFile } from "@/lib/sequence/packageIo";
+import { parseStatements } from "@/lib/sequence/dsl";
 import { downloadSequenceMatrix } from "@/lib/sequence/matrix";
 import { findDeepRecord, useDeepParam } from "@/lib/deep/deep";
 
@@ -80,6 +81,35 @@ export function SequenceRoute() {
       setName("");
       setActiveId(doc.id);
       await refresh();
+    }
+  };
+
+  const SAMPLE_DSL = [
+    "participant React",
+    "participant Salesforce",
+    "React -> Salesforce: Configure request",
+    "Salesforce --> React: Transaction context",
+    "if valid",
+    "React -> Salesforce: Update attributes",
+    "Salesforce --> React: Final pricing",
+    "else",
+    "Salesforce --> React: Validation errors",
+    "end",
+  ].join("\n");
+
+  const loadSample = async () => {
+    setImportError(null);
+    const r = parseStatements(SAMPLE_DSL);
+    if (r.errors.length > 0 || r.participants.length === 0) {
+      setImportError("Sample failed to parse.");
+      return;
+    }
+    const doc = { ...newSequence("Sample: RCA configure flow"), participants: r.participants, nodes: r.nodes };
+    if (await saveSequence(doc).catch(() => false)) {
+      setActiveId(doc.id);
+      await refresh();
+    } else {
+      setImportError("Could not save the sample.");
     }
   };
 
@@ -325,13 +355,16 @@ export function SequenceRoute() {
                   className="min-w-0 flex-1 rounded-xl border border-[#E8E2D8] bg-white px-3 py-2 text-[13px] text-[#27241F] placeholder-[#A39B8E] focus:border-[#C9A86A] focus:outline-none"
                 />
                 <Button onClick={() => void create()}>New Sequence</Button>
-                <Button variant="secondary" onClick={() => fileRef.current?.click()} title="Import a package JSON or DSL text file from a fellow dev">
+                <Button variant="secondary" onClick={() => fileRef.current?.click()} title="Import a package JSON, DSL text or Mermaid (.mmd) file from a fellow dev">
                   Import
+                </Button>
+                <Button variant="secondary" onClick={() => void loadSample()} title="Load the RCA configure-flow sample - sync, response and a condition branch">
+                  Sample
                 </Button>
                 <input
                   ref={fileRef}
                   type="file"
-                  accept=".json,.txt,.text,.seq,.dsl,application/json,text/plain"
+                  accept=".json,.txt,.text,.seq,.dsl,.mmd,application/json,text/plain"
                   className="hidden"
                   aria-label="Import sequence file"
                   onChange={(e) => {

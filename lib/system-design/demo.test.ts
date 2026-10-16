@@ -1,7 +1,7 @@
 "use client";
 
 import { describe, it, expect } from "vitest";
-import { buildCdcSyncProject, buildGroqSampleProject, buildOrderFanoutProject, buildRevenueCloudProject, buildTmfSampleProject } from "./demo";
+import { buildCdcSyncProject, buildGroqSampleProject, buildOrderFanoutProject, buildRetryFallbackProject, buildRevenueCloudProject, buildTmfSampleProject } from "./demo";
 import { validateProject } from "./model";
 import { compileMapping } from "./mapping";
 import { resolveChain } from "./chain";
@@ -78,8 +78,8 @@ describe("tmf order-flow sample", () => {
 
 describe("new starter templates", () => {
   it("validate cleanly, bind every edge end, and resolve runnable lanes", () => {
-    const builds = [buildOrderFanoutProject(), buildRevenueCloudProject(), buildCdcSyncProject()];
-    expect(builds).toHaveLength(3);
+    const builds = [buildOrderFanoutProject(), buildRevenueCloudProject(), buildCdcSyncProject(), buildRetryFallbackProject()];
+    expect(builds).toHaveLength(4);
     for (const project of builds) {
       const { project: valid, issues } = validateProject(JSON.parse(JSON.stringify(project)));
       expect(issues).toEqual([]);
@@ -118,5 +118,21 @@ describe("new starter templates", () => {
     const cdcLanes = resolveChain(cdc, "conn_cdc_1");
     expect(cdcLanes.length).toBe(2);
     expect(cdcLanes.flatMap((l) => l.edges.map((e) => e.id)).sort()).toEqual(["conn_cdc_1", "conn_cdc_1", "conn_cdc_2", "conn_cdc_3"]);
+  });
+});
+
+describe("retry + fallback starter", () => {
+  it("walks the exception path as three lanes", () => {
+    const project = buildRetryFallbackProject();
+    const lanes = resolveChain(project, "conn_rf_1");
+    expect(lanes.length).toBe(3);
+    expect(lanes.map((l) => l.edges[l.edges.length - 1].id).sort()).toEqual(["conn_rf_2", "conn_rf_3", "conn_rf_4"]);
+  });
+
+  it("keys the fallback charge idempotently off the order", () => {
+    const project = buildRetryFallbackProject();
+    const fb = project.connections.find((c) => c.id === "conn_rf_3");
+    expect(fb && fb.mapping && fb.mapping.mode).toBe("template");
+    expect(fb && fb.mapping && fb.mapping.template).toMatch(/idempotencyKey/);
   });
 });

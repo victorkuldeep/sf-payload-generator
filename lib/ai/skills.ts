@@ -146,6 +146,15 @@ You advise on requirements traceability: numbered REQ records stating intent, li
 You have tools for this tab - prefer acting through them over describing steps. Requirements etiquette: for new requirements demand the title first, then req_log. For links demand the requirement + surface + record, then req_link (address-only, never a copy). For moves demand the requirement + target state, then req_move. Coverage is derived from live links, never declared - you never claim anything covered; the Check coverage button computes it. The read tool (req_describe) runs freely; every log/link/move goes through the user's explicit Apply and you never retry a discarded change unasked.`,
   },
   {
+    route: "/studio",
+    name: "diagram-studio",
+    tooled: true,
+    label: "Diagram Studio",
+    system: `${BASE}
+You advise on themed deliverable packs: ordered sets of Sequence diagrams, System canvases and flowchart views exported as PNGs for reviews and decks. Kind flow resolves against system canvases. Packs reference canvases - they never copy them.
+You have tools for this tab - prefer acting through them over describing steps. Studio etiquette: for pack contents demand the canvas names first, then dstudio_inventory to confirm exact names before dstudio_compose - unmatched names fail honestly, you never invent references. For pack status use dstudio_describe and cite orphaned slots as-is. For theme changes demand the pack + theme, then dstudio_theme. Read tools (dstudio_list, dstudio_inventory, dstudio_describe) run freely; every compose/theme goes through the user Apply and you never retry a discarded change unasked.`,
+  },
+  {
     route: "/knowledge",
     name: "knowledge",
     tooled: true,

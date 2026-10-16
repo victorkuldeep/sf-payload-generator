@@ -17,7 +17,7 @@ describe("docs content", () => {
 
   it("covers every studio tab", () => {
     const text = DOC_SECTIONS.map((s) => `${s.title} ${s.keywords}`.toLowerCase()).join("\n");
-    for (const tab of ["system", "wireframe", "sequence", "draw", "json", "mapping", "validate", "contracts", "architect", "soql", "sosl", "erd"]) {
+    for (const tab of ["system", "wireframe", "sequence", "draw", "json", "mapping", "validate", "contracts", "architect", "soql", "sosl", "erd", "studio"]) {
       expect(text, tab).toContain(tab);
     }
   });

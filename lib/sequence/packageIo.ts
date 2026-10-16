@@ -1,10 +1,12 @@
 import { parseStatements } from "./dsl";
+import { mermaidToDsl } from "./mermaid";
 import { newSequence, SequenceSchema, type SequenceDocument } from "./model";
 
 /**
  * Sequence file import: the mirror of the History dialog exports.
- * Accepts the exported package, a raw document, or plain DSL text
- * (.txt) - anything a fellow dev can hand over. Every path re-ids the
+ * Accepts the exported package, a raw document, plain DSL text (.txt),
+ * or a Mermaid sequenceDiagram (.mmd, translated back to DSL) - anything
+ * a fellow dev can hand over. Every path re-ids the
  * document so an import can never overwrite an existing sequence.
  */
 
@@ -37,8 +39,9 @@ export function importSequenceFile(text: string, filename: string): SequenceImpo
     }
     return { ok: true, document: fresh(parsed.data, `${parsed.data.name} (imported)`) };
   }
-  // Plain DSL text.
-  const r = parseStatements(text);
+  // Plain DSL text (.mmd translates through the Mermaid subset first).
+  const source = lower.endsWith(".mmd") ? mermaidToDsl(text) : text;
+  const r = parseStatements(source);
   if (r.errors.length > 0) {
     const first = r.errors.slice(0, 3).map((e) => `line ${e.line}: ${e.message}`).join(" ");
     return { ok: false, error: `DSL errors - ${first}` };
