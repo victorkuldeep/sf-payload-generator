@@ -26,11 +26,15 @@ export interface SketchNode {
   y: number;
 }
 
+export type SketchEdgeKind = "bezier" | "straight" | "step" | "smoothstep";
+
 export interface SketchEdge {
   id: string;
   sourceId: string;
   targetId: string;
   label: string;
+  /** Link routing. Defaults to bezier. */
+  kind?: SketchEdgeKind;
 }
 
 export interface StudioSketch {
