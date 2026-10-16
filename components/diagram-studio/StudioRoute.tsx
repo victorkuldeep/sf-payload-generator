@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ReactFlowProvider } from "@xyflow/react";
 import { toPng } from "html-to-image";
-import { Camera, ChevronLeft, ChevronRight, Download, Send, Trash2, X } from "lucide-react";
+import { Camera, ChevronLeft, ChevronRight, Download, Eye, EyeOff, Send, Trash2, X } from "lucide-react";
 import Button from "../ui/Button";
 import { blankSketch, SKETCH_FLAVORS, sketchToSystemProject, type SketchFlavor, type StudioSketch } from "@/lib/diagram-studio/sketch";
 import { deleteSketch, listSketches, saveSketch } from "@/lib/diagram-studio/sketchStore";
@@ -30,6 +30,7 @@ export function StudioRoute() {
   const [showNew, setShowNew] = useState(false);
   const [search, setSearch] = useState("");
   const [invOpen, setInvOpen] = useState(true);
+  const [preview, setPreview] = useState(false);
   const [busy, setBusy] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -93,6 +94,13 @@ export function StudioRoute() {
     if (!el) return;
     setBusy(true);
     setExportError(null);
+    // Capture the clean preview view (no connector dots or viewport
+    // controls), then restore whatever mode the user was in.
+    const wasPreview = preview;
+    if (!wasPreview) {
+      setPreview(true);
+      await new Promise((r) => setTimeout(r, 80));
+    }
     try {
       const dataUrl = await toPng(el, { backgroundColor: "#FFFFFF", pixelRatio: scale, cacheBust: true });
       const a = document.createElement("a");
@@ -104,6 +112,7 @@ export function StudioRoute() {
     } catch {
       setExportError("Export failed - try again.");
     } finally {
+      if (!wasPreview) setPreview(false);
       setBusy(false);
     }
   };
@@ -123,9 +132,9 @@ export function StudioRoute() {
 
 
   return (
-    <div className="grid min-h-0 flex-1 items-stretch gap-3 lg:grid-cols-[auto_minmax(0,1fr)]">
+    <div className="grid min-h-0 flex-1 items-stretch gap-[2px] lg:grid-cols-[auto_minmax(0,1fr)]">
       {invOpen ? (
-      <aside className="flex h-full max-h-[calc(100vh-140px)] min-h-[420px] w-full flex-col rounded-xl border border-[#E8E2D8] bg-white p-3 lg:w-[300px]" aria-label="Sketches inventory">
+      <aside className="flex h-full max-h-[calc(100vh-140px)] min-h-[420px] w-full flex-col rounded-xl border border-[#E8E2D8] bg-white p-2 lg:w-[300px]" aria-label="Sketches inventory">
         <div className="mb-2 flex items-center justify-between">
           <p className="text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">Sketches · {sketches.length}</p>
           <button type="button" onClick={() => setInvOpen(false)} aria-label="Collapse sketches" title="Collapse sketches"
@@ -186,7 +195,7 @@ export function StudioRoute() {
         </button>
       )}
 
-      <section className="min-h-0 rounded-xl border border-[#E8E2D8] bg-white p-4" aria-label="Sketch editor">
+      <section className="min-h-0 rounded-xl border border-[#E8E2D8] bg-white p-[2px]" aria-label="Sketch editor">
         {!sketch ? (
           <div className="flex h-full min-h-[420px] flex-col items-center justify-center px-6 text-center">
             <p className="text-[16px] font-semibold text-[#27241F]">Diagram Studio</p>
@@ -197,7 +206,7 @@ export function StudioRoute() {
             </p>
           </div>
         ) : (
-          <div className="flex h-full max-h-[calc(100vh-140px)] min-h-[460px] flex-col gap-3">
+          <div className="flex h-full max-h-[calc(100vh-140px)] min-h-[460px] flex-col gap-[2px]">
             <div className="flex flex-wrap items-center gap-1.5">
               <input
                 key={sketch.id}
@@ -209,6 +218,11 @@ export function StudioRoute() {
                 aria-label="Sketch name"
                 className="min-w-0 flex-1 rounded-lg border border-transparent px-2 py-1 text-[15px] font-semibold text-[#27241F] hover:border-[#E8E2D8] focus:border-[#A98450] focus:outline-none"
               />
+              <button type="button" onClick={() => setPreview((p) => !p)} title={preview ? "Exit preview" : "Preview clean export view"}
+                aria-label={preview ? "Exit preview" : "Preview clean export view"} aria-pressed={preview}
+                className={`rounded-lg border p-2 transition-colors cursor-pointer ${preview ? "border-[#211F1B] bg-[#211F1B] text-white" : "border-[#E8E2D8] bg-white text-[#777168] hover:border-[#A98450] hover:text-[#27241F]"}`}>
+                {preview ? <EyeOff size={15} aria-hidden="true" /> : <Eye size={15} aria-hidden="true" />}
+              </button>
               <button type="button" onClick={() => void exportPng(2)} disabled={busy || sketch.nodes.length === 0}
                 title="Snapshot PNG (2x)" aria-label="Snapshot PNG"
                 className="rounded-lg border border-[#E8E2D8] bg-white p-2 text-[#777168] hover:border-[#A98450] hover:text-[#27241F] transition-colors cursor-pointer disabled:opacity-40">
@@ -249,8 +263,8 @@ export function StudioRoute() {
               </p>
             )}
             <ReactFlowProvider>
-              <div ref={shotRef} className="flex min-h-0 flex-1 flex-col">
-                <StudioCanvas sketch={sketch} onChange={(next) => mutateSketch(() => next)} />
+              <div className="flex min-h-0 flex-1 flex-col">
+                <StudioCanvas sketch={sketch} onChange={(next) => mutateSketch(() => next)} preview={preview} shotRef={shotRef} />
               </div>
             </ReactFlowProvider>
           </div>

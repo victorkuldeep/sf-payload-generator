@@ -256,9 +256,14 @@ function sameSel(a: Sel, b: Sel): boolean {
 export function StudioCanvas({
   sketch,
   onChange,
+  preview,
+  shotRef,
 }: {
   sketch: StudioSketch;
   onChange: (next: StudioSketch) => void;
+  /** Clean view: connector dots + zoom widget hidden (also what PNG captures). */
+  preview: boolean;
+  shotRef: { current: HTMLDivElement | null };
 }) {
   const flavor = sketch.flavor ?? "hybrid";
   const showSystems = flavor !== "flow";
@@ -380,7 +385,7 @@ export function StudioCanvas({
         targetHandle: e.targetHandle ?? undefined,
         type: e.kind && e.kind !== "bezier" ? e.kind : undefined,
         // Fat hit area: thin links are hard to click.
-        interactionWidth: 20,
+        interactionWidth: 30,
         label: e.label || undefined,
         labelBgPadding: [6, 3] as [number, number],
         labelBgBorderRadius: 6,
@@ -559,7 +564,7 @@ export function StudioCanvas({
   };
 
   return (
-    <div className="flex min-h-0 flex-1 items-stretch gap-3">
+    <div className="flex min-h-0 flex-1 items-stretch gap-[2px]">
       {palOpen ? (
         <div className="flex w-16 shrink-0 flex-col items-center gap-1 overflow-y-auto rounded-xl border border-[#E8E2D8] bg-white p-1.5" role="toolbar" aria-label="Sketch palette">
           <button type="button" onClick={() => setPalOpen(false)} aria-label="Collapse palette" title="Collapse palette"
@@ -617,12 +622,21 @@ export function StudioCanvas({
         </button>
       )}
 
-      <div ref={containerRef} className="relative min-h-[420px] min-w-0 flex-1 overflow-hidden rounded-xl border border-[#E8E2D8] bg-[#FAF8F2]">
+      <div
+        ref={(el) => {
+          containerRef.current = el;
+          shotRef.current = el;
+        }}
+        className={`relative min-h-[420px] min-w-0 flex-1 overflow-hidden rounded-xl border border-[#E8E2D8] bg-[#FAF8F2]${preview ? " studio-preview" : ""}`}
+      >
         <ReactFlow
           nodes={nodes}
           edges={rfEdges}
           nodeTypes={allNodeTypes}
+          nodesConnectable={!preview}
           onNodesChange={onNodesChange}
+          onNodeClick={(_, node) => onSelChange([node.id], [])}
+          onEdgeClick={(_, edge) => onSelChange([], [edge.id])}
           onConnect={(c) => {
             if (c.source && c.target) onConnectCommit(c.source, c.target, c.sourceHandle, c.targetHandle);
           }}
@@ -651,7 +665,7 @@ export function StudioCanvas({
       </div>
 
       {inspOpen ? (
-        <aside className="flex w-72 shrink-0 flex-col gap-2 overflow-y-auto rounded-xl border border-[#E8E2D8] bg-white p-3" aria-label="Sketch inspector">
+        <aside className="flex w-72 shrink-0 flex-col gap-[2px] overflow-y-auto rounded-xl border border-[#E8E2D8] bg-white p-2" aria-label="Sketch inspector">
           <button type="button" onClick={() => setInspOpen(false)} aria-label="Collapse inspector" title="Collapse inspector"
             className="self-end rounded-md p-1 text-[#A39B8E] hover:text-[#27241F] cursor-pointer">
             <ChevronRight size={14} aria-hidden="true" />
