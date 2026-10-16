@@ -3,6 +3,7 @@ import { blankStudioProject, newStudioId, orphanedItems, type StudioItemKind } f
 import { STUDIO_THEMES, studioTheme } from "@/lib/diagram-studio/themes";
 import { listDiagramStudios, saveDiagramStudio } from "@/lib/diagram-studio/store";
 import { resolvePackItems, type InventoryEntry } from "@/lib/diagram-studio/compose";
+import { SKETCH_TOOLS } from "./toolsSketch";
 import { listSequences } from "@/lib/sequence/store";
 import { listSystemProjects } from "@/lib/system-design/store";
 import type { AgentTool } from "./tools";
@@ -189,4 +190,4 @@ const themePack: AgentTool = {
   },
 };
 
-export const DIAGRAM_STUDIO_TOOLS: AgentTool[] = [listPacks, inventoryTool, describePack, composePack, themePack];
+export const DIAGRAM_STUDIO_TOOLS: AgentTool[] = [listPacks, inventoryTool, describePack, composePack, themePack, ...SKETCH_TOOLS];

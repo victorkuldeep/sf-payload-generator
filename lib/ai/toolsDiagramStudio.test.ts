@@ -17,8 +17,8 @@ async function run(name: string, args: unknown = {}) {
 describe("diagram-studio skill + tool set", () => {
   it("routes /studio to the diagram-studio pack with 5 tools", () => {
     expect(skillForPath("/studio").name).toBe("diagram-studio");
-    expect(toolsForSkill("diagram-studio")).toHaveLength(5);
-    expect(DIAGRAM_STUDIO_TOOLS.every((t) => t.name.startsWith("dstudio_"))).toBe(true);
+    expect(toolsForSkill("diagram-studio")).toHaveLength(8);
+    expect(DIAGRAM_STUDIO_TOOLS.every((t) => t.name.startsWith("dstudio_") || t.name.startsWith("sketch_"))).toBe(true);
   });
 
   it("reads report an empty browser store gracefully", async () => {
