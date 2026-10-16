@@ -57,7 +57,7 @@ export function StudioNoteView(props: NodeProps) {
 }
 
 function shell(selected: boolean | undefined, extra: string): string {
-  return `flex items-center justify-center px-3 py-2 text-center text-[12px] font-semibold leading-snug text-ivory-950 ${extra} ${
+  return `flex items-center justify-center px-3 py-2 text-center text-[11px] font-medium leading-snug text-ivory-950 ${extra} ${
     selected ? "ring-2 ring-bronze-500" : ""
   }`;
 }
@@ -71,7 +71,7 @@ export function FlowProcessView({ data, selected }: NodeProps) {
   return (
     <div className="relative">
       <FourSides prefix="proc" />
-      <div className={shell(selected, "min-h-[56px] w-44 rounded-md border-2 border-[#9A7653] bg-white shadow-sm")}>
+      <div className={shell(selected, "min-h-[56px] w-44 rounded-md border-[1.5px] border-[#9A7653] bg-white shadow-sm")}>
         <span className="whitespace-pre-wrap break-words">{d.label}</span>
       </div>
     </div>
@@ -83,8 +83,8 @@ export function FlowDecisionView({ data, selected }: NodeProps) {
   return (
     <div className="relative flex items-center justify-center">
       <FourSides prefix="dec" />
-      <div className={shell(selected, "min-h-[96px] w-44 border-2 border-[#722F37] bg-white shadow-sm [clip-path:polygon(50%_0,100%_50%,50%_100%,0_50%)]")}>
-        <span className="max-w-[90px] whitespace-pre-wrap break-words text-[11px]">{d.label}</span>
+      <div className={shell(selected, "min-h-[96px] w-44 border-[1.5px] border-[#722F37] bg-white shadow-sm [clip-path:polygon(50%_0,100%_50%,50%_100%,0_50%)]")}>
+        <span className="max-w-[90px] whitespace-pre-wrap break-words text-[10px]">{d.label}</span>
       </div>
     </div>
   );
@@ -95,7 +95,7 @@ export function FlowTerminatorView({ data, selected }: NodeProps) {
   return (
     <div className="relative">
       <FourSides prefix="term" />
-      <div className={shell(selected, "min-h-[44px] w-40 rounded-full border-2 border-[#4E342E] bg-[#F5F1E8] shadow-sm")}>
+      <div className={shell(selected, "min-h-[44px] w-40 rounded-full border-[1.5px] border-[#4E342E] bg-[#F5F1E8] shadow-sm")}>
         <span className="whitespace-pre-wrap break-words">{d.label}</span>
       </div>
     </div>

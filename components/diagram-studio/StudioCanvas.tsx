@@ -35,15 +35,11 @@ import Button from "../ui/Button";
  * change pipeline; identical id sets bail out to avoid render churn.
  */
 
-const SYSTEM_BUTTONS: { systemType: SystemType; label: string }[] = [
-  { systemType: "salesforce", label: "Salesforce" },
-  { systemType: "middleware", label: "Middleware" },
-  { systemType: "rest", label: "REST API" },
-  { systemType: "saas", label: "SaaS" },
-  { systemType: "queue", label: "Queue" },
-  { systemType: "database", label: "Database" },
-  { systemType: "custom", label: "Custom" },
-];
+/**
+ * System palette: the full System inventory (19 templates), not a subset -
+ * anything promotable to System must be placeable here. Single source:
+ * SYSTEM_TEMPLATES, so new system kinds appear automatically.
+ */
 
 const SHAPE_BUTTONS: { kind: Exclude<SketchNodeKind, "system">; label: string; Icon: typeof Square }[] = [
   { kind: "process", label: "Process", Icon: Square },
@@ -395,10 +391,10 @@ export function StudioCanvas({
         labelBgPadding: [6, 3] as [number, number],
         labelBgBorderRadius: 6,
         labelBgStyle: { fill: "#FFFFFF", fillOpacity: 0.95 },
-        labelStyle: { fontSize: 11, fontFamily: "monospace" },
+        labelStyle: { fontSize: 10, fontFamily: "monospace" },
         style: {
           stroke: "#8A8070",
-          strokeWidth: e.weight === "bold" ? 4 : e.weight === "medium" ? 2.5 : 1.5,
+          strokeWidth: e.weight === "bold" ? 2.75 : e.weight === "medium" ? 1.75 : 1,
           strokeDasharray: e.dash === "dotted" ? "2 4" : e.dash === "dashed" ? "8 5" : undefined,
           strokeLinecap: e.dash === "dotted" ? "round" : undefined,
         },
@@ -619,16 +615,16 @@ export function StudioCanvas({
           {showSystems && (
             <>
               <p className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#A39B8E]">Sys</p>
-              {SYSTEM_BUTTONS.map((b) => (
+              {SYSTEM_TEMPLATES.map((t) => (
                 <button
-                  key={b.systemType}
+                  key={t.systemType}
                   type="button"
-                  title={`Place ${b.label}`}
-                  aria-label={`Place ${b.label}`}
-                  onClick={() => place("system", b.systemType)}
+                  title={`Place ${t.name}`}
+                  aria-label={`Place ${t.name}`}
+                  onClick={() => place("system", t.systemType)}
                   className="rounded-lg border border-transparent p-1.5 text-[#777168] hover:border-[#E8E2D8] hover:text-[#27241F] transition-colors cursor-pointer"
                 >
-                  <SystemGlyph iconKey={SYSTEM_TEMPLATES.find((t) => t.systemType === b.systemType)?.iconKey ?? "plus"} />
+                  <SystemGlyph iconKey={t.iconKey} />
                 </button>
               ))}
             </>
