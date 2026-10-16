@@ -24,6 +24,12 @@ describe("blankSketch", () => {
     expect(blankSketch("  ").name).toBe("Untitled sketch");
     expect(blankSketch("X").nodes).toEqual([]);
   });
+
+  it("defaults to hybrid and honors explicit flavors", () => {
+    expect(blankSketch("X").flavor).toBe("hybrid");
+    expect(blankSketch("X", "flow").flavor).toBe("flow");
+    expect(blankSketch("X", "system").flavor).toBe("system");
+  });
 });
 
 describe("sketchToSystemProject", () => {

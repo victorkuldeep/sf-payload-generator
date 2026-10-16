@@ -35,11 +35,26 @@ export interface SketchEdge {
   label: string;
   /** Link routing. Defaults to bezier. */
   kind?: SketchEdgeKind;
+  /** Link line: solid by default. */
+  dash?: "solid" | "dotted" | "dashed";
+  /** Link weight: thin by default. */
+  weight?: "thin" | "medium" | "bold";
 }
+
+/** Sketch flavor gates the palette: system boxes, flow shapes, or both. */
+export type SketchFlavor = "system" | "flow" | "hybrid";
+
+export const SKETCH_FLAVORS: { id: SketchFlavor; label: string; blurb: string }[] = [
+  { id: "system", label: "System", blurb: "Topology boxes that promote to System" },
+  { id: "flow", label: "Flow", blurb: "Flowchart shapes, export and deliver" },
+  { id: "hybrid", label: "Hybrid", blurb: "Both inventories on one canvas" },
+];
 
 export interface StudioSketch {
   id: string;
   name: string;
+  /** Absent on vintage sketches - read as hybrid. */
+  flavor?: SketchFlavor;
   nodes: SketchNode[];
   edges: SketchEdge[];
   updatedAt: number;
@@ -49,8 +64,8 @@ export function sketchId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function blankSketch(name: string): StudioSketch {
-  return { id: sketchId("sketch"), name: name.trim() || "Untitled sketch", nodes: [], edges: [], updatedAt: Date.now() };
+export function blankSketch(name: string, flavor: SketchFlavor = "hybrid"): StudioSketch {
+  return { id: sketchId("sketch"), name: name.trim() || "Untitled sketch", flavor, nodes: [], edges: [], updatedAt: Date.now() };
 }
 
 export function blankSketchNode(kind: SketchNodeKind, at: { x: number; y: number }): SketchNode {

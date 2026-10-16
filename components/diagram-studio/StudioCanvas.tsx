@@ -3,17 +3,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Background, ReactFlow, useNodesState, useReactFlow, type Edge, type Node } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { ChevronLeft, ChevronRight, Diamond, RectangleHorizontal, Square, StickyNote } from "lucide-react";
-import { systemNodeTypes } from "@/components/system-design/flowRender";
+import { ChevronLeft, ChevronRight, Diamond, RectangleHorizontal, Square, StickyNote, X } from "lucide-react";
 import { SystemGlyph } from "@/components/system-design/SystemNode";
 import { SYSTEM_TEMPLATES, type SystemType } from "@/lib/system-design/model";
 import {
   blankSketchNode,
   sketchId,
+  type SketchEdge,
   type SketchEdgeKind,
   type SketchNodeKind,
   type StudioSketch,
 } from "@/lib/diagram-studio/sketch";
+
+type EdgeDash = NonNullable<SketchEdge["dash"]>;
+type EdgeWeight = NonNullable<SketchEdge["weight"]>;
 import { registerSketchBridge, sketchSnapshotOf } from "@/lib/ai/sketchBridge";
 import { studioNodeTypes } from "./StudioFlowNode";
 import Button from "../ui/Button";
@@ -60,9 +63,139 @@ function templateName(systemType: SystemType): string {
   return SYSTEM_TEMPLATES.find((t) => t.systemType === systemType)?.name ?? "Custom System";
 }
 
-const allNodeTypes = { ...systemNodeTypes, ...studioNodeTypes };
+const allNodeTypes = studioNodeTypes;
 
 type Sel = { nodes: string[]; edges: string[] };
+
+const fieldCls =
+  "mt-1 w-full rounded-lg border border-[#E8E2D8] bg-white px-2 py-1.5 text-[13px] font-normal focus:border-[#A98450] focus:outline-none";
+
+/** Inspector link desk: list a box's links and add new ones without dragging. */
+function NodeLinks({
+  sketch,
+  nodeId,
+  addLink,
+  dropEdge,
+}: {
+  sketch: StudioSketch;
+  nodeId: string;
+  addLink: (
+    fromId: string,
+    toId: string,
+    opts: { label: string; kind: SketchEdgeKind; dash: EdgeDash; weight: EdgeWeight }
+  ) => void;
+  dropEdge: (id: string) => void;
+}) {
+  const [targetId, setTargetId] = useState("");
+  const [dir, setDir] = useState<"out" | "in">("out");
+  const [label, setLabel] = useState("");
+  const [kind, setKind] = useState<SketchEdgeKind>("bezier");
+  const [dash, setDash] = useState<EdgeDash>("solid");
+  const [weight, setWeight] = useState<EdgeWeight>("thin");
+
+  const others = sketch.nodes.filter((n) => n.id !== nodeId);
+  const linked = sketch.edges.filter((e) => e.sourceId === nodeId || e.targetId === nodeId);
+  const nameOf = (id: string) => sketch.nodes.find((n) => n.id === id)?.label ?? "?";
+
+  return (
+    <div className="border-t border-[#EFE9DC] pt-2">
+      <p className="font-mono text-[10px] font-bold uppercase tracking-[1.4px] text-[#A39B8E]">
+        Links · {linked.length}
+      </p>
+      {linked.length > 0 && (
+        <ul className="mt-1.5 space-y-1">
+          {linked.map((e) => {
+            const out = e.sourceId === nodeId;
+            const other = out ? e.targetId : e.sourceId;
+            return (
+              <li key={e.id} className="flex items-center gap-1.5 rounded-lg border border-[#E8E2D8] px-2 py-1">
+                <span className="font-mono text-[10px] text-[#A39B8E]">{out ? "→" : "←"}</span>
+                <span className="min-w-0 flex-1 truncate text-[12px] text-[#27241F]" title={e.label || nameOf(other)}>
+                  {e.label || nameOf(other)}
+                </span>
+                <button type="button" onClick={() => dropEdge(e.id)} title="Delete link" aria-label={`Delete link ${e.label || nameOf(other)}`}
+                  className="rounded p-0.5 text-[#A39B8E] hover:text-[#B3261E] cursor-pointer">
+                  <X size={12} aria-hidden="true" />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {others.length > 0 ? (
+        <div className="mt-2 space-y-1.5 rounded-lg bg-[#FCFBF7] p-2">
+          <div className="grid grid-cols-2 gap-1.5">
+            <label className="block text-[11px] font-semibold text-[#27241F]">
+              Direction
+              <select value={dir} onChange={(e) => setDir(e.target.value as "out" | "in")} className={fieldCls}>
+                <option value="out">This → box</option>
+                <option value="in">Box → this</option>
+              </select>
+            </label>
+            <label className="block text-[11px] font-semibold text-[#27241F]">
+              Box
+              <select value={targetId} onChange={(e) => setTargetId(e.target.value)} className={fieldCls} aria-label="Link target box">
+                <option value="">Pick…</option>
+                {others.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <label className="block text-[11px] font-semibold text-[#27241F]">
+            Label
+            <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Create Order" className={fieldCls} />
+          </label>
+          <div className="grid grid-cols-3 gap-1.5">
+            <label className="block text-[11px] font-semibold text-[#27241F]">
+              Route
+              <select value={kind} onChange={(e) => setKind(e.target.value as SketchEdgeKind)} className={fieldCls}>
+                {EDGE_KINDS.map((k) => (
+                  <option key={k.id} value={k.id}>
+                    {k.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-[11px] font-semibold text-[#27241F]">
+              Line
+              <select value={dash} onChange={(e) => setDash(e.target.value as EdgeDash)} className={fieldCls}>
+                <option value="solid">Solid</option>
+                <option value="dashed">Dashed</option>
+                <option value="dotted">Dotted</option>
+              </select>
+            </label>
+            <label className="block text-[11px] font-semibold text-[#27241F]">
+              Weight
+              <select value={weight} onChange={(e) => setWeight(e.target.value as EdgeWeight)} className={fieldCls}>
+                <option value="thin">Thin</option>
+                <option value="medium">Medium</option>
+                <option value="bold">Bold</option>
+              </select>
+            </label>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => {
+              if (!targetId) return;
+              if (dir === "out") addLink(nodeId, targetId, { label: label.trim(), kind, dash, weight });
+              else addLink(targetId, nodeId, { label: label.trim(), kind, dash, weight });
+              setLabel("");
+            }}
+            disabled={!targetId}
+            title="Add link without dragging"
+          >
+            + Link
+          </Button>
+        </div>
+      ) : (
+        <p className="mt-1 text-[11px] text-[#A39B8E]">Place a second box to link.</p>
+      )}
+    </div>
+  );
+}
 
 function sameSel(a: Sel, b: Sel): boolean {
   return a.nodes.join(",") === b.nodes.join(",") && a.edges.join(",") === b.edges.join(",");
@@ -75,6 +208,9 @@ export function StudioCanvas({
   sketch: StudioSketch;
   onChange: (next: StudioSketch) => void;
 }) {
+  const flavor = sketch.flavor ?? "hybrid";
+  const showSystems = flavor !== "flow";
+  const showFlows = flavor !== "system";
   const containerRef = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition, getNodes } = useReactFlow();
   const sketchRef = useRef(sketch);
@@ -188,7 +324,12 @@ export function StudioCanvas({
         labelBgBorderRadius: 6,
         labelBgStyle: { fill: "#FFFFFF", fillOpacity: 0.95 },
         labelStyle: { fontSize: 11, fontFamily: "monospace" },
-        style: { stroke: "#8A8070", strokeWidth: 1.5 },
+        style: {
+          stroke: "#8A8070",
+          strokeWidth: e.weight === "bold" ? 4 : e.weight === "medium" ? 2.5 : 1.5,
+          strokeDasharray: e.dash === "dotted" ? "2 4" : e.dash === "dashed" ? "8 5" : undefined,
+          strokeLinecap: e.dash === "dotted" ? "round" : undefined,
+        },
       })),
     [sketch]
   );
@@ -295,6 +436,44 @@ export function StudioCanvas({
     commit({ ...sketchRef.current, edges: sketchRef.current.edges.map((e) => (e.id === id ? { ...e, kind } : e)) });
   };
 
+  const addLink = (
+    fromId: string,
+    toId: string,
+    opts: { label: string; kind: SketchEdgeKind; dash: EdgeDash; weight: EdgeWeight }
+  ) => {
+    if (fromId === toId) return;
+    const cur = sketchRef.current;
+    if (!cur.nodes.some((n) => n.id === fromId) || !cur.nodes.some((n) => n.id === toId)) return;
+    commit({
+      ...cur,
+      edges: [
+        ...cur.edges,
+        {
+          id: sketchId("ske"),
+          sourceId: fromId,
+          targetId: toId,
+          label: opts.label,
+          kind: opts.kind === "bezier" ? undefined : opts.kind,
+          dash: opts.dash === "solid" ? undefined : opts.dash,
+          weight: opts.weight === "thin" ? undefined : opts.weight,
+        },
+      ],
+    });
+  };
+
+  const dropEdge = (id: string) => {
+    commit({ ...sketchRef.current, edges: sketchRef.current.edges.filter((e) => e.id !== id) });
+  };
+
+  const setEdgeStyle = (id: string, dash: EdgeDash | undefined, weight: EdgeWeight | undefined) => {
+    commit({
+      ...sketchRef.current,
+      edges: sketchRef.current.edges.map((e) =>
+        e.id === id ? { ...e, ...(dash ? { dash } : null), ...(weight ? { weight } : null) } : e
+      ),
+    });
+  };
+
   return (
     <div className="flex min-h-0 flex-1 items-stretch gap-3">
       {palOpen ? (
@@ -303,32 +482,40 @@ export function StudioCanvas({
             className="rounded-md p-1 text-[#A39B8E] hover:text-[#27241F] cursor-pointer">
             <ChevronLeft size={14} aria-hidden="true" />
           </button>
-          <p className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#A39B8E]">Sys</p>
-          {SYSTEM_BUTTONS.map((b) => (
-            <button
-              key={b.systemType}
-              type="button"
-              title={`Place ${b.label}`}
-              aria-label={`Place ${b.label}`}
-              onClick={() => place("system", b.systemType)}
-              className="rounded-lg border border-transparent p-1.5 text-[#777168] hover:border-[#E8E2D8] hover:text-[#27241F] transition-colors cursor-pointer"
-            >
-              <SystemGlyph iconKey={SYSTEM_TEMPLATES.find((t) => t.systemType === b.systemType)?.iconKey ?? "plus"} />
-            </button>
-          ))}
-          <p className="mt-1 font-mono text-[9px] font-bold uppercase tracking-wider text-[#A39B8E]">Flow</p>
-          {SHAPE_BUTTONS.map(({ kind, label, Icon }) => (
-            <button
-              key={kind}
-              type="button"
-              title={`Place ${label}`}
-              aria-label={`Place ${label}`}
-              onClick={() => place(kind)}
-              className="rounded-lg border border-transparent p-1.5 text-[#777168] hover:border-[#E8E2D8] hover:text-[#27241F] transition-colors cursor-pointer"
-            >
-              <Icon size={15} aria-hidden="true" />
-            </button>
-          ))}
+          {showSystems && (
+            <>
+              <p className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#A39B8E]">Sys</p>
+              {SYSTEM_BUTTONS.map((b) => (
+                <button
+                  key={b.systemType}
+                  type="button"
+                  title={`Place ${b.label}`}
+                  aria-label={`Place ${b.label}`}
+                  onClick={() => place("system", b.systemType)}
+                  className="rounded-lg border border-transparent p-1.5 text-[#777168] hover:border-[#E8E2D8] hover:text-[#27241F] transition-colors cursor-pointer"
+                >
+                  <SystemGlyph iconKey={SYSTEM_TEMPLATES.find((t) => t.systemType === b.systemType)?.iconKey ?? "plus"} />
+                </button>
+              ))}
+            </>
+          )}
+          {showFlows && (
+            <>
+              <p className="mt-1 font-mono text-[9px] font-bold uppercase tracking-wider text-[#A39B8E]">Flow</p>
+              {SHAPE_BUTTONS.map(({ kind, label, Icon }) => (
+                <button
+                  key={kind}
+                  type="button"
+                  title={`Place ${label}`}
+                  aria-label={`Place ${label}`}
+                  onClick={() => place(kind)}
+                  className="rounded-lg border border-transparent p-1.5 text-[#777168] hover:border-[#E8E2D8] hover:text-[#27241F] transition-colors cursor-pointer"
+                >
+                  <Icon size={15} aria-hidden="true" />
+                </button>
+              ))}
+            </>
+          )}
           <p className="mt-1 font-mono text-[9px] font-bold uppercase tracking-wider text-[#A39B8E]">Edit</p>
           <button type="button" title="Undo (Ctrl+Z)" aria-label="Undo" onClick={undo} disabled={past.length === 0}
             className="rounded-lg border border-transparent p-1.5 text-[#777168] hover:border-[#E8E2D8] hover:text-[#27241F] transition-colors cursor-pointer disabled:opacity-40">
@@ -421,6 +608,7 @@ export function StudioCanvas({
               <Button size="sm" variant="ghost" onClick={removeSelection}>
                 Delete selected
               </Button>
+              <NodeLinks key={selNode.id} sketch={sketch} nodeId={selNode.id} addLink={addLink} dropEdge={dropEdge} />
             </>
           ) : selEdge ? (
             <>
@@ -452,6 +640,32 @@ export function StudioCanvas({
                   ))}
                 </select>
               </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block text-[12px] font-semibold text-[#27241F]">
+                  Line
+                  <select
+                    value={selEdge.dash ?? "solid"}
+                    onChange={(e) => setEdgeStyle(selEdge.id, e.target.value as EdgeDash, undefined)}
+                    className="mt-1 w-full rounded-lg border border-[#E8E2D8] bg-white px-2 py-1.5 text-[13px] font-normal focus:border-[#A98450] focus:outline-none"
+                  >
+                    <option value="solid">Solid</option>
+                    <option value="dashed">Dashed</option>
+                    <option value="dotted">Dotted</option>
+                  </select>
+                </label>
+                <label className="block text-[12px] font-semibold text-[#27241F]">
+                  Weight
+                  <select
+                    value={selEdge.weight ?? "thin"}
+                    onChange={(e) => setEdgeStyle(selEdge.id, undefined, e.target.value as EdgeWeight)}
+                    className="mt-1 w-full rounded-lg border border-[#E8E2D8] bg-white px-2 py-1.5 text-[13px] font-normal focus:border-[#A98450] focus:outline-none"
+                  >
+                    <option value="thin">Thin</option>
+                    <option value="medium">Medium</option>
+                    <option value="bold">Bold</option>
+                  </select>
+                </label>
+              </div>
               <Button size="sm" variant="ghost" onClick={removeSelection}>
                 Delete selected
               </Button>

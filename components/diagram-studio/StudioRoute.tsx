@@ -4,15 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ReactFlowProvider } from "@xyflow/react";
 import { toPng } from "html-to-image";
+import { Camera, ChevronLeft, ChevronRight, Download, Send, Trash2, X } from "lucide-react";
 import Button from "../ui/Button";
-import { blankSketch, sketchToSystemProject, type StudioSketch } from "@/lib/diagram-studio/sketch";
+import { blankSketch, SKETCH_FLAVORS, sketchToSystemProject, type SketchFlavor, type StudioSketch } from "@/lib/diagram-studio/sketch";
 import { deleteSketch, listSketches, saveSketch } from "@/lib/diagram-studio/sketchStore";
-import { STUDIO_THEMES, studioTheme } from "@/lib/diagram-studio/themes";
 import { studioItemPngFileName } from "@/lib/diagram-studio/types";
 import { SYSTEM_DRAFT_KEY } from "@/lib/draw/toSystemDraft";
 import { StudioCanvas } from "./StudioCanvas";
-
-type SaveState = "saved" | "saving" | "unsaved" | "error";
 
 const inputCls =
   "rounded-lg border border-[#E8E2D8] bg-white px-2.5 py-1.5 text-[13px] focus:border-[#A98450] focus:outline-none";
@@ -27,10 +25,11 @@ export function StudioRoute() {
   const router = useRouter();
   const [sketches, setSketches] = useState<StudioSketch[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [saveState, setSaveState] = useState<SaveState>("saved");
   const [newName, setNewName] = useState("");
-  const [themeId, setThemeId] = useState("premium-light");
-  const [scale, setScale] = useState<2 | 3>(2);
+  const [newFlavor, setNewFlavor] = useState<SketchFlavor>("hybrid");
+  const [showNew, setShowNew] = useState(false);
+  const [search, setSearch] = useState("");
+  const [invOpen, setInvOpen] = useState(true);
   const [busy, setBusy] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -45,13 +44,10 @@ export function StudioRoute() {
   }, []);
 
   const sketch = sketches.find((s) => s.id === activeId) ?? null;
-  const theme = studioTheme(themeId);
   const systemCount = sketch?.nodes.filter((n) => n.kind === "system").length ?? 0;
 
   const persist = useCallback(async (next: StudioSketch) => {
-    setSaveState("saving");
     const ok = await saveSketch(next);
-    setSaveState(ok ? "saved" : "error");
     if (ok) setSketches((prev) => prev.map((s) => (s.id === next.id ? { ...next, updatedAt: Date.now() } : s)));
   }, []);
 
@@ -61,7 +57,6 @@ export function StudioRoute() {
       if (!cur) return;
       const next = fn(cur);
       setSketches((prev) => prev.map((s) => (s.id === next.id ? next : s)));
-      setSaveState("unsaved");
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => void persist(next), 900);
     },
@@ -69,14 +64,20 @@ export function StudioRoute() {
   );
 
   const createSketch = () => {
-    const s = blankSketch(newName);
+    const s = blankSketch(newName, newFlavor);
     setNewName("");
+    setNewFlavor("hybrid");
+    setShowNew(false);
     setConfirmDelete(false);
     void saveSketch(s).then(() => {
       setSketches((prev) => [s, ...prev]);
       setActiveId(s.id);
     });
   };
+
+  const visibleSketches = search.trim()
+    ? sketches.filter((s) => s.name.toLowerCase().includes(search.trim().toLowerCase()))
+    : sketches;
 
   const deleteActive = async () => {
     if (!sketch) return;
@@ -86,14 +87,14 @@ export function StudioRoute() {
     setConfirmDelete(false);
   };
 
-  const exportPng = async () => {
+  const exportPng = async (scale: 2 | 3) => {
     if (!sketch || busy) return;
     const el = shotRef.current;
     if (!el) return;
     setBusy(true);
     setExportError(null);
     try {
-      const dataUrl = await toPng(el, { backgroundColor: theme.background, pixelRatio: scale, cacheBust: true });
+      const dataUrl = await toPng(el, { backgroundColor: "#FFFFFF", pixelRatio: scale, cacheBust: true });
       const a = document.createElement("a");
       a.href = dataUrl;
       a.download = studioItemPngFileName(sketch.name, scale);
@@ -119,45 +120,33 @@ export function StudioRoute() {
     router.push("/system");
   };
 
-  const saveBadge = (
-    <span
-      role="status"
-      className={`rounded-md border px-2 py-0.5 font-mono text-[10px] font-semibold ${
-        saveState === "saved"
-          ? "border-[#BFD9C6] bg-[#E9F3EC] text-[#2F7D4F]"
-          : saveState === "error"
-            ? "border-[#E5B8B2] bg-[#F9E8E6] text-[#B3261E]"
-            : "border-[#DCC99A] bg-[#F5EEDF] text-[#8A6A2F]"
-      }`}
-    >
-      {saveState === "saved" ? "Saved locally" : saveState === "saving" ? "Saving…" : saveState === "error" ? "Save failed" : "Unsaved changes"}
-    </span>
-  );
+
 
   return (
-    <div className="grid min-h-0 flex-1 items-stretch gap-3 lg:grid-cols-[300px_minmax(0,1fr)]">
-      <aside className="flex h-full max-h-[calc(100vh-140px)] min-h-[420px] flex-col rounded-xl border border-[#E8E2D8] bg-white p-3" aria-label="Sketches inventory">
+    <div className="grid min-h-0 flex-1 items-stretch gap-3 lg:grid-cols-[auto_minmax(0,1fr)]">
+      {invOpen ? (
+      <aside className="flex h-full max-h-[calc(100vh-140px)] min-h-[420px] w-full flex-col rounded-xl border border-[#E8E2D8] bg-white p-3 lg:w-[300px]" aria-label="Sketches inventory">
         <div className="mb-2 flex items-center justify-between">
           <p className="text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">Sketches · {sketches.length}</p>
-          {saveBadge}
+          <button type="button" onClick={() => setInvOpen(false)} aria-label="Collapse sketches" title="Collapse sketches"
+            className="rounded-md p-1 text-[#A39B8E] hover:text-[#27241F] cursor-pointer">
+            <ChevronLeft size={14} aria-hidden="true" />
+          </button>
         </div>
         <div className="mb-2 flex gap-2">
           <input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") createSketch();
-            }}
-            placeholder="New sketch - e.g. Order flow"
-            aria-label="New sketch name"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search sketches…"
+            aria-label="Search sketches"
             className={inputCls}
           />
-          <Button size="sm" onClick={createSketch} title="Create sketch">
+          <Button size="sm" onClick={() => setShowNew(true)} title="New sketch">
             + New
           </Button>
         </div>
         <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto">
-          {sketches.map((s) => (
+          {visibleSketches.map((s) => (
             <li key={s.id}>
               <button
                 type="button"
@@ -173,21 +162,29 @@ export function StudioRoute() {
               >
                 <p className="truncate text-[13px] font-semibold">{s.name}</p>
                 <p className={`font-mono text-[10px] ${s.id === activeId ? "text-white/70" : "text-[#A39B8E]"}`}>
-                  {s.nodes.filter((n) => n.kind === "system").length} systems · {s.edges.length} links
+                  {(s.flavor ?? "hybrid")[0].toUpperCase() + (s.flavor ?? "hybrid").slice(1)} · {s.nodes.filter((n) => n.kind === "system").length} systems · {s.edges.length} links
                 </p>
               </button>
             </li>
           ))}
-          {sketches.length === 0 && (
+          {visibleSketches.length === 0 && (
             <li className="rounded-lg border border-dashed border-[#D8CFC0] p-4 text-center">
-              <p className="text-[13px] font-semibold text-[#27241F]">No sketches yet</p>
+              <p className="text-[13px] font-semibold text-[#27241F]">{search.trim() ? "No matches" : "No sketches yet"}</p>
               <p className="mt-1 text-[11px] leading-relaxed text-[#777168]">
-                Name a sketch above - place system boxes and flowchart shapes, link them, then send systems to the System tab for real APIs.
+                {search.trim()
+                  ? "Try a different search."
+                  : "Hit + New - pick a name and a type, then place boxes, link them, and send systems to the System tab for real APIs."}
               </p>
             </li>
           )}
         </ul>
       </aside>
+      ) : (
+        <button type="button" onClick={() => setInvOpen(true)} aria-label="Expand sketches" title="Expand sketches"
+          className="w-8 shrink-0 self-stretch rounded-xl border border-[#E8E2D8] bg-white p-1 text-[#A39B8E] hover:text-[#27241F] cursor-pointer">
+          <ChevronRight size={14} aria-hidden="true" className="mx-auto" />
+        </button>
+      )}
 
       <section className="min-h-0 rounded-xl border border-[#E8E2D8] bg-white p-4" aria-label="Sketch editor">
         {!sketch ? (
@@ -201,7 +198,7 @@ export function StudioRoute() {
           </div>
         ) : (
           <div className="flex h-full max-h-[calc(100vh-140px)] min-h-[460px] flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
               <input
                 key={sketch.id}
                 defaultValue={sketch.name}
@@ -212,55 +209,38 @@ export function StudioRoute() {
                 aria-label="Sketch name"
                 className="min-w-0 flex-1 rounded-lg border border-transparent px-2 py-1 text-[15px] font-semibold text-[#27241F] hover:border-[#E8E2D8] focus:border-[#A98450] focus:outline-none"
               />
-              <label className="flex items-center gap-1.5 text-[11px] font-semibold text-[#777168]">
-                Theme
-                <select
-                  value={themeId}
-                  onChange={(e) => setThemeId(e.target.value)}
-                  className="rounded-lg border border-[#E8E2D8] bg-white px-2 py-1.5 text-[12px] font-normal text-[#27241F] focus:border-[#A98450] focus:outline-none"
-                >
-                  {STUDIO_THEMES.map((t) => (
-                    <option key={t.id} value={t.id} title={t.blurb}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex items-center gap-1.5 text-[11px] font-semibold text-[#777168]">
-                Scale
-                <select
-                  value={scale}
-                  onChange={(e) => setScale(Number(e.target.value) as 2 | 3)}
-                  className="rounded-lg border border-[#E8E2D8] bg-white px-2 py-1.5 text-[12px] font-normal text-[#27241F] focus:border-[#A98450] focus:outline-none"
-                >
-                  <option value={2}>2x PNG</option>
-                  <option value={3}>3x PNG</option>
-                </select>
-              </label>
-              <Button size="sm" variant="secondary" onClick={exportPng} disabled={busy || sketch.nodes.length === 0} title="Download this sketch as PNG">
-                {busy ? "Exporting…" : "PNG"}
-              </Button>
-              <Button
-                size="sm"
-                onClick={sendToSystem}
-                disabled={systemCount === 0}
-                title={systemCount === 0 ? "Place at least one system box first - flowcharts export directly" : "Promote system boxes + links into a runnable System project"}
-              >
-                Send to System
-              </Button>
+              <button type="button" onClick={() => void exportPng(2)} disabled={busy || sketch.nodes.length === 0}
+                title="Snapshot PNG (2x)" aria-label="Snapshot PNG"
+                className="rounded-lg border border-[#E8E2D8] bg-white p-2 text-[#777168] hover:border-[#A98450] hover:text-[#27241F] transition-colors cursor-pointer disabled:opacity-40">
+                <Camera size={15} aria-hidden="true" />
+              </button>
+              <button type="button" onClick={() => void exportPng(3)} disabled={busy || sketch.nodes.length === 0}
+                title="Hi-res PNG (3x)" aria-label="Hi-res PNG"
+                className="rounded-lg border border-[#211F1B] bg-[#211F1B] p-2 text-white hover:bg-[#3a352d] transition-colors cursor-pointer disabled:opacity-40">
+                <Download size={15} aria-hidden="true" />
+              </button>
+              <button type="button" onClick={sendToSystem} disabled={systemCount === 0}
+                title={systemCount === 0 ? "Place at least one system box first - flowcharts export directly" : "Send to System - promote boxes + links into a runnable project"}
+                aria-label="Send to System"
+                className="rounded-lg border border-[#E8E2D8] bg-white p-2 text-[#777168] hover:border-[#A98450] hover:text-[#27241F] transition-colors cursor-pointer disabled:opacity-40">
+                <Send size={15} aria-hidden="true" />
+              </button>
               {confirmDelete ? (
                 <>
-                  <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(false)}>
-                    Keep
-                  </Button>
-                  <Button size="sm" variant="danger" onClick={deleteActive}>
-                    Confirm delete
-                  </Button>
+                  <button type="button" onClick={() => setConfirmDelete(false)} title="Keep sketch" aria-label="Keep sketch"
+                    className="rounded-lg border border-[#E8E2D8] bg-white p-2 text-[#777168] hover:text-[#27241F] transition-colors cursor-pointer">
+                    <X size={15} aria-hidden="true" />
+                  </button>
+                  <button type="button" onClick={deleteActive} title="Confirm delete" aria-label="Confirm delete"
+                    className="rounded-lg border border-[#B3261E] bg-[#B3261E] p-2 text-white hover:bg-[#92211a] transition-colors cursor-pointer">
+                    <Trash2 size={15} aria-hidden="true" />
+                  </button>
                 </>
               ) : (
-                <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(true)} title="Delete this sketch">
-                  Delete
-                </Button>
+                <button type="button" onClick={() => setConfirmDelete(true)} title="Delete sketch" aria-label="Delete sketch"
+                  className="rounded-lg border border-[#E8E2D8] bg-white p-2 text-[#B3261E] hover:border-[#B3261E] transition-colors cursor-pointer">
+                  <Trash2 size={15} aria-hidden="true" />
+                </button>
               )}
             </div>
             {exportError && (
@@ -276,6 +256,58 @@ export function StudioRoute() {
           </div>
         )}
       </section>
+
+      {showNew && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="New sketch"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowNew(false);
+          }}>
+          <div className="w-full max-w-md rounded-2xl border border-[#E8E2D8] bg-white p-5 shadow-[0_2px_24px_rgba(169,132,80,0.08)]">
+            <p className="text-[16px] font-semibold text-[#27241F]">New sketch</p>
+            <label className="mt-3 block text-[12px] font-semibold text-[#27241F]">
+              Name
+              <input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") createSketch();
+                }}
+                placeholder="e.g. Order flow"
+                aria-label="Sketch name"
+                autoFocus
+                className="mt-1 w-full rounded-lg border border-[#E8E2D8] bg-white px-2.5 py-1.5 text-[13px] font-normal focus:border-[#A98450] focus:outline-none"
+              />
+            </label>
+            <p className="mt-3 text-[12px] font-semibold text-[#27241F]">Type</p>
+            <div className="mt-1.5 grid grid-cols-3 gap-2" role="radiogroup" aria-label="Sketch type">
+              {SKETCH_FLAVORS.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={newFlavor === f.id}
+                  onClick={() => setNewFlavor(f.id)}
+                  title={f.blurb}
+                  className={`rounded-xl border px-2 py-2.5 text-center transition-colors cursor-pointer ${
+                    newFlavor === f.id ? "border-[#211F1B] bg-[#211F1B] text-white" : "border-[#E8E2D8] bg-white hover:border-[#A98450]"
+                  }`}
+                >
+                  <span className="block text-[13px] font-semibold">{f.label}</span>
+                  <span className={`mt-0.5 block text-[10px] leading-snug ${newFlavor === f.id ? "text-white/70" : "text-[#777168]"}`}>{f.blurb}</span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button size="sm" variant="ghost" onClick={() => setShowNew(false)}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={createSketch} title="Create sketch">
+                Create
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
