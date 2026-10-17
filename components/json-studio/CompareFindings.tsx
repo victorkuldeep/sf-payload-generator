@@ -126,52 +126,32 @@ export function CompareSummary({
   );
 }
 
-// ── Tree Diff ───────────────────────────────────────────────────────────────
+// ── Diff table: the ultra-clean Node | Value in A | Value in B grid ─────────
 
-interface TreeRow {
-  path: string;
-  depth: number;
-  finding: Finding | null;
-  children: TreeRow[];
+/**
+ * Only value-bearing findings belong in the table. Wrapper rows
+ * (array-modified - details follow) and valueless rows (structural moves,
+ * duplicate keys) stay out so the grid reads one change per line.
+ */
+const TABLE_CATEGORIES: FindingCategory[] = [
+  "added",
+  "removed",
+  "modified",
+  "type-changed",
+  "array-added",
+  "array-removed",
+  "unmatched",
+];
+
+/** Cell text: primitives raw, absent side as null, containers compact. */
+function tableCell(v: unknown): string {
+  if (v === undefined || v === null) return "null";
+  if (typeof v === "string") return v;
+  const s = JSON.stringify(v);
+  return s.length > 60 ? `${s.slice(0, 60)}…` : s;
 }
 
-function buildFindingTree(findings: Finding[]): TreeRow[] {
-  const byPath = new Map<string, TreeRow>();
-  const roots: TreeRow[] = [];
-  const ensure = (path: string, depth: number): TreeRow => {
-    const hit = byPath.get(path);
-    if (hit) return hit;
-    const row: TreeRow = { path, depth, finding: null, children: [] };
-    byPath.set(path, row);
-    if (depth === 0) {
-      roots.push(row);
-    } else {
-      const parentPath = path.includes("[")
-        ? path.slice(0, Math.max(path.lastIndexOf("."), path.lastIndexOf("[")))
-        : "$";
-      const parent = ensure(parentPath === "" ? "$" : parentPath, depth - 1);
-      parent.children.push(row);
-    }
-    return row;
-  };
-  const sorted = [...findings].sort((a, b) =>
-    displayPath(a) < displayPath(b) ? -1 : 1
-  );
-  for (const f of sorted) {
-    const path = displayPath(f);
-    const depth = (path.match(/[.\[]/g) ?? []).length;
-    const row = ensure(path, depth);
-    if (!row.finding) row.finding = f;
-  }
-  const sortRows = (rows: TreeRow[]) => {
-    rows.sort((a, b) => (a.path < b.path ? -1 : 1));
-    for (const r of rows) sortRows(r.children);
-  };
-  sortRows(roots);
-  return roots;
-}
-
-export function TreeDiff({
+export function DiffTable({
   result,
   filter,
   selectedId,
@@ -182,126 +162,53 @@ export function TreeDiff({
   selectedId: string | null;
   onSelect: (id: string | null) => void;
 }) {
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const rows = useMemo(() => {
     const list =
-      filter === null ? result.findings : result.findings.filter((f) => filter.has(f.category));
-    return buildFindingTree(list);
+      filter === null ? [...result.findings] : result.findings.filter((f) => filter.has(f.category));
+    return list
+      .filter((f) => TABLE_CATEGORIES.includes(f.category))
+      .sort((a, b) => (displayPath(a) < displayPath(b) ? -1 : 1));
   }, [result, filter]);
 
-  // Keep ancestors of the selection expanded.
-  useMemo(() => {
-    if (!selectedId) return;
-    const f = result.findings.find((x) => x.id === selectedId);
-    if (!f) return;
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      let p = displayPath(f);
-      while (p !== "$") {
-        p = p.includes("[")
-          ? p.slice(0, Math.max(p.lastIndexOf("."), p.lastIndexOf("[")))
-          : "$";
-        if (p === "") p = "$";
-        next.delete(p);
-        if (p === "$") break;
-      }
-      return next;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId]);
-
-  const renderRow = (row: TreeRow): React.ReactNode => {
-    const meta = CATEGORY_META.find((c) => c.cat === row.finding?.category);
-    const isCollapsed = collapsed.has(row.path);
-    const isSel = row.finding?.id === selectedId;
-    return (
-      <div key={row.path}>
-        <div
-          className={`flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 transition-colors ${
-            isSel ? "bg-[#211F1B] text-white" : "hover:bg-[#F5F1E8]"
-          }`}
-          style={{ marginLeft: Math.min(row.depth, 8) * 16 }}
-          onClick={() => onSelect(row.finding ? (isSel ? null : row.finding.id) : null)}
-          role={row.finding ? "button" : undefined}
-          tabIndex={row.finding ? 0 : undefined}
-          onKeyDown={(e) => {
-            if ((e.key === "Enter" || e.key === " ") && row.finding) {
-              e.preventDefault();
-              onSelect(isSel ? null : (row.finding?.id ?? null));
-            }
-          }}
-          title={row.finding ? row.finding.explanation : "Context"}
-        >
-          {row.children.length > 0 ? (
-            <button
-              type="button"
-              aria-label={isCollapsed ? "Expand" : "Collapse"}
-              onClick={(e) => {
-                e.stopPropagation();
-                setCollapsed((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(row.path)) next.delete(row.path);
-                  else next.add(row.path);
-                  return next;
-                });
-              }}
-              className={`shrink-0 rounded p-0.5 text-[10px] leading-none cursor-pointer ${isSel ? "text-white/70" : "text-[#A39B8E]"}`}
-            >
-              {isCollapsed ? "▸" : "▾"}
-            </button>
-          ) : (
-            <span className="w-[14px] shrink-0" aria-hidden="true" />
-          )}
-          {meta ? (
-            <span className={`h-2 w-2 shrink-0 rounded-full ${meta.dot}`} title={meta.label} aria-label={meta.label} />
-          ) : (
-            <span className="h-2 w-2 shrink-0 rounded-full bg-[#E8E2D8]" title="Context" aria-label="Context" />
-          )}
-          <span className={`min-w-0 flex-1 truncate font-mono text-[12px] ${isSel ? "text-white" : "text-[#27241F]"}`} title={row.path}>
-            {row.path}
-          </span>
-          {row.finding && (
-            <span className={`hidden shrink-0 truncate text-[11px] sm:inline ${isSel ? "text-white/70" : "text-[#A39B8E]"}`}>
-              {formatValue(row.finding.newValue ?? row.finding.oldValue, 40)}
-            </span>
-          )}
-        </div>
-        {!isCollapsed && row.children.map(renderRow)}
-      </div>
-    );
-  };
-
   return (
-    <div className="rounded-xl border border-[#E8E2D8] bg-white p-1.5">
-      <div className="flex items-center gap-1.5 px-1.5 py-1">
-        <span className="font-mono text-[11px] text-[#A39B8E]">
-          {rows.length === 0 ? "No findings match the filter." : `${result.findings.length} findings`}
-        </span>
-        <span className="flex-1" />
-        <button
-          onClick={() => {
-            const all: string[] = [];
-            const walk = (rs: TreeRow[]) => {
-              for (const r of rs) {
-                if (r.children.length > 0) all.push(r.path);
-                walk(r.children);
-              }
-            };
-            walk(rows);
-            setCollapsed(new Set(all));
-          }}
-          className="rounded-md px-2 py-0.5 text-[11px] text-[#777168] hover:bg-[#F5F1E8] cursor-pointer"
-        >
-          Collapse all
-        </button>
-        <button
-          onClick={() => setCollapsed(new Set())}
-          className="rounded-md px-2 py-0.5 text-[11px] text-[#777168] hover:bg-[#F5F1E8] cursor-pointer"
-        >
-          Expand all
-        </button>
+    <div className="overflow-hidden rounded-xl border border-[#E8E2D8] bg-white">
+      <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 border-b border-[#E8E2D8] bg-[#F8F6F0] px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-wider text-[#A39B8E]">
+        <span>Node</span>
+        <span>Value in A</span>
+        <span>Value in B</span>
       </div>
-      <div className="max-h-[480px] overflow-y-auto">{rows.map(renderRow)}</div>
+      <div className="max-h-[420px] overflow-y-auto">
+        {rows.length === 0 && (
+          <p className="px-4 py-8 text-center text-[13px] text-[#A39B8E]">
+            {result.findings.length === 0 ? "No differences - documents match." : "No findings match."}
+          </p>
+        )}
+        {rows.map((f) => {
+          const meta = CATEGORY_META.find((c) => c.cat === f.category);
+          const isSel = f.id === selectedId;
+          return (
+            <button
+              key={f.id}
+              onClick={() => onSelect(isSel ? null : f.id)}
+              title={f.explanation}
+              className={`grid w-full cursor-pointer grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)] items-start gap-2 border-b border-[#E8E2D8] px-3 py-1.5 text-left transition-colors last:border-b-0 ${
+                isSel ? "bg-[#211F1B] text-white" : "hover:bg-[#F5F1E8]"
+              }`}
+            >
+              <span className={`flex min-w-0 items-center gap-1.5 font-mono text-[11px] ${isSel ? "text-white" : "text-[#27241F]"}`}>
+                <span className={`h-2 w-2 shrink-0 rounded-full ${meta?.dot ?? ""}`} aria-hidden="true" />
+                <span className="truncate" title={displayPath(f)}>{displayPath(f)}</span>
+              </span>
+              <span className={`min-w-0 truncate font-mono text-[11px] ${isSel ? "text-white/80" : "text-[#777168]"}`} title={tableCell(f.oldValue)}>
+                {tableCell(f.oldValue)}
+              </span>
+              <span className={`min-w-0 truncate font-mono text-[11px] ${isSel ? "text-white/80" : "text-[#27241F]"}`} title={tableCell(f.newValue)}>
+                {tableCell(f.newValue)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

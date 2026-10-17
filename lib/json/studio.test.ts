@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseJsonInput, formatBytes, formatJson } from "./studio";
+import { parseJsonInput, formatBytes, formatJson, detectArrayMatchKey } from "./studio";
 
 describe("parseJsonInput", () => {
   it("parses valid JSON", () => {
@@ -29,5 +29,38 @@ describe("formatBytes", () => {
 describe("formatJson", () => {
   it("pretty-prints with 2-space indent", () => {
     expect(formatJson({ a: [1] })).toBe('{\n  "a": [\n    1\n  ]\n}');
+  });
+});
+
+describe("detectArrayMatchKey", () => {
+  it("detects a shared unique id field", () => {
+    const a = { order: [{ id: "1", mrc: 100 }, { id: "2", mrc: 200 }] };
+    const b = { order: [{ id: "1", mrc: 100 }, { id: "2", mrc: 300 }] };
+    expect(detectArrayMatchKey(a, b)).toBe("id");
+  });
+  it("lowercase id wins over Salesforce Id and referenceId", () => {
+    const doc = {
+      items: [
+        { id: "a", Id: "x1", referenceId: "r1" },
+        { id: "b", Id: "x2", referenceId: "r2" },
+      ],
+    };
+    expect(detectArrayMatchKey(doc, doc)).toBe("id");
+  });
+  it("falls back to referenceId when no plain id exists", () => {
+    const doc = { req: [{ referenceId: "r1", v: 1 }, { referenceId: "r2", v: 2 }] };
+    expect(detectArrayMatchKey(doc, doc)).toBe("referenceId");
+  });
+  it("rejects non-unique keys and single-item arrays", () => {
+    expect(detectArrayMatchKey({ items: [{ id: "1" }, { id: "1" }] }, {})).toBe("");
+    expect(detectArrayMatchKey({ items: [{ id: "1" }] }, {})).toBe("");
+  });
+  it("finds usable keys nested deep in the document", () => {
+    const doc = { order: { lines: [{ id: "l1" }, { id: "l2" }] } };
+    expect(detectArrayMatchKey({}, doc)).toBe("id");
+  });
+  it("returns empty when nothing qualifies", () => {
+    expect(detectArrayMatchKey({ a: 1 }, { b: [1, 2, 3] })).toBe("");
+    expect(detectArrayMatchKey({}, {})).toBe("");
   });
 });

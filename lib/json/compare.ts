@@ -144,6 +144,26 @@ function explainChange(path: string, a: unknown, b: unknown): string {
   return `${path} changed from ${JSON.stringify(a)} to ${JSON.stringify(b)}.`;
 }
 
+/** Match-key value of an item, or null when it cannot be keyed. */
+function keyOf(v: unknown, matchKey: string): string | null {
+  if (v === null || typeof v !== "object" || Array.isArray(v)) return null;
+  const kv = (v as Record<string, unknown>)[matchKey];
+  if (kv === undefined || kv === null || typeof kv === "object") return null;
+  return String(kv);
+}
+
+/**
+ * A real payload mixes arrays that share one natural id (e.g.
+ * productOrderItem[].id) with nested arrays that have none (e.g.
+ * productCharacteristic[] keyed only by position). Key-mode therefore
+ * applies per array: only arrays that actually carry the key on at
+ * least one item on either side; the rest fall through to their own
+ * lcs/index handling exactly as if no matchKey had been set.
+ */
+function arrayHasUsableKey(a: unknown[], b: unknown[], matchKey: string): boolean {
+  return a.some((v) => keyOf(v, matchKey) !== null) || b.some((v) => keyOf(v, matchKey) !== null);
+}
+
 function diffValue(
   ctx: Ctx,
   a: unknown,
@@ -307,7 +327,7 @@ function diffArray(
   strA: string,
   strB: string
 ): void {
-  if (ctx.arrayMode === "key" && ctx.matchKey !== "") {
+  if (ctx.arrayMode === "key" && ctx.matchKey !== "" && arrayHasUsableKey(a, b, ctx.matchKey)) {
     diffArrayByKey(ctx, a, b, pathA, pathB, strA, strB);
     return;
   }
@@ -388,17 +408,10 @@ function diffArrayByKey(
   strA: string,
   strB: string
 ): void {
-  const keyOf = (v: unknown): string | null => {
-    if (v === null || typeof v !== "object" || Array.isArray(v)) return null;
-    const kv = (v as Record<string, unknown>)[ctx.matchKey];
-    if (kv === undefined || kv === null || typeof kv === "object") return null;
-    return String(kv);
-  };
-
   const indexByKey = (arr: unknown[]) => {
     const map = new Map<string, number[]>();
     arr.forEach((item, i) => {
-      const k = keyOf(item);
+      const k = keyOf(item, ctx.matchKey);
       if (k === null) return;
       if (!map.has(k)) map.set(k, []);
       map.get(k)?.push(i);
@@ -482,7 +495,7 @@ function diffArrayByKey(
     arr.forEach((item, i) => {
       if (seen.has(i)) return;
       seen.add(i);
-      const k = keyOf(item);
+      const k = keyOf(item, ctx.matchKey);
       const ref = side === "a" ? `${strA}[${i}]` : `${strB}[${i}]`;
       if (k === null) ctx.warnings.push(`${ref} has no "${ctx.matchKey}" - left unmatched.`);
       emit(ctx, {

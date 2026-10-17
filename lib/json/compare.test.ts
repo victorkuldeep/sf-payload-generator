@@ -94,9 +94,50 @@ describe("compare engine", () => {
     const r = compareDocuments(a, b, { arrayMode: "key", matchKey: "id" });
     expect(r.findings.some((f) => f.category === "duplicate-key")).toBe(true);
   });
-  it("items without the key are unmatched with a warning", () => {
+  it("key mode ignores arrays that carry no usable key (falls back to lcs/index)", () => {
+    // Identical keyless arrays: no findings at all, not an "unmatched" flood.
     const r = compareDocuments({ items: [{ v: 1 }] }, { items: [{ v: 1 }] }, { arrayMode: "key", matchKey: "id" });
-    expect(r.findings.some((f) => f.category === "unmatched")).toBe(true);
+    expect(r.findings.some((f) => f.category === "unmatched")).toBe(false);
+    expect(r.findings).toHaveLength(0);
+    // Changed keyless arrays surface per-field edits, not remove+add.
+    const r2 = compareDocuments({ items: [{ v: 1 }] }, { items: [{ v: 2 }] }, { arrayMode: "key", matchKey: "id" });
+    expect(r2.findings.some((f) => f.category === "modified" && f.pathA === "$.items[0].v")).toBe(true);
+    expect(r2.findings.some((f) => ["array-added", "array-removed"].includes(f.category))).toBe(false);
+  });
+  it("key matching recurses into a matched item instead of flattening it", () => {
+    const a = { items: [{ id: "1", name: "x", tags: [{ v: 1 }, { v: 2 }] }] };
+    const b = { items: [{ id: "1", name: "y", tags: [{ v: 1 }, { v: 2 }] }] };
+    const r = compareDocuments(a, b, { arrayMode: "key", matchKey: "id" });
+    expect(r.findings.some((f) => f.category === "modified" && f.pathA === "$.items[0].name")).toBe(true);
+    expect(r.findings.some((f) => ["array-added", "array-removed", "unmatched"].includes(f.category))).toBe(false);
+  });
+  it("one global key drives keyed arrays and falls back on keyless nested ones", () => {
+    const a = {
+      order: [
+        { id: "1", mrc: 100, chars: [{ k: "color", v: "red" }] },
+        { id: "2", mrc: 50, chars: [{ k: "size", v: "m" }] },
+      ],
+    };
+    const b = {
+      order: [
+        { id: "1", mrc: 200, chars: [{ k: "color", v: "blue" }] },
+        { id: "2", mrc: 50, chars: [{ k: "size", v: "m" }] },
+      ],
+    };
+    const r = compareDocuments(a, b, { arrayMode: "key", matchKey: "id" });
+    // Top array matched by id: per-leaf modifications, no wholesale add/remove.
+    expect(r.findings.some((f) => f.category === "modified" && f.pathA === "$.order[0].mrc")).toBe(true);
+    // Nested keyless array compared by position: its real edit also surfaces.
+    expect(r.findings.some((f) => f.category === "modified" && f.pathA === "$.order[0].chars[0].v")).toBe(true);
+    expect(r.findings.some((f) => ["array-added", "array-removed", "unmatched"].includes(f.category))).toBe(false);
+  });
+  it("an item without the key is unmatched with a warning when the array uses the key elsewhere", () => {
+    const r = compareDocuments(
+      { items: [{ id: "1", v: 1 }, { v: 2 }] },
+      { items: [{ id: "1", v: 1 }] },
+      { arrayMode: "key", matchKey: "id" }
+    );
+    expect(r.findings.some((f) => f.category === "unmatched" && f.matchStatus === "unmatched-a")).toBe(true);
     expect(r.warnings.some((w) => w.includes('"id"'))).toBe(true);
   });
   it("nested arrays recurse", () => {

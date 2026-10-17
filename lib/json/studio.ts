@@ -30,7 +30,49 @@ export function formatBytes(n: number): string {
   return `${(n / 1024 / 1024).toFixed(2)} MB`;
 }
 
-export const COMPARE_KEY_PRESETS = ["referenceId", "Id", "Name"] as const;
+/** Priority order: lowercase id (REST/API convention) wins over Id (Salesforce). */
+export const COMPARE_KEY_PRESETS = ["id", "Id", "referenceId", "Name"] as const;
+
+/**
+ * Scans both payloads for an array (2+ items, all plain objects) where one
+ * of the common id-ish keys is present and unique across every item.
+ * Returns the highest-priority usable key, or "" when none qualifies.
+ * Powers the Auto default so a typical API payload gets correct array
+ * matching without the user having to find the dropdown first.
+ */
+export function detectArrayMatchKey(a: unknown, b: unknown): string {
+  const candidates: string[] = [...COMPARE_KEY_PRESETS];
+  const usable = new Set<string>();
+
+  const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+    typeof v === "object" && v !== null && !Array.isArray(v);
+
+  const checkArray = (arr: unknown[]) => {
+    if (arr.length < 2 || !arr.every(isPlainObject)) return;
+    for (const key of candidates) {
+      if (usable.has(key)) continue;
+      const values = (arr as Record<string, unknown>[])
+        .map((o) => o[key])
+        .filter((v): v is string | number => typeof v === "string" || typeof v === "number");
+      if (values.length === arr.length && new Set(values).size === values.length) {
+        usable.add(key);
+      }
+    }
+  };
+
+  const walk = (v: unknown) => {
+    if (Array.isArray(v)) {
+      checkArray(v);
+      for (const item of v) walk(item);
+    } else if (isPlainObject(v)) {
+      for (const value of Object.values(v)) walk(value);
+    }
+  };
+
+  walk(a);
+  walk(b);
+  return candidates.find((k) => usable.has(k)) ?? "";
+}
 
 const SAMPLE_A = {
   allOrNone: true,

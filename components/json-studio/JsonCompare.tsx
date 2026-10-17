@@ -2,10 +2,10 @@
 
 import { useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { parseJsonInput, formatBytes, samplePair, COMPARE_KEY_PRESETS } from "@/lib/json/studio";
+import { parseJsonInput, formatBytes, samplePair, COMPARE_KEY_PRESETS, detectArrayMatchKey } from "@/lib/json/studio";
 import { compareDocuments, type FindingCategory } from "@/lib/json/compare";
 import { LaserButton, LaserOverlay, useLaser } from "./LaserOverlay";
-import { CATEGORY_META, CompareSummary, TreeDiff, EngineeringTable } from "./CompareFindings";
+import { CATEGORY_META, CompareSummary, DiffTable, EngineeringTable } from "./CompareFindings";
 import { CompareGraph } from "./CompareGraph";
 import Button from "../ui/Button";
 
@@ -29,7 +29,7 @@ export function JsonCompare() {
   const [bErr, setBErr] = useState<string | null>(null);
   const [pair, setPair] = useState<{ a: object; b: object } | null>(null);
   const [blocks, setBlocks] = useState<number | null>(null);
-  const [compareKey, setCompareKey] = useState<string>("referenceId");
+  const [compareKey, setCompareKey] = useState<string>("");
   const [strategy, setStrategy] = useState<"strict" | "loose" | "type-aware">("strict");
   const [ignorePaths, setIgnorePaths] = useState("");
   const [current, setCurrent] = useState(0);
@@ -38,6 +38,7 @@ export function JsonCompare() {
   useLaser(laser, setLaser);
   const [inputsOpen, setInputsOpen] = useState(true);
   const [resultView, setResultView] = useState<"side" | "summary" | "tree" | "graph" | "engineering">("side");
+  const [engStyle, setEngStyle] = useState<"tabular" | "detailed">("tabular");
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
   const [catFilter, setCatFilter] = useState<Set<FindingCategory> | null>(null);
   const viewerRef = useRef<ViewerRef | null>(null);
@@ -69,17 +70,26 @@ export function JsonCompare() {
     return `${formatBytes(sa)} vs ${formatBytes(sb)}`;
   }, [pair]);
 
+  // Auto matches arrays by a natural id field when the dropdown is left
+  // at its default - key mode then applies per array, and arrays without
+  // the key fall through to lcs/index exactly as if no key were set.
+  const effectiveCompareKey = useMemo(() => {
+    if (compareKey === "") return pair ? detectArrayMatchKey(pair.a, pair.b) : "";
+    if (compareKey === "index") return "";
+    return compareKey;
+  }, [compareKey, pair]);
+
   // Canonical findings: same options as the legacy viewer, so every new
-  // view agrees with it by construction. Legacy defaults preserved.
+  // view agrees with it by construction.
   const result = useMemo(() => {
     if (!pair) return null;
     return compareDocuments(pair.a, pair.b, {
       strategy,
-      arrayMode: compareKey !== "" ? "key" : "lcs",
-      matchKey: compareKey,
+      arrayMode: compareKey === "index" ? "index" : effectiveCompareKey !== "" ? "key" : "lcs",
+      matchKey: effectiveCompareKey,
       ignorePaths: ignorePaths.split(",").map((s) => s.trim()).filter(Boolean),
     });
-  }, [pair, strategy, compareKey, ignorePaths]);
+  }, [pair, strategy, compareKey, effectiveCompareKey, ignorePaths]);
 
   const toggleCat = (cat: FindingCategory) => {
     setCatFilter((prev) => {
@@ -189,9 +199,10 @@ export function JsonCompare() {
             value={compareKey}
             onChange={(e) => setCompareKey(e.target.value)}
             className="cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-1.5 py-1 font-mono text-[11px]"
-            title="Array items match by this key instead of index - referenceId for composite batches"
+            title="Auto finds a natural id field per payload; pick one to force it, or index for pure positional matching"
           >
-            <option value="">index</option>
+            <option value="">Auto{effectiveCompareKey ? ` (${effectiveCompareKey})` : ""}</option>
+            <option value="index">index</option>
             {COMPARE_KEY_PRESETS.map((k) => (
               <option key={k} value={k}>{k}</option>
             ))}
@@ -277,7 +288,7 @@ export function JsonCompare() {
               [
                 ["side", "Side-by-side"],
                 ["summary", "Summary"],
-                ["tree", "Tree Diff"],
+                ["tree", "Table Diff"],
                 ["graph", "Graph Diff"],
                 ["engineering", "Engineering"],
               ] as const
@@ -307,7 +318,7 @@ export function JsonCompare() {
             )}
           </div>
 
-          {/* Laser covers every result view - side-by-side, summary, tree, graph, engineering */}
+          {/* Laser covers every result view - side-by-side, summary, table, graph, engineering */}
           <div ref={laserHostRef} className="relative">
           {resultView === "side" && pair && (
           <div className="overflow-hidden rounded-xl border border-[#E8E2D8]">
@@ -346,7 +357,7 @@ export function JsonCompare() {
           )}
 
           {result && resultView === "tree" && pair && (
-            <TreeDiff
+            <DiffTable
               result={result}
               filter={catFilter}
               selectedId={selectedFindingId}
@@ -366,12 +377,48 @@ export function JsonCompare() {
           )}
 
           {result && resultView === "engineering" && (
-            <EngineeringTable
-              result={result}
-              filter={catFilter}
-              selectedId={selectedFindingId}
-              onSelect={setSelectedFindingId}
-            />
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-1.5" role="tablist" aria-label="Engineering styles">
+                {(
+                  [
+                    ["tabular", "Tabular"],
+                    ["detailed", "Detailed"],
+                  ] as const
+                ).map(([v, label]) => (
+                  <button
+                    key={v}
+                    role="tab"
+                    aria-selected={engStyle === v}
+                    onClick={() => setEngStyle(v)}
+                    className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
+                      engStyle === v
+                        ? "border-[#211F1B] bg-[#211F1B] text-white"
+                        : "border-[#E8E2D8] bg-white text-[#777168] hover:text-[#27241F]"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+                <span className="font-mono text-[11px] text-[#A39B8E]">
+                  {engStyle === "tabular" ? "Node · Value in A · Value in B" : "search, sort and copy per finding"}
+                </span>
+              </div>
+              {engStyle === "tabular" ? (
+                <DiffTable
+                  result={result}
+                  filter={catFilter}
+                  selectedId={selectedFindingId}
+                  onSelect={setSelectedFindingId}
+                />
+              ) : (
+                <EngineeringTable
+                  result={result}
+                  filter={catFilter}
+                  selectedId={selectedFindingId}
+                  onSelect={setSelectedFindingId}
+                />
+              )}
+            </div>
           )}
 
           {result && resultView !== "side" && (
