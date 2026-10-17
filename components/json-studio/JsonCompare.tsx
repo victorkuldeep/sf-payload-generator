@@ -38,7 +38,7 @@ export function JsonCompare() {
   useLaser(laser, setLaser);
   const [inputsOpen, setInputsOpen] = useState(true);
   const [resultView, setResultView] = useState<"side" | "summary" | "tree" | "graph" | "engineering">("side");
-  const [engStyle, setEngStyle] = useState<"tabular" | "detailed">("tabular");
+  const [engStyle, setEngStyle] = useState<"tabular" | "detailed">("detailed");
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
   const [catFilter, setCatFilter] = useState<Set<FindingCategory> | null>(null);
   const viewerRef = useRef<ViewerRef | null>(null);

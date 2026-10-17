@@ -1,6 +1,7 @@
 "use client";
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ChevronDown, ChevronUp, FoldVertical, Maximize2, Minus, PanelRight, Plus, RotateCcw, UnfoldVertical } from "lucide-react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -55,6 +56,18 @@ const TONE_DOT: Record<ChangeTone, string> = {
   type: "bg-[#7A5C9E]",
 };
 
+const EDGE_STROKE: Record<ChangeTone, string> = {
+  neutral: "#A39B8E",
+  added: "#32815B",
+  removed: "#B84C42",
+  modified: "#B98335",
+  type: "#7A5C9E",
+};
+
+function toneLabel(t: ChangeTone): string {
+  return t === "neutral" ? "unchanged" : t;
+}
+
 function JsonGraphNodeInner({ id, data, selected }: NodeProps<Node<JsonGraphNodeData>>) {
   return (
     <div
@@ -73,14 +86,19 @@ function JsonGraphNodeInner({ id, data, selected }: NodeProps<Node<JsonGraphNode
           data.onToggle(id);
         }
       }}
-      onClick={() => data.onSelect(id)}
+      onClick={() => {
+        // Clicking a container both selects it and opens/closes it.
+        if (data.expandable) data.onToggle(id);
+        data.onSelect(id);
+      }}
       className={`w-[232px] rounded-xl border-2 bg-white px-2.5 py-2 shadow-sm transition-colors ${TONE_BORDER[data.tone]} ${
         selected ? "ring-4 ring-[#A98450]/40" : ""
       }`}
     >
       <Handle type="target" position={Position.Top} style={{ opacity: 0, width: 2, height: 2, pointerEvents: "none" }} />
       <div className="flex items-center gap-1.5">
-        {data.expandable ? (
+        <span className={`h-2 w-2 shrink-0 rounded-full ${TONE_DOT[data.tone]}`} title={toneLabel(data.tone)} aria-hidden="true" />
+        {data.expandable && (
           <button
             type="button"
             onClick={(e) => {
@@ -92,8 +110,6 @@ function JsonGraphNodeInner({ id, data, selected }: NodeProps<Node<JsonGraphNode
           >
             {data.expanded ? "▾" : "▸"}
           </button>
-        ) : (
-          <span className={`h-2 w-2 shrink-0 rounded-full ${TONE_DOT[data.tone]}`} aria-hidden="true" />
         )}
         <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-[#27241F]" title={data.label}>
           {data.label}
@@ -167,13 +183,17 @@ function layouted(
       },
     };
   });
-  const edges: Edge[] = proj.edges.map((e) => ({
-    id: e.id,
-    source: e.source,
-    target: e.target,
-    type: "default",
-    style: { stroke: "#A39B8E", strokeWidth: 1.5 },
-  }));
+  const toneById = new Map(proj.nodes.map((n) => [n.id, n.tone] as const));
+  const edges: Edge[] = proj.edges.map((e) => {
+    const tone = toneById.get(e.target) ?? "neutral";
+    return {
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      type: "default",
+      style: { stroke: EDGE_STROKE[tone], strokeWidth: tone === "neutral" ? 1.5 : 2 },
+    };
+  });
   return { nodes, edges, pos, truncated: proj.truncated, visible: proj.visible, total: proj.total };
 }
 
@@ -303,6 +323,20 @@ function JsonGraphFlow({ doc, tones, onRevealInTree, selectedId: controlledId, o
       if (all.size >= 1500) break;
     }
     setExpanded(all);
+    // A blind refit after a big expansion zooms to microscopic nodes and the
+    // canvas reads as empty - center the root at a readable zoom instead.
+    window.setTimeout(() => {
+      const p = posRef.current.get(doc.rootId);
+      if (p) setCenter(p.x, p.y, { zoom: 0.85, duration: reducedMotion ? 0 : 250 });
+      else fitView({ padding: 0.15, maxZoom: 1, duration: reducedMotion ? 0 : 250 });
+    }, 120);
+  };
+
+  const collapseAll = () => {
+    setExpanded(new Set());
+    window.setTimeout(() => {
+      fitView({ padding: 0.15, maxZoom: 1, duration: reducedMotion ? 0 : 250 });
+    }, 60);
   };
 
   return (
@@ -333,27 +367,36 @@ function JsonGraphFlow({ doc, tones, onRevealInTree, selectedId: controlledId, o
         <Controls position="bottom-left" />
       </ReactFlow>
 
-      {/* Toolbar */}
-      <div className="absolute left-3 top-3 z-30 flex flex-wrap items-center gap-1.5">
+      {/* Toolbar - icon only, tooltips carry the labels */}
+      <div className="absolute left-3 top-3 z-30 flex flex-wrap items-center gap-1">
         <span className="rounded-lg border border-[#E8E2D8] bg-white px-2.5 py-1.5 text-[11px] font-medium text-[#777168]">
           {laid.visible}/{laid.total} nodes{laid.truncated ? " · capped" : ""}
         </span>
-        <button onClick={() => zoomIn({ duration: reducedMotion ? 0 : 200 })} aria-label="Zoom in" title="Zoom in" className="rounded-lg border border-[#E8E2D8] bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#777168] hover:text-[#27241F] transition-colors cursor-pointer">+</button>
-        <button onClick={() => zoomOut({ duration: reducedMotion ? 0 : 200 })} aria-label="Zoom out" title="Zoom out" className="rounded-lg border border-[#E8E2D8] bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#777168] hover:text-[#27241F] transition-colors cursor-pointer">−</button>
-        <button onClick={() => fitView({ padding: 0.15, duration: reducedMotion ? 0 : 250 })} title="Fit to view" className="rounded-lg border border-[#E8E2D8] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#777168] hover:text-[#27241F] transition-colors cursor-pointer">Fit</button>
-        <button
+        <ToolBtn label="Zoom in" onClick={() => zoomIn({ duration: reducedMotion ? 0 : 200 })}>
+          <Plus size={13} aria-hidden="true" />
+        </ToolBtn>
+        <ToolBtn label="Zoom out" onClick={() => zoomOut({ duration: reducedMotion ? 0 : 200 })}>
+          <Minus size={13} aria-hidden="true" />
+        </ToolBtn>
+        <ToolBtn label="Fit to view" onClick={() => fitView({ padding: 0.15, maxZoom: 1, duration: reducedMotion ? 0 : 250 })}>
+          <Maximize2 size={13} aria-hidden="true" />
+        </ToolBtn>
+        <ToolBtn
+          label="Reset view"
           onClick={() => {
             setExpanded(new Set());
             setSelectedId(null);
-            fitView({ padding: 0.15, duration: reducedMotion ? 0 : 250 });
+            fitView({ padding: 0.15, maxZoom: 1, duration: reducedMotion ? 0 : 250 });
           }}
-          title="Reset view"
-          className="rounded-lg border border-[#E8E2D8] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#777168] hover:text-[#27241F] transition-colors cursor-pointer"
         >
-          Reset
-        </button>
-        <button onClick={expandAll} title="Expand all (capped)" className="rounded-lg border border-[#E8E2D8] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#777168] hover:text-[#27241F] transition-colors cursor-pointer">Expand all</button>
-        <button onClick={() => setExpanded(new Set())} title="Collapse all to root" className="rounded-lg border border-[#E8E2D8] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#777168] hover:text-[#27241F] transition-colors cursor-pointer">Collapse</button>
+          <RotateCcw size={13} aria-hidden="true" />
+        </ToolBtn>
+        <ToolBtn label="Expand all (capped)" onClick={expandAll}>
+          <UnfoldVertical size={13} aria-hidden="true" />
+        </ToolBtn>
+        <ToolBtn label="Collapse all to root" onClick={collapseAll}>
+          <FoldVertical size={13} aria-hidden="true" />
+        </ToolBtn>
       </div>
 
       {/* Search */}
@@ -381,18 +424,17 @@ function JsonGraphFlow({ doc, tones, onRevealInTree, selectedId: controlledId, o
         </div>
         {hits.length > 0 && (
           <>
-            <button onClick={() => gotoHit((hitIndex - 1 + hits.length) % hits.length)} aria-label="Previous match" className="rounded-lg border border-[#E8E2D8] bg-white px-2 py-1 text-[11px] text-[#777168] hover:text-[#27241F] cursor-pointer">↑</button>
-            <button onClick={() => gotoHit((hitIndex + 1) % hits.length)} aria-label="Next match" className="rounded-lg border border-[#E8E2D8] bg-white px-2 py-1 text-[11px] text-[#777168] hover:text-[#27241F] cursor-pointer">↓</button>
+            <ToolBtn label="Previous match" onClick={() => gotoHit((hitIndex - 1 + hits.length) % hits.length)}>
+              <ChevronUp size={13} aria-hidden="true" />
+            </ToolBtn>
+            <ToolBtn label="Next match" onClick={() => gotoHit((hitIndex + 1) % hits.length)}>
+              <ChevronDown size={13} aria-hidden="true" />
+            </ToolBtn>
           </>
         )}
-        <button
-          onClick={() => setInspectorOpen((v) => !v)}
-          aria-pressed={inspectorOpen}
-          title="Toggle inspector"
-          className="rounded-lg border border-[#E8E2D8] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#777168] hover:text-[#27241F] transition-colors cursor-pointer"
-        >
-          {inspectorOpen ? "Hide panel" : "Inspector"}
-        </button>
+        <ToolBtn label={inspectorOpen ? "Hide inspector panel" : "Show inspector panel"} onClick={() => setInspectorOpen((v) => !v)}>
+          <PanelRight size={13} aria-hidden="true" />
+        </ToolBtn>
       </div>
 
       {/* Inspector */}
@@ -437,6 +479,20 @@ function JsonGraphFlow({ doc, tones, onRevealInTree, selectedId: controlledId, o
         </div>
       )}
     </div>
+  );
+}
+
+function ToolBtn({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className="rounded-lg border border-[#E8E2D8] bg-white p-1.5 text-[#777168] transition-colors hover:text-[#27241F] cursor-pointer"
+    >
+      {children}
+    </button>
   );
 }
 

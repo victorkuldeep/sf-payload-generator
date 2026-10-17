@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { parseJsonInput, formatBytes, formatJson, detectArrayMatchKey } from "./studio";
+import { parseJsonInput, formatBytes, formatJson, detectArrayMatchKey, diffTableTsv } from "./studio";
+import { compareDocuments } from "./compare";
 
 describe("parseJsonInput", () => {
   it("parses valid JSON", () => {
@@ -62,5 +63,28 @@ describe("detectArrayMatchKey", () => {
   it("returns empty when nothing qualifies", () => {
     expect(detectArrayMatchKey({ a: 1 }, { b: [1, 2, 3] })).toBe("");
     expect(detectArrayMatchKey({}, {})).toBe("");
+  });
+});
+
+
+describe("diffTableTsv", () => {
+  const rows = (a: unknown, b: unknown) =>
+    compareDocuments(a, b, { arrayMode: "lcs" }).findings.filter((f) =>
+      ["added", "removed", "modified"].includes(f.category)
+    );
+
+  it("renders Node, Value in A, Value in B with a header", () => {
+    const tsv = diffTableTsv(rows({ mrc: 100 }, { mrc: 200 }));
+    const lines = tsv.split("\n");
+    expect(lines[0]).toBe("Node\tValue in A\tValue in B");
+    expect(lines).toContain("$.mrc\t100\t200");
+  });
+  it("shows null for the absent side", () => {
+    expect(diffTableTsv(rows({ a: 1 }, {}))).toContain("$.a\t1\tnull");
+    expect(diffTableTsv(rows({}, { b: "x" }))).toContain("$.b\tnull\tx");
+  });
+  it("quotes cells containing tabs, newlines and quotes", () => {
+    const tsv = diffTableTsv(rows({ s: "a\tb" }, { s: 'say "hi"\nbye' }));
+    expect(tsv).toContain('$.s\t"a\tb"\t"say ""hi""\nbye"');
   });
 });

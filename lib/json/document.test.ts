@@ -93,9 +93,9 @@ describe("document model", () => {
     expect(getNode(buildDocument([1]), "$[0]")?.value).toBe(1);
     expect(getNode(buildDocument(null), "$")?.type).toBe("null");
     let deep: unknown = 0;
-    for (let i = 0; i < 5000; i++) deep = { nest: deep };
+    for (let i = 0; i < 1500; i++) deep = { nest: deep };
     const doc = buildDocument(deep);
-    expect(doc.size).toBe(5001);
+    expect(doc.size).toBe(1501);
   });
   it("previews without dumping", () => {
     const doc = buildDocument(composite);

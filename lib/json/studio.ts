@@ -1,3 +1,5 @@
+import type { Finding } from "./compare";
+
 export type JsonParseResult = { ok: true; value: unknown } | { ok: false; error: string };
 
 /** Parse with a human error (line-aware when V8 reports position). */
@@ -130,4 +132,25 @@ const SAMPLE_B = {
 
 export function samplePair(): { a: string; b: string } {
   return { a: formatJson(SAMPLE_A), b: formatJson(SAMPLE_B) };
+}
+
+/** Full-fidelity cell text for export (never truncated). */
+export function tableCellFull(v: unknown): string {
+  if (v === undefined || v === null) return "null";
+  if (typeof v === "string") return v;
+  return JSON.stringify(v) ?? "null";
+}
+
+/**
+ * Tab-separated Node / Value in A / Value in B rows: header + one line per
+ * finding, quoted per TSV rules. Pastes straight into Excel/Sheets.
+ */
+export function diffTableTsv(rows: Finding[]): string {
+  const esc = (sv: string) => (/[\t\n\r"]/.test(sv) ? '"' + sv.replace(/"/g, '""') + '"' : sv);
+  const nodeOf = (f: Finding): string => f.pathA ?? f.pathB ?? "$";
+  const lines = ["Node\tValue in A\tValue in B"];
+  for (const f of rows) {
+    lines.push(esc(nodeOf(f)) + "\t" + esc(tableCellFull(f.oldValue)) + "\t" + esc(tableCellFull(f.newValue)));
+  }
+  return lines.join("\n");
 }

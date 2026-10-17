@@ -1,8 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Check, Copy, FileSpreadsheet } from "lucide-react";
 import type { CompareResult, Finding, FindingCategory } from "@/lib/json/compare";
 import type { ChangeTone } from "@/lib/json/graph";
+import { buildExcelWorkbook, downloadExcelWorkbook } from "@/lib/excel/workbook";
+import { diffTableTsv } from "@/lib/json/studio";
 
 export const CATEGORY_META: { cat: FindingCategory; label: string; dot: string; text: string }[] = [
   { cat: "added", label: "Added", dot: "bg-[#32815B]", text: "text-[#32815B]" },
@@ -143,6 +146,25 @@ const TABLE_CATEGORIES: FindingCategory[] = [
   "unmatched",
 ];
 
+/** Full-fidelity cell text for export (never truncated). */
+function tableCellFull(v: unknown): string {
+  if (v === undefined || v === null) return "null";
+  if (typeof v === "string") return v;
+  return JSON.stringify(v) ?? "null";
+}
+
+async function downloadDiffTableXlsx(rows: Finding[]): Promise<void> {
+  const wb = await buildExcelWorkbook([
+    {
+      name: "Diff",
+      header: ["Node", "Value in A", "Value in B"],
+      rows: rows.map((f) => [displayPath(f), tableCellFull(f.oldValue), tableCellFull(f.newValue)]),
+      widths: [64, 48, 48],
+    },
+  ]);
+  await downloadExcelWorkbook(wb, "json-compare-diff.xlsx");
+}
+
 /** Cell text: primitives raw, absent side as null, containers compact. */
 function tableCell(v: unknown): string {
   if (v === undefined || v === null) return "null";
@@ -170,8 +192,44 @@ export function DiffTable({
       .sort((a, b) => (displayPath(a) < displayPath(b) ? -1 : 1));
   }, [result, filter]);
 
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const copyExcel = async () => {
+    try {
+      await navigator.clipboard.writeText(diffTableTsv(rows));
+      setCopied("excel");
+      window.setTimeout(() => setCopied(null), 1400);
+    } catch {
+      /* clipboard unavailable */
+    }
+  };
+
   return (
     <div className="overflow-hidden rounded-xl border border-[#E8E2D8] bg-white">
+      <div className="flex items-center gap-1 border-b border-[#E8E2D8] px-2.5 py-1.5">
+        <span className="font-mono text-[11px] text-[#A39B8E]">
+          {rows.length === 0 ? "no changes" : `${rows.length} change${rows.length === 1 ? "" : "s"}`}
+        </span>
+        <span className="flex-1" />
+        <button
+          type="button"
+          onClick={() => void copyExcel()}
+          title="Copy as Excel - tab-separated, pastes straight into a spreadsheet"
+          aria-label="Copy table as Excel"
+          className="rounded-md border border-[#E8E2D8] p-1.5 text-[#777168] transition-colors hover:border-[#A98450] hover:text-[#27241F] cursor-pointer"
+        >
+          {copied === "excel" ? <Check size={13} aria-hidden="true" /> : <Copy size={13} aria-hidden="true" />}
+        </button>
+        <button
+          type="button"
+          onClick={() => void downloadDiffTableXlsx(rows)}
+          title="Download as Excel (.xlsx)"
+          aria-label="Download table as Excel"
+          className="rounded-md border border-[#E8E2D8] p-1.5 text-[#777168] transition-colors hover:border-[#A98450] hover:text-[#27241F] cursor-pointer"
+        >
+          <FileSpreadsheet size={13} aria-hidden="true" />
+        </button>
+      </div>
       <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 border-b border-[#E8E2D8] bg-[#F8F6F0] px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-wider text-[#A39B8E]">
         <span>Node</span>
         <span>Value in A</span>
@@ -227,7 +285,9 @@ export function EngineeringTable({
   onSelect: (id: string | null) => void;
 }) {
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<"path" | "category">("path");
+  const [sort, setSort] = useState<"path" | "category" | "depth">("path");
+
+  const depthOf = (f: Finding): number => (displayPath(f).match(/[.\[]/g) ?? []).length;
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -242,16 +302,13 @@ export function EngineeringTable({
           JSON.stringify(f.newValue ?? f.oldValue ?? "").toLowerCase().includes(q)
       );
     }
-    list.sort((a, b) =>
-      sort === "path"
-        ? displayPath(a) < displayPath(b)
-          ? -1
-          : 1
-        : a.category < b.category
-          ? -1
-          : 1
-    );
+    list.sort((a, b) => {
+      if (sort === "category") return a.category < b.category ? -1 : 1;
+      if (sort === "depth") return depthOf(a) - depthOf(b) || (displayPath(a) < displayPath(b) ? -1 : 1);
+      return displayPath(a) < displayPath(b) ? -1 : 1;
+    });
     return list;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result, filter, search, sort]);
 
   const selected = result.findings.find((f) => f.id === selectedId) ?? null;
@@ -279,7 +336,7 @@ export function EngineeringTable({
           className="min-w-[160px] flex-1 rounded-md border border-[#E8E2D8] px-2 py-1 font-mono text-[12px] focus:border-[#A98450] focus:outline-none"
         />
         <button
-          onClick={() => setSort(sort === "path" ? "category" : "path")}
+          onClick={() => setSort(sort === "path" ? "category" : sort === "category" ? "depth" : "path")}
           title="Toggle sort"
           className="rounded-md border border-[#E8E2D8] px-2 py-1 font-mono text-[11px] text-[#777168] hover:text-[#27241F] cursor-pointer"
         >
@@ -289,38 +346,59 @@ export function EngineeringTable({
       </div>
 
       <div className="overflow-hidden rounded-xl border border-[#E8E2D8] bg-white">
-        <div className="max-h-[420px] overflow-y-auto">
-          {rows.length === 0 && (
-            <p className="px-4 py-8 text-center text-[13px] text-[#A39B8E]">
-              {result.findings.length === 0 ? "No differences - documents match." : "No findings match."}
-            </p>
-          )}
-          {rows.map((f) => {
-            const meta = CATEGORY_META.find((c) => c.cat === f.category);
-            const isSel = f.id === selectedId;
-            return (
-              <button
-                key={f.id}
-                onClick={() => onSelect(isSel ? null : f.id)}
-                className={`grid w-full cursor-pointer grid-cols-[110px_minmax(0,1fr)] items-start gap-2 border-b border-[#E8E2D8] px-3 py-2 text-left transition-colors last:border-b-0 sm:grid-cols-[130px_minmax(0,1.4fr)_minmax(0,1fr)] ${
-                  isSel ? "bg-[#211F1B] text-white" : "hover:bg-[#F5F1E8]"
-                }`}
-              >
-                <span className="flex items-center gap-1.5 text-[11px] font-semibold">
-                  <span className={`h-2 w-2 shrink-0 rounded-full ${meta?.dot ?? ""}`} aria-hidden="true" />
-                  <span className={isSel ? "text-white" : meta?.text ?? ""}>{meta?.label}</span>
-                </span>
-                <span className={`min-w-0 truncate font-mono text-[11px] ${isSel ? "text-white/80" : "text-[#27241F]"}`} title={displayPath(f)}>
-                  {displayPath(f)}
-                </span>
-                <span className={`hidden min-w-0 truncate font-mono text-[11px] sm:block ${isSel ? "text-white/60" : "text-[#A39B8E]"}`} title={f.explanation}>
-                  {f.oldValue !== undefined && f.newValue !== undefined
-                    ? `${formatValue(f.oldValue, 30)} → ${formatValue(f.newValue, 30)}`
-                    : formatValue(f.newValue ?? f.oldValue, 60)}
-                </span>
-              </button>
-            );
-          })}
+        <div className="overflow-x-auto">
+          <div className="min-w-[760px]">
+            <div className="grid grid-cols-[120px_minmax(0,1.5fr)_52px_minmax(0,1fr)_minmax(0,1fr)] gap-2 border-b border-[#E8E2D8] bg-[#F8F6F0] px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-wider text-[#A39B8E]">
+              <span>Change</span>
+              <span>Node</span>
+              <span>Depth</span>
+              <span>Value in A</span>
+              <span>Value in B</span>
+            </div>
+            <div className="max-h-[420px] overflow-y-auto">
+              {rows.length === 0 && (
+                <p className="px-4 py-8 text-center text-[13px] text-[#A39B8E]">
+                  {result.findings.length === 0 ? "No differences - documents match." : "No findings match."}
+                </p>
+              )}
+              {rows.map((f) => {
+                const meta = CATEGORY_META.find((c) => c.cat === f.category);
+                const isSel = f.id === selectedId;
+                const diverged = f.pathA !== null && f.pathB !== null && f.pathA !== f.pathB;
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() => onSelect(isSel ? null : f.id)}
+                    className={`grid w-full cursor-pointer grid-cols-[120px_minmax(0,1.5fr)_52px_minmax(0,1fr)_minmax(0,1fr)] items-start gap-2 border-b border-[#E8E2D8] px-3 py-2 text-left transition-colors last:border-b-0 ${
+                      isSel ? "bg-[#211F1B] text-white" : "hover:bg-[#F5F1E8]"
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5 text-[11px] font-semibold">
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${meta?.dot ?? ""}`} aria-hidden="true" />
+                      <span className={isSel ? "text-white" : meta?.text ?? ""}>{meta?.label}</span>
+                    </span>
+                    <span className="min-w-0">
+                      <span className={`block truncate font-mono text-[11px] ${isSel ? "text-white" : "text-[#27241F]"}`} title={displayPath(f)}>
+                        {displayPath(f)}
+                      </span>
+                      {diverged && (
+                        <span className={`block truncate font-mono text-[10px] ${isSel ? "text-white/60" : "text-[#A39B8E]"}`} title={f.pathB ?? ""}>
+                          in B: {f.pathB}
+                        </span>
+                      )}
+                    </span>
+                    <span className={`font-mono text-[11px] ${isSel ? "text-white/70" : "text-[#A39B8E]"}`}>{depthOf(f)}</span>
+                    <span className={`min-w-0 truncate font-mono text-[11px] ${isSel ? "text-white/70" : "text-[#777168]"}`} title={formatValue(f.oldValue, 200)}>
+                      {f.oldValue !== undefined ? formatValue(f.oldValue, 44) : "null"}
+                    </span>
+                    <span className={`min-w-0 truncate font-mono text-[11px] ${isSel ? "text-white/80" : "text-[#27241F]"}`} title={formatValue(f.newValue, 200)}>
+                      {f.newValue !== undefined ? formatValue(f.newValue, 44) : "null"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -338,6 +416,17 @@ export function EngineeringTable({
             )}
           </div>
           <p className="mt-1.5 text-[13px] text-[#27241F]">{selected.explanation}</p>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-[#A39B8E]">
+            <span>depth {depthOf(selected)}</span>
+            <span>type {selected.oldType ?? "missing"} -&gt; {selected.newType ?? "missing"}</span>
+            {selected.matchKey && <span>match {selected.matchKey} · {selected.matchStatus}</span>}
+          </div>
+          {selected.pathA !== null && selected.pathB !== null && selected.pathA !== selected.pathB && (
+            <div className="mt-2 grid gap-2 font-mono text-[11px] sm:grid-cols-2">
+              <p className="truncate rounded-lg bg-[#F8F6F0] px-2 py-1 text-[#777168]" title={selected.pathA}>A: {selected.pathA}</p>
+              <p className="truncate rounded-lg bg-[#F8F6F0] px-2 py-1 text-[#27241F]" title={selected.pathB}>B: {selected.pathB}</p>
+            </div>
+          )}
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
             <div className="rounded-lg bg-[#F8F6F0] p-2">
               <p className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#A39B8E]">
@@ -356,11 +445,6 @@ export function EngineeringTable({
               </pre>
             </div>
           </div>
-          {selected.matchKey && (
-            <p className="mt-1.5 font-mono text-[11px] text-[#A39B8E]">
-              match {selected.matchKey} · {selected.matchStatus}
-            </p>
-          )}
         </div>
       )}
     </div>

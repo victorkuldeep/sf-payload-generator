@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { buildDocument, type JsonDocument } from "@/lib/json/document";
 import type { Finding, FindingCategory } from "@/lib/json/compare";
+import type { ChangeTone } from "@/lib/json/graph";
 import { JsonGraph } from "./JsonGraph";
 import { tonesForSide } from "./CompareFindings";
 
@@ -18,6 +19,37 @@ function includeSet(doc: JsonDocument, ids: Iterable<string>): Set<string> {
     }
   }
   return keep;
+}
+
+const LEGEND_DOT: Record<ChangeTone, string> = {
+  neutral: "bg-[#A39B8E]",
+  added: "bg-[#32815B]",
+  removed: "bg-[#B84C42]",
+  modified: "bg-[#B98335]",
+  type: "bg-[#7A5C9E]",
+};
+
+/** Changed-node counts per tone so each canvas reads as a diff at a glance. */
+function ToneLegend({ tones, total }: { tones: Map<string, ChangeTone>; total: number }) {
+  const counts = new Map<ChangeTone, number>();
+  for (const t of tones.values()) counts.set(t, (counts.get(t) ?? 0) + 1);
+  const parts = (["added", "removed", "modified", "type"] as ChangeTone[])
+    .map((tone) => ({ tone, n: counts.get(tone) ?? 0 }))
+    .filter((p) => p.n > 0);
+  const changed = parts.reduce((s, p) => s + p.n, 0);
+  return (
+    <span className="ml-2 inline-flex flex-wrap items-center gap-x-2 gap-y-0.5 align-middle font-sans text-[10px] font-medium normal-case tracking-normal text-[#777168]">
+      <span>
+        {changed}/{total} changed
+      </span>
+      {parts.map((p) => (
+        <span key={p.tone} className="inline-flex items-center gap-1">
+          <span className={`h-1.5 w-1.5 rounded-full ${LEGEND_DOT[p.tone]}`} aria-hidden="true" />
+          {p.tone} {p.n}
+        </span>
+      ))}
+    </span>
+  );
 }
 
 /**
@@ -74,7 +106,10 @@ export function CompareGraph({
   return (
     <div className="grid items-start gap-4 lg:grid-cols-2">
       <div>
-        <p className="mb-1.5 font-mono text-[11px] font-bold text-[#777168]">A · source</p>
+        <p className="mb-1.5 font-mono text-[11px] font-bold text-[#777168]">
+          A · source
+          <ToneLegend tones={tonesA} total={docA.size} />
+        </p>
         <JsonGraph
           doc={docA}
           tones={tonesA}
@@ -84,7 +119,10 @@ export function CompareGraph({
         />
       </div>
       <div>
-        <p className="mb-1.5 font-mono text-[11px] font-bold text-[#777168]">B · target</p>
+        <p className="mb-1.5 font-mono text-[11px] font-bold text-[#777168]">
+          B · target
+          <ToneLegend tones={tonesB} total={docB.size} />
+        </p>
         <JsonGraph
           doc={docB}
           tones={tonesB}
