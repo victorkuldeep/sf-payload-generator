@@ -94,6 +94,12 @@ export function CompareGraph({
   const selA = finding?.pathA ?? null;
   const selB = finding?.pathB ?? null;
 
+  // Paired values for the selection: both inspectors render the inline change.
+  const compareValues =
+    finding && finding.oldValue !== undefined && finding.newValue !== undefined
+      ? { oldValue: finding.oldValue, newValue: finding.newValue }
+      : null;
+
   const selectFrom = (side: "a" | "b") => (nodeId: string | null) => {
     if (nodeId === null) {
       onSelect(null);
@@ -114,6 +120,7 @@ export function CompareGraph({
           doc={docA}
           tones={tonesA}
           includeOnly={includeA}
+          compareValues={compareValues}
           selectedId={selA}
           onSelect={selectFrom("a")}
         />
@@ -127,6 +134,7 @@ export function CompareGraph({
           doc={docB}
           tones={tonesB}
           includeOnly={includeB}
+          compareValues={compareValues}
           selectedId={selB}
           onSelect={selectFrom("b")}
         />

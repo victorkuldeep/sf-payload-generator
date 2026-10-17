@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronUp, FoldVertical, Maximize2, Minus, PanelRight, Plus, RotateCcw, UnfoldVertical } from "lucide-react";
+import { Braces, ChevronDown, ChevronUp, Copy, FoldVertical, Link2, ListFilter, ListTree, Maximize2, Minus, PanelRight, Plus, RotateCcw, UnfoldVertical } from "lucide-react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -23,6 +23,7 @@ import type { JsonDocument } from "@/lib/json/document";
 import { ancestorIds, getNode } from "@/lib/json/document";
 import { projectGraph, searchGraphModel, type ChangeTone } from "@/lib/json/graph";
 import { stringifyPath } from "@/lib/json/path";
+import { diffSegments } from "@/lib/json/diffText";
 
 interface JsonGraphNodeData extends Record<string, unknown> {
   label: string;
@@ -40,12 +41,14 @@ interface JsonGraphNodeData extends Record<string, unknown> {
 const NODE_W = 232;
 const NODE_H = 78;
 
+// Changed nodes draw a burgundy border - the tone dots keep the exact
+// change color (added / removed / modified / type) so both read at once.
 const TONE_BORDER: Record<ChangeTone, string> = {
   neutral: "border-[#E8E2D8]",
-  added: "border-[#32815B]",
-  removed: "border-[#B84C42]",
-  modified: "border-[#B98335]",
-  type: "border-[#7A5C9E]",
+  added: "border-[#722F37]",
+  removed: "border-[#722F37]",
+  modified: "border-[#722F37]",
+  type: "border-[#722F37]",
 };
 
 const TONE_DOT: Record<ChangeTone, string> = {
@@ -91,7 +94,7 @@ function JsonGraphNodeInner({ id, data, selected }: NodeProps<Node<JsonGraphNode
         if (data.expandable) data.onToggle(id);
         data.onSelect(id);
       }}
-      className={`w-[232px] rounded-xl border-2 bg-white px-2.5 py-2 shadow-sm transition-colors ${TONE_BORDER[data.tone]} ${
+      className={`w-[232px] rounded-xl border-2 bg-white px-2.5 py-2 shadow-sm transition-colors ${TONE_BORDER[data.tone]} ${data.tone !== "neutral" ? "ring-1 ring-[#722F37]/40" : ""} ${
         selected ? "ring-4 ring-[#A98450]/40" : ""
       }`}
     >
@@ -143,6 +146,8 @@ export interface JsonGraphProps {
   onSelect?: (id: string | null) => void;
   /** Render subset + ancestors (change-category filters). */
   includeOnly?: Set<string> | null;
+  /** Paired A/B values for the selection: renders an inline change highlight. Diff views only. */
+  compareValues?: { oldValue: unknown; newValue: unknown } | null;
 }
 
 function layouted(
@@ -201,7 +206,7 @@ function layouted(
  * Read-only JSON graph: hierarchical canvas, search across the full
  * model, inspector with copy actions, reveal-in-tree sync.
  */
-function JsonGraphFlow({ doc, tones, onRevealInTree, selectedId: controlledId, onSelect, includeOnly }: JsonGraphProps) {
+function JsonGraphFlow({ doc, tones, onRevealInTree, selectedId: controlledId, onSelect, includeOnly, compareValues }: JsonGraphProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<JsonGraphNodeData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -211,10 +216,13 @@ function JsonGraphFlow({ doc, tones, onRevealInTree, selectedId: controlledId, o
     (id: string | null) => {
       if (onSelect) onSelect(id);
       else setInternalSelectedId(id);
+      // Selecting a node always reveals the inspector - hiding stays manual.
+      if (id !== null) setInspectorOpen(true);
     },
     [onSelect]
   );
   const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [diffOnly, setDiffOnly] = useState(false);
   const [query, setQuery] = useState("");
   const [hitIndex, setHitIndex] = useState(0);
   const [copied, setCopied] = useState<string | null>(null);
@@ -245,10 +253,34 @@ function JsonGraphFlow({ doc, tones, onRevealInTree, selectedId: controlledId, o
     }
   }, [docKey, lastDocKey, setSelectedId]);
 
+  // Changed-nodes-only scope: every changed node plus its ancestors, so a
+  // 5-diff needle in a 500-node haystack stays traversable. Intersects with
+  // the category filter when both are active.
+  const diffOnlySet = useMemo(() => {
+    if (!diffOnly || !tones) return null;
+    const keep = new Set<string>();
+    for (const [id, tone] of tones) {
+      if (tone === "neutral") continue;
+      let cur: string | null = id;
+      const guard = new Set<string>();
+      while (cur !== null && !guard.has(cur) && doc.nodes.has(cur)) {
+        guard.add(cur);
+        keep.add(cur);
+        cur = doc.nodes.get(cur)?.parent ?? null;
+      }
+    }
+    return keep;
+  }, [diffOnly, tones, doc]);
+
+  const effectiveInclude = useMemo(() => {
+    if (diffOnlySet && includeOnly) return new Set([...diffOnlySet].filter((id) => includeOnly.has(id)));
+    return diffOnlySet ?? includeOnly;
+  }, [diffOnlySet, includeOnly]);
+
   const laid = useMemo(
-    () => layouted(doc, expanded, tones, onToggle, setSelectedId, includeOnly),
+    () => layouted(doc, expanded, tones, onToggle, setSelectedId, effectiveInclude),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [doc, expanded, tones, includeOnly]
+    [doc, expanded, tones, effectiveInclude]
   );
 
   useEffect(() => {
@@ -395,8 +427,17 @@ function JsonGraphFlow({ doc, tones, onRevealInTree, selectedId: controlledId, o
           <UnfoldVertical size={13} aria-hidden="true" />
         </ToolBtn>
         <ToolBtn label="Collapse all to root" onClick={collapseAll}>
-          <FoldVertical size={13} aria-hidden="true" />
+          <FoldVertical size={13} aria-hidden={true} />
         </ToolBtn>
+        {tones && (
+          <ToolBtn
+            label={diffOnly ? "Show all nodes" : "Show changed nodes only"}
+            onClick={() => setDiffOnly((v) => !v)}
+            active={diffOnly}
+          >
+            <ListFilter size={13} aria-hidden={true} />
+          </ToolBtn>
+        )}
       </div>
 
       {/* Search */}
@@ -432,7 +473,7 @@ function JsonGraphFlow({ doc, tones, onRevealInTree, selectedId: controlledId, o
             </ToolBtn>
           </>
         )}
-        <ToolBtn label={inspectorOpen ? "Hide inspector panel" : "Show inspector panel"} onClick={() => setInspectorOpen((v) => !v)}>
+        <ToolBtn label={inspectorOpen ? "Hide inspector panel" : "Show inspector panel"} onClick={() => setInspectorOpen((v) => !v)} active={!inspectorOpen}>
           <PanelRight size={13} aria-hidden="true" />
         </ToolBtn>
       </div>
@@ -457,22 +498,25 @@ function JsonGraphFlow({ doc, tones, onRevealInTree, selectedId: controlledId, o
                 {JSON.stringify(selected.value, null, 2) ?? "—"}
               </pre>
             </div>
+            {compareValues && (
+              <ChangeBlock oldValue={compareValues.oldValue} newValue={compareValues.newValue} />
+            )}
           </div>
           <div className="flex flex-wrap gap-1.5 border-t border-[#E8E2D8] px-3 py-2">
-            <button onClick={() => void copyText(stringifyPath(selected.path), "path")} className="rounded-md border border-[#E8E2D8] px-2 py-1 text-[11px] hover:border-[#A98450] transition-colors cursor-pointer">
-              {copied === "path" ? "Copied" : "Copy path"}
+            <button onClick={() => void copyText(stringifyPath(selected.path), "path")} className="inline-flex items-center gap-1 rounded-md border border-[#E8E2D8] px-2 py-1 text-[11px] hover:border-[#A98450] transition-colors cursor-pointer">
+              {copied === "path" ? "Copied" : (<><Link2 size={12} aria-hidden="true" /> Copy path</>)}
             </button>
-            <button onClick={() => void copyText(JSON.stringify(selected.value), "value")} className="rounded-md border border-[#E8E2D8] px-2 py-1 text-[11px] hover:border-[#A98450] transition-colors cursor-pointer">
-              {copied === "value" ? "Copied" : "Copy JSON value"}
+            <button onClick={() => void copyText(JSON.stringify(selected.value), "value")} className="inline-flex items-center gap-1 rounded-md border border-[#E8E2D8] px-2 py-1 text-[11px] hover:border-[#A98450] transition-colors cursor-pointer">
+              {copied === "value" ? "Copied" : (<><Braces size={12} aria-hidden="true" /> Copy JSON value</>)}
             </button>
             {(selected.type === "object" || selected.type === "array") && (
-              <button onClick={() => void copyText(JSON.stringify(selected.value, null, 2), "subtree")} className="rounded-md border border-[#E8E2D8] px-2 py-1 text-[11px] hover:border-[#A98450] transition-colors cursor-pointer">
-                {copied === "subtree" ? "Copied" : "Copy subtree"}
+              <button onClick={() => void copyText(JSON.stringify(selected.value, null, 2), "subtree")} className="inline-flex items-center gap-1 rounded-md border border-[#E8E2D8] px-2 py-1 text-[11px] hover:border-[#A98450] transition-colors cursor-pointer">
+                {copied === "subtree" ? "Copied" : (<><Copy size={12} aria-hidden="true" /> Copy subtree</>)}
               </button>
             )}
             {onRevealInTree && (
-              <button onClick={() => onRevealInTree(selected.path)} className="rounded-md bg-[#211F1B] px-2 py-1 text-[11px] font-semibold text-white hover:opacity-90 transition-opacity cursor-pointer">
-                Reveal in tree
+              <button onClick={() => onRevealInTree(selected.path)} className="inline-flex items-center gap-1 rounded-md bg-[#211F1B] px-2 py-1 text-[11px] font-semibold text-white hover:opacity-90 transition-opacity cursor-pointer">
+                <ListTree size={12} aria-hidden="true" /> Reveal in tree
               </button>
             )}
           </div>
@@ -482,17 +526,60 @@ function JsonGraphFlow({ doc, tones, onRevealInTree, selectedId: controlledId, o
   );
 }
 
-function ToolBtn({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+function ToolBtn({ label, onClick, children, active }: { label: string; onClick: () => void; children: ReactNode; active?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
       title={label}
       aria-label={label}
-      className="rounded-lg border border-[#E8E2D8] bg-white p-1.5 text-[#777168] transition-colors hover:text-[#27241F] cursor-pointer"
+      aria-pressed={active ?? undefined}
+      className={`rounded-lg border p-1.5 transition-colors cursor-pointer ${active ? "border-[#211F1B] bg-[#211F1B] text-white" : "border-[#E8E2D8] bg-white text-[#777168] hover:text-[#27241F]"}`}
     >
       {children}
     </button>
+  );
+}
+
+function ChangeBlock({ oldValue, newValue }: { oldValue: unknown; newValue: unknown }) {
+  const stra = typeof oldValue === "string" ? oldValue : (JSON.stringify(oldValue, null, 2) ?? "");
+  const strb = typeof newValue === "string" ? newValue : (JSON.stringify(newValue, null, 2) ?? "");
+  const segs = diffSegments(stra, strb);
+  const paint = (side: "a" | "b") => {
+    if (!segs) {
+      const text = side === "a" ? stra : strb;
+      return <pre className="mt-0.5 max-h-40 overflow-auto rounded-lg bg-[#F8F6F0] p-2 font-mono text-[11px] text-[#27241F]">{text}</pre>;
+    }
+    return (
+      <pre className="mt-0.5 max-h-40 overflow-auto rounded-lg bg-[#F8F6F0] p-2 font-mono text-[11px] text-[#27241F] whitespace-pre-wrap break-all">
+        {segs
+          .filter((s) => (side === "a" ? s.kind !== "add" : s.kind !== "del"))
+          .map((s, k) =>
+            s.kind === "same" ? (
+              <span key={k}>{s.text}</span>
+            ) : (
+              <span key={k} className={s.kind === "del" ? "bg-[#F3D9D4] text-[#8B4049]" : "bg-[#D9EBDE] text-[#2F7D4F]"}>
+                {s.text}
+              </span>
+            )
+          )}
+      </pre>
+    );
+  };
+  return (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-[#A39B8E]">Change A to B</p>
+      <div className="mt-0.5 space-y-1.5">
+        <div>
+          <p className="font-mono text-[10px] text-[#A39B8E]">A</p>
+          {paint("a")}
+        </div>
+        <div>
+          <p className="font-mono text-[10px] text-[#A39B8E]">B</p>
+          {paint("b")}
+        </div>
+      </div>
+    </div>
   );
 }
 
