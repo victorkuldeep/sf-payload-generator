@@ -499,7 +499,7 @@ export function RecordPopover({
                   : `${shownCandidates.length} records aboard - pick one to visualize`}
             </p>
             {tabbed && (
-              <div className="mt-1.5 flex flex-wrap gap-1" role="tablist" aria-label="Parent records">
+              <div className="mt-1.5 flex flex-nowrap gap-1 overflow-x-auto pb-0.5" role="tablist" aria-label="Parent records">
                 <button
                   type="button"
                   role="tab"
@@ -522,7 +522,7 @@ export function RecordPopover({
                     aria-selected={activeTab?.key === g.key}
                     onClick={() => setCandTab(g.key)}
                     title={g.label}
-                    className={`max-w-[140px] truncate rounded-md border px-1.5 py-0.5 text-[10px] font-semibold transition-colors cursor-pointer ${
+                    className={`shrink-0 whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[10px] font-semibold transition-colors cursor-pointer ${
                       activeTab?.key === g.key
                         ? "border-bronze-400 bg-bronze-100 text-bronze-700"
                         : "border-[var(--color-line-soft)] text-ivory-500 hover:text-ivory-950"
@@ -572,14 +572,14 @@ export function RecordPopover({
             )}
           </div>
         )}
-        {pop.mode === "record" && pop.candidates.length > 1 && (
+        {pop.mode === "record" && pop.candidates.length > 0 && (
           <div className="px-1 pb-1">
             <button
               type="button"
               onClick={() => onModeChange("picker")}
               className="text-[11px] font-semibold text-bronze-600 hover:text-bronze-700 cursor-pointer"
             >
-              ← {pop.candidates.length} records aboard
+              ← {pop.candidates.length} record{pop.candidates.length === 1 ? "" : "s"} aboard
             </button>
           </div>
         )}

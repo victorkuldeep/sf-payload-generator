@@ -1415,7 +1415,8 @@ export default function SchemaPanel({
     setRecordPopError(null);
     // Live already? Converge first: parents loaded after the last pull get
     // their first page now, so every on-canvas parent is represented. The
-    // eye never dumps data on first pull; the entity box carries it instead.
+    // eye always lands on the list (even for one record) - the entity box
+    // carries the visualized row while the eye offers list + Inspect.
     if (knownIdsFor(recordStoreRef.current, apiName).length > 0) {
       if (recordBusyRef.current) return;
       setRecordBusy(apiName);
@@ -1426,7 +1427,7 @@ export default function SchemaPanel({
         recordBusyRef.current = null;
         setRecordBusy(null);
       }
-      setRecordPop({ apiName, x: anchor.x, y: anchor.y, mode: "record" });
+      setRecordPop({ apiName, x: anchor.x, y: anchor.y, mode: "picker" });
       return;
     }
     const plan = resolveTarget(apiName, recordStoreRef.current, recordCtxRef.current);
@@ -1448,7 +1449,6 @@ export default function SchemaPanel({
         // children (Task, junctions) never skip a parent's rows. One denied
         // parent fails into the banner without sinking the others.
         const plans = resolveChildPlans(apiName, recordStoreRef.current, recordCtxRef.current);
-        let total = 0;
         let firstId: string | null = null;
         for (const p of plans) {
           let rows: Record<string, unknown>[] = [];
@@ -1458,24 +1458,18 @@ export default function SchemaPanel({
             setRecordPopError(err instanceof Error ? err.message : "Record pull failed.");
             continue;
           }
-          total += rows.length;
           if (!firstId) {
             const fid = rows[0]?.Id;
             if (typeof fid === "string" && fid) firstId = fid;
           }
         }
-        if (total === 0) {
-          setRecordPop({ apiName, x: anchor.x, y: anchor.y, mode: "picker" });
-          return;
-        }
         // First row visualizes by default (full row, not the list subset).
         if (firstId) {
           pulled.push({ api: apiName, fields: await pullSingle(apiName, firstId) });
         }
-        // Many rows: open the picker table so one can be chosen.
-        if (total > 1) {
-          setRecordPop({ apiName, x: anchor.x, y: anchor.y, mode: "picker" });
-        }
+        // Always land on the list - even one row gets list + Inspect, so the
+        // eye never strands the architect without a way back.
+        setRecordPop({ apiName, x: anchor.x, y: anchor.y, mode: "picker" });
       }
       for (const p of pulled) void prefetchRefLabelsRef.current(p.api, p.fields);
     } catch (err) {

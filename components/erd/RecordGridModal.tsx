@@ -182,7 +182,7 @@ export function RecordGridModal({
             </button>
           </div>
           {tabbed && (
-            <div className="mt-2 flex flex-wrap gap-1" role="tablist" aria-label="Parent records">
+            <div className="mt-2 flex flex-nowrap gap-1 overflow-x-auto pb-0.5" role="tablist" aria-label="Parent records">
               <button
                 type="button"
                 role="tab"
@@ -205,7 +205,7 @@ export function RecordGridModal({
                   aria-selected={activeGroup?.key === g.key}
                   onClick={() => setGroupKey(g.key)}
                   title={g.label}
-                  className={`max-w-[220px] truncate rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
+                  className={`shrink-0 whitespace-nowrap rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
                     activeGroup?.key === g.key
                       ? "border-bronze-400 bg-bronze-100 text-bronze-700"
                       : "border-[var(--color-line)] bg-white text-ivory-500 hover:text-ivory-950"
