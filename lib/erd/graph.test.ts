@@ -177,12 +177,13 @@ describe("standard relationship targets", () => {
 });
 
 describe("detectJunction", () => {
+  const noMd = new Map<string, boolean>();
   it("flags 2+ required non-system lookups as junction", () => {
     const d = desc("X__c", [
       { name: "A__c", type: "reference", nillable: false, referenceTo: ["A__c"] },
       { name: "B__c", type: "reference", nillable: false, referenceTo: ["B__c"] },
     ]);
-    expect(detectJunction(d)).toBe(true);
+    expect(detectJunction(d, noMd)).toBe(true);
   });
   it("ignores CreatedById / LastModifiedById / OwnerId", () => {
     const d = desc("Account", [
@@ -190,20 +191,33 @@ describe("detectJunction", () => {
       { name: "LastModifiedById", type: "reference", nillable: false, referenceTo: ["User"] },
       { name: "OwnerId", type: "reference", nillable: false, referenceTo: ["User"] },
     ]);
-    expect(detectJunction(d)).toBe(false);
+    expect(detectJunction(d, noMd)).toBe(false);
   });
   it("does not flag single lookup", () => {
     const d = desc("X__c", [
       { name: "A__c", type: "reference", nillable: false, referenceTo: ["A__c"] },
     ]);
-    expect(detectJunction(d)).toBe(false);
+    expect(detectJunction(d, noMd)).toBe(false);
   });
-  it("nillable lookups don't count", () => {
+  it("nillable lookups don't count without a master-detail leg", () => {
     const d = desc("X__c", [
       { name: "A__c", type: "reference", nillable: true, referenceTo: ["A__c"] },
       { name: "B__c", type: "reference", nillable: true, referenceTo: ["B__c"] },
     ]);
-    expect(detectJunction(d)).toBe(false);
+    expect(detectJunction(d, noMd)).toBe(false);
+  });
+  it("flags a master-detail leg paired with an optional lookup", () => {
+    const d = desc("J__c", [
+      { name: "MD__c", type: "reference", nillable: false, referenceTo: ["P__c"] },
+      { name: "LK__c", type: "reference", nillable: true, referenceTo: ["Q__c"] },
+    ]);
+    expect(detectJunction(d, new Map([["J__c::MD__c", true]]))).toBe(true);
+  });
+  it("does not flag a lone master-detail leg", () => {
+    const d = desc("J__c", [
+      { name: "MD__c", type: "reference", nillable: false, referenceTo: ["P__c"] },
+    ]);
+    expect(detectJunction(d, new Map([["J__c::MD__c", true]]))).toBe(false);
   });
 });
 

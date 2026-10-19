@@ -322,11 +322,6 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
           {data.label}
         </p>
         <div className="flex items-center justify-center gap-1.5">
-          {data.isJunction && (
-            <span className="shrink-0 rounded border px-1 py-px text-[9px] font-bold bg-bronze-100 text-bronze-700 border-bronze-300" title="Two or more required lookups - classic junction object">
-              JUNCTION
-            </span>
-          )}
           <button
             type="button"
             onClick={(e) => {
@@ -726,6 +721,14 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
             >
               {OBJECT_KIND_LABEL[data.objectKind]}
             </span>
+            {data.isJunction && (
+              <span
+                title="Junction object - joins two or more parents (two required lookups, or a master-detail leg plus another lookup)"
+                className="shrink-0 rounded border border-bronze-300 bg-bronze-100 px-1 py-px text-[9px] font-bold text-bronze-700"
+              >
+                JUNCTION
+              </span>
+            )}
             {data.recordId && (
               <span className="min-w-0 truncate font-mono text-[10px] text-ivory-600" title={`Visualizing ${data.recordId}`}>
                 {data.recordId.slice(0, 8)}…

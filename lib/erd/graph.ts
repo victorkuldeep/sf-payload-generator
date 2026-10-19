@@ -285,16 +285,25 @@ function orderRows(
 /** Audit/system lookups every standard object carries - never junction evidence. */
 const SYSTEM_REF_FIELDS = new Set(["CreatedById", "LastModifiedById", "OwnerId"]);
 
-/** Junction heuristic: 2+ required NON-SYSTEM lookups = classic junction object. */
-export function detectJunction(describe: SalesforceDescribeResult): boolean {
-  const requiredRefs = describe.fields.filter(
+/**
+ * Junction heuristic: 2+ required NON-SYSTEM lookups = classic junction, or
+ * a master-detail leg paired with another non-system reference leg
+ * (lookup+MD junctions often leave the lookup optional). Audit/system
+ * lookups never count. mdIndex maps "ChildObject::field" -> cascadeDelete.
+ */
+export function detectJunction(
+  describe: SalesforceDescribeResult,
+  mdIndex: Map<string, boolean>
+): boolean {
+  const legs = describe.fields.filter(
     (f) =>
       f.type === "reference" &&
-      !f.nillable &&
       !SYSTEM_REF_FIELDS.has(f.name) &&
       (f.referenceTo?.length ?? 0) > 0
   );
-  return requiredRefs.length >= 2;
+  if (legs.filter((f) => !f.nillable).length >= 2) return true;
+  const mdLegs = legs.filter((f) => mdIndex.get(`${describe.name}::${f.name}`) === true);
+  return mdLegs.length > 0 && legs.length >= 2;
 }
 
 export interface ErdElements {
@@ -409,7 +418,7 @@ export function buildErdElements(
         totalFields: describe.fields.length,
         shownChildren: 0, // filled by panel
         totalChildren: childRels.length,
-        isJunction: detectJunction(describe),
+        isJunction: detectJunction(describe, mdIndex),
         isRoot: apiName === root,
         recordTypes: describe.recordTypeInfos ?? [],
         spotlight: spot != null && spot.focus === apiName,
@@ -862,6 +871,12 @@ export function buildGraphElements(
   const parents = level1.filter((n) => n.role === "parent");
   const children = level1.filter((n) => n.role === "child");
 
+  // Root MD legs from the neighborhood: parent-role neighbors whose kind is
+  // "md" carry the same cascadeDelete evidence the ERD edges use.
+  const rootMd = new Map<string, boolean>();
+  for (const n of neighbors) {
+    if (n.role === "parent" && n.kind === "md" && n.via) rootMd.set(`${root.name}::${n.via}`, true);
+  }
   const nodes: Node<GraphBubbleData>[] = [
     {
       id: root.name,
@@ -874,7 +889,7 @@ export function buildGraphElements(
         role: "root",
         loaded: true,
         childCount: (root.childRelationships ?? []).filter((r) => r.relationshipName).length,
-        isJunction: detectJunction(root),
+        isJunction: detectJunction(root, rootMd),
         dimmed: false,
         spotlight: false,
       },
