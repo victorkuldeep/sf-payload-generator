@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Button from "../ui/Button";
 import { FieldInput, formatCellValue, type RecordFieldMeta } from "./RecordPopover";
 import { LookupPickerModal, type LookupHit } from "./LookupPickerModal";
-import { serializeDraftValue } from "@/lib/erd/recordWalk";
+import { serializeDraftValue, targetApiForId } from "@/lib/erd/recordWalk";
 import type { ObjectLayout } from "@/lib/salesforce/layouts";
 
 export interface EditModalData {
@@ -21,6 +21,8 @@ export interface EditModalData {
   objectLabelOf: (apiName: string) => string;
   /** Search target records for the lookup picker. */
   onLookupSearch: (apiName: string, query: string) => Promise<LookupHit[]>;
+  /** Resolve one lookup Id to its human label; null = show raw Id. */
+  onResolveLookup: (apiName: string, id: string) => Promise<string | null>;
 }
 
 type Draft = Record<string, string | boolean>;
@@ -70,6 +72,45 @@ function LookupSearchButton({ label, onOpen }: { label: string; onOpen: () => vo
   );
 }
 
+/**
+ * Resolved human label under a raw reference Id ("Acme" under an
+ * AccountId). Read-only text; falls back to the target type ("User").
+ * Renders nothing when there is no Id, no target, or no label.
+ */
+function ReferenceCaption({
+  targetApi,
+  targetId,
+  resolve,
+  right,
+}: {
+  targetApi: string | null;
+  targetId: string | null;
+  resolve: (apiName: string, id: string) => Promise<string | null>;
+  right?: boolean;
+}) {
+  const [label, setLabel] = useState<string | null>(null);
+  useEffect(() => {
+    if (!targetApi || !targetId) {
+      setLabel(null);
+      return;
+    }
+    let live = true;
+    setLabel(null);
+    void resolve(targetApi, targetId).then((name) => {
+      if (live) setLabel(name);
+    });
+    return () => {
+      live = false;
+    };
+  }, [targetApi, targetId, resolve]);
+  if (!targetId || !targetApi) return null;
+  return (
+    <p className={`mt-0.5 truncate text-[11px] text-[var(--color-muted)]${right ? " text-right" : ""}`} title={label ?? undefined}>
+      {label ?? targetApi}
+    </p>
+  );
+}
+
 function FieldRow({
   meta,
   apiName,
@@ -77,6 +118,9 @@ function FieldRow({
   draftValue,
   onDraft,
   onLookupPicker,
+  lookupTarget,
+  lookupId,
+  resolveLookup,
 }: {
   meta: RecordFieldMeta | undefined;
   apiName: string;
@@ -84,6 +128,10 @@ function FieldRow({
   draftValue: string | boolean | undefined;
   onDraft: (v: string | boolean) => void;
   onLookupPicker: ((meta: RecordFieldMeta) => void) | null;
+  /** Polymorphic target + current Id for reference captions (null when n/a). */
+  lookupTarget: string | null;
+  lookupId: string | null;
+  resolveLookup: (apiName: string, id: string) => Promise<string | null>;
 }) {
   const editable = isEditable(meta);
   const targets = meta?.type === "reference" ? (meta.refs ?? []) : [];
@@ -100,17 +148,27 @@ function FieldRow({
       </span>
       <span className="w-[220px] shrink-0">
         {editable ? (
-          <span className="flex items-center gap-1">
-            <span className="min-w-0 flex-1">
-              <FieldInput meta={meta} value={draftValue ?? (typeof value === "boolean" ? value : String(value ?? ""))} onChange={onDraft} />
+          <span className="block">
+            <span className="flex items-center gap-1">
+              <span className="min-w-0 flex-1">
+                <FieldInput meta={meta} value={draftValue ?? (typeof value === "boolean" ? value : String(value ?? ""))} onChange={onDraft} />
+              </span>
+              {onLookupPicker && meta && targets.length > 0 && (
+                <LookupSearchButton label={meta.label} onOpen={() => onLookupPicker(meta)} />
+              )}
             </span>
-            {onLookupPicker && meta && targets.length > 0 && (
-              <LookupSearchButton label={meta.label} onOpen={() => onLookupPicker(meta)} />
+            {targets.length > 0 && (
+              <ReferenceCaption targetApi={lookupTarget} targetId={lookupId} resolve={resolveLookup} right />
             )}
           </span>
         ) : (
-          <span className="block break-all text-right font-mono text-[11px] text-ivory-400" title={formatCellValue(value)}>
-            {formatCellValue(value)}
+          <span className="block">
+            <span className="block break-all text-right font-mono text-[11px] text-ivory-400" title={formatCellValue(value)}>
+              {formatCellValue(value)}
+            </span>
+            {meta?.type === "reference" && (
+              <ReferenceCaption targetApi={lookupTarget} targetId={lookupId} resolve={resolveLookup} right />
+            )}
           </span>
         )}
       </span>
@@ -131,6 +189,9 @@ function FieldCell({
   edited,
   onDraft,
   onLookupPicker,
+  lookupTarget,
+  lookupId,
+  resolveLookup,
 }: {
   meta: RecordFieldMeta | undefined;
   apiName: string;
@@ -139,6 +200,10 @@ function FieldCell({
   edited: boolean;
   onDraft: (v: string | boolean) => void;
   onLookupPicker: ((meta: RecordFieldMeta) => void) | null;
+  /** Polymorphic target + current Id for reference captions (null when n/a). */
+  lookupTarget: string | null;
+  lookupId: string | null;
+  resolveLookup: (apiName: string, id: string) => Promise<string | null>;
 }) {
   const editable = isEditable(meta);
   const targets = meta?.type === "reference" ? (meta.refs ?? []) : [];
@@ -157,17 +222,27 @@ function FieldCell({
       </span>
       <span className="w-[210px] shrink-0">
         {editable ? (
-          <span className="flex items-center gap-1">
-            <span className="min-w-0 flex-1">
-              <FieldInput meta={meta} value={draftValue ?? (typeof value === "boolean" ? value : String(value ?? ""))} onChange={onDraft} />
+          <span className="block">
+            <span className="flex items-center gap-1">
+              <span className="min-w-0 flex-1">
+                <FieldInput meta={meta} value={draftValue ?? (typeof value === "boolean" ? value : String(value ?? ""))} onChange={onDraft} />
+              </span>
+              {onLookupPicker && meta && targets.length > 0 && (
+                <LookupSearchButton label={meta.label} onOpen={() => onLookupPicker(meta)} />
+              )}
             </span>
-            {onLookupPicker && meta && targets.length > 0 && (
-              <LookupSearchButton label={meta.label} onOpen={() => onLookupPicker(meta)} />
+            {targets.length > 0 && (
+              <ReferenceCaption targetApi={lookupTarget} targetId={lookupId} resolve={resolveLookup} right />
             )}
           </span>
         ) : (
-          <span className="block break-all text-right font-mono text-[11px] text-ivory-400" title={formatCellValue(value)}>
-            {formatCellValue(value)}
+          <span className="block">
+            <span className="block break-all text-right font-mono text-[11px] text-ivory-400" title={formatCellValue(value)}>
+              {formatCellValue(value)}
+            </span>
+            {meta?.type === "reference" && (
+              <ReferenceCaption targetApi={lookupTarget} targetId={lookupId} resolve={resolveLookup} right />
+            )}
           </span>
         )}
       </span>
@@ -191,7 +266,12 @@ export function RecordEditModal({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
-  const [pickerFor, setPickerFor] = useState<RecordFieldMeta | null>(null);
+  const [pickerFor, setPickerFor] = useState<{
+    meta: RecordFieldMeta;
+    currentId: string | null;
+    currentTarget: string | null;
+    currentName: string | null;
+  } | null>(null);
 
   // Fresh record, fresh draft.
   useEffect(() => {
@@ -214,6 +294,36 @@ export function RecordEditModal({
   }, [onClose, saving]);
 
   const metaOf = (apiName: string) => data.metas.find((m) => m.name === apiName);
+
+  /**
+   * Current lookup context for a reference field: polymorphic target from
+   * the live Id (draft wins over saved), falling back to the first declared
+   * target for single-target refs. Powers captions and picker preselect.
+   */
+  const lookupContext = (meta: RecordFieldMeta): { target: string | null; id: string | null } => {
+    const refs = meta.refs ?? [];
+    const raw = data.rawFields[meta.name];
+    const dv = draft[meta.name];
+    const id =
+      typeof dv === "string" && dv.trim() !== ""
+        ? dv.trim()
+        : typeof raw === "string" && raw.trim() !== ""
+          ? raw.trim()
+          : null;
+    const target = (id ? targetApiForId(refs, id) : null) ?? refs[0] ?? null;
+    return { target, id };
+  };
+
+  /** Open the lookup picker with the current value preselected. */
+  const openPicker = (meta: RecordFieldMeta) => {
+    const ctx = lookupContext(meta);
+    setPickerFor({ meta, currentId: ctx.id, currentTarget: ctx.target, currentName: null });
+    if (ctx.id && ctx.target) {
+      void data.onResolveLookup(ctx.target, ctx.id).then((name) => {
+        setPickerFor((prev) => (prev && prev.meta.name === meta.name ? { ...prev, currentName: name } : prev));
+      });
+    }
+  };
   const changes = useMemo(() => computeChanges(data.metas, data.rawFields, draft), [data.metas, data.rawFields, draft]);
   const changeBody = useMemo(() => {
     const body: Record<string, unknown> = {};
@@ -385,18 +495,24 @@ export function RecordEditModal({
                 <p className="px-1 py-2 text-[12px] text-ivory-600">No updateable fields on this record - everything is read-only.</p>
               )}
               <div className="grid items-start gap-2 sm:grid-cols-2">
-                {allFields.map((m) => (
-                  <FieldCell
-                    key={m.name}
-                    meta={m}
-                    apiName={m.name}
-                    value={data.rawFields[m.name]}
-                    draftValue={draft[m.name]}
-                    edited={changedSet.has(m.name)}
-                    onDraft={(v) => setDraft((p) => ({ ...p, [m.name]: v }))}
-                    onLookupPicker={(meta) => setPickerFor(meta)}
-                  />
-                ))}
+                {allFields.map((m) => {
+                  const lc = lookupContext(m);
+                  return (
+                    <FieldCell
+                      key={m.name}
+                      meta={m}
+                      apiName={m.name}
+                      value={data.rawFields[m.name]}
+                      draftValue={draft[m.name]}
+                      edited={changedSet.has(m.name)}
+                      onDraft={(v) => setDraft((p) => ({ ...p, [m.name]: v }))}
+                      onLookupPicker={openPicker}
+                      lookupTarget={lc.target}
+                      lookupId={lc.id}
+                      resolveLookup={data.onResolveLookup}
+                    />
+                  );
+                })}
               </div>
               {allFields.length === 0 && (
                 <p className="px-1 py-2 text-[12px] text-ivory-600">No fields match “{filter}”.</p>
@@ -413,6 +529,7 @@ export function RecordEditModal({
                         {row.map((item) => {
                           const meta = metaOf(item.apiName);
                           const editable = isEditable(meta, item.layoutEditable);
+                          const lc = meta ? lookupContext(meta) : { target: null as string | null, id: null as string | null };
                           return (
                             <div
                               key={item.apiName}
@@ -424,7 +541,10 @@ export function RecordEditModal({
                                 value={data.rawFields[item.apiName]}
                                 draftValue={draft[item.apiName]}
                                 onDraft={(v) => setDraft((p) => ({ ...p, [item.apiName]: v }))}
-                                onLookupPicker={(m) => setPickerFor(m)}
+                                onLookupPicker={openPicker}
+                                lookupTarget={lc.target}
+                                lookupId={lc.id}
+                                resolveLookup={data.onResolveLookup}
                               />
                               {!meta && (
                                 <p className="px-2 pb-1 font-mono text-[10px] text-ivory-500">Not in describe - saved as-is.</p>
@@ -468,14 +588,17 @@ export function RecordEditModal({
           )}
         </div>
       </div>
-      {pickerFor && (pickerFor.refs ?? []).length > 0 && (
+      {pickerFor && (pickerFor.meta.refs ?? []).length > 0 && (
         <LookupPickerModal
-          fieldLabel={pickerFor.label}
-          targets={pickerFor.refs ?? []}
+          fieldLabel={pickerFor.meta.label}
+          targets={pickerFor.meta.refs ?? []}
+          initialTarget={pickerFor.currentTarget ?? undefined}
+          currentId={pickerFor.currentId}
+          currentName={pickerFor.currentName}
           targetLabelOf={data.objectLabelOf}
           onSearch={data.onLookupSearch}
           onPick={(id) => {
-            setDraft((p) => ({ ...p, [pickerFor.name]: id }));
+            setDraft((p) => ({ ...p, [pickerFor.meta.name]: id }));
             setPickerFor(null);
           }}
           onClose={() => setPickerFor(null)}

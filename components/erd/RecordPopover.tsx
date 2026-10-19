@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Button from "../ui/Button";
+import { RecordGridModal } from "./RecordGridModal";
 
 export interface RecordFieldMeta {
   name: string;
@@ -46,6 +47,8 @@ export interface RecordPopData {
   mode: "picker" | "record" | "lookup";
   /** Every aboard id with a human name; the entity box shows selectedId. */
   candidates: { id: string; name: string }[];
+  /** Every aboard row for the entity: singles then child rows, deduped by Id. Feeds the table-grid modal. */
+  tableRows: Record<string, unknown>[];
   selectedId: string | null;
   /** Lookup jump context: which source field's target this panel shows. */
   lookup?: {
@@ -260,10 +263,11 @@ export function RecordPopover({
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [copiedLookup, setCopiedLookup] = useState(false);
+  const [gridOpen, setGridOpen] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && !(e.target instanceof HTMLElement && e.target.closest("[data-grid-modal]"))) onClose();
     };
     const onDown = (e: PointerEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as globalThis.Node)) {
@@ -281,6 +285,7 @@ export function RecordPopover({
   // Reset transient state whenever a different node or panel opens.
   useEffect(() => {
     setCopiedLookup(false);
+    setGridOpen(false);
   }, [pop.apiName, pop.mode, pop.lookup?.targetId]);
 
   const W = 320;
@@ -399,6 +404,20 @@ export function RecordPopover({
               <path d="M18 4v4h-4M6 20v-4h4" />
             </svg>
           </button>
+          {pop.tableRows.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setGridOpen(true)}
+              aria-label={`View all ${pop.tableRows.length} ${pop.apiName} records as a table`}
+              title={`View all ${pop.tableRows.length} records as a table - search, filter columns, export to Excel`}
+              className="rounded p-1 text-ivory-500 hover:text-bronze-600 hover:bg-ivory-200 transition-colors cursor-pointer"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <path d="M3 10h18M9 10v10" />
+              </svg>
+            </button>
+          )}
           {pop.singleId && (
             <button
               type="button"
@@ -553,6 +572,15 @@ export function RecordPopover({
           Drop {pop.nodeLabel} data · root Id stays
         </Button>
       </div>
+      {gridOpen && pop.tableRows.length > 0 && (
+        <RecordGridModal
+          apiName={pop.apiName}
+          nodeLabel={pop.nodeLabel}
+          rows={pop.tableRows}
+          onClose={() => setGridOpen(false)}
+          onEditRecord={onEditRecord}
+        />
+      )}
     </div>
   );
 }

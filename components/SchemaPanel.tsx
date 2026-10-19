@@ -63,10 +63,13 @@ import {
   kindForId,
   keyFieldFor,
   buildLookupSearchQuery,
+  buildLabelQuery,
+  escapeSoqlString,
   resolveTarget,
   nodeRecordState,
   selectedRecordId,
   knownIdsFor,
+  rowsForApi,
   emptyLoadedState,
   childPageKey,
   RECORD_ROW_LIMIT,
@@ -1789,6 +1792,7 @@ export default function SchemaPanel({
         blockedApi: null,
         mode: "lookup",
         candidates: [],
+        tableRows: [],
         selectedId: null,
         lookup: {
           sourceApi: recordLookup.sourceApi,
@@ -1832,6 +1836,7 @@ export default function SchemaPanel({
       }
       return id;
     };
+    const tableRows = rowsForApi(recordStore, apiName);
     const candidates = knownIdsFor(recordStore, apiName).map((id) => ({ id, name: nameOf(id) }));
     const selectedId = selectedRecordId(apiName, recordStore, recordSel[apiName] ?? null);
     const resolvedMode = recordPop?.apiName === apiName ? recordPop.mode : "picker";
@@ -1844,7 +1849,7 @@ export default function SchemaPanel({
             ? "No lookup path from a loaded record reaches this object yet."
             : `Nothing loaded connects here yet.`,
           blockedApi: plan.missingApi === apiName ? null : plan.missingApi,
-          mode: "picker", candidates, selectedId,
+          mode: "picker", candidates, selectedId, tableRows: [],
         };
       }
     }
@@ -1866,7 +1871,7 @@ export default function SchemaPanel({
       y,
       blockedHint: null,
       blockedApi: null,
-      mode: resolvedMode, candidates, selectedId,
+      mode: resolvedMode, candidates, selectedId, tableRows,
     };
   }, [labels, recordStore, recordSel, recordBusy, recordPopError, recordCtx, recordPop, recordLookup]);
 
@@ -2672,6 +2677,50 @@ export default function SchemaPanel({
       });
     }
     return hits;
+  }, [describes, runRecordQuery, describeCached]);
+
+  /**
+   * Resolve one lookup Id to its human label (Name / orderNumber-style key).
+   * Aboard rows first (free), else one deliberate single-row query. Null
+   * when the target has no text key or the row is hidden - the caller then
+   * shows the raw Id. Never throws.
+   */
+  const resolveLookupLabel = useCallback(async (
+    apiName: string,
+    id: string,
+  ): Promise<string | null> => {
+    const clean = id.trim();
+    if (!clean) return null;
+    const aboard = recordStoreRef.current.singles.get(apiName)?.get(clean)?.fields;
+    if (aboard) {
+      const d = describes.get(apiName);
+      if (apiName === "Group") return queueLabelFromRow(aboard as Record<string, unknown> | undefined);
+      const key = d ? keyFieldFor(d.fields) : null;
+      const label = key ? labelFromRow(aboard as Record<string, unknown> | undefined, key) : null;
+      if (label) return label;
+    }
+    try {
+      let d: SalesforceDescribeResult | undefined = describes.get(apiName);
+      if (!d && !lookupDescribeCacheRef.current.has(apiName)) {
+        const fetched = await describeCached(apiName);
+        lookupDescribeCacheRef.current.set(apiName, fetched);
+        d = fetched ?? undefined;
+      } else if (!d) {
+        d = lookupDescribeCacheRef.current.get(apiName) ?? undefined;
+      }
+      if (apiName === "Group") {
+        const rows = await runRecordQuery(
+          `SELECT Id, Name, Type FROM Group WHERE Id = '${escapeSoqlString(clean)}' LIMIT 1`
+        );
+        return queueLabelFromRow(rows[0]) ?? null;
+      }
+      const key = d ? keyFieldFor(d.fields) : null;
+      if (!key) return null;
+      const rows = await runRecordQuery(buildLabelQuery(apiName, key, clean));
+      return labelFromRow(rows[0], key);
+    } catch {
+      return null;
+    }
   }, [describes, runRecordQuery, describeCached]);
 
   // ── Canvas autosave (per org, IndexedDB): full describes + curation persist
@@ -6380,6 +6429,7 @@ export default function SchemaPanel({
               layoutsError: ls.error,
               objectLabelOf: (api) => labels.get(api) ?? api,
               onLookupSearch: (api, q) => searchLookupRecords(api, q),
+              onResolveLookup: (api, id) => resolveLookupLabel(api, id),
             }}
             onClose={() => setEditModal(null)}
             onSave={(api, id, changes) => saveRecordEdit(api, id, changes)}

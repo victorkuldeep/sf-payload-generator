@@ -225,6 +225,29 @@ export function serializeDraftValue(
   return v;
 }
 
+/** Every aboard row for an object: singles first, then child rows, deduped by Id. */
+export function rowsForApi(state: LoadedState, apiName: string): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
+  for (const s of state.singles.get(apiName)?.values() ?? []) {
+    if (seen.has(s.id)) continue;
+    seen.add(s.id);
+    out.push({ Id: s.id, ...s.fields });
+  }
+  for (const page of state.children.values()) {
+    if (page.childApi !== apiName) continue;
+    for (const row of page.rows) {
+      const id = str(row.Id);
+      if (id) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+      }
+      out.push(row);
+    }
+  }
+  return out;
+}
+
 /** Every known record id for an object: singles first, then child-row ids. */
 export function knownIdsFor(state: LoadedState, apiName: string): string[] {
   const out: string[] = [];

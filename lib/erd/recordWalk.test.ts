@@ -20,6 +20,7 @@ import {
   buildLabelQuery,
   buildLookupSearchQuery,
   labelFromRow,
+  rowsForApi,
   emptyLoadedState,
   type LoadedState,
   type ResolveContext,
@@ -227,5 +228,49 @@ describe("record walk engine", () => {
     expect(buildLookupSearchQuery("Weird__c", null, "001xx")).toBe(
       "SELECT Id FROM Weird__c WHERE Id = '001xx' LIMIT 20"
     );
+  });
+});
+
+describe("rowsForApi", () => {
+  const page = (rows: Record<string, unknown>[]) => ({
+    childApi: "Contact",
+    lookupField: "AccountId",
+    parentApi: "Account",
+    parentId: "001A",
+    rows,
+    offset: rows.length,
+    exhausted: true,
+  });
+
+  it("merges singles then child rows, deduped by Id", () => {
+    const s = emptyLoadedState();
+    s.singles.set(
+      "Contact",
+      new Map([
+        ["003A", { id: "003A", fields: { Name: "Ann" } }],
+      ])
+    );
+    s.children.set("Contact::AccountId::001A", page([
+      { Id: "003A", Name: "Ann" },
+      { Id: "003B", Name: "Bob" },
+    ]));
+    const rows = rowsForApi(s, "Contact");
+    expect(rows.map((r) => r.Id)).toEqual(["003A", "003B"]);
+    expect(rows[0]).toMatchObject({ Id: "003A", Name: "Ann" });
+  });
+
+  it("ignores other objects and keeps id-less rows", () => {
+    const s = emptyLoadedState();
+    s.children.set("Task::WhoId::003A", {
+      childApi: "Task",
+      lookupField: "WhoId",
+      parentApi: "Contact",
+      parentId: "003A",
+      rows: [{ Subject: "stray" }],
+      offset: 1,
+      exhausted: true,
+    });
+    expect(rowsForApi(s, "Contact")).toEqual([]);
+    expect(rowsForApi(s, "Task")).toEqual([{ Subject: "stray" }]);
   });
 });

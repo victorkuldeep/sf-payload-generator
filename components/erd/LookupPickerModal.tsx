@@ -19,6 +19,8 @@ export function LookupPickerModal({
   targets,
   targetLabelOf,
   initialTarget,
+  currentId,
+  currentName,
   onSearch,
   onPick,
   onClose,
@@ -28,6 +30,10 @@ export function LookupPickerModal({
   targets: string[];
   targetLabelOf: (apiName: string) => string;
   initialTarget?: string;
+  /** Saved/draft Id on the record - pinned as the Current row. */
+  currentId?: string | null;
+  /** Resolved human label for the current Id (still loading until set). */
+  currentName?: string | null;
   onSearch: (apiName: string, query: string) => Promise<LookupHit[]>;
   onPick: (id: string) => void;
   onClose: () => void;
@@ -152,13 +158,33 @@ export function LookupPickerModal({
             </p>
           )}
           <ul className="space-y-1">
+            {currentId && (
+              <li>
+                <button
+                  type="button"
+                  onClick={() => onPick(currentId)}
+                  title={`Keep ${currentId}`}
+                  className="w-full rounded-xl border border-bronze-400 bg-bronze-100/60 px-3 py-2 text-left transition-colors hover:border-bronze-500 cursor-pointer"
+                >
+                  <span className="block truncate text-[12px] font-bold text-ivory-950">
+                    {currentName ?? currentId}
+                    <span className="ml-1.5 rounded-full border border-bronze-300 bg-white px-1.5 py-px font-mono text-[10px] font-bold text-bronze-700">CURRENT</span>
+                  </span>
+                  <span className="block truncate font-mono text-[10px] text-ivory-500">{currentName ? currentId : "Resolving…"}</span>
+                </button>
+              </li>
+            )}
             {hits.map((h) => (
               <li key={h.id}>
                 <button
                   type="button"
                   onClick={() => onPick(h.id)}
                   title={`Use ${h.id}`}
-                  className="w-full rounded-xl border border-[var(--color-line-soft)] bg-white px-3 py-2 text-left transition-colors hover:border-bronze-400 hover:bg-bronze-100/50 cursor-pointer"
+                  className={`w-full rounded-xl border px-3 py-2 text-left transition-colors cursor-pointer ${
+                    h.id === currentId
+                      ? "border-bronze-400 bg-bronze-100/60 hover:border-bronze-500"
+                      : "border-[var(--color-line-soft)] bg-white hover:border-bronze-400 hover:bg-bronze-100/50"
+                  }`}
                 >
                   <span className="block truncate text-[12px] font-bold text-ivory-950">
                     {h.name}
