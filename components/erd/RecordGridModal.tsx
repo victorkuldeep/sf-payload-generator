@@ -10,6 +10,7 @@ import {
   gridRowsToTsv,
 } from "@/lib/erd/recordGrid";
 import { formatCellValue } from "./RecordPopover";
+import { ColumnPickerModal } from "./ColumnPickerModal";
 
 const ICON_BTN =
   "rounded-md border border-[var(--color-line)] p-1.5 text-ivory-500 transition-colors hover:text-bronze-600 hover:border-bronze-400 cursor-pointer disabled:opacity-40";
@@ -45,12 +46,14 @@ export function RecordGridModal({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
-        onClose();
+        // Topmost first: Escape closes the column modal, never the grid.
+        if (colsOpen) setColsOpen(false);
+        else onClose();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, colsOpen]);
 
   const allCols = useMemo(() => gridColumns(rows), [rows]);
   const visibleCols = useMemo(() => allCols.filter((c) => !hidden.has(c)), [allCols, hidden]);
@@ -94,6 +97,16 @@ export function RecordGridModal({
       else next.add(c);
       return next;
     });
+  };
+  const showCols = (cols: string[]) => {
+    setHidden((prev) => {
+      const next = new Set(prev);
+      for (const c of cols) next.delete(c);
+      return next;
+    });
+  };
+  const hideCols = (cols: string[]) => {
+    setHidden((prev) => new Set([...prev, ...cols]));
   };
 
   return (
@@ -174,48 +187,14 @@ export function RecordGridModal({
                 className="w-full rounded-lg border border-[var(--color-line)] bg-white py-1.5 pl-7 pr-2 text-[12px] text-ivory-950 placeholder:text-ivory-500 focus:border-bronze-400 focus:outline-none"
               />
             </div>
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setColsOpen((v) => !v)}
-                aria-expanded={colsOpen}
-                title="Choose which API columns stay visible"
-                className="rounded-lg border border-[var(--color-line)] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-ivory-700 hover:text-bronze-600 hover:border-bronze-400 transition-colors cursor-pointer"
-              >
-                Columns {visibleCols.length}/{allCols.length}
-              </button>
-              {colsOpen && (
-                <div className="absolute right-0 z-10 mt-1 max-h-64 w-56 overflow-y-auto rounded-xl border border-[var(--color-line)] bg-white p-1.5 shadow-lg">
-                  <div className="mb-1 flex gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setHidden(new Set())}
-                      className="flex-1 rounded-md px-2 py-1 text-[10px] font-bold text-bronze-600 hover:bg-bronze-100 cursor-pointer"
-                    >
-                      All
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setHidden(new Set(allCols))}
-                      className="flex-1 rounded-md px-2 py-1 text-[10px] font-bold text-bronze-600 hover:bg-bronze-100 cursor-pointer"
-                    >
-                      None
-                    </button>
-                  </div>
-                  {allCols.map((c) => (
-                    <label key={c} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-[11px] hover:bg-[var(--color-canvas)]">
-                      <input
-                        type="checkbox"
-                        checked={!hidden.has(c)}
-                        onChange={() => toggleCol(c)}
-                        className="h-3.5 w-3.5 cursor-pointer accent-bronze-600"
-                      />
-                      <span className="min-w-0 flex-1 truncate font-mono text-ivory-950" title={c}>{c}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
+            <button
+              type="button"
+              onClick={() => setColsOpen(true)}
+              title="Choose which API columns stay visible"
+              className="rounded-lg border border-[var(--color-line)] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-ivory-700 hover:text-bronze-600 hover:border-bronze-400 transition-colors cursor-pointer"
+            >
+              Columns {visibleCols.length}/{allCols.length}
+            </button>
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-auto">
@@ -267,8 +246,23 @@ export function RecordGridModal({
                   const id = typeof row.Id === "string" ? row.Id : null;
                   return (
                     <tr key={id ?? i} className="odd:bg-white even:bg-[var(--color-canvas)] hover:bg-bronze-100/60">
-                      <td className="sticky left-0 border-r border-[var(--color-line-soft)] bg-inherit px-2 py-1 font-mono text-[10px] text-ivory-500">
-                        {i + 1}
+                      <td className="sticky left-0 border-r border-[var(--color-line-soft)] bg-inherit px-2 py-1">
+                        <span className="flex items-center gap-1.5">
+                          <span className="font-mono text-[10px] text-ivory-500">{i + 1}</span>
+                          {id && (
+                            <button
+                              type="button"
+                              onClick={() => onEditRecord(apiName, id)}
+                              title="Edit this record full-screen"
+                              aria-label={`Edit record ${id}`}
+                              className="rounded p-0.5 text-bronze-600 transition-colors hover:bg-bronze-100 hover:text-bronze-700 cursor-pointer"
+                            >
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                                <path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                              </svg>
+                            </button>
+                          )}
+                        </span>
                       </td>
                       {visibleCols.map((c) => (
                         <td
@@ -304,6 +298,18 @@ export function RecordGridModal({
           </p>
         </div>
       </div>
+      {colsOpen && (
+        <ColumnPickerModal
+          title={`Columns · ${nodeLabel}`}
+          subtitle={`${allCols.length} API columns - tick what stays visible`}
+          columns={allCols}
+          hidden={hidden}
+          onToggle={toggleCol}
+          onShow={showCols}
+          onHide={hideCols}
+          onClose={() => setColsOpen(false)}
+        />
+      )}
     </div>
   );
 }
