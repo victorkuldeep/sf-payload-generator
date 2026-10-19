@@ -1834,6 +1834,7 @@ export default function SchemaPanel({
         tableRows: [],
         candidateGroups: [],
         tableGroups: [],
+        requiredFields: [],
         selectedId: null,
         lookup: {
           sourceApi: recordLookup.sourceApi,
@@ -1907,7 +1908,7 @@ export default function SchemaPanel({
             : `Nothing loaded connects here yet.`,
           blockedApi: plan.missingApi === apiName ? null : plan.missingApi,
           mode: "picker", candidates, selectedId, tableRows: [],
-          candidateGroups: [], tableGroups: [],
+          candidateGroups: [], tableGroups: [], requiredFields: [],
         };
       }
     }
@@ -1931,8 +1932,11 @@ export default function SchemaPanel({
       blockedApi: null,
       mode: resolvedMode, candidates, selectedId, tableRows,
       candidateGroups, tableGroups,
+      requiredFields: (describes.get(apiName)?.fields ?? [])
+        .filter((f) => !f.nillable && f.name !== "Id")
+        .map((f) => f.name),
     };
-  }, [labels, recordStore, recordSel, recordBusy, recordPopError, recordCtx, recordPop, recordLookup]);
+  }, [labels, recordStore, recordSel, recordBusy, recordPopError, recordCtx, recordPop, recordLookup, describes]);
 
   // ── Inbox lifecycle writers (Phase 2): meta merges onto the canonical
   // entity/snapshot records with history entries. Legacy todo/done flags

@@ -26,6 +26,7 @@ export function RecordGridModal({
   nodeLabel,
   rows,
   groups,
+  requiredFields,
   onClose,
   onEditRecord,
 }: {
@@ -34,6 +35,8 @@ export function RecordGridModal({
   rows: Record<string, unknown>[];
   /** Per-parent slices; tabs render when > 1. Defaults to every row. */
   groups?: RecordTableGroup[];
+  /** Required field API names - pinned behind Id, then Name. */
+  requiredFields?: string[];
   onClose: () => void;
   /** Open the existing full-screen edit modal for one row. */
   onEditRecord: (apiName: string, id: string) => void;
@@ -64,7 +67,7 @@ export function RecordGridModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, colsOpen]);
 
-  const allCols = useMemo(() => gridColumns(activeRows), [activeRows]);
+  const allCols = useMemo(() => gridColumns(activeRows, requiredFields ?? []), [activeRows, requiredFields]);
   const visibleCols = useMemo(() => allCols.filter((c) => !hidden.has(c)), [allCols, hidden]);
   const filtered = useMemo(
     () => filterGridRows(activeRows, allCols, { search, cols: colFilters, hidden }),

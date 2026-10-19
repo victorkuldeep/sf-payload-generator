@@ -18,13 +18,23 @@ const rows = [
 const none: GridFilter = { search: "", cols: {}, hidden: new Set() };
 
 describe("record grid helpers", () => {
-  it("unions columns with Id first, skipping the envelope", () => {
+  it("unions columns with Id first, then alphabetical, skipping the envelope", () => {
     expect(gridColumns(rows)).toEqual([
       "Id",
       "Name",
-      "Industry",
       "AnnualRevenue",
       "Custom__c",
+      "Industry",
+    ]);
+  });
+
+  it("pins required fields behind Id and Name, then alphabetical", () => {
+    expect(gridColumns(rows, ["Industry", "Custom__c"])).toEqual([
+      "Id",
+      "Name",
+      "Custom__c",
+      "Industry",
+      "AnnualRevenue",
     ]);
   });
 

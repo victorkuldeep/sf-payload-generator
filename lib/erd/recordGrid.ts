@@ -5,7 +5,7 @@
  */
 
 /** API-name columns across rows: Id first, then first-seen order. Skips the REST envelope noise. */
-export function gridColumns(rows: Record<string, unknown>[]): string[] {
+export function gridColumns(rows: Record<string, unknown>[], requiredFields: string[] = []): string[] {
   const cols: string[] = [];
   const seen = new Set<string>();
   for (const row of rows) {
@@ -15,10 +15,27 @@ export function gridColumns(rows: Record<string, unknown>[]): string[] {
       cols.push(k);
     }
   }
+  // Id (primary key) first, then required fields, then everything else
+  // alphabetical (case-insensitive, deterministic across runtimes) so wide
+  // objects scan the same way on every open.
+  const pinned = new Set(requiredFields);
+  const alpha = (a: string, b: string): number => {
+    const al = a.toLowerCase();
+    const bl = b.toLowerCase();
+    if (al !== bl) return al < bl ? -1 : 1;
+    return a < b ? -1 : a > b ? 1 : 0;
+  };
   cols.sort((a, b) => {
     if (a === "Id") return -1;
     if (b === "Id") return 1;
-    return 0;
+    // Name is the human key and all but always populated - it rides right
+    // behind Id even when the describe marks it optional.
+    if (a === "Name") return -1;
+    if (b === "Name") return 1;
+    const pa = pinned.has(a) ? 0 : 1;
+    const pb = pinned.has(b) ? 0 : 1;
+    if (pa !== pb) return pa - pb;
+    return alpha(a, b);
   });
   return cols;
 }

@@ -66,6 +66,8 @@ export interface RecordPopData {
   /** Per-parent slices of candidates/tableRows; tabs render when > 1. */
   candidateGroups: RecordCandidateGroup[];
   tableGroups: RecordTableGroup[];
+  /** Required (!nillable) field API names - pinned behind Id in the grid. */
+  requiredFields: string[];
   selectedId: string | null;
   /** Lookup jump context: which source field's target this panel shows. */
   lookup?: {
@@ -639,6 +641,7 @@ export function RecordPopover({
           nodeLabel={pop.nodeLabel}
           rows={pop.tableRows}
           groups={pop.tableGroups}
+          requiredFields={pop.requiredFields}
           onClose={() => setGridOpen(false)}
           onEditRecord={onEditRecord}
         />
