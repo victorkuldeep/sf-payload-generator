@@ -265,8 +265,16 @@ export function knownIdsFor(state: LoadedState, apiName: string): string[] {
 
 export type TargetPlan =
   | { kind: "single"; apiName: string; id: string }
-  | { kind: "children"; childApi: string; lookupField: string; parentApi: string; parentId: string }
+  | ({ kind: "children" } & ChildPlan)
   | { kind: "blocked"; missingApi: string; missingLabel: string };
+
+/** One pullable children page: lookup field + the loaded parent id behind it. */
+export interface ChildPlan {
+  childApi: string;
+  lookupField: string;
+  parentApi: string;
+  parentId: string;
+}
 
 export interface ResolveContext {
   rootApi: string | null;
@@ -278,13 +286,59 @@ export interface ResolveContext {
 }
 
 /**
+ * Every pullable children page for a node: one plan per (lookup field,
+ * loaded parent id) pair, root-first. Multi-parent children (Task WhatId +
+ * WhoId, junctions with a lookup and a master-detail) resolve one plan per
+ * parent so the pull fans out instead of stopping at the first parent.
+ * Deduplicated - the same parent id reached twice yields one plan.
+ */
+/** Reference fields on a node that can point at a loaded parent. */
+function targetLookups(targetApi: string, ctx: ResolveContext) {
+  const describe = ctx.getDescribe(targetApi);
+  return (describe?.fields ?? []).filter(
+    (f) => f.type === "reference" && (f.referenceTo ?? []).length > 0
+  );
+}
+
+export function resolveChildPlans(
+  targetApi: string,
+  state: LoadedState,
+  ctx: ResolveContext
+): ChildPlan[] {
+  const lookups = targetLookups(targetApi, ctx);
+  if (lookups.length === 0) return [];
+  const parentCandidates: { api: string; id: string }[] = [];
+  if (ctx.rootApi && ctx.rootId) parentCandidates.push({ api: ctx.rootApi, id: ctx.rootId });
+  for (const [api, recs] of state.singles) {
+    if (api === ctx.rootApi) continue;
+    for (const id of recs.keys()) parentCandidates.push({ api, id });
+  }
+  for (const page of state.children.values()) {
+    for (const row of page.rows) {
+      const id = str(row.Id);
+      if (id) parentCandidates.push({ api: page.childApi, id });
+    }
+  }
+  const plans: ChildPlan[] = [];
+  const seen = new Set<string>();
+  for (const parent of parentCandidates) {
+    const via = lookups.find((f) => (f.referenceTo ?? []).includes(parent.api));
+    if (!via) continue;
+    const key = `${via.name}::${parent.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    plans.push({ childApi: targetApi, lookupField: via.name, parentApi: parent.api, parentId: parent.id });
+  }
+  return plans;
+}
+
+/**
  * How to pull one node's data from the current loaded set:
  * - a known id (root or a lookup value seen on a loaded record) -> single GET
  * - a loaded parent id + this node's lookup to it -> children query
  * - otherwise blocked, naming the canvas parent to load first.
  */
 export function resolveTarget(targetApi: string, state: LoadedState, ctx: ResolveContext): TargetPlan {
-  const describe = ctx.getDescribe(targetApi);
   // Already aboard: show the first known record (insertion order).
   const known = knownIdsFor(state, targetApi);
   if (known.length > 0) return { kind: "single", apiName: targetApi, id: known[0] };
@@ -305,29 +359,14 @@ export function resolveTarget(targetApi: string, state: LoadedState, ctx: Resolv
       }
     }
   }
-  // A loaded parent this node looks up to? (Root first, then the rest.)
-  const lookups = (describe?.fields ?? []).filter(
-    (f) => f.type === "reference" && (f.referenceTo ?? []).length > 0
-  );
-  const parentCandidates: { api: string; id: string }[] = [];
-  if (ctx.rootApi && ctx.rootId) parentCandidates.push({ api: ctx.rootApi, id: ctx.rootId });
-  for (const [api, recs] of state.singles) {
-    if (api === ctx.rootApi) continue;
-    for (const id of recs.keys()) parentCandidates.push({ api, id });
-  }
-  for (const page of state.children.values()) {
-    for (const row of page.rows) {
-      const id = str(row.Id);
-      if (id) parentCandidates.push({ api: page.childApi, id });
-    }
-  }
-  for (const parent of parentCandidates) {
-    const via = lookups.find((f) => (f.referenceTo ?? []).includes(parent.api));
-    if (via) {
-      return { kind: "children", childApi: targetApi, lookupField: via.name, parentApi: parent.api, parentId: parent.id };
-    }
+  // A loaded parent this node looks up to? Every plan, not just the first -
+  // multi-parent children pull one page per (lookup, parent id) pair.
+  const plans = resolveChildPlans(targetApi, state, ctx);
+  if (plans.length > 0) {
+    return { kind: "children", ...plans[0] };
   }
   // Blocked: suggest the first on-canvas parent (describe order), else any lookup target.
+  const lookups = targetLookups(targetApi, ctx);
   const onCanvas = lookups.find((f) => (f.referenceTo ?? []).some((t) => ctx.canvasApis.includes(t)));
   const hint = onCanvas ?? lookups[0];
   const missingApi = hint ? (hint.referenceTo ?? []).find((t) => ctx.canvasApis.includes(t)) ?? (hint.referenceTo ?? [])[0] : null;
@@ -351,7 +390,14 @@ export function nodeRecordState(  apiName: string,
       hint: plan.missingApi === apiName ? "No lookup path from a loaded record" : `Load ${plan.missingLabel} first`,
     };
   }
-  return { state: "reachable", hint: plan.kind === "single" ? "Click to pull this record" : `Click to pull via ${ctx.labelOf(plan.parentApi)}` };
+  if (plan.kind === "single") return { state: "reachable", hint: "Click to pull this record" };
+  const planCount = resolveChildPlans(apiName, state, ctx).length;
+  return {
+    state: "reachable",
+    hint: planCount > 1
+      ? `Click to pull via ${planCount} parents`
+      : `Click to pull via ${ctx.labelOf(plan.parentApi)}`,
+  };
 }
 
 /**

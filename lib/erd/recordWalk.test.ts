@@ -21,6 +21,7 @@ import {
   buildLookupSearchQuery,
   labelFromRow,
   rowsForApi,
+  resolveChildPlans,
   emptyLoadedState,
   type LoadedState,
   type ResolveContext,
@@ -272,5 +273,50 @@ describe("rowsForApi", () => {
     });
     expect(rowsForApi(s, "Contact")).toEqual([]);
     expect(rowsForApi(s, "Task")).toEqual([{ Subject: "stray" }]);
+  });
+});
+
+describe("resolveChildPlans", () => {
+  it("fans out one plan per loaded parent (Task WhoId -> Lead + Contact)", () => {
+    const s = withRoot();
+    s.singles.set("Contact", new Map([["003A", { id: "003A", fields: { Id: "003A" } }]]));
+    const plans = resolveChildPlans("Task", s, ctx());
+    expect(plans).toEqual([
+      { childApi: "Task", lookupField: "WhoId", parentApi: "Lead", parentId: "00Qxx0000012345" },
+      { childApi: "Task", lookupField: "WhoId", parentApi: "Contact", parentId: "003A" },
+    ]);
+  });
+
+  it("dedupes the same parent reached twice and keeps resolveTarget on the first plan", () => {
+    const s = withRoot();
+    s.children.set("Lead::ConvertedAccountId::001B", {
+      childApi: "Lead",
+      lookupField: "ConvertedAccountId",
+      parentApi: "Account",
+      parentId: "001B",
+      rows: [{ Id: "00Qxx0000012345" }],
+      offset: 1,
+      exhausted: true,
+    });
+    const plans = resolveChildPlans("Task", s, ctx());
+    expect(plans).toEqual([
+      { childApi: "Task", lookupField: "WhoId", parentApi: "Lead", parentId: "00Qxx0000012345" },
+    ]);
+    const plan = resolveTarget("Task", s, ctx());
+    expect(plan).toEqual({ kind: "children", ...plans[0] });
+  });
+
+  it("returns [] when the node has no lookups, and hints the parent count", () => {
+    expect(resolveChildPlans("Lead", emptyLoadedState(), ctx())).toEqual([]);
+    const s = withRoot();
+    s.singles.set("Contact", new Map([["003A", { id: "003A", fields: { Id: "003A" } }]]));
+    expect(nodeRecordState("Task", s, ctx())).toEqual({
+      state: "reachable",
+      hint: "Click to pull via 2 parents",
+    });
+    expect(nodeRecordState("Task", withRoot(), ctx())).toEqual({
+      state: "reachable",
+      hint: "Click to pull via Lead",
+    });
   });
 });

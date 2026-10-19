@@ -25,6 +25,20 @@ export interface RecordSection {
   loadingMore: boolean;
 }
 
+/** Picker candidates scoped to one loaded parent (eye list tab). */
+export interface RecordCandidateGroup {
+  key: string;
+  label: string;
+  ids: { id: string; name: string }[];
+}
+
+/** Grid rows scoped to one loaded parent (table-grid modal tab). */
+export interface RecordTableGroup {
+  key: string;
+  label: string;
+  rows: Record<string, unknown>[];
+}
+
 export interface RecordPopData {
   apiName: string;
   nodeLabel: string;
@@ -49,6 +63,9 @@ export interface RecordPopData {
   candidates: { id: string; name: string }[];
   /** Every aboard row for the entity: singles then child rows, deduped by Id. Feeds the table-grid modal. */
   tableRows: Record<string, unknown>[];
+  /** Per-parent slices of candidates/tableRows; tabs render when > 1. */
+  candidateGroups: RecordCandidateGroup[];
+  tableGroups: RecordTableGroup[];
   selectedId: string | null;
   /** Lookup jump context: which source field's target this panel shows. */
   lookup?: {
@@ -264,6 +281,8 @@ export function RecordPopover({
   const rootRef = useRef<HTMLDivElement>(null);
   const [copiedLookup, setCopiedLookup] = useState(false);
   const [gridOpen, setGridOpen] = useState(false);
+  /** Picker candidate tab: "__all__" or a parent group key. */
+  const [candTab, setCandTab] = useState("__all__");
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -286,6 +305,7 @@ export function RecordPopover({
   useEffect(() => {
     setCopiedLookup(false);
     setGridOpen(false);
+    setCandTab("__all__");
   }, [pop.apiName, pop.mode, pop.lookup?.targetId]);
 
   const W = 320;
@@ -378,6 +398,12 @@ export function RecordPopover({
     );
   }
 
+  // Picker tabs: one per loaded parent when several fed this node.
+  // "All" preserves the full aboard list; a parent tab scopes to its rows.
+  const tabbed = pop.candidateGroups.length > 1;
+  const activeTab = tabbed ? pop.candidateGroups.find((g) => g.key === candTab) : undefined;
+  const shownCandidates = activeTab ? activeTab.ids : pop.candidates;
+
   return (
     <div
       ref={rootRef}
@@ -466,15 +492,50 @@ export function RecordPopover({
         {pop.mode === "picker" && !pop.blockedHint && (
           <div className="px-1 py-1">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-ivory-600">
-              {pop.candidates.length === 0
+              {shownCandidates.length === 0
                 ? "No records aboard yet"
-                : pop.candidates.length === 1
+                : shownCandidates.length === 1
                   ? "1 record aboard - visualizing it"
-                  : `${pop.candidates.length} records aboard - pick one to visualize`}
+                  : `${shownCandidates.length} records aboard - pick one to visualize`}
             </p>
-            {pop.candidates.length > 0 && (
+            {tabbed && (
+              <div className="mt-1.5 flex flex-wrap gap-1" role="tablist" aria-label="Parent records">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={!activeTab}
+                  onClick={() => setCandTab("__all__")}
+                  title="Every aboard record, all parents"
+                  className={`rounded-md border px-1.5 py-0.5 text-[10px] font-semibold transition-colors cursor-pointer ${
+                    !activeTab
+                      ? "border-bronze-400 bg-bronze-100 text-bronze-700"
+                      : "border-[var(--color-line-soft)] text-ivory-500 hover:text-ivory-950"
+                  }`}
+                >
+                  All ({pop.candidates.length})
+                </button>
+                {pop.candidateGroups.map((g) => (
+                  <button
+                    key={g.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab?.key === g.key}
+                    onClick={() => setCandTab(g.key)}
+                    title={g.label}
+                    className={`max-w-[140px] truncate rounded-md border px-1.5 py-0.5 text-[10px] font-semibold transition-colors cursor-pointer ${
+                      activeTab?.key === g.key
+                        ? "border-bronze-400 bg-bronze-100 text-bronze-700"
+                        : "border-[var(--color-line-soft)] text-ivory-500 hover:text-ivory-950"
+                    }`}
+                  >
+                    {g.label} ({g.ids.length})
+                  </button>
+                ))}
+              </div>
+            )}
+            {shownCandidates.length > 0 && (
               <ul className="mt-1.5 max-h-[180px] space-y-1 overflow-y-auto">
-                {pop.candidates.map((c) => {
+                {shownCandidates.map((c) => {
                   const active = pop.selectedId === c.id;
                   return (
                     <li key={c.id} className={`rounded-lg border px-2 py-1.5 transition-colors ${
@@ -577,6 +638,7 @@ export function RecordPopover({
           apiName={pop.apiName}
           nodeLabel={pop.nodeLabel}
           rows={pop.tableRows}
+          groups={pop.tableGroups}
           onClose={() => setGridOpen(false)}
           onEditRecord={onEditRecord}
         />

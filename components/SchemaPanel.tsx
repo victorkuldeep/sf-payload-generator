@@ -70,6 +70,7 @@ import {
   selectedRecordId,
   knownIdsFor,
   rowsForApi,
+  resolveChildPlans,
   emptyLoadedState,
   childPageKey,
   RECORD_ROW_LIMIT,
@@ -1275,6 +1276,22 @@ export default function SchemaPanel({
     return rows;
   }, [runRecordQuery, childSelectFor]);
 
+  /** Pull first pages for parent plans that have none yet (a parent loaded
+   * after the first pull). One denied parent never blocks the eye - whatever
+   * is aboard still opens. */
+  const pullMissingPlans = useCallback(async (apiName: string): Promise<void> => {
+    const store = recordStoreRef.current;
+    const plans = resolveChildPlans(apiName, store, recordCtxRef.current);
+    for (const p of plans) {
+      if (store.children.has(childPageKey(p.childApi, p.lookupField, p.parentId))) continue;
+      try {
+        await pullChildPage(p.childApi, p.lookupField, p.parentApi, p.parentId, 0, false);
+      } catch {
+        // Swallowed per plan: the eye opens with whatever is aboard.
+      }
+    }
+  }, [pullChildPage]);
+
   /** Lookup jump: from one loaded row's reference field, fetch the target's
    * key field (Name, else OrderNumber-style, else raw Id) with one deliberate
    * query. Targets off-canvas resolve without touching the canvas; targets
@@ -1396,9 +1413,19 @@ export default function SchemaPanel({
     anchor: { x: number; y: number; width: number; height: number }
   ) => {
     setRecordPopError(null);
-    // Live already? Open the full record panel (inspect + edit) - the eye
-    // never dumps data on first pull; the entity box carries it instead.
+    // Live already? Converge first: parents loaded after the last pull get
+    // their first page now, so every on-canvas parent is represented. The
+    // eye never dumps data on first pull; the entity box carries it instead.
     if (knownIdsFor(recordStoreRef.current, apiName).length > 0) {
+      if (recordBusyRef.current) return;
+      setRecordBusy(apiName);
+      recordBusyRef.current = apiName;
+      try {
+        await pullMissingPlans(apiName);
+      } finally {
+        recordBusyRef.current = null;
+        setRecordBusy(null);
+      }
       setRecordPop({ apiName, x: anchor.x, y: anchor.y, mode: "record" });
       return;
     }
@@ -1417,18 +1444,36 @@ export default function SchemaPanel({
         // One record: pull silently, entity box + field peeks carry it.
         pulled.push({ api: apiName, fields: await pullSingle(apiName, plan.id) });
       } else {
-        const rows = await pullChildPage(plan.childApi, plan.lookupField, plan.parentApi, plan.parentId, 0, false);
-        if (rows.length === 0) {
+        // Fan out: one first-page per loaded parent, so multi-parent
+        // children (Task, junctions) never skip a parent's rows. One denied
+        // parent fails into the banner without sinking the others.
+        const plans = resolveChildPlans(apiName, recordStoreRef.current, recordCtxRef.current);
+        let total = 0;
+        let firstId: string | null = null;
+        for (const p of plans) {
+          let rows: Record<string, unknown>[] = [];
+          try {
+            rows = await pullChildPage(p.childApi, p.lookupField, p.parentApi, p.parentId, 0, false);
+          } catch (err) {
+            setRecordPopError(err instanceof Error ? err.message : "Record pull failed.");
+            continue;
+          }
+          total += rows.length;
+          if (!firstId) {
+            const fid = rows[0]?.Id;
+            if (typeof fid === "string" && fid) firstId = fid;
+          }
+        }
+        if (total === 0) {
           setRecordPop({ apiName, x: anchor.x, y: anchor.y, mode: "picker" });
           return;
         }
         // First row visualizes by default (full row, not the list subset).
-        const firstId = rows[0].Id;
-        if (typeof firstId === "string" && firstId) {
+        if (firstId) {
           pulled.push({ api: apiName, fields: await pullSingle(apiName, firstId) });
         }
         // Many rows: open the picker table so one can be chosen.
-        if (rows.length > 1) {
+        if (total > 1) {
           setRecordPop({ apiName, x: anchor.x, y: anchor.y, mode: "picker" });
         }
       }
@@ -1440,7 +1485,7 @@ export default function SchemaPanel({
       recordBusyRef.current = null;
       setRecordBusy(null);
     }
-  }, [pullSingle, pullChildPage]);
+  }, [pullSingle, pullChildPage, pullMissingPlans]);
 
   const recordStoreRef = useRef(recordStore);
   recordStoreRef.current = recordStore;
@@ -1793,6 +1838,8 @@ export default function SchemaPanel({
         mode: "lookup",
         candidates: [],
         tableRows: [],
+        candidateGroups: [],
+        tableGroups: [],
         selectedId: null,
         lookup: {
           sourceApi: recordLookup.sourceApi,
@@ -1838,6 +1885,22 @@ export default function SchemaPanel({
     };
     const tableRows = rowsForApi(recordStore, apiName);
     const candidates = knownIdsFor(recordStore, apiName).map((id) => ({ id, name: nameOf(id) }));
+    // Per-parent slices for the tabbed picker + grid: one group per loaded
+    // parent page with rows. A merged row belongs to a parent when its
+    // lookup value equals that parent's id (slim and full rows alike).
+    const candidateGroups: RecordPopData["candidateGroups"] = [];
+    const tableGroups: RecordPopData["tableGroups"] = [];
+    for (const [key, page] of recordStore.children) {
+      if (page.childApi !== apiName) continue;
+      const label = `${labels.get(page.parentApi) ?? page.parentApi} · ${page.lookupField}`;
+      const ids = page.rows
+        .map((r) => (typeof r.Id === "string" ? r.Id : null))
+        .filter((id): id is string => !!id)
+        .map((id) => ({ id, name: nameOf(id) }));
+      if (ids.length > 0) candidateGroups.push({ key, label, ids });
+      const grows = tableRows.filter((r) => r[page.lookupField] === page.parentId);
+      if (grows.length > 0) tableGroups.push({ key, label, rows: grows });
+    }
     const selectedId = selectedRecordId(apiName, recordStore, recordSel[apiName] ?? null);
     const resolvedMode = recordPop?.apiName === apiName ? recordPop.mode : "picker";
     if (singles.length === 0 && sections.length === 0 && !loading) {
@@ -1850,6 +1913,7 @@ export default function SchemaPanel({
             : `Nothing loaded connects here yet.`,
           blockedApi: plan.missingApi === apiName ? null : plan.missingApi,
           mode: "picker", candidates, selectedId, tableRows: [],
+          candidateGroups: [], tableGroups: [],
         };
       }
     }
@@ -1872,6 +1936,7 @@ export default function SchemaPanel({
       blockedHint: null,
       blockedApi: null,
       mode: resolvedMode, candidates, selectedId, tableRows,
+      candidateGroups, tableGroups,
     };
   }, [labels, recordStore, recordSel, recordBusy, recordPopError, recordCtx, recordPop, recordLookup]);
 

@@ -9,7 +9,7 @@ import {
   gridRowsToMatrix,
   gridRowsToTsv,
 } from "@/lib/erd/recordGrid";
-import { formatCellValue } from "./RecordPopover";
+import { formatCellValue, type RecordTableGroup } from "./RecordPopover";
 import { ColumnPickerModal } from "./ColumnPickerModal";
 
 const ICON_BTN =
@@ -25,12 +25,15 @@ export function RecordGridModal({
   apiName,
   nodeLabel,
   rows,
+  groups,
   onClose,
   onEditRecord,
 }: {
   apiName: string;
   nodeLabel: string;
   rows: Record<string, unknown>[];
+  /** Per-parent slices; tabs render when > 1. Defaults to every row. */
+  groups?: RecordTableGroup[];
   onClose: () => void;
   /** Open the existing full-screen edit modal for one row. */
   onEditRecord: (apiName: string, id: string) => void;
@@ -41,6 +44,12 @@ export function RecordGridModal({
   const [colsOpen, setColsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** Parent tab: "__all__" or a group key. Search/filters/columns follow it. */
+  const [groupKey, setGroupKey] = useState("__all__");
+  const parentGroups = groups ?? [];
+  const tabbed = parentGroups.length > 1;
+  const activeGroup = tabbed ? parentGroups.find((g) => g.key === groupKey) : undefined;
+  const activeRows = activeGroup ? activeGroup.rows : rows;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -55,11 +64,11 @@ export function RecordGridModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, colsOpen]);
 
-  const allCols = useMemo(() => gridColumns(rows), [rows]);
+  const allCols = useMemo(() => gridColumns(activeRows), [activeRows]);
   const visibleCols = useMemo(() => allCols.filter((c) => !hidden.has(c)), [allCols, hidden]);
   const filtered = useMemo(
-    () => filterGridRows(rows, allCols, { search, cols: colFilters, hidden }),
-    [rows, allCols, search, colFilters, hidden]
+    () => filterGridRows(activeRows, allCols, { search, cols: colFilters, hidden }),
+    [activeRows, allCols, search, colFilters, hidden]
   );
 
   const copyExcel = async () => {
@@ -126,7 +135,7 @@ export function RecordGridModal({
             <p className="min-w-0 flex-1 truncate text-[12px] font-semibold text-ivory-950">
               {nodeLabel} · <span className="font-mono">{apiName}</span>
               <span className="ml-2 font-mono text-[10px] font-normal text-ivory-500">
-                {filtered.length}/{rows.length} rows · {visibleCols.length}/{allCols.length} cols
+                {filtered.length}/{activeRows.length} rows · {visibleCols.length}/{allCols.length} cols
               </span>
             </p>
             <button
@@ -172,6 +181,41 @@ export function RecordGridModal({
               </svg>
             </button>
           </div>
+          {tabbed && (
+            <div className="mt-2 flex flex-wrap gap-1" role="tablist" aria-label="Parent records">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={!activeGroup}
+                onClick={() => setGroupKey("__all__")}
+                title="Every aboard record, all parents"
+                className={`rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
+                  !activeGroup
+                    ? "border-bronze-400 bg-bronze-100 text-bronze-700"
+                    : "border-[var(--color-line)] bg-white text-ivory-500 hover:text-ivory-950"
+                }`}
+              >
+                All ({rows.length})
+              </button>
+              {parentGroups.map((g) => (
+                <button
+                  key={g.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeGroup?.key === g.key}
+                  onClick={() => setGroupKey(g.key)}
+                  title={g.label}
+                  className={`max-w-[220px] truncate rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
+                    activeGroup?.key === g.key
+                      ? "border-bronze-400 bg-bronze-100 text-bronze-700"
+                      : "border-[var(--color-line)] bg-white text-ivory-500 hover:text-ivory-950"
+                  }`}
+                >
+                  {g.label} ({g.rows.length})
+                </button>
+              ))}
+            </div>
+          )}
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             <div className="relative min-w-[180px] flex-1">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true" className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-ivory-500">
