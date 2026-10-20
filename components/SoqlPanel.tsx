@@ -49,7 +49,15 @@ const SOQL_TIMEOUT_MS = 120000;
  * tab's memory without bound. 500k small SOQL rows ≈ low-hundreds MB.
  */
 const ROW_CEILING = 500_000;
-const RENDER_CAP = 500;
+const PAGE_SIZES = [50, 100, 200, 500];
+
+/** Compact page numbers: 0-based pages, "l"/"r" stand for ellipsis gaps. */
+function pageList(cur: number, total: number): (number | "l" | "r")[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i);
+  if (cur <= 2) return [0, 1, 2, 3, "r", total - 1];
+  if (cur >= total - 3) return [0, "l", total - 4, total - 3, total - 2, total - 1];
+  return [0, "l", cur - 1, cur, cur + 1, "r", total - 1];
+}
 
 const TEMPLATES: { name: string; soql: string; tooling?: boolean }[] = [
   {
@@ -641,6 +649,15 @@ export default function SoqlPanel({
     }
   }, [soql, instanceUrl, apiVersion, getToken, onSessionExpired]);
 
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(100);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+
+  // New result set or new filter view: back to the first page.
+  useEffect(() => {
+    setPage(0);
+  }, [result, jqlRows]);
+
   /** Displayed table: JsonQL override when active, else the server table. */
   const shown: SoqlRow | null = useMemo(() => {
     if (!result || !jqlRows) return result;
@@ -653,6 +670,18 @@ export default function SoqlPanel({
       timeMs: result.timeMs,
     };
   }, [result, jqlRows]);
+
+  // Premium paging over the displayed view (server rows or JsonQL output):
+  // only one page of <tr> ever hits the DOM, so 10k rows can't hang the tab.
+  const totalPages = shown ? Math.max(1, Math.ceil(shown.rows.length / pageSize)) : 1;
+  const safePage = Math.min(page, totalPages - 1);
+  const pageStart = safePage * pageSize;
+  const pageRows = shown ? shown.rows.slice(pageStart, pageStart + pageSize) : [];
+
+  const gotoPage = (p: number) => {
+    setPage(Math.max(0, Math.min(p, totalPages - 1)));
+    tableScrollRef.current?.scrollTo({ top: 0 });
+  };
 
   const exportText = useCallback(
     (format: "csv" | "tsv" | "json") => {
@@ -1085,7 +1114,7 @@ export default function SoqlPanel({
               {mode === "soql" && tooling && <Badge variant="info">Tooling</Badge>}
               {mode === "soql" && allRows && <Badge variant="warning">queryAll</Badge>}
             </div>
-            <div className="max-h-96 overflow-auto">
+            <div ref={tableScrollRef} className="max-h-96 overflow-auto">
               <table className="w-full border-collapse text-xs">
                 <thead className="sticky top-0">
                   <tr>
@@ -1100,8 +1129,8 @@ export default function SoqlPanel({
                   </tr>
                 </thead>
                 <tbody>
-                  {shown.rows.slice(0, RENDER_CAP).map((r, i) => (
-                    <tr key={i} className="odd:bg-[var(--color-surface)] even:bg-[var(--color-canvas)] hover:bg-ivory-300">
+                  {pageRows.map((r, i) => (
+                    <tr key={pageStart + i} className="odd:bg-[var(--color-surface)] even:bg-[var(--color-canvas)] hover:bg-ivory-300">
                       {r.map((cell, j) => (
                         <td
                           key={j}
@@ -1115,15 +1144,106 @@ export default function SoqlPanel({
                   ))}
                 </tbody>
               </table>
-              {shown.rows.length > RENDER_CAP && (
-                <p className="px-3 py-2 text-[11px] text-ivory-600">
-                  Showing first {RENDER_CAP} of {shown.rows.length} fetched rows - export for the rest.
-                </p>
-              )}
               {shown.rows.length === 0 && (
                 <p className="px-3 py-6 text-center text-xs text-ivory-600">Query ran clean - zero rows matched.</p>
               )}
             </div>
+            {shown.rows.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 border-t border-[var(--color-line-soft)] bg-[var(--color-surface-soft)] px-3 py-1.5 text-[11px] text-ivory-700">
+                <div className="flex flex-1 items-center">
+                  <span>
+                    Showing {(pageStart + 1).toLocaleString()}–{Math.min(pageStart + pageSize, shown.rows.length).toLocaleString()} of {shown.rows.length.toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex flex-1 items-center justify-center gap-2">
+                  <span className="font-medium text-ivory-950">
+                    Page {(safePage + 1).toLocaleString()} of {totalPages.toLocaleString()}
+                  </span>
+                  <label className="flex items-center gap-1">
+                    Per page
+                    <select
+                      value={pageSize}
+                      onChange={(e) => {
+                        setPageSize(Number(e.target.value));
+                        setPage(0);
+                      }}
+                      aria-label="Rows per page"
+                      className="cursor-pointer rounded-md border border-[var(--color-line-soft)] bg-white px-1 py-0.5 font-mono text-[11px] text-ivory-950"
+                    >
+                      {PAGE_SIZES.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="flex flex-1 items-center justify-end">
+                  <div className="flex items-center" role="navigation" aria-label="Result pages">
+                    <button
+                      type="button"
+                      onClick={() => gotoPage(0)}
+                      disabled={safePage === 0}
+                      aria-label="First page"
+                      title="First page"
+                      className="-ml-px cursor-pointer rounded-none border border-[var(--color-line)] bg-white px-2 py-1 font-semibold text-ivory-700 first:ml-0 first:rounded-l-md hover:bg-bronze-100 hover:text-bronze-700 disabled:opacity-40"
+                    >
+                      First
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => gotoPage(safePage - 1)}
+                      disabled={safePage === 0}
+                      aria-label="Previous page"
+                      title="Previous page"
+                      className="-ml-px cursor-pointer rounded-none border border-[var(--color-line)] bg-white px-2 py-1 font-semibold text-ivory-700 hover:bg-bronze-100 hover:text-bronze-700 disabled:opacity-40"
+                    >
+                      ‹
+                    </button>
+                    {pageList(safePage, totalPages).map((p, k) =>
+                      p === "l" || p === "r" ? (
+                        <span key={`${p}${k}`} className="-ml-px border border-[var(--color-line)] bg-white px-1.5 py-1 text-ivory-500">…</span>
+                      ) : (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => gotoPage(p)}
+                          disabled={p === safePage}
+                          aria-label={`Page ${p + 1}`}
+                          aria-current={p === safePage ? "page" : undefined}
+                          title={`Page ${p + 1}`}
+                          className={`-ml-px cursor-pointer rounded-none border border-[var(--color-line)] bg-white px-2 py-1 font-mono ${
+                            p === safePage
+                              ? "font-bold text-bronze-700 underline decoration-bronze-400 decoration-2 underline-offset-2"
+                              : "text-ivory-700 hover:bg-bronze-100 hover:text-bronze-700"
+                          }`}
+                        >
+                          {p + 1}
+                        </button>
+                      )
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => gotoPage(safePage + 1)}
+                      disabled={safePage >= totalPages - 1}
+                      aria-label="Next page"
+                      title="Next page"
+                      className="-ml-px cursor-pointer rounded-none border border-[var(--color-line)] bg-white px-2 py-1 font-semibold text-ivory-700 hover:bg-bronze-100 hover:text-bronze-700 disabled:opacity-40"
+                    >
+                      ›
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => gotoPage(totalPages - 1)}
+                      disabled={safePage >= totalPages - 1}
+                      aria-label="Last page"
+                      title="Last page"
+                      className="-ml-px cursor-pointer rounded-none border border-[var(--color-line)] bg-white px-2 py-1 font-semibold text-ivory-700 last:rounded-r-md hover:bg-bronze-100 hover:text-bronze-700 disabled:opacity-40"
+                    >
+                      Last
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
