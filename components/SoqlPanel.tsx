@@ -51,12 +51,26 @@ const SOQL_TIMEOUT_MS = 120000;
 const ROW_CEILING = 500_000;
 const PAGE_SIZES = [10, 20, 50, 100, 200, 500];
 
-/** Compact page numbers: 0-based pages, "l"/"r" stand for ellipsis gaps. */
+/**
+ * Block sliding window: 10 consecutive page buttons that jump in tens
+ * (1-10, then 11-20, …), framed by First / Prev / … / Next / Last with
+ * ellipses wherever pages are skipped. Thousands of pages never print -
+ * the window shifts as the current page crosses each block edge.
+ */
 function pageList(cur: number, total: number): (number | "l" | "r")[] {
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i);
-  if (cur <= 2) return [0, 1, 2, 3, "r", total - 1];
-  if (cur >= total - 3) return [0, "l", total - 4, total - 3, total - 2, total - 1];
-  return [0, "l", cur - 1, cur, cur + 1, "r", total - 1];
+  if (total <= 12) return Array.from({ length: total }, (_, i) => i);
+  const start = Math.min(Math.floor(cur / 10) * 10, total - 10);
+  const out: (number | "l" | "r")[] = [];
+  if (start > 0) {
+    out.push(0);
+    if (start > 1) out.push("l");
+  }
+  for (let i = start; i < start + 10; i++) out.push(i);
+  if (start + 10 < total) {
+    if (start + 10 < total - 1) out.push("r");
+    out.push(total - 1);
+  }
+  return out;
 }
 
 const TEMPLATES: { name: string; soql: string; tooling?: boolean }[] = [
