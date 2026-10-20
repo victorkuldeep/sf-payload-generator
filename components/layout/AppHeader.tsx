@@ -173,7 +173,7 @@ function MegaPanel({
   );
 }
 
-export type NavMode = "home" | "builder" | "composite" | "soql" | "graphql" | "schema" | "rest" | "apex" | "events";
+export type NavMode = "home" | "builder" | "composite" | "soql" | "graphql" | "schema" | "rest" | "apex" | "events" | "webhooks";
 
 interface AppHeaderProps {
   connected?: boolean;
@@ -318,6 +318,7 @@ export function AppHeader(props: AppHeaderProps) {
       items: [
         { kind: "mode", id: "apex", label: "Apex", desc: "Anonymous Apex runner" },
         { kind: "mode", id: "events", label: "Events", desc: "Live platform event monitor" },
+        { kind: "mode", id: "webhooks", label: "Webhooks", desc: "Live inbound webhook inbox" },
       ],
     },
     {

@@ -56,6 +56,7 @@ import SoqlPanel from "@/components/SoqlPanel";
 import RestExplorerPanel from "@/components/RestExplorerPanel";
 import { ApexPanel } from "@/components/ApexPanel";
 import { EventMonitorPanel } from "@/components/EventMonitorPanel";
+import { WebhooksPanel } from "@/components/WebhooksPanel";
 import dynamic from "next/dynamic";
 
 // Schema canvas loads on demand: keeps the main bundle lean and the
@@ -69,7 +70,7 @@ const SchemaPanel = dynamic(() => import("@/components/SchemaPanel"), {
   ),
 });
 
-type BuilderMode = "home" | "single" | "composite" | "soql" | "graphql" | "schema" | "rest" | "apex" | "events";
+type BuilderMode = "home" | "single" | "composite" | "soql" | "graphql" | "schema" | "rest" | "apex" | "events" | "webhooks";
 
 
 
@@ -655,13 +656,14 @@ export default function Home() {
         : mode === "rest" ? "rest"
         : mode === "apex" ? "apex"
         : mode === "events" ? "events"
+        : mode === "webhooks" ? "webhooks"
         : "builder";
       scrollToSection(id, false);
     }, 80);
   }, []);
 
   const handleNavigate = useCallback(
-    (mode: "home" | "builder" | "composite" | "soql" | "graphql" | "schema" | "rest" | "apex" | "events") => {
+    (mode: "home" | "builder" | "composite" | "soql" | "graphql" | "schema" | "rest" | "apex" | "events" | "webhooks") => {
       // Home is always available - it just shows the start screen.
       if (mode === "home") {
         goMode("home");
@@ -1787,6 +1789,19 @@ export default function Home() {
               <section id="events" aria-label="Event Monitor" className="scroll-mt-20">
                 <EventMonitorPanel
                   active={state.mode === "events"}
+                  instanceUrl={state.instanceUrl}
+                  apiVersion={state.apiVersion}
+                  getToken={() => tokenRef.current}
+                  onSessionExpired={handleSessionExpired}
+                />
+              </section>
+            </div>
+
+            {/* ── Webhooks console mode ── */}
+            <div hidden={state.mode !== "webhooks"}>
+              <section id="webhooks" aria-label="Webhooks Console" className="scroll-mt-20">
+                <WebhooksPanel
+                  active={state.mode === "webhooks"}
                   instanceUrl={state.instanceUrl}
                   apiVersion={state.apiVersion}
                   getToken={() => tokenRef.current}
