@@ -56,6 +56,15 @@ const pill: Record<string, string> = {
   idle: "border-[var(--color-line)] bg-white text-ivory-500",
 };
 
+/** Proper chevron for the channel dropdown - no text glyphs. */
+function ChevronDown({ className = "" }: { className?: string }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className}>
+      <path d="M4 6l4 4 4-4" />
+    </svg>
+  );
+}
+
 /** Event Monitor: live Bayeux subscribe over platform events, CDC and topics. */
 export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSessionExpired, active = true }: EventMonitorPanelProps) {
   const [kind, setKind] = useState<ChannelKind>("standard");
@@ -289,21 +298,34 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
     return data.records ?? [];
   };
 
+  /** Global describe, one call - reused by the custom + change lists. */
+  const describeObjects = async (token: string): Promise<{ name: string; label: string }[]> => {
+    const ver = apiVersion.startsWith("v") ? apiVersion : `v${apiVersion}`;
+    const response = await apiFetch(
+      "/api/salesforce/rest",
+      { instanceUrl, token, scope: "org", method: "GET", path: `/services/data/${ver}/sobjects/` },
+      60000
+    );
+    const data = (await response.json()) as { success?: boolean; body?: { sobjects?: { name: string; label: string }[] }; error?: string };
+    if (!response.ok || data.error) throw new Error(typeof data.error === "string" ? data.error : "List failed");
+    return data.body?.sobjects ?? [];
+  };
+
   /** Auto-pull the channel list for the active type - no hand-typed names. */
   const loadOptions = async (forKind: ChannelKind, token: string) => {
     setLoadingOptions(true);
     setOptionsNote(null);
     try {
       if (forKind === "custom") {
-        // In SOQL LIKE, _ is a single-char wildcard: unescaped '%__e' matches
-        // "AccountShare" (ends "re"). Escape it, then double-check client-side.
-        const rows = await runSoql(token, "SELECT QualifiedApiName, Label FROM EntityDefinition WHERE QualifiedApiName LIKE '%\\_\\_e' ORDER BY QualifiedApiName LIMIT 300");
-        setOptions(
-          rows
-            .map((r) => ({ value: String(r.QualifiedApiName ?? ""), label: String(r.Label ?? r.QualifiedApiName ?? "") }))
-            .filter((o) => o.value && o.value.endsWith("__e"))
-        );
-        if (rows.length >= 300) setOptionsNote("300+ custom events - type in the box to narrow, the dropdown only holds the first 300.");
+        // Proven against a live org: EntityDefinition LIKE cannot express a
+        // literal "__e" - unescaped _ is a wildcard (matches "AccountShare"),
+        // escaped \_ returns zero rows. Global describe + endsWith is exact.
+        const found = (await describeObjects(token))
+          .filter((s) => s.name.endsWith("__e"))
+          .map((s) => ({ value: s.name, label: s.label ?? s.name }))
+          .sort((a, b) => a.value.localeCompare(b.value));
+        setOptions(found);
+        if (found.length === 0) setOptionsNote("No custom platform events on this org.");
       } else if (forKind === "standard") {
         const rows = await runSoql(
           token,
@@ -324,21 +346,9 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
         );
         if (rows.length === 0) setOptionsNote("No push topics on this org - create one or type a channel path.");
       } else if (forKind === "change") {
-        const response = await apiFetch(
-          "/api/salesforce/rest",
-          {
-            instanceUrl,
-            token,
-            scope: "org",
-            method: "GET",
-            path: `/services/data/${apiVersion.startsWith("v") ? apiVersion : `v${apiVersion}`}/sobjects/`,
-          },
-          60000
-        );
-        const data = (await response.json()) as { success?: boolean; body?: { sobjects?: { name: string; label: string }[] }; error?: string };
-        if (!response.ok || data.error) throw new Error(typeof data.error === "string" ? data.error : "List failed");
+        const all = await describeObjects(token);
         setOptions(
-          (data.body?.sobjects ?? [])
+          all
             .map((s) => ({ value: s.name, label: s.label ?? s.name }))
             .sort((a, b) => a.value.localeCompare(b.value))
         );
@@ -385,7 +395,7 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
             {connected && status.state === "connected" ? `● ${status.clientId.slice(0, 8)}` : phase}
           </span>
         </div>
-        <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_1fr_120px_auto]">
+        <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto]">
           <div>
             <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[#777168]" htmlFor="ev-kind">Channel Type</label>
             <select
@@ -431,15 +441,15 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
                   aria-expanded={comboOpen}
                   aria-label="Show all channels"
                   title={options.length > 0 ? `Show all ${options.length} channels` : loadingOptions ? "Loading channels…" : "No channels loaded"}
-                  className="shrink-0 cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-2 text-[#27241F] hover:border-[#A98450] disabled:opacity-50"
+                  className="flex shrink-0 cursor-pointer items-center rounded-lg border border-[#E8E2D8] bg-white px-2 text-[#27241F] hover:border-[#A98450] disabled:opacity-50"
                 >
-                  {loadingOptions ? "…" : "▾"}
+                  <ChevronDown className={loadingOptions ? "animate-pulse" : ""} />
                 </button>
               )}
             </div>
             {comboOpen && kind !== "path" && (
-              <div className="absolute z-20 mt-1 max-h-72 w-72 overflow-hidden rounded-xl border border-[#E8E2D8] bg-white shadow-lg">
-                <div className="border-b border-[#E8E2D8] p-1.5">
+              <div className="absolute z-20 mt-1 max-h-80 w-[min(26rem,92vw)] overflow-hidden rounded-xl border border-[#E8E2D8] bg-white shadow-lg">
+                <div className="border-b border-[#E8E2D8] p-2">
                   <input
                     value={comboFilter}
                     onChange={(e) => setComboFilter(e.target.value)}
@@ -450,7 +460,7 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
                     className="w-full rounded-md border border-[#E8E2D8] px-2 py-1.5 text-[12px] text-[#27241F] placeholder:text-[#A39B8E] focus:border-[#A98450] focus:outline-none"
                   />
                 </div>
-                <ul className="max-h-56 overflow-y-auto p-1.5">
+                <ul className="max-h-72 overflow-y-auto p-1.5">
                   {options
                     .filter((o) => {
                       const q = comboFilter.trim().toLowerCase();
@@ -476,12 +486,15 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
                       </li>
                     ))}
                 </ul>
-                <div className="flex items-center justify-between border-t border-[#E8E2D8] bg-[var(--color-canvas)] px-2 py-1">
-                  <span className="font-mono text-[10px] text-[#777168]">{options.length} channels</span>
+                <div className="flex items-center justify-between gap-2 border-t border-[#E8E2D8] bg-[var(--color-canvas)] px-2.5 py-1.5">
+                  <span className="font-mono text-[10px] text-[#777168]">
+                    {options.length} channel{options.length === 1 ? "" : "s"}
+                    {comboFilter.trim() ? " (filtered)" : ""}
+                  </span>
                   <button
                     type="button"
                     onClick={() => setComboOpen(false)}
-                    className="cursor-pointer rounded px-1.5 py-0.5 text-[11px] font-semibold text-bronze-600 hover:bg-bronze-100"
+                    className="cursor-pointer rounded-md border border-[#E8E2D8] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#27241F] hover:border-[#A98450]"
                   >
                     Done
                   </button>
@@ -516,7 +529,7 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
               )}
             </div>
           </div>
-          <div className="flex items-end gap-1.5">
+          <div className="flex flex-wrap items-end gap-1.5">
             <Button
               size="sm"
               onClick={() => void subscribe()}
@@ -592,7 +605,7 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
       </div>
 
       <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
-        {subs.length > 0 && (
+        {(
           <div className="flex flex-wrap gap-1" role="tablist" aria-label="Subscriptions">
             <button
               type="button"
