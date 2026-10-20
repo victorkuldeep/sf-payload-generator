@@ -114,7 +114,10 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
     if (kind === "path") return n;
     if (!n) return "";
     if (kind === "standard" || kind === "custom") return platformEventChannel(n);
-    if (kind === "change") return /^[A-Za-z_][\w]*ChangeEvent$/.test(n) ? `/data/${n}` : changeEventChannel(n.replace(/__e$/, ""));
+    if (kind === "change") {
+      if (n === "ChangeEvents") return "/data/ChangeEvents";
+      return /^[A-Za-z_][\w]*ChangeEvent$/.test(n) ? `/data/${n}` : changeEventChannel(n.replace(/__e$/, ""));
+    }
     return topicChannel(n);
   }, [kind, name]);
 
@@ -285,10 +288,10 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
     }
   };
 
-  const runSoql = async (token: string, soql: string): Promise<Record<string, unknown>[]> => {
+  const runSoql = async (token: string, soql: string, useTooling = false): Promise<Record<string, unknown>[]> => {
     const response = await apiFetch(
       "/api/salesforce/soql",
-      { instanceUrl, token, apiVersion, soql },
+      { instanceUrl, token, apiVersion, soql, tooling: useTooling },
       60000
     );
     const data = (await response.json()) as { success?: boolean; records?: Record<string, unknown>[]; error?: string };
@@ -329,7 +332,7 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
       } else if (forKind === "standard") {
         const rows = await runSoql(
           token,
-          "SELECT QualifiedApiName, Label FROM EntityDefinition WHERE (QualifiedApiName LIKE '%Event' OR QualifiedApiName LIKE '%Stream') ORDER BY QualifiedApiName LIMIT 300"
+          "SELECT QualifiedApiName, Label FROM EntityDefinition WHERE (QualifiedApiName LIKE '%Event' OR QualifiedApiName LIKE '%Stream') AND (NOT QualifiedApiName LIKE '%ChangeEvent') ORDER BY QualifiedApiName LIMIT 300"
         );
         const skip = new Set(["Event", "EventLogFile"]);
         setOptions(
@@ -346,13 +349,18 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
         );
         if (rows.length === 0) setOptionsNote("No push topics on this org - create one or type a channel path.");
       } else if (forKind === "change") {
-        const all = await describeObjects(token);
-        setOptions(
-          all
-            .map((s) => ({ value: s.name, label: s.label ?? s.name }))
-            .sort((a, b) => a.value.localeCompare(b.value))
+        // Inspector's exact pattern: the standard ChangeEvents channel's
+        // members ARE the CDC-enabled entities - no guessing from describe.
+        const rows = await runSoql(
+          token,
+          "SELECT MasterLabel, SelectedEntity FROM PlatformEventChannelMember WHERE EventChannel = 'ChangeEvents' ORDER BY MasterLabel",
+          true
         );
-        setOptionsNote("Pick the object - CDC must be enabled for it or subscribe reports an unknown channel.");
+        const found = rows
+          .map((r) => ({ value: String(r.SelectedEntity ?? ""), label: String(r.MasterLabel ?? r.SelectedEntity ?? "") }))
+          .filter((o) => o.value);
+        setOptions([{ value: "ChangeEvents", label: "All Change Events" }, ...found]);
+        if (found.length === 0) setOptionsNote("No CDC-enabled objects on this org - enable Change Data Capture first.");
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Channel list failed";
