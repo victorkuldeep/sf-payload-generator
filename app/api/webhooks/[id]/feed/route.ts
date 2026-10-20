@@ -14,7 +14,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     const { env } = getCloudflareContext();
     const inbox = (env as unknown as { WEBHOOK_INBOX: WebhookInboxNamespace }).WEBHOOK_INBOX;
     const stub = inbox.getByName(id);
-    return await stub.fetch(req);
+    return await stub.fetch(new Request(req.url, { method: req.method, headers: req.headers }));
   } catch (err) {
     return Response.json({ ok: false, error: String((err as Error)?.message ?? err).slice(0, 200) }, { status: 500 });
   }
