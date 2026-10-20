@@ -20,9 +20,17 @@ export interface WebhookCapture {
   truncated: boolean;
 }
 
+export interface InboxResp {
+  status: number;
+  headers: Record<string, string>;
+  body: string;
+}
+
 export interface OwnerEntry {
   uuid: string;
   name: string;
+  /** Optional description captured at registration. */
+  note: string;
   active: boolean;
   expiresAt: number;
   lastAt: number;
@@ -38,6 +46,9 @@ interface InboxMeta {
   order: string[];
   name: string;
   lastAt: number;
+  paused: boolean;
+  /** Custom response config; null = default fixed envelope. */
+  resp: InboxResp | null;
 }
 
 interface OwnerIndex {
@@ -96,6 +107,38 @@ const CORS: Record<string, string> = {
 const json = (data: unknown, status = 200, extra?: Record<string, string>): Response =>
   Response.json(data, { status, headers: { ...CORS, ...(extra ?? {}) } });
 
+/** Default envelope is itself a template - one code path for every reply. */
+const DEFAULT_RESP: InboxResp = { status: 200, headers: {}, body: '{"ok":true,"id":"{{reqId}}"}' };
+
+function renderTemplate(tpl: string, vars: Record<string, string>): string {
+  return tpl.replace(/\{\{\s*([A-Za-z0-9_.:-]+)\s*\}\}/g, (m, key: string) =>
+    key in vars ? vars[key] : m
+  );
+}
+
+const RESP_HEADER_RE = /^[A-Za-z0-9-]+$/;
+const RESP_DROP_HEADERS = new Set(["content-length", "connection", "transfer-encoding"]);
+
+/** Validate an owner-supplied response config; null when invalid. */
+function sanitizeResp(cfg: unknown): InboxResp | null {
+  const c = cfg as Partial<InboxResp> | null;
+  if (!c || typeof c !== "object") return null;
+  if (!Number.isInteger(c.status) || (c.status as number) < 100 || (c.status as number) > 599) return null;
+  const headers: Record<string, string> = {};
+  if (c.headers !== undefined) {
+    if (!c.headers || typeof c.headers !== "object" || Array.isArray(c.headers)) return null;
+    const rows = Object.entries(c.headers as Record<string, unknown>);
+    if (rows.length > 10) return null;
+    for (const [k, v] of rows) {
+      if (!RESP_HEADER_RE.test(k) || k.length > 64 || typeof v !== "string" || v.length > 2048) return null;
+      if (RESP_DROP_HEADERS.has(k.toLowerCase())) continue;
+      headers[k] = v;
+    }
+  }
+  if (typeof c.body !== "string" || c.body.length > MIRROR_BODY_CHARS) return null;
+  return { status: c.status as number, headers, body: c.body };
+}
+
 const freshMeta = (now: number): InboxMeta => ({
   owner: null,
   expiresAt: 0,
@@ -106,6 +149,8 @@ const freshMeta = (now: number): InboxMeta => ({
   order: [],
   name: "",
   lastAt: 0,
+  paused: false,
+  resp: null,
 });
 
 async function sha256Hex(input: string): Promise<string> {
@@ -154,6 +199,8 @@ export class WebhookInbox {
     if (op === "claim") return this.claim(request);
     if (op === "heartbeat") return this.heartbeat(request);
     if (op === "release") return this.release(request);
+    if (op === "setPaused") return this.setPaused(request);
+    if (op === "response") return this.responseCfg(request);
     const subPath = at >= 0 ? "/" + seg.slice(at + 1).join("/") : "/" + seg.join("/");
     return this.receive(request, subPath, url);
   }
@@ -254,9 +301,10 @@ export class WebhookInbox {
 
   private async receive(request: Request, subPath: string, url: URL): Promise<Response> {
     // Registered inboxes only: claiming (via /register, Salesforce-validated)
-    // must come first. Random uuids 404 without reading or storing anything.
+    // must come first. Random or paused uuids 404 without reading or
+    // storing anything.
     const gate = await this.readMeta();
-    if (!gate.owner) return json({ error: "not found" }, 404);
+    if (!gate.owner || gate.paused) return json({ error: "not found" }, 404);
     const body = await this.readBody(request);
     if ("error" in body) return body.error;
     const text = new TextDecoder().decode(body.bytes);
@@ -306,7 +354,66 @@ export class WebhookInbox {
     meta.received += 1;
     meta.lastAt = now;
     await this.writeMeta(meta);
-    return json({ ok: true, id: rec.reqId });
+    return this.reply(meta.resp ?? DEFAULT_RESP, rec, text, headers, query);
+  }
+
+  /** Build the sender-facing reply from the inbox response config. */
+  private reply(
+    cfg: InboxResp,
+    rec: WebhookCapture,
+    bodyText: string,
+    headers: Record<string, string>,
+    query: Record<string, string>
+  ): Response {
+    const vars: Record<string, string> = {
+      method: rec.method,
+      path: rec.path,
+      reqId: rec.reqId,
+      at: new Date(rec.at).toISOString(),
+      size: String(rec.size),
+      body: bodyText.slice(0, 32768),
+    };
+    for (const [k, v] of Object.entries(query)) vars[`query.${k}`] = v;
+    for (const [k, v] of Object.entries(headers)) vars[`headers.${k.toLowerCase()}`] = v;
+    const out = renderTemplate(cfg.body, vars);
+    const outHeaders: Record<string, string> = { ...CORS };
+    let hasContentType = false;
+    for (const [k, v] of Object.entries(cfg.headers)) {
+      outHeaders[k] = renderTemplate(v, vars);
+      if (k.toLowerCase() === "content-type") hasContentType = true;
+    }
+    if (!hasContentType) {
+      try {
+        JSON.parse(out);
+        outHeaders["content-type"] = "application/json";
+      } catch {
+        outHeaders["content-type"] = "text/plain;charset=utf-8";
+      }
+    }
+    return new Response(out, { status: cfg.status, headers: outHeaders });
+  }
+
+  /** Owner-only response designer: read the config, or validate + store it. */
+  private async responseCfg(request: Request): Promise<Response> {
+    const body = await this.readJson<{ token?: string; instanceUrl?: string; config?: unknown }>(request);
+    if (!body?.token || !body.instanceUrl) return json({ ok: false, error: "owner session required" }, 401);
+    let owner: string;
+    try {
+      ({ owner } = await this.resolveOwner(body.token, body.instanceUrl));
+    } catch (err) {
+      if (err instanceof Response) return err;
+      return json({ ok: false, error: "session check failed" }, 401);
+    }
+    const meta = await this.readMeta();
+    if (!meta.owner || meta.owner !== owner) return json({ ok: false, error: "not found" }, 404);
+    if (body.config === undefined) {
+      return json({ ok: true, config: meta.resp ?? DEFAULT_RESP });
+    }
+    const clean = sanitizeResp(body.config);
+    if (!clean) return json({ ok: false, error: "bad response config" }, 400);
+    meta.resp = clean;
+    await this.writeMeta(meta);
+    return json({ ok: true, config: clean });
   }
 
   private async feed(request: Request): Promise<Response> {
@@ -399,6 +506,24 @@ export class WebhookInbox {
     return json({ ok: true, released: true });
   }
 
+  /** Owner-only pause switch: paused inboxes stop capturing (receive 404s). */
+  private async setPaused(request: Request): Promise<Response> {
+    const body = await this.readJson<{ token?: string; instanceUrl?: string; paused?: boolean }>(request);
+    if (!body?.token || !body.instanceUrl) return json({ ok: false, error: "owner session required" }, 401);
+    let owner: string;
+    try {
+      ({ owner } = await this.resolveOwner(body.token, body.instanceUrl));
+    } catch (err) {
+      if (err instanceof Response) return err;
+      return json({ ok: false, error: "session check failed" }, 401);
+    }
+    const meta = await this.readMeta();
+    if (!meta.owner || meta.owner !== owner) return json({ ok: false, error: "not found" }, 404);
+    meta.paused = body.paused === true;
+    await this.writeMeta(meta);
+    return json({ ok: true, paused: meta.paused });
+  }
+
   // ---------- owner index ops (DO named `owner:<orgId>:<userId>`) ----------
 
   private async ownerOp(op: string | undefined, request: Request): Promise<Response> {
@@ -407,6 +532,7 @@ export class WebhookInbox {
       instanceUrl?: string;
       uuid?: string;
       name?: string;
+      note?: string;
       active?: boolean;
       uuids?: { uuid: string; active: boolean }[];
     }>(request);
@@ -439,6 +565,7 @@ export class WebhookInbox {
       idx.entries[uuid] = {
         uuid,
         name: typeof body.name === "string" && body.name ? body.name.slice(0, 80) : (prev?.name ?? uuid),
+        note: typeof body.note === "string" && body.note ? body.note.slice(0, 280) : (prev?.note ?? ""),
         active: wantActive,
         expiresAt: prev?.expiresAt ?? 0,
         lastAt: prev?.lastAt ?? 0,
@@ -479,10 +606,11 @@ export class WebhookInbox {
       const uuid = typeof body.uuid === "string" ? body.uuid : "";
       const e = idx.entries[uuid];
       if (!e) return json({ ok: false, error: "not found" }, 404);
-      const b = body as unknown as { expiresAt?: number; lastAt?: number; name?: string };
+      const b = body as unknown as { expiresAt?: number; lastAt?: number; name?: string; note?: string };
       if (typeof b.expiresAt === "number") e.expiresAt = b.expiresAt;
       if (typeof b.lastAt === "number") e.lastAt = b.lastAt;
       if (typeof b.name === "string" && b.name) e.name = b.name.slice(0, 80);
+      if (typeof b.note === "string") e.note = b.note.slice(0, 280);
       await this.writeIndex(idx);
       return json({ ok: true, entry: e });
     }

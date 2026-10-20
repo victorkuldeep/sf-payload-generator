@@ -137,6 +137,82 @@ describe("WebhookInbox owner gating", () => {
     expect(theirs.status).toBe(404);
   });
 
+  it("stops capturing while paused and resumes after", async () => {
+    userinfoAs("org1", "user1");
+    const box = inbox();
+    await box.fetch(post(`/api/webhooks/${UUID}/claim`, { token: "t", instanceUrl: OWNER_URL }));
+    const pause = await box.fetch(post(`/api/webhooks/${UUID}/setPaused`, { token: "t", instanceUrl: OWNER_URL, paused: true }));
+    expect(pause.status).toBe(200);
+    const blocked = await box.fetch(post(`/api/webhooks/${UUID}`, { a: 1 }));
+    expect(blocked.status).toBe(404);
+    const resume = await box.fetch(post(`/api/webhooks/${UUID}/setPaused`, { token: "t", instanceUrl: OWNER_URL, paused: false }));
+    expect(resume.status).toBe(200);
+    const through = await box.fetch(post(`/api/webhooks/${UUID}`, { a: 1 }));
+    expect(through.status).toBe(200);
+  });
+
+  it("designs the sender-facing response with request templates", async () => {
+    userinfoAs("org1", "user1");
+    const box = inbox();
+    await box.fetch(post(`/api/webhooks/${UUID}/claim`, { token: "t", instanceUrl: OWNER_URL }));
+
+    // Default envelope carries the capture id.
+    const first = await box.fetch(post(`/api/webhooks/${UUID}`, { a: 1 }));
+    expect(first.status).toBe(200);
+    const def = (await first.json()) as { ok: boolean; id: string };
+    expect(def.ok).toBe(true);
+    expect(typeof def.id).toBe("string");
+
+    // Read current config, then set a custom one.
+    const got = (await (
+      await box.fetch(post(`/api/webhooks/${UUID}/response`, { token: "t", instanceUrl: OWNER_URL }))
+    ).json()) as { ok: boolean; config: { body: string } };
+    expect(got.ok).toBe(true);
+    expect(got.config.body).toContain("{{reqId}}");
+
+    const set = await box.fetch(
+      post(`/api/webhooks/${UUID}/response`, {
+        token: "t",
+        instanceUrl: OWNER_URL,
+        config: {
+          status: 201,
+          headers: { "X-Order": "created" },
+          body: '{"order":"{{query.o}}","via":"{{method}} {{path}}"}',
+        },
+      })
+    );
+    expect(set.status).toBe(200);
+
+    const cap = await box.fetch(post(`/api/webhooks/${UUID}/tmf/order?o=TMF-1`, { x: 1 }));
+    expect(cap.status).toBe(201);
+    expect(cap.headers.get("x-order")).toBe("created");
+    expect(cap.headers.get("content-type")).toContain("application/json");
+    expect(await cap.json()).toEqual({ order: "TMF-1", via: "POST /tmf/order" });
+
+    // Invalid configs are rejected, never stored.
+    const bad = await box.fetch(
+      post(`/api/webhooks/${UUID}/response`, {
+        token: "t",
+        instanceUrl: OWNER_URL,
+        config: { status: 99, body: "nope" },
+      })
+    );
+    expect(bad.status).toBe(400);
+
+    // Another user cannot read or rewrite the response.
+    userinfoAs("org1", "intruder");
+    const snooped = await box.fetch(post(`/api/webhooks/${UUID}/response`, { token: "x", instanceUrl: OWNER_URL }));
+    expect(snooped.status).toBe(404);
+    const hijacked = await box.fetch(
+      post(`/api/webhooks/${UUID}/response`, {
+        token: "x",
+        instanceUrl: OWNER_URL,
+        config: { status: 200, body: "hijacked" },
+      })
+    );
+    expect(hijacked.status).toBe(404);
+  });
+
   it("rejects management when the session is expired", async () => {
     vi.stubGlobal(
       "fetch",

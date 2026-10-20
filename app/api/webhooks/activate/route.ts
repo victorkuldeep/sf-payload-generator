@@ -2,7 +2,7 @@
  * POST /api/webhooks/activate { token, instanceUrl, uuids: [{ uuid, active }] }
  * Flips live/paused across the caller's registry. Cap: 10 live at once.
  */
-import { ID_RE, doJson, getOwnerInbox, resolveOwnerName } from "../../../../lib/webhooks/server";
+import { ID_RE, doJson, getInbox, getOwnerInbox, resolveOwnerName } from "../../../../lib/webhooks/server";
 
 export async function POST(req: Request) {
   let body: { token?: unknown; instanceUrl?: unknown; uuids?: unknown };
@@ -30,6 +30,17 @@ export async function POST(req: Request) {
       instanceUrl: body?.instanceUrl,
       uuids,
     });
+    if (touch.status !== 200 || touch.data.ok !== true) {
+      return Response.json(touch.data, { status: touch.status });
+    }
+    // Flip the inbox-level pause switch too, so paused inboxes stop capturing.
+    // Best-effort per inbox: an expired inbox must not fail the whole update.
+    const session = { token: body?.token, instanceUrl: body?.instanceUrl };
+    await Promise.all(
+      uuids.map((u) =>
+        doJson(getInbox(u.uuid), "setPaused", { ...session, paused: !u.active }).catch(() => undefined)
+      )
+    );
     return Response.json(touch.data, { status: touch.status });
   } catch (err) {
     if (err instanceof Response) return err;

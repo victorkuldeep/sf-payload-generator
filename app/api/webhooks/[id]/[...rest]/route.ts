@@ -7,7 +7,7 @@
  */
 import { ID_RE, doRequest, getInbox, getOwnerInbox, resolveOwnerName } from "../../../../../lib/webhooks/server";
 
-const OPS = new Set(["feed", "claim", "heartbeat", "release"]);
+const OPS = new Set(["feed", "claim", "heartbeat", "release", "setPaused", "response"]);
 
 function target(id: string, rest: string[], search: string): string {
   const path = rest.map((s) => encodeURIComponent(s)).join("/");

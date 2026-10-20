@@ -6,7 +6,7 @@
 import { doJson, getInbox, getOwnerInbox, resolveOwnerName } from "../../../../lib/webhooks/server";
 
 export async function POST(req: Request) {
-  let body: { token?: unknown; instanceUrl?: unknown; name?: unknown };
+  let body: { token?: unknown; instanceUrl?: unknown; name?: unknown; note?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -14,6 +14,7 @@ export async function POST(req: Request) {
   }
   const { token, instanceUrl } = body ?? {};
   const name = typeof body?.name === "string" ? body.name.slice(0, 80) : "";
+  const note = typeof body?.note === "string" ? body.note.slice(0, 280) : "";
   try {
     const owner = await resolveOwnerName(token, instanceUrl);
     const session = { token, instanceUrl };
@@ -24,7 +25,7 @@ export async function POST(req: Request) {
       if (claim.status !== 200 || claim.data.ok !== true) {
         return Response.json(claim.data, { status: claim.status });
       }
-      const reg = await doJson(getOwnerInbox(owner), "claim", { ...session, uuid, name, active: true });
+      const reg = await doJson(getOwnerInbox(owner), "claim", { ...session, uuid, name, note, active: true });
       if (reg.status !== 200 || reg.data.ok !== true) {
         // Roll back the inbox claim so the uuid can never strand claimed.
         await doJson(getInbox(uuid), "release", session).catch(() => undefined);
@@ -34,6 +35,7 @@ export async function POST(req: Request) {
         ...session,
         uuid,
         name,
+        note,
         expiresAt: claim.data.expiresAt,
         lastAt: Date.now(),
       }).catch(() => undefined);
