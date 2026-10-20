@@ -10,6 +10,8 @@ import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import { apiFetch, ApiTimeoutError } from "@/lib/api";
 import { downloadTextFile } from "@/lib/collection/postman";
 import { downloadQueryResult } from "@/lib/soql/export";
+import { QueryFilterBar } from "@/components/QueryFilterBar";
+import { QueryToolStrip } from "@/components/QueryToolStrip";
 import { newItemId } from "@/lib/collection/types";
 import {
   listSoqlQueries,
@@ -151,6 +153,11 @@ export default function SoqlPanel({
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
   const [result, setResult] = useState<SoqlRow | null>(null);
+  /** Raw server rows behind the table - JsonQL filters/aggregates these. */
+  const [baseRecords, setBaseRecords] = useState<unknown[] | null>(null);
+  /** JsonQL override rows (null = show server table) + status chip. */
+  const [jqlRows, setJqlRows] = useState<unknown[] | null>(null);
+  const [jqlLabel, setJqlLabel] = useState<string | null>(null);
   const [xlsxBusy, setXlsxBusy] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const stoppedRef = useRef(false);
@@ -329,6 +336,9 @@ export default function SoqlPanel({
       setRunning(true);
       setRunError(null);
       setResult(null);
+      setBaseRecords(null);
+      setJqlRows(null);
+      setJqlLabel(null);
       setSoslCounts(null);
       const started = Date.now();
       try {
@@ -350,6 +360,9 @@ export default function SoqlPanel({
           return;
         }
         const table = toObjectTable(data.searchRecords ?? []);
+        setBaseRecords(data.searchRecords ?? []);
+        setJqlRows(null);
+        setJqlLabel(null);
         setResult({
           columns: table.columns,
           rows: table.rows,
@@ -425,6 +438,9 @@ export default function SoqlPanel({
     setRunning(true);
     setRunError(null);
     setResult(null);
+    setBaseRecords(null);
+    setJqlRows(null);
+    setJqlLabel(null);
     setSoslCounts(null);
     const started = Date.now();
     try {
@@ -448,6 +464,9 @@ export default function SoqlPanel({
         return;
       }
       const table = toTable(data.records ?? []);
+      setBaseRecords(data.records ?? []);
+      setJqlRows(null);
+      setJqlLabel(null);
       setResult({
         columns: table.columns,
         rows: table.rows,
@@ -542,19 +561,32 @@ export default function SoqlPanel({
     }
   }, [soql, instanceUrl, apiVersion, getToken, onSessionExpired]);
 
+  /** Displayed table: JsonQL override when active, else the server table. */
+  const shown: SoqlRow | null = useMemo(() => {
+    if (!result || !jqlRows) return result;
+    const table = toTable(jqlRows);
+    return {
+      columns: table.columns,
+      rows: table.rows,
+      totalSize: jqlRows.length,
+      truncated: false,
+      timeMs: result.timeMs,
+    };
+  }, [result, jqlRows]);
+
   const exportText = useCallback(
     (format: "csv" | "tsv" | "json") => {
-      if (!result) return null;
+      if (!shown) return null;
       if (format === "json") {
         return JSON.stringify(
-          result.rows.map((r) => Object.fromEntries(result.columns.map((c, i) => [c, r[i]]))),
+          shown.rows.map((r) => Object.fromEntries(shown.columns.map((c, i) => [c, r[i]]))),
           null,
           2
         );
       }
-      return toCsv(result.columns, result.rows, format === "tsv" ? "\t" : ",");
+      return toCsv(shown.columns, shown.rows, format === "tsv" ? "\t" : ",");
     },
-    [result]
+    [shown]
   );
 
   const copyExport = useCallback(
@@ -563,12 +595,12 @@ export default function SoqlPanel({
       if (text == null) return;
       try {
         await navigator.clipboard.writeText(text);
-        setNotice(`Copied ${format === "tsv" ? "Excel" : format.toUpperCase()} (${result?.rows.length ?? 0} rows) to clipboard.`);
+        setNotice(`Copied ${format === "tsv" ? "Excel" : format.toUpperCase()} (${shown?.rows.length ?? 0} rows) to clipboard.`);
       } catch {
         setNotice("Clipboard unavailable in this browser.");
       }
     },
-    [exportText, result]
+    [exportText, shown]
   );
 
   const downloadExport = useCallback(
@@ -587,28 +619,28 @@ export default function SoqlPanel({
   );
 
   const downloadXlsx = useCallback(async () => {
-    if (!result) return;
+    if (!shown) return;
     setXlsxBusy(true);
     try {
       const d = new Date();
       const pad = (n: number) => String(n).padStart(2, "0");
       await downloadQueryResult(
         {
-          columns: result.columns,
-          rows: result.rows,
-          totalSize: result.totalSize,
-          truncated: result.truncated,
-          timeMs: result.timeMs,
+          columns: shown.columns,
+          rows: shown.rows,
+          totalSize: shown.totalSize,
+          truncated: shown.truncated,
+          timeMs: shown.timeMs,
           query: soql,
           mode,
         },
         `soql-export-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.xlsx`
       );
-      setNotice(`Downloaded Excel (${result.rows.length} rows).`);
+      setNotice(`Downloaded Excel (${shown.rows.length} rows).`);
     } finally {
       setXlsxBusy(false);
     }
-  }, [result, soql, mode]);
+  }, [shown, soql, mode]);
 
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -625,6 +657,9 @@ export default function SoqlPanel({
     setMode(next);
     onLanguageChange?.(next);
     setResult(null);
+    setBaseRecords(null);
+    setJqlRows(null);
+    setJqlLabel(null);
     setRunError(null);
     setSoslCounts(null);
     setPlanOpen(false);
@@ -648,6 +683,9 @@ export default function SoqlPanel({
       setSoql(q);
       setTooling(useTooling);
       setResult(null);
+      setBaseRecords(null);
+      setJqlRows(null);
+      setJqlLabel(null);
       setRunError(null);
       setSoslCounts(null);
       setPlanOpen(false);
@@ -836,7 +874,7 @@ export default function SoqlPanel({
               Save
             </Button>
           </div>
-          <Button size="sm" variant="ghost" onClick={() => { setSoql(""); setResult(null); }}>
+          <Button size="sm" variant="ghost" onClick={() => { setSoql(""); setResult(null); setBaseRecords(null); setJqlRows(null); setJqlLabel(null); }}>
             Clear
           </Button>
         </div>
@@ -920,14 +958,38 @@ export default function SoqlPanel({
         )}
         {notice && <p className="text-xs text-ivory-700">{notice}</p>}
 
-        {result && (
+        {baseRecords && baseRecords.length > 0 && (
+          <div className="space-y-2">
+            <QueryToolStrip
+              records={baseRecords}
+              onDisplay={(rows, label) => {
+                setJqlRows(rows);
+                setJqlLabel(label);
+              }}
+            />
+            <QueryFilterBar
+              records={baseRecords}
+              onDisplay={(rows, label) => {
+                setJqlRows(rows);
+                setJqlLabel(label);
+              }}
+            />
+          </div>
+        )}
+
+        {shown && (
           <div className="rounded-lg border border-[var(--color-line)] overflow-hidden">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--color-line-soft)] bg-[var(--color-surface-soft)] px-3 py-2 text-xs">
               <span className="font-semibold text-ivory-950">
-                {result.totalSize.toLocaleString()} row{result.totalSize === 1 ? "" : "s"}
+                {shown.totalSize.toLocaleString()} row{shown.totalSize === 1 ? "" : "s"}
               </span>
-              <span className="text-ivory-600">{result.timeMs}ms</span>
-              {result.truncated && (
+              <span className="text-ivory-600">{shown.timeMs}ms</span>
+              {jqlLabel && (
+                <span className="rounded-full border border-bronze-300 bg-bronze-100 px-2 py-0.5 font-mono text-[10px] font-semibold text-bronze-700" title="JsonQL view - exports follow this table">
+                  {jqlLabel}
+                </span>
+              )}
+              {shown.truncated && (
                 <span className="font-medium text-amber-700">Truncated at fetch cap - add LIMIT to page deliberately.</span>
               )}
               {mode === "sosl" && <Badge variant="info">SOSL</Badge>}
@@ -943,7 +1005,7 @@ export default function SoqlPanel({
               <table className="w-full border-collapse text-xs">
                 <thead className="sticky top-0">
                   <tr>
-                    {result.columns.map((c) => (
+                    {shown.columns.map((c) => (
                       <th
                         key={c}
                         className="border-b border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-left font-mono font-semibold text-ivory-900 whitespace-nowrap"
@@ -954,7 +1016,7 @@ export default function SoqlPanel({
                   </tr>
                 </thead>
                 <tbody>
-                  {result.rows.slice(0, RENDER_CAP).map((r, i) => (
+                  {shown.rows.slice(0, RENDER_CAP).map((r, i) => (
                     <tr key={i} className="odd:bg-[var(--color-surface)] even:bg-[var(--color-canvas)] hover:bg-ivory-300">
                       {r.map((cell, j) => (
                         <td
@@ -969,12 +1031,12 @@ export default function SoqlPanel({
                   ))}
                 </tbody>
               </table>
-              {result.rows.length > RENDER_CAP && (
+              {shown.rows.length > RENDER_CAP && (
                 <p className="px-3 py-2 text-[11px] text-ivory-600">
-                  Showing first {RENDER_CAP} of {result.rows.length} fetched rows - export for the rest.
+                  Showing first {RENDER_CAP} of {shown.rows.length} fetched rows - export for the rest.
                 </p>
               )}
-              {result.rows.length === 0 && (
+              {shown.rows.length === 0 && (
                 <p className="px-3 py-6 text-center text-xs text-ivory-600">Query ran clean - zero rows matched.</p>
               )}
             </div>
