@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { numericFields, recordFields } from "@/lib/queryFieldStats";
 import Button from "./ui/Button";
 
 type Op = "COUNT" | "SUM" | "AVG" | "MIN" | "MAX" | "DISTINCT";
@@ -32,28 +33,16 @@ export function QueryToolStrip({
   const [readout, setReadout] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const fields = useMemo(() => {
-    const seen = new Set<string>();
-    for (const r of records) {
-      if (r !== null && typeof r === "object" && !Array.isArray(r)) {
-        for (const k of Object.keys(r as Record<string, unknown>)) {
-          if (k !== "attributes" && !seen.has(k)) seen.add(k);
-        }
-      }
-    }
-    return [...seen].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-  }, [records]);
+  const fields = useMemo(() => recordFields(records), [records]);
+  // Only these fields can feed SUM/AVG/MIN/MAX - Ids and Names never qualify,
+  // so those icons disable instead of failing after the click.
+  const numericSet = useMemo(() => new Set(numericFields(records)), [records]);
 
-  const numericField = (f: string): boolean => {
-    let seen = 0;
-    for (const r of records) {
-      const v = (r as Record<string, unknown> | null)?.[f];
-      if (v === null || v === undefined || v === "") continue;
-      if (typeof v !== "number") return false;
-      if (++seen >= 5) break;
-    }
-    return seen > 0;
-  };
+  // Fresh run: the previous field may not exist in the new rows.
+  useEffect(() => {
+    setField("");
+    setReadout(null);
+  }, [records]);
 
   const run = async (op: Op) => {
     const f = field.trim();
@@ -61,7 +50,7 @@ export function QueryToolStrip({
       setReadout("Pick a field first.");
       return;
     }
-    if ((op === "SUM" || op === "AVG" || op === "MIN" || op === "MAX") && !numericField(f)) {
+    if ((op === "SUM" || op === "AVG" || op === "MIN" || op === "MAX") && !numericSet.has(f)) {
       setReadout(`${f || "Field"} is not numeric.`);
       return;
     }
@@ -115,19 +104,23 @@ export function QueryToolStrip({
         ))}
       </select>
       <div className="flex items-center gap-0.5" role="toolbar" aria-label="Quick aggregates">
-        {OPS.map((o) => (
-          <button
-            key={o.id}
-            type="button"
-            onClick={() => void run(o.id)}
-            disabled={busy}
-            title={o.label}
-            aria-label={o.label}
-            className="h-7 w-7 cursor-pointer rounded-md text-[13px] font-bold text-ivory-700 transition-colors hover:bg-bronze-100 hover:text-bronze-700 disabled:opacity-40"
-          >
-            {o.glyph}
-          </button>
-        ))}
+        {OPS.map((o) => {
+          const needsNum = o.id === "SUM" || o.id === "AVG" || o.id === "MIN" || o.id === "MAX";
+          const off = busy || (needsNum && (!field.trim() || !numericSet.has(field.trim())));
+          return (
+            <button
+              key={o.id}
+              type="button"
+              onClick={() => void run(o.id)}
+              disabled={off}
+              title={needsNum && field.trim() && !numericSet.has(field.trim()) ? `${field.trim()} is not numeric` : o.label}
+              aria-label={o.label}
+              className="h-7 w-7 cursor-pointer rounded-md text-[13px] font-bold text-ivory-700 transition-colors hover:bg-bronze-100 hover:text-bronze-700 disabled:opacity-40"
+            >
+              {o.glyph}
+            </button>
+          );
+        })}
       </div>
       {readout && (
         <span className="flex min-w-0 items-center gap-1.5 rounded-full border border-bronze-300 bg-bronze-100 px-2 py-0.5 font-mono text-[11px] font-semibold text-bronze-700">

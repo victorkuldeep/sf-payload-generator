@@ -79,17 +79,7 @@ export function aggregateRecords(records: unknown[], spec: AggSpec): FilterOutco
   }
 }
 
-/** Top-level field names for the aggregate field pickers. */
-export function recordFields(records: unknown[]): string[] {
-  const seen = new Set<string>();
-  for (const r of records) {
-    if (r !== null && typeof r === "object" && !Array.isArray(r)) {
-      for (const k of Object.keys(r as Rec)) {
-        if (k !== "attributes" && !seen.has(k)) seen.add(k);
-      }
-    }
-  }
-  return [...seen].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-}
+export { recordFields, valueChips, numericFields } from "./queryFieldStats";
+export type { ValueChip } from "./queryFieldStats";
 
 export type { AggSpec };

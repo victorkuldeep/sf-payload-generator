@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { checkQuery, filterRecords, aggregateRecords, recordFields } from "./queryFilter";
+import { checkQuery, filterRecords, aggregateRecords, recordFields, valueChips, numericFields } from "./queryFilter";
 
 const rows = () => [
   { Id: "001A", Name: "Acme", Industry: "Tech", AnnualRevenue: 900000 },
@@ -95,5 +95,44 @@ describe("aggregateRecords", () => {
 describe("recordFields", () => {
   it("unions top-level keys minus attributes", () => {
     expect(recordFields([{ a: 1, attributes: {} }, { b: 2 }] as unknown[])).toEqual(["a", "b"]);
+  });
+});
+
+describe("valueChips", () => {
+  it("mines low-cardinality string values with counts", () => {
+    const chips = valueChips(rows());
+    const tech = chips.find((c) => c.field === "Industry" && c.value === "Tech");
+    expect(tech?.count).toBe(2);
+    // every chip round-trips as a valid filter
+    for (const c of chips) {
+      expect(checkQuery(`${c.field} = "${c.value}"`)).toBeNull();
+    }
+  });
+
+  it("skips single-value, high-cardinality, non-string and attributes", () => {
+    const many = Array.from({ length: 9 }, (_, i) => ({ Group: `g${i}`, Solo: "only", N: i, attributes: {} }));
+    const chips = valueChips(many as unknown[]);
+    expect(chips.find((c) => c.field === "Group")).toBeUndefined();
+    expect(chips.find((c) => c.field === "Solo")).toBeUndefined();
+    expect(chips.find((c) => c.field === "N")).toBeUndefined();
+    expect(chips.find((c) => c.field === "attributes")).toBeUndefined();
+  });
+
+  it("caps fields and values", () => {
+    const wide = Array.from({ length: 10 }, (_, i) =>
+      Object.fromEntries(Array.from({ length: 10 }, (_, j) => [`F${j}`, (i + j) % 2 ? "a" : "b"]))
+    );
+    expect(valueChips(wide as unknown[], 2).filter((c) => c.field === "F0")).toHaveLength(2);
+    expect(valueChips(wide as unknown[], 2)).toHaveLength(4);
+  });
+});
+
+describe("numericFields", () => {
+  it("keeps only fields with numeric samples", () => {
+    expect(numericFields(rows())).toEqual(["AnnualRevenue"]);
+  });
+
+  it("rejects mixed-type fields", () => {
+    expect(numericFields([{ v: 1 }, { v: "x" }] as unknown[])).toEqual([]);
   });
 });

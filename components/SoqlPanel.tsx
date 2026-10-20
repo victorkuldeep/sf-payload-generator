@@ -43,6 +43,12 @@ interface SoqlPanelProps {
 const SOQL_STARTER = "SELECT Id, Name FROM Account LIMIT 20";
 
 const SOQL_TIMEOUT_MS = 120000;
+/**
+ * Client-driven auto-batching has no 50k-style cap, so this is the only
+ * guardrail: fetching stops here with a clear note instead of growing the
+ * tab's memory without bound. 500k small SOQL rows ≈ low-hundreds MB.
+ */
+const ROW_CEILING = 500_000;
 const RENDER_CAP = 500;
 
 const TEMPLATES: { name: string; soql: string; tooling?: boolean }[] = [
@@ -80,6 +86,7 @@ interface SoqlRow {
   rows: string[][];
   totalSize: number;
   truncated: boolean;
+  truncatedNote?: string;
   timeMs: number;
 }
 
@@ -437,12 +444,56 @@ export default function SoqlPanel({
     abortRef.current = ctrl;
     setRunning(true);
     setRunError(null);
+    setFetchProgress(null);
     setResult(null);
     setBaseRecords(null);
     setJqlRows(null);
     setJqlLabel(null);
     setSoslCounts(null);
     const started = Date.now();
+    // Accumulates the fast path + every continuation page, so Stop keeps
+    // whatever arrived instead of discarding a lakh-scale fetch.
+    let all: unknown[] = [];
+    let finalTotal = 0;
+    let remaining: string | null = null;
+    let ceilingHit = false;
+    // Single commit point: table + history + notices stay consistent whether
+    // the run completed, hit the ceiling, or was stopped early.
+    const commit = (rows: unknown[], total: number, note: string | null, truncNote?: string) => {
+      const table = toTable(rows);
+      setBaseRecords(rows);
+      setJqlRows(null);
+      setJqlLabel(null);
+      setResult({
+        columns: table.columns,
+        rows: table.rows,
+        totalSize: total,
+        truncated: note !== null,
+        ...(truncNote ? { truncatedNote: truncNote } : {}),
+        timeMs: Date.now() - started,
+      });
+      if (note) setNotice(note);
+      const now = Date.now();
+      setHistory((prev) => {
+        const dup = prev.find((h) => !h.saved && h.soql === q && h.tooling === tooling && (h.mode ?? "soql") === "soql");
+        const entry: SoqlQuery = dup
+          ? { ...dup, lastRun: now, rowCount: rows.length }
+          : {
+              id: newItemId(),
+              soql: q,
+              label: "",
+              saved: false,
+              tooling,
+              mode: "soql",
+              rowCount: rows.length,
+              createdAt: now,
+              lastRun: now,
+            };
+        void saveSoqlQuery(entry).catch(() => {});
+        const rest = prev.filter((h) => h.id !== entry.id);
+        return [entry, ...rest].slice(0, 60);
+      });
+    };
     try {
       const response = await apiFetch(
         "/api/salesforce/soql",
@@ -453,7 +504,7 @@ export default function SoqlPanel({
       const data = (await response.json()) as {
         records?: unknown[];
         totalSize?: number;
-        truncated?: boolean;
+        nextRecordsUrl?: string | null;
         success?: boolean;
         error?: string;
       };
@@ -463,40 +514,68 @@ export default function SoqlPanel({
         if (isSessionExpiredMessage(message)) onSessionExpired?.();
         return;
       }
-      const table = toTable(data.records ?? []);
-      setBaseRecords(data.records ?? []);
-      setJqlRows(null);
-      setJqlLabel(null);
-      setResult({
-        columns: table.columns,
-        rows: table.rows,
-        totalSize: data.totalSize ?? table.rows.length,
-        truncated: !!data.truncated,
-        timeMs: Date.now() - started,
-      });
-      // Auto-history (dedupe identical query+mode)
-      const now = Date.now();
-      setHistory((prev) => {
-        const dup = prev.find((h) => !h.saved && h.soql === q && h.tooling === tooling && (h.mode ?? "soql") === "soql");
-        const entry: SoqlQuery = dup
-          ? { ...dup, lastRun: now, rowCount: data.records?.length ?? 0 }
-          : {
-              id: newItemId(),
-              soql: q,
-              label: "",
-              saved: false,
-              tooling,
-              mode: "soql",
-              rowCount: data.records?.length ?? 0,
-              createdAt: now,
-              lastRun: now,
-            };
-        void saveSoqlQuery(entry).catch(() => {});
-        const rest = prev.filter((h) => h.id !== entry.id);
-        return [entry, ...rest].slice(0, 60);
-      });
+      all = [...(data.records ?? [])];
+      finalTotal = data.totalSize ?? all.length;
+      remaining = data.nextRecordsUrl ?? null;
+      // Client-driven auto-batching: one short page per request until done,
+      // so even lakh-scale result sets stream in without hitting any single
+      // call's budget. No 50k-style cap - the platform paginates freely.
+      while (remaining) {
+        if (stoppedRef.current) break;
+        if (all.length >= ROW_CEILING) {
+          ceilingHit = true;
+          break;
+        }
+        setFetchProgress(
+          `Fetched ${all.length.toLocaleString()} of ${finalTotal.toLocaleString()} rows…`
+        );
+        const pr = await apiFetch(
+          "/api/salesforce/soql",
+          { instanceUrl, token, apiVersion, soql: q, tooling, allRows, pageUrl: remaining },
+          undefined,
+          ctrl.signal
+        );
+        const pdata = (await pr.json()) as {
+          records?: unknown[];
+          totalSize?: number;
+          nextRecordsUrl?: string | null;
+          success?: boolean;
+          error?: string;
+        };
+        if (!pr.ok || !pdata.success) {
+          throw new Error(typeof pdata.error === "string" ? pdata.error : "Fetching the next page failed");
+        }
+        if (Array.isArray(pdata.records)) all.push(...pdata.records);
+        if (typeof pdata.totalSize === "number") finalTotal = pdata.totalSize;
+        remaining = pdata.nextRecordsUrl ?? null;
+      }
+      if (ceilingHit) {
+        commit(
+          all,
+          finalTotal,
+          `Stopped at the ${ROW_CEILING.toLocaleString()}-row safety ceiling - showing what arrived. Narrow with filters or LIMIT.`,
+          `safety ceiling (${ROW_CEILING.toLocaleString()} rows)`
+        );
+      } else if (stoppedRef.current) {
+        commit(
+          all,
+          finalTotal,
+          `Stopped - showing ${all.length.toLocaleString()} of ${finalTotal.toLocaleString()} fetched rows.`,
+          "stopped early"
+        );
+      } else {
+        commit(all, finalTotal, null);
+      }
     } catch (err) {
-      if (stoppedRef.current) {
+      if (stoppedRef.current && all.length > 0) {
+        // Aborted mid-stream with pages already in hand - keep them.
+        commit(
+          all,
+          finalTotal,
+          `Stopped - showing ${all.length.toLocaleString()} of ${finalTotal.toLocaleString()} fetched rows.`,
+          "stopped early"
+        );
+      } else if (stoppedRef.current) {
         setRunError("Stopped - partial results (if any) were discarded.");
       } else if (err instanceof ApiTimeoutError) {
         setRunError(err.message);
@@ -507,6 +586,7 @@ export default function SoqlPanel({
       }
     } finally {
       setRunning(false);
+      setFetchProgress(null);
       abortRef.current = null;
     }
   }, [soql, tooling, allRows, mode, runSosl, instanceUrl, apiVersion, getToken, onSessionExpired]);
@@ -643,6 +723,7 @@ export default function SoqlPanel({
   }, [shown, soql, mode]);
 
   const [notice, setNotice] = useState<string | null>(null);
+  const [fetchProgress, setFetchProgress] = useState<string | null>(null);
 
   const historyItems = useMemo(
     () => history.filter((h) => !h.saved && (h.mode ?? "soql") === mode),
@@ -930,6 +1011,9 @@ export default function SoqlPanel({
               Stop
             </Button>
           )}
+          {running && fetchProgress && (
+            <span className="text-xs text-ivory-700" role="status">{fetchProgress}</span>
+          )}
           <Button variant="secondary" onClick={handlePlan} disabled={!soql.trim() || running || mode !== "soql"} title={mode !== "soql" ? "Query plans are SOQL-only" : undefined}>
             Query Plan
           </Button>
@@ -990,7 +1074,7 @@ export default function SoqlPanel({
                 </span>
               )}
               {shown.truncated && (
-                <span className="font-medium text-amber-700">Truncated at fetch cap - add LIMIT to page deliberately.</span>
+                <span className="font-medium text-amber-700">Partial results{shown.truncatedNote ? ` - ${shown.truncatedNote}` : ""}.</span>
               )}
               {mode === "sosl" && <Badge variant="info">SOSL</Badge>}
               {mode === "sosl" && soslCounts && (
