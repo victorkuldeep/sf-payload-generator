@@ -448,7 +448,7 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
               )}
             </div>
             {comboOpen && kind !== "path" && (
-              <div className="absolute z-20 mt-1 max-h-80 w-[min(26rem,92vw)] overflow-hidden rounded-xl border border-[#E8E2D8] bg-white shadow-lg">
+              <div className="absolute z-20 mt-1 flex max-h-80 w-[min(26rem,92vw)] flex-col overflow-hidden rounded-xl border border-[#E8E2D8] bg-white shadow-lg">
                 <div className="border-b border-[#E8E2D8] p-2">
                   <input
                     value={comboFilter}
@@ -460,7 +460,7 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
                     className="w-full rounded-md border border-[#E8E2D8] px-2 py-1.5 text-[12px] text-[#27241F] placeholder:text-[#A39B8E] focus:border-[#A98450] focus:outline-none"
                   />
                 </div>
-                <ul className="max-h-72 overflow-y-auto p-1.5">
+                <ul className="min-h-0 flex-1 overflow-y-auto p-1.5">
                   {options
                     .filter((o) => {
                       const q = comboFilter.trim().toLowerCase();
