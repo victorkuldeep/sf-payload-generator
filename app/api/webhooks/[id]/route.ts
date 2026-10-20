@@ -1,12 +1,12 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare/cloudflare-context";
-/// <reference types="@cloudflare/workers-types" />
+import type { WebhookInboxNamespace } from "../../../../durable-objects/binding";
 
 const ID_RE = /^[A-Za-z0-9_-]{8,128}$/;
 
-async function inboxFor(id: string): Promise<DurableObjectStub> {
+async function inboxFor(id: string) {
   const { env } = await getCloudflareContext({ async: true });
-  const inbox = (env as unknown as { WEBHOOK_INBOX: DurableObjectNamespace }).WEBHOOK_INBOX;
-  return inbox.get(inbox.idFromName(id));
+  const inbox = (env as unknown as { WEBHOOK_INBOX: WebhookInboxNamespace }).WEBHOOK_INBOX;
+  return inbox.getByName(id);
 }
 
 /** Open receive leg: any sender POSTs here, the uuid's DO stores it. */

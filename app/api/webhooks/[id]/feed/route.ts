@@ -1,5 +1,5 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare/cloudflare-context";
-/// <reference types="@cloudflare/workers-types" />
+import type { WebhookInboxNamespace } from "../../../../../durable-objects/binding";
 
 const ID_RE = /^[A-Za-z0-9_-]{8,128}$/;
 
@@ -11,7 +11,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const { id } = await ctx.params;
   if (!ID_RE.test(id)) return Response.json({ error: "bad id" }, { status: 400 });
   const { env } = await getCloudflareContext({ async: true });
-  const inbox = (env as unknown as { WEBHOOK_INBOX: DurableObjectNamespace }).WEBHOOK_INBOX;
-  const stub: DurableObjectStub = inbox.get(inbox.idFromName(id));
+  const inbox = (env as unknown as { WEBHOOK_INBOX: WebhookInboxNamespace }).WEBHOOK_INBOX;
+  const stub = inbox.getByName(id);
   return stub.fetch(req);
 }

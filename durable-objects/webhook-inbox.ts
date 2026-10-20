@@ -1,9 +1,11 @@
-import { DurableObject } from "cloudflare:workers";
-
 /**
- * One live webhook inbox per uuid. Receives arbitrary POSTs, keeps the last
+ * Live webhook inbox Durable Object. Receives arbitrary POSTs, keeps the last
  * 100, serves them back to the owning tab, and self-destructs past TTL.
  * Sending is open; viewing is gated one layer up (Next route, P2).
+ *
+ * Runtime types below are deliberately local and structural: no external
+ * type packages, so `next build` typechecks identically on a laptop and in
+ * Cloudflare's build container.
  */
 
 export interface WebhookCapture {
@@ -28,8 +30,17 @@ interface InboxMeta {
   order: string[];
 }
 
-interface WebhookEnv {
-  WEBHOOK_INBOX: DurableObjectNamespace;
+interface WebhookStorage {
+  get<T = unknown>(key: string): Promise<T | undefined>;
+  get<T = unknown>(keys: string[]): Promise<Map<string, T>>;
+  put(key: string, value: unknown): Promise<void>;
+  delete(key: string | string[]): Promise<boolean | number>;
+  deleteAll(): Promise<void>;
+  setAlarm(scheduledTime: number | Date): Promise<void>;
+}
+
+interface WebhookContext {
+  readonly storage: WebhookStorage;
 }
 
 const MAX_REQUESTS = 100;
@@ -67,7 +78,13 @@ const freshMeta = (now: number): InboxMeta => ({
   order: [],
 });
 
-export class WebhookInbox extends DurableObject<WebhookEnv> {
+export class WebhookInbox {
+  private readonly ctx: WebhookContext;
+
+  constructor(ctx: WebhookContext) {
+    this.ctx = ctx;
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const seg = url.pathname.split("/").filter(Boolean);
@@ -132,6 +149,7 @@ export class WebhookInbox extends DurableObject<WebhookEnv> {
       bytes.set(c, offset);
       offset += c.byteLength;
     }
+    const text = new TextDecoder().decode(bytes);
 
     const now = Date.now();
     const meta = await this.readMeta();
@@ -147,9 +165,9 @@ export class WebhookInbox extends DurableObject<WebhookEnv> {
     }
     if (!meta.expiresAt) {
       meta.expiresAt = now + TTL_MS;
+      await this.ctx.storage.setAlarm(meta.expiresAt);
     }
 
-    const text = new TextDecoder().decode(bytes);
     const headers: Record<string, string> = {};
     request.headers.forEach((value, key) => {
       if (!SENSITIVE_HEADERS.has(key.toLowerCase()) && key.length < 128 && value.length < 8192) {
@@ -197,10 +215,9 @@ export class WebhookInbox extends DurableObject<WebhookEnv> {
       ids = order.slice(-limit);
       hasMore = order.length > limit;
     }
-    const rows = ids.length > 0 ? await this.ctx.storage.get<WebhookCapture>(ids.map((id) => `req:${id}`)) : new Map();
-    const requests = ids
-      .map((id) => rows.get(`req:${id}`))
-      .filter((r): r is WebhookCapture => r !== undefined);
+    const rows =
+      ids.length > 0 ? await this.ctx.storage.get<WebhookCapture>(ids.map((id) => `req:${id}`)) : new Map<string, WebhookCapture>();
+    const requests = ids.map((id) => rows.get(`req:${id}`)).filter((r): r is WebhookCapture => r !== undefined);
     return json({ ok: true, requests, hasMore, expiresAt: meta.expiresAt });
   }
 }
