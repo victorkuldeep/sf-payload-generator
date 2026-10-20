@@ -173,7 +173,7 @@ function MegaPanel({
   );
 }
 
-export type NavMode = "home" | "builder" | "composite" | "soql" | "graphql" | "schema" | "rest";
+export type NavMode = "home" | "builder" | "composite" | "soql" | "graphql" | "schema" | "rest" | "apex" | "events";
 
 interface AppHeaderProps {
   connected?: boolean;
@@ -307,6 +307,17 @@ export function AppHeader(props: AppHeaderProps) {
         { kind: "mode", id: "soql", label: "Query", desc: "SOQL + SOSL query builder" },
         { kind: "mode", id: "graphql", label: "GraphQL", desc: "GraphQL query builder" },
         { kind: "mode", id: "rest", label: "Rest", desc: "REST explorer" },
+      ],
+    },
+    {
+      id: "run",
+      label: "Run",
+      eyebrow: "Run",
+      headline: "Prove it live.",
+      punch: "Execute Apex and watch platform events stream in - the org, live, no deployment.",
+      items: [
+        { kind: "mode", id: "apex", label: "Apex", desc: "Anonymous Apex runner" },
+        { kind: "mode", id: "events", label: "Events", desc: "Live platform event monitor" },
       ],
     },
     {

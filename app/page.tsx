@@ -54,6 +54,8 @@ import CompositePanel from "@/components/CompositePanel";
 import GraphQLPanel from "@/components/GraphQLPanel";
 import SoqlPanel from "@/components/SoqlPanel";
 import RestExplorerPanel from "@/components/RestExplorerPanel";
+import { ApexPanel } from "@/components/ApexPanel";
+import { EventMonitorPanel } from "@/components/EventMonitorPanel";
 import dynamic from "next/dynamic";
 
 // Schema canvas loads on demand: keeps the main bundle lean and the
@@ -67,7 +69,7 @@ const SchemaPanel = dynamic(() => import("@/components/SchemaPanel"), {
   ),
 });
 
-type BuilderMode = "home" | "single" | "composite" | "soql" | "graphql" | "schema" | "rest";
+type BuilderMode = "home" | "single" | "composite" | "soql" | "graphql" | "schema" | "rest" | "apex" | "events";
 
 
 
@@ -294,6 +296,22 @@ const HERO_SLIDES: {
     copy: "Org-scoped or public calls with cURL paste, history and one-click collection staging.",
     cta: "REST",
     mode: "rest",
+  },
+  {
+    eyebrow: "Anonymous Apex runner",
+    titleA: "Run code,",
+    titleEm: "no deployment.",
+    copy: "Execute Apex against the connected org - compile errors, exceptions and debug logs inline.",
+    cta: "Apex",
+    mode: "apex",
+  },
+  {
+    eyebrow: "Live event monitor",
+    titleA: "Watch events",
+    titleEm: "as they happen.",
+    copy: "Subscribe to platform events, CDC and push topics - replay, filter and copy the live stream.",
+    cta: "Events",
+    mode: "events",
   },
   {
     eyebrow: "JSON Studio",
@@ -635,13 +653,15 @@ export default function Home() {
         : mode === "graphql" ? "graphql"
         : mode === "schema" ? "schema"
         : mode === "rest" ? "rest"
+        : mode === "apex" ? "apex"
+        : mode === "events" ? "events"
         : "builder";
       scrollToSection(id, false);
     }, 80);
   }, []);
 
   const handleNavigate = useCallback(
-    (mode: "home" | "builder" | "composite" | "soql" | "graphql" | "schema" | "rest") => {
+    (mode: "home" | "builder" | "composite" | "soql" | "graphql" | "schema" | "rest" | "apex" | "events") => {
       // Home is always available - it just shows the start screen.
       if (mode === "home") {
         goMode("home");
@@ -692,7 +712,7 @@ export default function Home() {
     }
     if (!tab) return;
     const mode = tab === "builder" ? "single" : tab;
-    if (mode !== "single" && mode !== "composite" && mode !== "soql" && mode !== "graphql" && mode !== "schema" && mode !== "rest") return;
+    if (mode !== "single" && mode !== "composite" && mode !== "soql" && mode !== "graphql" && mode !== "schema" && mode !== "rest" && mode !== "apex" && mode !== "events") return;
     deepTabDone.current = true;
     jumpToMode(mode as Exclude<BuilderMode, "home">);
   }, [jumpToMode]);
@@ -771,7 +791,7 @@ export default function Home() {
     const params = new URLSearchParams(window.location.search);
     const m = params.get("mode");
     const share = params.get("share");
-    const valid = ["single", "composite", "soql", "graphql", "schema", "rest", "home", "json", "contracts"];
+    const valid = ["single", "composite", "soql", "graphql", "schema", "rest", "apex", "events", "home", "json", "contracts"];
     if (share && /^[a-z0-9]{16,64}$/i.test(share)) {
       setShareId(share);
       history.replaceState(null, "", window.location.pathname);
@@ -1745,6 +1765,31 @@ export default function Home() {
                   onAddToCollection={requestAddToCollection}
                   collectionCount={collection.length}
                   onOpenCollection={() => setShowCollection(true)}
+                  onSessionExpired={handleSessionExpired}
+                />
+              </section>
+            </div>
+
+            {/* ── Anonymous Apex mode ── */}
+            <div hidden={state.mode !== "apex"}>
+              <section id="apex" aria-label="Anonymous Apex Runner" className="scroll-mt-20">
+                <ApexPanel
+                  instanceUrl={state.instanceUrl}
+                  apiVersion={state.apiVersion}
+                  getToken={() => tokenRef.current}
+                  onSessionExpired={handleSessionExpired}
+                />
+              </section>
+            </div>
+
+            {/* ── Event monitor mode ── */}
+            <div hidden={state.mode !== "events"}>
+              <section id="events" aria-label="Event Monitor" className="scroll-mt-20">
+                <EventMonitorPanel
+                  active={state.mode === "events"}
+                  instanceUrl={state.instanceUrl}
+                  apiVersion={state.apiVersion}
+                  getToken={() => tokenRef.current}
                   onSessionExpired={handleSessionExpired}
                 />
               </section>

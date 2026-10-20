@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { JsonEditorPane } from "@/components/json-studio/JsonEditorPane";
 import { JsonCompare } from "@/components/json-studio/JsonCompare";
+import { JsonTransform } from "@/components/json-studio/JsonTransform";
 
-type Tab = "editor" | "compare";
+type Tab = "editor" | "compare" | "transform";
 
 /** JSON Studio: editor + A/B comparator for API payloads. */
 export function JsonStudio() {
@@ -19,13 +20,14 @@ export function JsonStudio() {
           <div>
             <h2 className="text-[15px] font-semibold text-[#27241F]">JSON Studio</h2>
           </div>
-          <p className="hidden text-xs text-[#777168] sm:block">Edit payloads, then diff versions node by node.</p>
+          <p className="hidden text-xs text-[#777168] sm:block">Edit payloads, diff versions, reshape and escape string-carried payloads.</p>
         </div>
         <div className="mt-2 flex" role="tablist" aria-label="JSON Studio screens">
           {(
             [
               { id: "editor", label: "Editor" },
               { id: "compare", label: "Compare A/B" },
+              { id: "transform", label: "Transform" },
             ] as { id: Tab; label: string }[]
           ).map((t) => (
             <button
@@ -45,7 +47,7 @@ export function JsonStudio() {
         </div>
       </div>
 
-      {tab === "editor" ? <JsonEditorPane /> : <JsonCompare />}
+      {tab === "editor" ? <JsonEditorPane /> : tab === "compare" ? <JsonCompare /> : <JsonTransform />}
     </div>
   );
 }
