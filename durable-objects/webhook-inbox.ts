@@ -49,7 +49,7 @@ interface CachedOwner {
   exp: number;
 }
 
-interface WebhookStorage {
+export interface WebhookStorage {
   get<T = unknown>(key: string): Promise<T | undefined>;
   get<T = unknown>(keys: string[]): Promise<Map<string, T>>;
   put(key: string, value: unknown): Promise<void>;
@@ -58,8 +58,9 @@ interface WebhookStorage {
   setAlarm(scheduledTime: number | Date): Promise<void>;
 }
 
-interface WebhookContext {
+export interface WebhookContext {
   readonly storage: WebhookStorage;
+  readonly id?: { name?: string };
 }
 
 interface TokenValidation {
@@ -252,6 +253,10 @@ export class WebhookInbox {
   // ---------- uuid inbox ops ----------
 
   private async receive(request: Request, subPath: string, url: URL): Promise<Response> {
+    // Registered inboxes only: claiming (via /register, Salesforce-validated)
+    // must come first. Random uuids 404 without reading or storing anything.
+    const gate = await this.readMeta();
+    if (!gate.owner) return json({ error: "not found" }, 404);
     const body = await this.readBody(request);
     if ("error" in body) return body.error;
     const text = new TextDecoder().decode(body.bytes);

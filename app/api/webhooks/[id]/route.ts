@@ -1,12 +1,7 @@
-import { getCloudflareContext } from "@opennextjs/cloudflare/cloudflare-context";
-import type { WebhookInboxNamespace } from "../../../../durable-objects/binding";
-
-const ID_RE = /^[A-Za-z0-9_-]{8,128}$/;
+import { ID_RE, getInbox } from "../../../../lib/webhooks/server";
 
 function inboxFor(id: string) {
-  const { env } = getCloudflareContext();
-  const inbox = (env as unknown as { WEBHOOK_INBOX: WebhookInboxNamespace }).WEBHOOK_INBOX;
-  return inbox.getByName(id);
+  return getInbox(id);
 }
 
 /**
@@ -14,22 +9,26 @@ function inboxFor(id: string) {
  * only accepts a genuine Request; forwarding the framework object makes the
  * runtime stringify it ("Invalid URL: [object Request]").
  */
-function forwardable(req: Request): Request {
+async function forwardable(req: Request): Promise<Request> {
+  if (req.method === "GET" || req.method === "HEAD") {
+    return new Request(req.url, { method: req.method, headers: req.headers });
+  }
   return new Request(req.url, {
     method: req.method,
     headers: req.headers,
-    body: req.body,
+    body: await req.text().catch(() => ""),
   });
 }
 
-/** Open receive leg: any sender POSTs here, the uuid's DO stores it. */
+/** Receive leg: any sender POSTs here; the DO stores it only if registered. */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   if (!ID_RE.test(id)) return Response.json({ error: "bad id" }, { status: 400 });
   try {
     const stub = inboxFor(id);
-    return await stub.fetch(forwardable(req));
+    return await stub.fetch(await forwardable(req));
   } catch (err) {
+    if (err instanceof Response) return err;
     return Response.json({ ok: false, error: String((err as Error)?.message ?? err).slice(0, 200) }, { status: 500 });
   }
 }
@@ -40,8 +39,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!ID_RE.test(id)) return Response.json({ error: "bad id" }, { status: 400 });
   try {
     const stub = inboxFor(id);
-    return await stub.fetch(forwardable(req));
+    return await stub.fetch(await forwardable(req));
   } catch (err) {
+    if (err instanceof Response) return err;
     return Response.json({ ok: false, error: String((err as Error)?.message ?? err).slice(0, 200) }, { status: 500 });
   }
 }

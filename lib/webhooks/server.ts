@@ -5,12 +5,20 @@
  */
 import { getCloudflareContext } from "@opennextjs/cloudflare/cloudflare-context";
 import type { WebhookInboxNamespace, WebhookInboxStub } from "../../durable-objects/binding";
+import { devNamespace } from "./dev-mesh";
 
 export const ID_RE = /^[A-Za-z0-9_-]{8,128}$/;
 
 function namespace(): WebhookInboxNamespace {
-  const { env } = getCloudflareContext();
-  return (env as unknown as { WEBHOOK_INBOX: WebhookInboxNamespace }).WEBHOOK_INBOX;
+  try {
+    const { env } = getCloudflareContext();
+    const inbox = (env as unknown as { WEBHOOK_INBOX?: WebhookInboxNamespace }).WEBHOOK_INBOX;
+    if (inbox) return inbox;
+  } catch {
+    /* not on the Cloudflare runtime - fall through to the dev mesh */
+  }
+  if (process.env.NODE_ENV !== "production") return devNamespace();
+  throw Response.json({ ok: false, error: "webhook storage unavailable" }, { status: 503 });
 }
 
 export function getInbox(id: string): WebhookInboxStub {
