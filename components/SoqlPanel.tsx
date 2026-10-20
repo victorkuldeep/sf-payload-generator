@@ -49,7 +49,7 @@ const SOQL_TIMEOUT_MS = 120000;
  * tab's memory without bound. 500k small SOQL rows ≈ low-hundreds MB.
  */
 const ROW_CEILING = 500_000;
-const PAGE_SIZES = [50, 100, 200, 500];
+const PAGE_SIZES = [10, 20, 50, 100, 200, 500];
 
 /** Compact page numbers: 0-based pages, "l"/"r" stand for ellipsis gaps. */
 function pageList(cur: number, total: number): (number | "l" | "r")[] {
