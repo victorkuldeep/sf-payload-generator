@@ -4,12 +4,15 @@ import { useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import {
-  APEX_WARN_CHARS,
-  executeAnonymousPath,
-  apexLogBodyPath,
-  parseApexResult,
+  LOG_CATEGORIES,
+  LOG_LEVELS,
+  DEFAULT_LOG_CATEGORY,
+  DEFAULT_LOG_LEVEL,
+  apexHeaderLine,
   apexSummary,
   type ApexRunResult,
+  type LogCategory,
+  type LogLevel,
 } from "@/lib/salesforce/apex";
 import Button from "./ui/Button";
 
@@ -31,16 +34,19 @@ interface ApexHistoryEntry {
 const editorClass =
   "w-full rounded border border-ivory-400 bg-white px-3 py-2 font-mono text-xs text-ivory-950 placeholder-ivory-500 focus:border-bronze-500 focus:outline-none focus:ring-1 focus:ring-bronze-500 resize-y";
 
-/** Anonymous Apex runner: Dev Console "Execute Anonymous" over Tooling REST. */
+/**
+ * Anonymous Apex runner, Workbench "Apex Execute" style: Log Category + Log
+ * Level ride the SOAP DebuggingHeader and the debug log comes back inline -
+ * no TraceFlag litter, no log polling.
+ */
 export function ApexPanel({ instanceUrl, apiVersion, getToken, onSessionExpired }: ApexPanelProps) {
   const [code, setCode] = useState("System.debug('Hello from GRAVENX');");
+  const [logCategory, setLogCategory] = useState<LogCategory>(DEFAULT_LOG_CATEGORY);
+  const [logLevel, setLogLevel] = useState<LogLevel>(DEFAULT_LOG_LEVEL);
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
   const [result, setResult] = useState<ApexRunResult | null>(null);
   const [responseMs, setResponseMs] = useState<number | null>(null);
-  const [logBody, setLogBody] = useState<string | null>(null);
-  const [logLoading, setLogLoading] = useState(false);
-  const [logError, setLogError] = useState<string | null>(null);
   const [history, setHistory] = useState<ApexHistoryEntry[]>([]);
   const idRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -61,43 +67,28 @@ export function ApexPanel({ instanceUrl, apiVersion, getToken, onSessionExpired 
     setRunning(true);
     setRunError(null);
     setResult(null);
-    setLogBody(null);
-    setLogError(null);
-    const started = Date.now();
     try {
       const response = await apiFetch(
-        "/api/salesforce/rest",
-        {
-          instanceUrl,
-          token,
-          scope: "org",
-          method: "GET",
-          path: executeAnonymousPath(apiVersion, code),
-        },
+        "/api/salesforce/apex",
+        { instanceUrl, token, apiVersion, code, logCategory, logLevel },
         120000,
         ctrl.signal
       );
       const data = (await response.json()) as {
-        success?: boolean;
-        status?: number;
-        statusText?: string;
-        body?: unknown;
+        ok?: boolean;
+        result?: ApexRunResult;
+        responseTime?: number;
         error?: string;
       };
-      if (!response.ok || data.error) {
+      if (!response.ok || !data.ok || !data.result) {
         const message = typeof data.error === "string" ? data.error : "Request failed";
         setRunError(message);
         if (isSessionExpiredMessage(message)) onSessionExpired?.();
         return;
       }
-      if (data.status === 401) {
-        onSessionExpired?.();
-        return;
-      }
-      const parsed = parseApexResult(data.body);
+      const parsed = data.result;
       setResult(parsed);
-      setResponseMs(Date.now() - started);
-      if (parsed.logId) void fetchLog(parsed.logId, token);
+      setResponseMs(typeof data.responseTime === "number" ? data.responseTime : null);
       const firstLine = code.trim().split("\n")[0].slice(0, 80);
       setHistory((p) => [{ id: ++idRef.current, at: Date.now(), preview: firstLine, summary: apexSummary(parsed), ok: parsed.success }, ...p].slice(0, 20));
     } catch (err) {
@@ -110,48 +101,47 @@ export function ApexPanel({ instanceUrl, apiVersion, getToken, onSessionExpired 
     }
   };
 
-  /** Fetch a debug log body - runs automatically after every execution. */
-  const fetchLog = async (logId: string, token: string) => {
-    setLogLoading(true);
-    setLogError(null);
-    setLogBody(null);
-    try {
-      const response = await apiFetch(
-        "/api/salesforce/rest",
-        {
-          instanceUrl,
-          token,
-          scope: "org",
-          method: "GET",
-          path: apexLogBodyPath(apiVersion, logId),
-        },
-        120000
-      );
-      const data = (await response.json()) as { success?: boolean; body?: unknown; error?: string };
-      if (!response.ok || data.error) {
-        throw new Error(typeof data.error === "string" ? data.error : "Log fetch failed");
-      }
-      setLogBody(typeof data.body === "string" ? data.body : JSON.stringify(data.body ?? "", null, 2));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Log fetch failed";
-      setLogError(message);
-      if (isSessionExpiredMessage(message)) onSessionExpired?.();
-    } finally {
-      setLogLoading(false);
-    }
-  };
-
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
             <h2 className="text-[15px] font-semibold text-[#27241F]">Anonymous Apex</h2>
-            <p className="text-xs text-[#777168]">Execute Apex without deploying - compile errors and debug logs inline.</p>
+            <p className="text-xs text-[#777168]">Execute Apex without deploying - Workbench-style logs with category + level.</p>
           </div>
           <span className="rounded border border-ivory-300 bg-ivory-100 px-1.5 py-0.5 font-mono text-[10px] text-ivory-600">
-            GET /tooling/executeAnonymous
+            POST /tooling via SOAP executeAnonymous
           </span>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
+          <label className="flex items-center gap-1.5 text-[12px] text-[#27241F]" htmlFor="apex-log-category">
+            Log Category:
+            <select
+              id="apex-log-category"
+              value={logCategory}
+              onChange={(e) => setLogCategory(e.target.value as LogCategory)}
+              disabled={running}
+              className="cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-2 py-1.5 text-[12px] text-[#27241F] disabled:opacity-60"
+            >
+              {LOG_CATEGORIES.map((c) => (
+                <option key={c.id} value={c.id}>{c.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-1.5 text-[12px] text-[#27241F]" htmlFor="apex-log-level">
+            Log Level:
+            <select
+              id="apex-log-level"
+              value={logLevel}
+              onChange={(e) => setLogLevel(e.target.value as LogLevel)}
+              disabled={running}
+              className="cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-2 py-1.5 text-[12px] text-[#27241F] disabled:opacity-60"
+            >
+              {LOG_LEVELS.map((l) => (
+                <option key={l} value={l}>{l}</option>
+              ))}
+            </select>
+          </label>
         </div>
         <textarea
           value={code}
@@ -160,22 +150,20 @@ export function ApexPanel({ instanceUrl, apiVersion, getToken, onSessionExpired 
           rows={8}
           aria-label="Apex code"
           placeholder="System.debug('Hello');"
-          className={`${editorClass} mt-3 min-h-[160px]`}
+          className={`${editorClass} mt-2 min-h-[160px]`}
         />
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <Button size="sm" onClick={() => void run()} disabled={running} title="Run against the connected org">
-            {running ? "Running…" : "Run"}
+            {running ? "Running…" : "Execute"}
           </Button>
           {running && (
             <Button size="sm" variant="ghost" onClick={() => abortRef.current?.abort()}>
               Stop
             </Button>
           )}
-          {code.length > APEX_WARN_CHARS && (
-            <span className="text-[11px] font-medium text-amber-700">
-              Long script ({code.length} chars) - the URL-encoded GET may hit server limits.
-            </span>
-          )}
+          <Button size="sm" variant="ghost" onClick={() => setCode("")} disabled={running} title="Clear the editor">
+            Reset
+          </Button>
           <span className="flex-1" />
           <span className="font-mono text-[11px] text-ivory-500">{code.length} chars</span>
         </div>
@@ -185,59 +173,47 @@ export function ApexPanel({ instanceUrl, apiVersion, getToken, onSessionExpired 
           </div>
         )}
         {result && (
-          <div className={`mt-2 rounded-lg border px-3 py-2 ${result.success ? "border-green-300 bg-green-50" : "border-red-300 bg-red-50"}`}>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className={`text-sm font-bold ${result.success ? "text-green-700" : "text-red-700"}`}>
-                {result.success ? "Success" : result.compiled ? "Runtime exception" : "Compile failed"}
-              </span>
-              {responseMs !== null && <span className="text-xs text-ivory-600">{responseMs}ms</span>}
-              <span className="flex-1" />
-              {result.logId && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    const t = getToken();
-                    if (t) void fetchLog(result.logId as string, t);
-                  }}
-                  disabled={logLoading}
-                  title="Re-fetch the debug log"
-                >
-                  {logLoading ? "Loading log…" : "Reload log"}
-                </Button>
+          <div className="mt-2">
+            <h3 className="text-[13px] font-semibold text-[#27241F]">Results</h3>
+            <div className={`mt-1 rounded-lg border px-3 py-2 ${result.success ? "border-green-300 bg-green-50" : "border-red-300 bg-red-50"}`}>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`text-sm font-bold ${result.success ? "text-green-700" : "text-red-700"}`}>
+                  {result.success ? "Success" : result.compiled ? "Runtime exception" : "Compile failed"}
+                </span>
+                {responseMs !== null && <span className="text-xs text-ivory-600">{responseMs}ms</span>}
+                {result.debugLog && (
+                  <span className="flex-1" />
+                )}
+                {result.debugLog && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(result.debugLog as string).catch(() => {});
+                    }}
+                    title="Copy the full log"
+                  >
+                    Copy log
+                  </Button>
+                )}
+              </div>
+              {!result.success && (
+                <p className="mt-1 font-mono text-xs text-red-700">{apexSummary(result)}</p>
+              )}
+              {result.exceptionStackTrace && (
+                <pre className="mt-1 max-h-[160px] overflow-auto font-mono text-[11px] text-red-700 whitespace-pre-wrap">{result.exceptionStackTrace}</pre>
               )}
             </div>
-            <p className={`mt-1 font-mono text-xs ${result.success ? "text-green-800" : "text-red-700"}`}>{apexSummary(result)}</p>
-            {result.exceptionStackTrace && (
-              <pre className="mt-1 max-h-[160px] overflow-auto font-mono text-[11px] text-red-700 whitespace-pre-wrap">{result.exceptionStackTrace}</pre>
+            <pre className="mt-2 max-h-[320px] overflow-auto rounded-lg border border-[#E8E2D8] bg-white px-3 py-2 font-mono text-[11px] text-[#27241F] whitespace-pre-wrap">
+              {apexHeaderLine(apiVersion, logCategory, logLevel)}
+              {"\n"}Execute Anonymous: {code.trim()}
+              {result.debugLog ? `\n${result.debugLog}` : "\n(no debug log returned - raise the Log Level)"}
+            </pre>
+            {responseMs !== null && (
+              <p className="mt-1 text-center text-[11px] text-ivory-500">
+                Requested in {(responseMs / 1000).toFixed(3)} sec
+              </p>
             )}
-          </div>
-        )}
-        {logError && (
-          <div className="mt-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
-            {logError}
-          </div>
-        )}
-        {logLoading && logBody === null && !logError && (
-          <p className="mt-2 text-[12px] text-[#777168]">Loading debug log…</p>
-        )}
-        {logBody !== null && (
-          <div className="mt-2">
-            <div className="mb-1 flex items-center justify-between gap-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-[#777168]">Debug log</p>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => {
-                  const t = logBody;
-                  void navigator.clipboard.writeText(t).catch(() => {});
-                }}
-                title="Copy the full log"
-              >
-                Copy log
-              </Button>
-            </div>
-            <pre className="max-h-[320px] overflow-auto rounded-lg border border-[#E8E2D8] bg-white px-3 py-2 font-mono text-[11px] text-[#27241F] whitespace-pre-wrap">{logBody}</pre>
           </div>
         )}
       </div>

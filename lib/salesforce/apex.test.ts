@@ -1,35 +1,61 @@
 import { describe, it, expect } from "vitest";
 import {
-  toolingVersion,
-  executeAnonymousPath,
-  apexLogBodyPath,
-  parseApexResult,
+  soapVersion,
+  escapeXml,
+  categoryLevels,
+  buildExecuteAnonymousEnvelope,
+  parseApexSoapResponse,
+  parseSoapFault,
   apexSummary,
+  apexHeaderLine,
 } from "./apex";
 
-describe("anonymous apex paths", () => {
-  it("normalizes the api version", () => {
-    expect(toolingVersion("66.0")).toBe("v66.0");
-    expect(toolingVersion("v66.0")).toBe("v66.0");
-  });
-
-  it("builds the executeAnonymous GET path with encoded body", () => {
-    // encodeURIComponent leaves single quotes alone but encodes the semicolon.
-    expect(executeAnonymousPath("v66.0", "System.debug('hi');")).toBe(
-      "/services/data/v66.0/tooling/executeAnonymous/?anonymousBody=System.debug('hi')%3B"
-    );
-  });
-
-  it("builds the ApexLog body path", () => {
-    expect(apexLogBodyPath("66.0", "07Lxx0000012345")).toBe(
-      "/services/data/v66.0/sobjects/ApexLog/07Lxx0000012345/Body"
-    );
+describe("soapVersion", () => {
+  it("strips the v prefix", () => {
+    expect(soapVersion("v68.0")).toBe("68.0");
+    expect(soapVersion("68.0")).toBe("68.0");
   });
 });
 
-describe("parseApexResult", () => {
-  it("parses a clean execution", () => {
-    expect(parseApexResult({ compiled: true, success: true, line: -1, column: -1, id: "07L1" })).toEqual({
+describe("escapeXml", () => {
+  it("escapes code safely", () => {
+    expect(escapeXml(`a<b>&"c"`)).toBe("a&lt;b&gt;&amp;&quot;c&quot;");
+  });
+});
+
+describe("categoryLevels", () => {
+  it("runs the chosen category at the chosen level", () => {
+    const l = categoryLevels("Db", "Fine");
+    expect(l.Db).toBe("Fine");
+    expect(l.Workflow).toBe("INFO");
+  });
+
+  it("never drops ApexCode below DEBUG unless chosen", () => {
+    expect(categoryLevels("Db", "Info").ApexCode).toBe("DEBUG");
+    expect(categoryLevels("ApexCode", "Error").ApexCode).toBe("Error");
+  });
+});
+
+describe("buildExecuteAnonymousEnvelope", () => {
+  it("carries session, debug levels and escaped code", () => {
+    const xml = buildExecuteAnonymousEnvelope(`System.debug("x");`, "ApexCode", "Debug", "SID");
+    expect(xml).toContain("<apex:sessionId>SID</apex:sessionId>");
+    expect(xml).toContain("<apex:category>ApexCode</apex:category><apex:level>Debug</apex:level>");
+    expect(xml).toContain("System.debug(&quot;x&quot;);");
+  });
+});
+
+const SOAP_OK = `<?xml version="1.0"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+<soapenv:Body><executeAnonymousResponse><result>
+<compiled>true</compiled><success>true</success><line>-1</line><column>-1</column>
+<debugLog>10:55:54.33|USER_DEBUG|[1]|DEBUG|Hello &amp; bye</debugLog>
+</result></executeAnonymousResponse></soapenv:Body></soapenv:Envelope>`;
+
+describe("parseApexSoapResponse", () => {
+  it("parses a clean execution with unescaped log", () => {
+    const r = parseApexSoapResponse(SOAP_OK);
+    expect(r).toEqual({
       compiled: true,
       success: true,
       line: null,
@@ -37,25 +63,33 @@ describe("parseApexResult", () => {
       compileProblem: null,
       exceptionMessage: null,
       exceptionStackTrace: null,
-      logId: "07L1",
+      debugLog: "10:55:54.33|USER_DEBUG|[1]|DEBUG|Hello & bye",
     });
+    expect(apexSummary(r)).toBe("Executed clean");
   });
 
-  it("parses a compile failure with location", () => {
-    const r = parseApexResult({ compiled: false, success: false, line: 3, column: 12, compileProblem: "Unexpected token" });
-    expect(r.compiled).toBe(false);
-    expect(r.line).toBe(3);
-    expect(apexSummary(r)).toContain("line 3");
-  });
-
-  it("parses a runtime exception", () => {
-    const r = parseApexResult({ compiled: true, success: false, exceptionMessage: "System.DmlException", id: "07L2" });
-    expect(apexSummary(r)).toContain("System.DmlException");
+  it("parses compile and runtime failures", () => {
+    const bad = parseApexSoapResponse("<r><compiled>false</compiled><success>false</success><line>3</line><compileProblem>Unexpected token</compileProblem></r>");
+    expect(bad.compiled).toBe(false);
+    expect(apexSummary(bad)).toContain("line 3");
+    const ex = parseApexSoapResponse("<r><compiled>true</compiled><success>false</success><exceptionMessage>System.DmlException</exceptionMessage></r>");
+    expect(apexSummary(ex)).toContain("System.DmlException");
   });
 
   it("never throws on garbage", () => {
-    expect(parseApexResult(null).success).toBe(false);
-    expect(parseApexResult("oops").compiled).toBe(false);
-    expect(parseApexResult([1]).logId).toBeNull();
+    expect(parseApexSoapResponse(null).success).toBe(false);
+    expect(parseApexSoapResponse("oops").debugLog).toBeNull();
+  });
+
+  it("extracts SOAP faults", () => {
+    expect(parseSoapFault("<faultstring>INVALID_SESSION_ID</faultstring>")).toBe("INVALID_SESSION_ID");
+    expect(parseSoapFault("nope")).toBeNull();
+  });
+});
+
+describe("apexHeaderLine", () => {
+  it("mirrors the Workbench header", () => {
+    expect(apexHeaderLine("v68.0", "ApexCode", "Debug")).toBe("68.0 APEX_CODE,DEBUG");
+    expect(apexHeaderLine("68.0", "Db", "Fine")).toBe("68.0 DATABASE,FINE");
   });
 });

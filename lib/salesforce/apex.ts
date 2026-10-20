@@ -1,25 +1,119 @@
 /**
- * Anonymous Apex via Tooling REST: the Dev Console "Execute Anonymous"
- * equivalent over GET /tooling/executeAnonymous/?anonymousBody=...
- * Runs through the existing /api/salesforce/rest proxy (org scope) -
- * no new auth, token stays in session memory.
+ * Anonymous Apex via the SOAP Apex API - the Workbench "Apex Execute"
+ * equivalent. The REST Tooling executeAnonymous returns no log and takes no
+ * debug levels, so we go SOAP like Workbench does: DebuggingHeader carries
+ * the Log Category + Level, and the response carries the debug log inline.
+ * Runs through a dedicated /api/salesforce/apex proxy - token stays in
+ * session memory, never in a URL.
  */
 
-/** Past this many chars the URL-encoded GET is likely to hit server limits. */
-export const APEX_WARN_CHARS = 6000;
+/** Log categories exactly as Workbench lists them (id = SOAP name). */
+export const LOG_CATEGORIES = [
+  { id: "Db", label: "Database" },
+  { id: "Workflow", label: "Workflow" },
+  { id: "Validation", label: "Validation" },
+  { id: "Callout", label: "Callout" },
+  { id: "ApexCode", label: "Apex Code" },
+  { id: "ApexProfiling", label: "Apex Profiling" },
+] as const;
 
-export function toolingVersion(apiVersion: string): string {
-  return apiVersion.startsWith("v") ? apiVersion : `v${apiVersion}`;
+export type LogCategory = (typeof LOG_CATEGORIES)[number]["id"];
+
+export const LOG_LEVELS = [
+  "None",
+  "Error",
+  "Warn",
+  "Info",
+  "Debug",
+  "Fine",
+  "Finer",
+  "Finest",
+] as const;
+
+export type LogLevel = (typeof LOG_LEVELS)[number];
+
+export const DEFAULT_LOG_CATEGORY: LogCategory = "ApexCode";
+export const DEFAULT_LOG_LEVEL: LogLevel = "Debug";
+
+/** Workbench header token per category, e.g. "68.0 APEX_CODE,DEBUG". */
+const CATEGORY_TOKENS: Record<LogCategory, string> = {
+  Db: "DATABASE",
+  Workflow: "WORKFLOW",
+  Validation: "VALIDATION",
+  Callout: "CALLOUT",
+  ApexCode: "APEX_CODE",
+  ApexProfiling: "APEX_PROFILING",
+};
+
+/** SOAP wants the bare version: "v68.0" -> "68.0". */
+export function soapVersion(apiVersion: string): string {
+  const v = apiVersion.startsWith("v") ? apiVersion.slice(1) : apiVersion;
+  return /^\d+\.0$/.test(v) ? v : v;
 }
 
-/** Proxy path for one anonymous execution. Caller URL-length-guards first. */
-export function executeAnonymousPath(apiVersion: string, code: string): string {
-  return `/services/data/${toolingVersion(apiVersion)}/tooling/executeAnonymous/?anonymousBody=${encodeURIComponent(code)}`;
+/** Workbench-style header line for the results block. */
+export function apexHeaderLine(apiVersion: string, category: LogCategory, level: LogLevel): string {
+  return `${soapVersion(apiVersion)} ${CATEGORY_TOKENS[category]},${level.toUpperCase()}`;
 }
 
-/** Proxy path for an ApexLog debug body (plain text). */
-export function apexLogBodyPath(apiVersion: string, logId: string): string {
-  return `/services/data/${toolingVersion(apiVersion)}/sobjects/ApexLog/${logId.trim()}/Body`;
+export function escapeXml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function unescapeXml(s: string): string {
+  return s
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+/**
+ * Level per SOAP category. The chosen category runs at the chosen level;
+ * ApexCode never drops below DEBUG (unless it IS the chosen category) so
+ * System.debug output stays visible - the exact complaint that started this.
+ * Everything else stays at INFO, the platform default.
+ */
+export function categoryLevels(category: LogCategory, level: LogLevel): Record<string, string> {
+  const all = ["Db", "Workflow", "Validation", "Callout", "ApexCode", "ApexProfiling", "System", "Visualforce"];
+  const out: Record<string, string> = {};
+  for (const c of all) {
+    if (c === category) out[c] = level;
+    else if (c === "ApexCode") out[c] = "DEBUG";
+    else out[c] = "INFO";
+  }
+  return out;
+}
+
+/** SOAP executeAnonymous envelope with Workbench's DebuggingHeader. */
+export function buildExecuteAnonymousEnvelope(
+  code: string,
+  category: LogCategory,
+  level: LogLevel,
+  sessionId: string
+): string {
+  const levels = categoryLevels(category, level);
+  const cats = Object.entries(levels)
+    .map(([c, l]) => `<apex:categories><apex:category>${c}</apex:category><apex:level>${l}</apex:level></apex:categories>`)
+    .join("");
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>` +
+    `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:apex="http://soap.sforce.com/2006/08/apex">` +
+    `<soapenv:Header>` +
+    `<apex:SessionHeader><apex:sessionId>${escapeXml(sessionId)}</apex:sessionId></apex:SessionHeader>` +
+    `<apex:DebuggingHeader>${cats}</apex:DebuggingHeader>` +
+    `</soapenv:Header>` +
+    `<soapenv:Body>` +
+    `<apex:executeAnonymous><apex:String>${escapeXml(code)}</apex:String></apex:executeAnonymous>` +
+    `</soapenv:Body>` +
+    `</soapenv:Envelope>`
+  );
 }
 
 export interface ApexRunResult {
@@ -30,11 +124,16 @@ export interface ApexRunResult {
   compileProblem: string | null;
   exceptionMessage: string | null;
   exceptionStackTrace: string | null;
-  logId: string | null;
+  debugLog: string | null;
 }
 
-/** Parse the Tooling executeAnonymous response body. Never throws. */
-export function parseApexResult(body: unknown): ApexRunResult {
+function tag(xml: string, name: string): string | null {
+  const m = xml.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`));
+  return m ? m[1] : null;
+}
+
+/** Parse the SOAP executeAnonymous response. Never throws. */
+export function parseApexSoapResponse(xml: unknown): ApexRunResult {
   const empty: ApexRunResult = {
     compiled: false,
     success: false,
@@ -43,25 +142,36 @@ export function parseApexResult(body: unknown): ApexRunResult {
     compileProblem: null,
     exceptionMessage: null,
     exceptionStackTrace: null,
-    logId: null,
+    debugLog: null,
   };
-  if (body === null || typeof body !== "object" || Array.isArray(body)) return empty;
-  const b = body as Record<string, unknown>;
-  const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null);
-  const str = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
+  if (typeof xml !== "string" || !xml) return empty;
+  const num = (v: string | null): number | null => {
+    if (v === null) return null;
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  };
+  const str = (v: string | null): string | null => (v !== null && v !== "" ? v : null);
+  const rawLog = tag(xml, "debugLog");
   return {
-    compiled: b.compiled === true,
-    success: b.success === true,
-    line: num(b.line),
-    column: num(b.column),
-    compileProblem: str(b.compileProblem),
-    exceptionMessage: str(b.exceptionMessage),
-    exceptionStackTrace: str(b.exceptionStackTrace),
-    logId: str(b.id),
+    compiled: tag(xml, "compiled") === "true",
+    success: tag(xml, "success") === "true",
+    line: num(tag(xml, "line")),
+    column: num(tag(xml, "column")),
+    compileProblem: str(tag(xml, "compileProblem")),
+    exceptionMessage: str(tag(xml, "exceptionMessage")),
+    exceptionStackTrace: str(tag(xml, "exceptionStackTrace")),
+    debugLog: str(rawLog === null ? null : unescapeXml(rawLog)),
   };
 }
 
-/** One-line human summary for history rows and notices. */
+/** Pull a SOAP faultstring out of a non-200 response. */
+export function parseSoapFault(xml: unknown): string | null {
+  if (typeof xml !== "string" || !xml) return null;
+  const f = tag(xml, "faultstring");
+  return f ? unescapeXml(f) : null;
+}
+
+/** One-line human summary for history rows. */
 export function apexSummary(result: ApexRunResult): string {
   if (!result.compiled) {
     const where = result.line !== null ? ` (line ${result.line})` : "";

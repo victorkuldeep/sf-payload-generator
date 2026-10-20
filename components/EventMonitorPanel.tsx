@@ -295,12 +295,15 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
     setOptionsNote(null);
     try {
       if (forKind === "custom") {
-        const rows = await runSoql(token, "SELECT QualifiedApiName, Label FROM EntityDefinition WHERE QualifiedApiName LIKE '%__e' ORDER BY QualifiedApiName LIMIT 300");
+        // In SOQL LIKE, _ is a single-char wildcard: unescaped '%__e' matches
+        // "AccountShare" (ends "re"). Escape it, then double-check client-side.
+        const rows = await runSoql(token, "SELECT QualifiedApiName, Label FROM EntityDefinition WHERE QualifiedApiName LIKE '%\\_\\_e' ORDER BY QualifiedApiName LIMIT 300");
         setOptions(
           rows
             .map((r) => ({ value: String(r.QualifiedApiName ?? ""), label: String(r.Label ?? r.QualifiedApiName ?? "") }))
-            .filter((o) => o.value)
+            .filter((o) => o.value && o.value.endsWith("__e"))
         );
+        if (rows.length >= 300) setOptionsNote("300+ custom events - type in the box to narrow, the dropdown only holds the first 300.");
       } else if (forKind === "standard") {
         const rows = await runSoql(
           token,
@@ -521,6 +524,22 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
               title={channelValid ? `Subscribe ${channelPath}` : "Pick a channel above, then subscribe - add as many as you need"}
             >
               {opBusy ? "Adding…" : subs.length === 0 ? "Subscribe" : "Add channel"}
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                const current = channelValid ? subs.find((s) => s.channel === channelPath) : undefined;
+                if (current) void unsubscribeChannel(current.channel);
+              }}
+              disabled={opBusy || !channelValid || !subs.some((s) => s.channel === channelPath)}
+              title={
+                channelValid && subs.some((s) => s.channel === channelPath)
+                  ? `Unsubscribe ${channelPath}`
+                  : "Nothing subscribed for this channel yet"
+              }
+            >
+              Unsubscribe
             </Button>
           </div>
         </div>
