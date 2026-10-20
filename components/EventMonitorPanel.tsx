@@ -90,6 +90,8 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
   const [copied, setCopied] = useState(false);
 
   const clientRef = useRef<BayeuxClient | null>(null);
+  /** BAYEUX_BROWSER jar: the browser holds it, the proxy threads it upstream. */
+  const cookieRef = useRef<string | null>(null);
   const seqRef = useRef(0);
   const pausedRef = useRef(false);
   pausedRef.current = paused;
@@ -165,18 +167,21 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
    * to /cometd cross-origin (no CORS headers), and the token never leaves
    * the server leg. The proxy holds healthy long-polls server-side. */
   const makePost = (token: string) => async (messages: BayeuxMessage[]): Promise<BayeuxMessage[]> => {
+    // A re-handshake starts a new server session - drop the old cookie jar.
+    if (messages.some((m) => m.channel === "/meta/handshake")) cookieRef.current = null;
     const res = await apiFetch(
       "/api/salesforce/cometd",
-      { instanceUrl, token, apiVersion, messages },
+      { instanceUrl, token, apiVersion, messages, cookie: cookieRef.current ?? undefined },
       120000
     );
-    const data = (await res.json()) as { ok?: boolean; replies?: BayeuxMessage[]; error?: string };
+    const data = (await res.json()) as { ok?: boolean; replies?: BayeuxMessage[]; cookie?: string | null; error?: string };
     if (res.status === 401 || res.status === 403) {
       throw new Error(`Handshake auth failed (${res.status}) - token may have expired`);
     }
     if (!res.ok || !data.ok || !Array.isArray(data.replies)) {
       throw new Error(typeof data.error === "string" ? data.error : "Stream request failed");
     }
+    if (typeof data.cookie === "string" && data.cookie) cookieRef.current = data.cookie;
     return data.replies;
   };
 
@@ -262,6 +267,20 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
       client.stop();
       clientRef.current = null;
     }
+  };
+
+  /** Hard reset: kill the loop, drop the client + cookie jar, clear everything. */
+  const resetAll = () => {
+    clientRef.current?.stop();
+    clientRef.current = null;
+    cookieRef.current = null;
+    bufferRef.current = [];
+    setSubs([]);
+    setEvents([]);
+    setView("dashboard");
+    setStatus({ state: "disconnected" });
+    setStatusMsg(null);
+    setOpBusy(false);
   };
 
   const togglePause = () => {
@@ -562,6 +581,14 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
               }
             >
               Unsubscribe
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={resetAll}
+              title="Stop everything, clear channels and events, start over"
+            >
+              Reset
             </Button>
           </div>
         </div>

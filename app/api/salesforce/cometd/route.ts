@@ -9,7 +9,24 @@ const schema = z.object({
   token: z.string().min(1),
   apiVersion: z.string().min(1),
   messages: z.array(z.record(z.string(), z.unknown())).min(1).max(20),
+  cookie: z.string().max(500).optional(),
 });
+
+/** Pull BAYEUX_BROWSER out of the upstream Set-Cookie headers. */
+function extractBayeuxCookie(headers: Headers): string | null {
+  const all: string[] =
+    typeof headers.getSetCookie === "function"
+      ? headers.getSetCookie()
+      : (() => {
+          const single = headers.get("set-cookie");
+          return single ? [single] : [];
+        })();
+  for (const c of all) {
+    const m = c.match(/^BAYEUX_BROWSER=([^;]+)/i);
+    if (m) return m[1];
+  }
+  return null;
+}
 
 /**
  * CometD proxy: browsers cannot POST to /cometd cross-origin (no CORS
@@ -32,7 +49,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten().fieldErrors }, { status: 400 });
   }
 
-  const { instanceUrl, token, apiVersion, messages } = parsed.data;
+  const { instanceUrl, token, apiVersion, messages, cookie } = parsed.data;
+  const jar = typeof cookie === "string" ? cookie.replace(/[;\s]/g, "") : "";
 
   let origin: string;
   try {
@@ -54,6 +72,7 @@ export async function POST(req: NextRequest) {
         "Content-Type": "application/json",
         Accept: "application/json",
         Authorization: `Bearer ${token}`,
+        ...(jar ? { Cookie: `BAYEUX_BROWSER=${jar}` } : {}),
       },
       body: JSON.stringify(messages),
       signal: ctrl.signal,
@@ -70,7 +89,7 @@ export async function POST(req: NextRequest) {
     if (!Array.isArray(replies)) {
       return NextResponse.json({ error: "Stream returned a non-batch reply" }, { status: 502 });
     }
-    return NextResponse.json({ ok: true, replies });
+    return NextResponse.json({ ok: true, replies, cookie: extractBayeuxCookie(response.headers) });
   } catch (err) {
     if (isAbortError(err)) {
       return NextResponse.json({ error: "Stream request timed out - reconnecting" }, { status: 504 });
