@@ -206,4 +206,32 @@ describe("BayeuxClient", () => {
     expect(statuses).toContain("failed");
     expect(client.running).toBe(false);
   });
+
+  it("reports start success so callers never record dead subs", async () => {
+    const okPost = vi.fn(async (msgs: BayeuxMessage[]): Promise<BayeuxMessage[]> => {
+      const [m] = msgs;
+      if (m.channel === "/meta/handshake") return hsOk("c1");
+      if (m.channel === "/meta/subscribe") return subOk(m.subscription as string);
+      await new Promise((r) => setTimeout(r, 20));
+      return [{ channel: "/meta/connect", successful: true }];
+    });
+    const okClient = new BayeuxClient(
+      okPost,
+      () => {},
+      () => {}
+    );
+    expect(await okClient.start([{ channel: "/event/A__e", replay: -1 }])).toBe(true);
+    expect(okClient.running).toBe(true);
+    okClient.stop();
+
+    const states: string[] = [];
+    const badClient = new BayeuxClient(
+      async () => [{ channel: "/meta/handshake", successful: false, error: "403" }],
+      () => {},
+      (s) => states.push(s.state)
+    );
+    expect(await badClient.start([{ channel: "/event/A__e", replay: -1 }])).toBe(false);
+    expect(badClient.running).toBe(false);
+    expect(states).toContain("failed");
+  });
 });

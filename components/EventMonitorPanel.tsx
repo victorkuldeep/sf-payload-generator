@@ -95,18 +95,6 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
   pausedRef.current = paused;
   const bufferRef = useRef<FeedEvent[]>([]);
 
-  const origin = useMemo(() => {
-    try {
-      return new URL(instanceUrl).origin;
-    } catch {
-      return instanceUrl.replace(/\/$/, "");
-    }
-  }, [instanceUrl]);
-  const cometdUrl = useMemo(() => {
-    const v = apiVersion.startsWith("v") ? apiVersion.slice(1) : apiVersion;
-    return `${origin}/cometd/${v}`;
-  }, [origin, apiVersion]);
-
   useEffect(() => () => clientRef.current?.stop(), []);
 
   const channelPath = useMemo(() => {
@@ -173,18 +161,23 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
     setEvents((p) => [ev, ...p].slice(0, MAX_EVENTS));
   };
 
+  /** Bayeux transport rides the same-origin CometD proxy: browsers cannot POST
+   * to /cometd cross-origin (no CORS headers), and the token never leaves
+   * the server leg. The proxy holds healthy long-polls server-side. */
   const makePost = (token: string) => async (messages: BayeuxMessage[]): Promise<BayeuxMessage[]> => {
-    const res = await fetch(cometdUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify(messages),
-      signal: AbortSignal.timeout(120000),
-    });
+    const res = await apiFetch(
+      "/api/salesforce/cometd",
+      { instanceUrl, token, apiVersion, messages },
+      120000
+    );
+    const data = (await res.json()) as { ok?: boolean; replies?: BayeuxMessage[]; error?: string };
     if (res.status === 401 || res.status === 403) {
       throw new Error(`Handshake auth failed (${res.status}) - token may have expired`);
     }
-    if (!res.ok) throw new Error(`CometD error ${res.status}`);
-    return (await res.json()) as BayeuxMessage[];
+    if (!res.ok || !data.ok || !Array.isArray(data.replies)) {
+      throw new Error(typeof data.error === "string" ? data.error : "Stream request failed");
+    }
+    return data.replies;
   };
 
   const onClientStatus = (s: BayeuxStatus) => {
@@ -218,6 +211,7 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
     setOpBusy(true);
     setStatusMsg(null);
     try {
+      let ok: boolean;
       if (!clientRef.current) {
         setEvents([]);
         bufferRef.current = [];
@@ -228,10 +222,17 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
           onClientStatus
         );
         clientRef.current = client;
-        await client.start([sub]);
+        ok = await client.start([sub]);
+        // A failed start leaves a dead client behind - drop it so the next
+        // click starts fresh instead of failing on the corpse.
+        if (!ok) clientRef.current = null;
       } else {
         await clientRef.current.addChannels([sub]);
+        ok = true;
       }
+      // start() already reported the failure via status; never record a sub
+      // that has no live connection behind it.
+      if (!ok) return;
       setSubs((p) => [...p, sub]);
       setView(sub.channel);
       setName("");

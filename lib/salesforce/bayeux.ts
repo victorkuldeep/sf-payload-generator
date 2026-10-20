@@ -133,8 +133,13 @@ export class BayeuxClient {
     return !this.stopped;
   }
 
-  async start(subs: ChannelSub[]): Promise<void> {
-    if (!this.stopped) return;
+  /**
+   * True when the handshake + subscriptions landed and the connect loop is
+   * running. False when establish failed (status already reports it) - the
+   * caller must not record the subscription in that case.
+   */
+  async start(subs: ChannelSub[]): Promise<boolean> {
+    if (!this.stopped) return true;
     if (subs.length === 0) throw new Error("Subscribe to at least one channel");
     this.stopped = false;
     this.attempt = 0;
@@ -144,9 +149,10 @@ export class BayeuxClient {
     } catch (err) {
       this.stopped = true;
       this.onStatus({ state: "failed", message: err instanceof Error ? err.message : "Connect failed" });
-      return;
+      return false;
     }
     void this.loop();
+    return true;
   }
 
   /** Subscribe more channels on the live connection (no re-handshake). */
