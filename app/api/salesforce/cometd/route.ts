@@ -9,7 +9,7 @@ const schema = z.object({
   token: z.string().min(1),
   apiVersion: z.string().min(1),
   messages: z.array(z.record(z.string(), z.unknown())).min(1).max(20),
-  cookie: z.string().max(500).optional(),
+  cookie: z.string().max(500).nullable().optional(),
 });
 
 /** Pull BAYEUX_BROWSER out of the upstream Set-Cookie headers. */

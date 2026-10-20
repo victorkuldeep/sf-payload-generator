@@ -39,7 +39,7 @@ export type BayeuxStatus =
   | { state: "disconnected" }
   | { state: "failed"; message: string };
 
-export type BayeuxPost = (messages: BayeuxMessage[]) => Promise<BayeuxMessage[]>;
+export type BayeuxPost = (messages: BayeuxMessage[], signal?: AbortSignal) => Promise<BayeuxMessage[]>;
 
 export function handshakeMessages(): BayeuxMessage[] {
   return [
@@ -99,6 +99,11 @@ export function extractReplayId(msg: BayeuxMessage): number | null {
   return typeof id === "number" && Number.isFinite(id) ? id : null;
 }
 
+/** True when the server no longer knows the session - safe to re-handshake. */
+export function isUnknownClient(err: unknown): boolean {
+  return err instanceof Error && /unknown client/i.test(err.message);
+}
+
 /** Channel path builders + loose validation (custom paths pass through). */
 export const platformEventChannel = (apiName: string): string => `/event/${apiName.trim()}`;
 export const changeEventChannel = (apiName: string): string => `/data/${apiName.trim()}ChangeEvent`;
@@ -122,6 +127,35 @@ export class BayeuxClient {
   private lastReplay = new Map<string, number>();
   private attempt = 0;
   private subs: ChannelSub[] = [];
+  /** Serializes handshake / resubscribe / add work so a hung long-poll that
+   *  goes Unknown-client at the same moment as an add-click cannot fork the
+   *  session into two half-established clientIds. */
+  private op: Promise<void> = Promise.resolve();
+
+  private enqueue<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.op.then(fn, fn);
+    // Keep the chain alive for the next caller even if this one rejects.
+    this.op = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
+  }
+
+  /** Abort handle for the in-flight connect poll, if any. */
+  private connectAbort: AbortController | null = null;
+  /** Set when the abort came from our own re-handshake (not a real failure). */
+  private abortArmed = false;
+
+  /** Wake the delivery loop off a stale session so it re-polls the fresh one now. */
+  private abortConnect(): void {
+    this.abortArmed = true;
+    try {
+      this.connectAbort?.abort();
+    } catch {
+      /* best-effort wake-up */
+    }
+  }
 
   constructor(
     private post: BayeuxPost,
@@ -155,20 +189,68 @@ export class BayeuxClient {
     return true;
   }
 
-  /** Subscribe more channels on the live connection (no re-handshake). */
-  async addChannels(subs: ChannelSub[]): Promise<void> {
-    if (this.stopped || !this.clientId) throw new Error("Not connected");
-    for (const sub of subs) {
-      if (this.subs.some((s) => s.channel === sub.channel)) continue;
-      const replay = this.lastReplay.get(sub.channel) ?? sub.replay;
-      const replies = await this.post([subscribeMessage(this.clientId, { channel: sub.channel, replay })]);
+  private async subscribeOnce(channel: string, replay: number): Promise<void> {
+    const attempt = async (id: string): Promise<void> => {
+      const replies = await this.post([subscribeMessage(id, { channel, replay })]);
       const reply = replies.find((m) => m.channel === "/meta/subscribe");
       if (reply && reply.successful === false) {
         const detail = typeof reply.error === "string" && reply.error ? `: ${reply.error}` : "";
-        throw new Error(`Subscribe refused for ${sub.channel}${detail}`);
+        throw new Error(`Subscribe refused for ${channel}${detail}`);
       }
-      this.subs.push(sub);
+    };
+    const id = this.clientId;
+    if (!id) throw new Error("Not connected");
+    try {
+      await attempt(id);
+    } catch (err) {
+      // A fresh session can be momentarily unknown upstream (affinity /
+      // replication lag): one delayed retry on the SAME session before
+      // escalating to a full re-handshake.
+      if (this.stopped || !isUnknownClient(err)) throw err;
+      await new Promise((r) => setTimeout(r, 1500));
+      const retryId = this.clientId;
+      if (this.stopped || !retryId) throw err;
+      await attempt(retryId);
     }
+  }
+
+  /**
+   * Subscribe more channels on the live connection (no re-handshake) - with
+   * self-heal: if the server forgot the session mid-life (expiry/race,
+   * "Unknown client") while a long-poll hung elsewhere, queue behind any
+   * in-flight reconnect, claim the new channel first so the re-handshake
+   * covers it, and retry once instead of failing the click.
+   */
+  async addChannels(subs: ChannelSub[]): Promise<void> {
+    return this.enqueue(async () => {
+      if (this.stopped || !this.clientId) throw new Error("Not connected");
+      for (const sub of subs) {
+        if (this.subs.some((s) => s.channel === sub.channel)) continue;
+        const replay = this.lastReplay.get(sub.channel) ?? sub.replay;
+        try {
+          await this.subscribeOnce(sub.channel, replay);
+        } catch (err) {
+          if (this.stopped || !isUnknownClient(err)) throw err;
+          // Claim it before the re-handshake so establish() resubscribes
+          // everything (old + new) on the single fresh session.
+          this.subs.push(sub);
+          this.clientId = null;
+          try {
+            await this.establish();
+          } catch (e) {
+            // Roll back the claim so a retry starts clean.
+            this.subs = this.subs.filter((s) => s.channel !== sub.channel);
+            throw e;
+          }
+          if (this.stopped) throw new Error("Not connected");
+          // Wake the delivery loop off the stale long-poll so it re-polls
+          // the fresh session immediately instead of hanging out the old one.
+          this.abortConnect();
+          return;
+        }
+        this.subs.push(sub);
+      }
+    });
   }
 
   /** Drop one channel; the connection stays up for the rest. */
@@ -191,6 +273,12 @@ export class BayeuxClient {
     this.stopped = true;
     const id = this.clientId;
     this.clientId = null;
+    this.abortArmed = false;
+    try {
+      this.connectAbort?.abort();
+    } catch {
+      /* best-effort wake-up */
+    }
     this.onStatus({ state: "disconnected" });
     if (id) {
       void this.post([disconnectMessage(id)]).catch(() => {
@@ -199,38 +287,87 @@ export class BayeuxClient {
     }
   }
 
-  private async establish(): Promise<void> {
+  private async establish(cleanRetry = true): Promise<void> {
     const hs = await this.post(handshakeMessages());
     const parsed = parseHandshake(hs);
     if ("error" in parsed) throw new Error(parsed.error);
     this.clientId = parsed.clientId;
-    for (const sub of this.subs) {
-      const replay = this.lastReplay.get(sub.channel) ?? sub.replay;
-      const replies = await this.post([subscribeMessage(parsed.clientId, { channel: sub.channel, replay })]);
-      const reply = replies.find((m) => m.channel === "/meta/subscribe");
-      if (reply && reply.successful === false) {
-        const detail = typeof reply.error === "string" && reply.error ? `: ${reply.error}` : "";
-        throw new Error(`Subscribe refused for ${sub.channel}${detail}`);
+    // One batched subscribe for every channel: fewer round trips means a
+    // smaller window where a publish can slip past replay -1 listeners.
+    const sendBatch = (): Promise<BayeuxMessage[]> =>
+      this.post(
+        this.subs.map((sub) =>
+          subscribeMessage(parsed.clientId, {
+            channel: sub.channel,
+            replay: this.lastReplay.get(sub.channel) ?? sub.replay,
+          })
+        )
+      );
+    let replies = await sendBatch();
+    let refused = replies.filter((m) => m.channel === "/meta/subscribe" && m.successful === false);
+    const unknownRefusal = (): boolean =>
+      refused.some((m) => typeof m.error === "string" && /unknown client/i.test(m.error));
+    if (refused.length > 0 && unknownRefusal() && !this.stopped) {
+      // Same-session delayed retry first: a fresh handshake can be
+      // momentarily unknown upstream, and re-handshaking immediately can
+      // 403 the exact same way.
+      await new Promise((r) => setTimeout(r, 1500));
+      if (!this.stopped && this.clientId) {
+        replies = await sendBatch();
+        refused = replies.filter((m) => m.channel === "/meta/subscribe" && m.successful === false);
       }
+    }
+    if (refused.length > 0) {
+      const unknown = refused.some((m) => typeof m.error === "string" && /unknown client/i.test(m.error));
+      if (unknown && cleanRetry && !this.stopped) {
+        // Fresh handshake, stale view somewhere upstream (typical right
+        // after Reset) - one clean retry before surfacing the failure.
+        this.clientId = null;
+        return this.establish(false);
+      }
+      const first = refused[0];
+      const ch = typeof first.subscription === "string" ? first.subscription : (this.subs[0]?.channel ?? "?");
+      const detail = typeof first.error === "string" && first.error ? `: ${first.error}` : "";
+      throw new Error(`Subscribe refused for ${ch}${detail}`);
     }
     this.onStatus({ state: "connected", clientId: parsed.clientId });
   }
 
   private async loop(): Promise<void> {
-    while (!this.stopped && this.clientId) {
+    while (!this.stopped) {
       const id = this.clientId;
-      let replies: BayeuxMessage[];
-      try {
-        replies = await this.post([connectMessage(id)]);
-      } catch (err) {
-        if (this.stopped) return;
-        await this.backoff(err);
+      if (!id) {
+        // A re-handshake is in flight (add-click or backoff) - wait for the
+        // fresh session instead of exiting the only delivery loop.
+        await new Promise((r) => setTimeout(r, 250));
         continue;
       }
+      const pollCtrl = new AbortController();
+      this.connectAbort = pollCtrl;
+      // Any pending wake-up is satisfied by this fresh poll.
+      this.abortArmed = false;
+      let replies: BayeuxMessage[];
+      try {
+        replies = await this.post([connectMessage(id)], pollCtrl.signal);
+      } catch (err) {
+        if (this.connectAbort === pollCtrl) this.connectAbort = null;
+        if (this.stopped) return;
+        if (this.abortArmed) {
+          // Woken by our own re-handshake - the fresh session is ready.
+          this.abortArmed = false;
+          continue;
+        }
+        await this.backoff(err, id);
+        continue;
+      }
+      if (this.connectAbort === pollCtrl) this.connectAbort = null;
       for (const m of replies) {
         if (this.stopped) return;
         if (m.channel === "/meta/connect" && m.successful === false) {
-          await this.backoff(new Error(typeof m.error === "string" && m.error ? m.error : "Connect refused"));
+          await this.backoff(
+            new Error(typeof m.error === "string" && m.error ? m.error : "Connect refused"),
+            id
+          );
           break;
         }
         if (isEventDelivery(m)) {
@@ -242,7 +379,7 @@ export class BayeuxClient {
     }
   }
 
-  private async backoff(err: unknown): Promise<void> {
+  private async backoff(err: unknown, failedId?: string | null): Promise<void> {
     this.attempt += 1;
     this.onStatus({
       state: "reconnecting",
@@ -252,8 +389,15 @@ export class BayeuxClient {
     await new Promise((r) => setTimeout(r, Math.min(1000 * 2 ** (this.attempt - 1), 15000)));
     if (this.stopped) return;
     try {
-      this.clientId = null;
-      await this.establish();
+      await this.enqueue(async () => {
+        if (this.stopped) return;
+        // An addChannels self-heal may have already re-established while
+        // this backoff was sleeping - only skip when a DIFFERENT live
+        // session exists. A stale or null id still needs re-establishing.
+        if (failedId !== undefined && this.clientId !== null && this.clientId !== failedId) return;
+        this.clientId = null;
+        await this.establish();
+      });
       this.attempt = 0;
     } catch (e) {
       await this.backoff(e);

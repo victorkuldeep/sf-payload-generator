@@ -89,15 +89,24 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [copied, setCopied] = useState(false);
 
-  const clientRef = useRef<BayeuxClient | null>(null);
-  /** BAYEUX_BROWSER jar: the browser holds it, the proxy threads it upstream. */
-  const cookieRef = useRef<string | null>(null);
+  /** One independent CometD session per listener: a stale handshake, a cookie
+   * race, or a reconnect on one channel never disturbs the others. */
+  const clientsRef = useRef(new Map<string, BayeuxClient>());
+  /** Latest status per channel - feeds the aggregate pill plus tab states. */
+  const statusByChannelRef = useRef(new Map<string, BayeuxStatus>());
+  const [chanStates, setChanStates] = useState<Record<string, BayeuxStatus>>({});
   const seqRef = useRef(0);
   const pausedRef = useRef(false);
   pausedRef.current = paused;
   const bufferRef = useRef<FeedEvent[]>([]);
 
-  useEffect(() => () => clientRef.current?.stop(), []);
+  useEffect(
+    () => () => {
+      for (const c of clientsRef.current.values()) c.stop();
+      clientsRef.current.clear();
+    },
+    []
+  );
 
   const channelPath = useMemo(() => {
     const n = name.trim();
@@ -130,23 +139,14 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
     for (const e of events) m.set(e.channel, (m.get(e.channel) ?? 0) + 1);
     return m;
   }, [events]);
-  const ratePerMin = useMemo(() => {
-    const cut = Date.now() - 60000;
-    return events.filter((e) => e.at >= cut).length;
-  }, [events]);
-  /** 24 buckets x 5s sparkline over the trailing two minutes. */
-  const buckets = useMemo(() => {
-    const n = 24;
-    const span = 5000;
-    const now = Date.now();
-    const arr = new Array<number>(n).fill(0);
+  /** Last-seen timestamp per channel - feeds the listener cards. */
+  const lastAt = useMemo(() => {
+    const m = new Map<string, number>();
     for (const e of events) {
-      const i = Math.floor((e.at - (now - n * span)) / span);
-      if (i >= 0 && i < n) arr[i] += 1;
+      if (!m.has(e.channel)) m.set(e.channel, e.at);
     }
-    return arr;
+    return m;
   }, [events]);
-  const bucketMax = Math.max(1, ...buckets);
   const lastEventAt = events.length > 0 ? events[0].at : null;
   const channelColor = (channel: string): string => {
     const i = subs.findIndex((s) => s.channel === channel);
@@ -166,13 +166,22 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
   /** Bayeux transport rides the same-origin CometD proxy: browsers cannot POST
    * to /cometd cross-origin (no CORS headers), and the token never leaves
    * the server leg. The proxy holds healthy long-polls server-side. */
-  const makePost = (token: string) => async (messages: BayeuxMessage[]): Promise<BayeuxMessage[]> => {
+  /** Bayeux transport rides the same-origin CometD proxy: browsers cannot POST
+   * to /cometd cross-origin (no CORS headers), and the token never leaves
+   * the server leg. The proxy holds healthy long-polls server-side.
+   * Each listener owns its jar: one channel's responses can never clobber
+   * a sibling's session affinity. */
+  const makePost = (token: string, jar: { current: string | null }) => async (
+    messages: BayeuxMessage[],
+    signal?: AbortSignal
+  ): Promise<BayeuxMessage[]> => {
     // A re-handshake starts a new server session - drop the old cookie jar.
-    if (messages.some((m) => m.channel === "/meta/handshake")) cookieRef.current = null;
+    if (messages.some((m) => m.channel === "/meta/handshake")) jar.current = null;
     const res = await apiFetch(
       "/api/salesforce/cometd",
-      { instanceUrl, token, apiVersion, messages, cookie: cookieRef.current ?? undefined },
-      120000
+      { instanceUrl, token, apiVersion, messages, cookie: jar.current ?? undefined },
+      120000,
+      signal
     );
     const data = (await res.json()) as { ok?: boolean; replies?: BayeuxMessage[]; cookie?: string | null; error?: string };
     if (res.status === 401 || res.status === 403) {
@@ -181,23 +190,50 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
     if (!res.ok || !data.ok || !Array.isArray(data.replies)) {
       throw new Error(typeof data.error === "string" ? data.error : "Stream request failed");
     }
-    if (typeof data.cookie === "string" && data.cookie) cookieRef.current = data.cookie;
+    if (typeof data.cookie === "string" && data.cookie) jar.current = data.cookie;
     return data.replies;
   };
 
-  const onClientStatus = (s: BayeuxStatus) => {
-    setStatus(s);
-    if (s.state === "failed") {
-      setStatusMsg(s.message);
-      if (isSessionExpiredMessage(s.message)) onSessionExpired?.();
-    } else if (s.state === "reconnecting") {
-      setStatusMsg(`Reconnecting (attempt ${s.attempt}): ${s.message}`);
+  const shortChannel = (ch: string): string => ch.replace(/^\/(event|data|topic)\//, "");
+
+  /** Roll every listener's status into one honest aggregate for the pill. */
+  const recomputeAggregate = () => {
+    const all = [...statusByChannelRef.current.entries()];
+    const live = all.find(([, v]) => v.state === "connected");
+    const busy = all.find(([, v]) => v.state === "reconnecting" || v.state === "connecting");
+    const failed = all.find(([, v]) => v.state === "failed");
+    if (live) {
+      setStatus(live[1]);
+      const pending = all.filter(([, v]) => v.state !== "connected");
+      setStatusMsg(pending.length > 0 ? `${shortChannel(pending[0][0])} still connecting…` : null);
+    } else if (busy) {
+      const [ch, b] = busy;
+      setStatus(b);
+      setStatusMsg(
+        b.state === "reconnecting"
+          ? `Reconnecting ${shortChannel(ch)} (attempt ${b.attempt}): ${b.message}`
+          : `${shortChannel(ch)} connecting…`
+      );
+    } else if (failed) {
+      const [ch, f] = failed;
+      setStatus(f);
+      setStatusMsg(f.state === "failed" ? `${shortChannel(ch)}: ${f.message}` : `${shortChannel(ch)} failed`);
     } else {
+      setStatus({ state: "disconnected" });
       setStatusMsg(null);
     }
   };
 
-  /** Subscribe one more channel - first call opens the connection, later calls join it. */
+  const handleChannelStatus = (channel: string, s: BayeuxStatus) => {
+    if (s.state === "disconnected") statusByChannelRef.current.delete(channel);
+    else statusByChannelRef.current.set(channel, s);
+    setChanStates(Object.fromEntries(statusByChannelRef.current));
+    recomputeAggregate();
+    if (s.state === "failed" && isSessionExpiredMessage(s.message)) onSessionExpired?.();
+  };
+
+  /** One independent listener per channel: its own handshake, session, jar
+   * and delivery loop. Subscribing channel B never touches channel A. */
   const subscribe = async () => {
     const token = getToken();
     if (!token) {
@@ -215,65 +251,59 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
     }
     setOpBusy(true);
     setStatusMsg(null);
+    const jar = { current: null as string | null };
+    const client = new BayeuxClient(
+      makePost(token, jar),
+      (channel, data, replayId) => pushEvent(channel, data, replayId),
+      (s) => handleChannelStatus(sub.channel, s)
+    );
     try {
-      let ok: boolean;
-      if (!clientRef.current) {
+      if (subs.length === 0) {
         setEvents([]);
         bufferRef.current = [];
-        setStatus({ state: "connecting" });
-        const client = new BayeuxClient(
-          makePost(token),
-          (channel, data, replayId) => pushEvent(channel, data, replayId),
-          onClientStatus
-        );
-        clientRef.current = client;
-        ok = await client.start([sub]);
-        // A failed start leaves a dead client behind - drop it so the next
-        // click starts fresh instead of failing on the corpse.
-        if (!ok) clientRef.current = null;
-      } else {
-        await clientRef.current.addChannels([sub]);
-        ok = true;
       }
-      // start() already reported the failure via status; never record a sub
-      // that has no live connection behind it.
+      const ok = await client.start([sub]);
+      // A failed start leaves a dead client behind - drop it so the next
+      // click starts fresh instead of failing on the corpse.
       if (!ok) return;
+      clientsRef.current.set(sub.channel, client);
       setSubs((p) => [...p, sub]);
       setView(sub.channel);
       setName("");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Subscribe failed";
-      setStatus({ state: "failed", message });
-      setStatusMsg(message);
+      handleChannelStatus(sub.channel, { state: "failed", message });
     } finally {
       setOpBusy(false);
     }
   };
 
-  /** Drop one channel; the last one out stops the connection. */
+  /** Drop one listener; its session, jar and loop die with it. */
   const unsubscribeChannel = async (channel: string) => {
-    const client = clientRef.current;
+    const client = clientsRef.current.get(channel);
     if (client) {
       try {
         await client.removeChannel(channel);
       } catch {
         /* best-effort goodbye keeps the feed honest */
       }
+      client.stop();
+      clientsRef.current.delete(channel);
     }
+    statusByChannelRef.current.delete(channel);
+    setChanStates(Object.fromEntries(statusByChannelRef.current));
+    recomputeAggregate();
     const next = subs.filter((s) => s.channel !== channel);
     setSubs(next);
     if (view === channel) setView("dashboard");
-    if (next.length === 0 && client) {
-      client.stop();
-      clientRef.current = null;
-    }
   };
 
-  /** Hard reset: kill the loop, drop the client + cookie jar, clear everything. */
+  /** Hard reset: kill every listener session, jar and loop; clear everything. */
   const resetAll = () => {
-    clientRef.current?.stop();
-    clientRef.current = null;
-    cookieRef.current = null;
+    for (const c of clientsRef.current.values()) c.stop();
+    clientsRef.current.clear();
+    statusByChannelRef.current.clear();
+    setChanStates({});
     bufferRef.current = [];
     setSubs([]);
     setEvents([]);
@@ -419,8 +449,8 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
             <h2 className="text-[15px] font-semibold text-[#27241F]">Subscribe to a Channel</h2>
             <p className="text-xs text-[#777168]">Live Bayeux stream direct from your org - token stays in this tab.</p>
           </div>
-          <span className={`rounded border px-2 py-0.5 font-mono text-[11px] font-bold ${pill[phase] ?? pill.idle}`}>
-            {connected && status.state === "connected" ? `● ${status.clientId.slice(0, 8)}` : phase}
+          <span className={`rounded border px-2 py-0.5 font-mono text-[11px] font-bold ${pill[phase] ?? pill.idle}`} title="One independent live session per listener">
+            {connected && status.state === "connected" ? `● ${subs.length} live` : phase}
           </span>
         </div>
         <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto]">
@@ -568,22 +598,6 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
             </Button>
             <Button
               size="sm"
-              variant="secondary"
-              onClick={() => {
-                const current = channelValid ? subs.find((s) => s.channel === channelPath) : undefined;
-                if (current) void unsubscribeChannel(current.channel);
-              }}
-              disabled={opBusy || !channelValid || !subs.some((s) => s.channel === channelPath)}
-              title={
-                channelValid && subs.some((s) => s.channel === channelPath)
-                  ? `Unsubscribe ${channelPath}`
-                  : "Nothing subscribed for this channel yet"
-              }
-            >
-              Unsubscribe
-            </Button>
-            <Button
-              size="sm"
               variant="ghost"
               onClick={resetAll}
               title="Stop everything, clear channels and events, start over"
@@ -636,87 +650,83 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
           ))}
         </div>
         {statusMsg && (
-          <p className="mt-2 text-[12px] text-red-700" role="status">{statusMsg}</p>
+          <p className={`mt-2 text-[12px] ${phase === "failed" ? "text-red-700" : phase === "reconnecting" || phase === "connecting" ? "text-amber-700" : "text-[#777168]"}`} role="status">{statusMsg}</p>
         )}
       </div>
 
       <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
-        {(
-          <div className="flex flex-wrap gap-1" role="tablist" aria-label="Subscriptions">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={view === "dashboard"}
-              onClick={() => setView("dashboard")}
-              title="Converged Grafana-style view across every subscription"
-              className={`rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
-                view === "dashboard"
-                  ? "border-bronze-400 bg-bronze-100 text-bronze-700"
-                  : "border-[#E8E2D8] bg-white text-[#777168] hover:text-[#27241F]"
-              }`}
-            >
-              Dashboard ({events.length})
-            </button>
-            {subs.map((s) => (
+        <div className="flex flex-wrap items-center gap-1 border-b border-[#E8E2D8] pb-2" role="tablist" aria-label="Listeners">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "dashboard"}
+            onClick={() => setView("dashboard")}
+            title="Converged view across every listener"
+            className={`cursor-pointer rounded-t-md border-b-2 px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
+              view === "dashboard"
+                ? "border-bronze-500 text-bronze-700"
+                : "border-transparent text-[#777168] hover:text-[#27241F]"
+            }`}
+          >
+            Dashboard
+            <span className="ml-1 font-mono font-normal text-[#A39B8E]">{events.length}</span>
+          </button>
+          {subs.map((s) => {
+            const selected = view === s.channel;
+            const liveState = chanStates[s.channel]?.state;
+            const replayLabel = s.replay === -1 ? "new" : s.replay === -2 ? "stored" : `#${s.replay}`;
+            const seen = lastAt.get(s.channel);
+            const short = s.channel.replace(/^\/(event|data|topic)\//, "");
+            return (
               <span
                 key={s.channel}
-                className={`flex items-center gap-1 rounded-md border px-1 py-1 text-[11px] font-semibold transition-colors ${
-                  view === s.channel
-                    ? "border-bronze-400 bg-bronze-100 text-bronze-700"
-                    : "border-[#E8E2D8] bg-white text-[#777168]"
+                className={`flex max-w-[240px] items-center gap-1 rounded-t-md border-b-2 px-1 py-1 text-[11px] font-semibold transition-colors ${
+                  selected ? "border-bronze-500" : "border-transparent"
                 }`}
               >
                 <button
                   type="button"
                   role="tab"
-                  aria-selected={view === s.channel}
+                  aria-selected={selected}
                   onClick={() => setView(s.channel)}
-                  title={s.channel}
-                  className="flex cursor-pointer items-center gap-1.5 hover:text-[#27241F]"
+                  title={`${s.channel} · replay ${replayLabel}${seen ? ` · last ${new Date(seen).toLocaleTimeString()}` : " · waiting…"}`}
+                  className={`flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 px-1.5 py-0.5 ${
+                    selected ? "text-bronze-700" : "text-[#777168] hover:text-[#27241F]"
+                  } ${liveState && liveState !== "connected" ? "animate-pulse" : ""}`}
                 >
                   <span className={`h-2 w-2 shrink-0 rounded-full ${channelColor(s.channel)}`} aria-hidden="true" />
-                  <span className="max-w-[220px] truncate font-mono" title={s.channel}>{s.channel}</span>
-                  <span className="font-mono">({counts.get(s.channel) ?? 0})</span>
+                  <span className="truncate font-mono" title={s.channel}>{short}</span>
+                  <span className="shrink-0 font-mono font-normal text-[#A39B8E]">({counts.get(s.channel) ?? 0})</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => void unsubscribeChannel(s.channel)}
-                  aria-label={`Unsubscribe ${s.channel}`}
-                  title={`Unsubscribe ${s.channel}`}
-                  className="cursor-pointer rounded px-1 hover:bg-bronze-200 hover:text-bronze-700"
+                  aria-label={`Remove listener ${s.channel}`}
+                  title={`Remove listener ${s.channel}`}
+                  className="shrink-0 cursor-pointer rounded px-1 text-[12px] leading-none text-[#A39B8E] hover:bg-bronze-200 hover:text-bronze-700"
                 >
                   ✕
                 </button>
               </span>
+            );
+          })}
+          {subs.length === 0 && (
+            <span className="px-2 py-1.5 text-[11px] text-[#A39B8E]">No listeners yet — subscribe above.</span>
+          )}
+        </div>
+        {view === "dashboard" && subs.length > 0 && (
+          <div className="mt-2 grid grid-cols-3 divide-x divide-[#E8E2D8] rounded-lg border border-[#E8E2D8]">
+            {[
+              ["Events", String(events.length), `${events.length} events received across every listener`],
+              ["Listeners", String(subs.length), `${subs.length} active channel subscriptions`],
+              ["Last event", lastEventAt ? new Date(lastEventAt).toLocaleTimeString() : "—", "Most recent delivery"],
+            ].map(([k, v, hint]) => (
+              <div key={k} className="px-3 py-2" title={hint}>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-[#A39B8E]">{k}</p>
+                <p className="mt-0.5 truncate font-mono text-[16px] font-bold leading-none text-[#27241F]">{v}</p>
+              </div>
             ))}
           </div>
-        )}
-        {view === "dashboard" && subs.length > 0 && (
-          <>
-            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {[
-                ["Total events", String(events.length)],
-                ["Events / min", String(ratePerMin)],
-                ["Channels", String(subs.length)],
-                ["Last event", lastEventAt ? new Date(lastEventAt).toLocaleTimeString() : "—"],
-              ].map(([k, v]) => (
-                <div key={k} className="rounded-lg border border-[#E8E2D8] bg-[var(--color-canvas)] px-2.5 py-1.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-[#777168]">{k}</p>
-                  <p className="font-mono text-[15px] font-bold text-[#27241F]">{v}</p>
-                </div>
-              ))}
-            </div>
-            <div className="mt-2 flex h-10 items-end gap-0.5" role="img" aria-label="Event rate over the trailing two minutes">
-              {buckets.map((b, i) => (
-                <div
-                  key={i}
-                  className="flex-1 rounded-sm bg-bronze-400"
-                  style={{ height: `${Math.max(5, (b / bucketMax) * 100)}%`, opacity: b === 0 ? 0.2 : 1 }}
-                  title={`${b} events`}
-                />
-              ))}
-            </div>
-          </>
         )}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <h3 className="text-[13px] font-semibold text-[#27241F]">
@@ -732,6 +742,16 @@ export function EventMonitorPanel({ instanceUrl, apiVersion, getToken, onSession
           <Button size="sm" variant="ghost" onClick={togglePause} disabled={!connected && events.length === 0} title="Freeze the list (incoming events buffer)">
             {paused ? "Resume" : "Pause"}
           </Button>
+          {view !== "dashboard" && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => void unsubscribeChannel(view)}
+              title={`Unsubscribe ${view} and close this tab`}
+            >
+              Unsubscribe
+            </Button>
+          )}
           <span className="flex-1" />
           <input
             value={filter}

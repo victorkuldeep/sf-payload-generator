@@ -8,6 +8,7 @@ import {
   parseHandshake,
   isEventDelivery,
   extractReplayId,
+  isUnknownClient,
   platformEventChannel,
   changeEventChannel,
   topicChannel,
@@ -233,5 +234,200 @@ describe("BayeuxClient", () => {
     expect(await badClient.start([{ channel: "/event/A__e", replay: -1 }])).toBe(false);
     expect(badClient.running).toBe(false);
     expect(states).toContain("failed");
+  });
+
+  it("recovers on the same session when the refusal is just replication lag", async () => {
+    let handshakes = 0;
+    let batchSends = 0;
+    const post = vi.fn(async (msgs: BayeuxMessage[]): Promise<BayeuxMessage[]> => {
+      const [m] = msgs;
+      if (m.channel === "/meta/handshake") {
+        handshakes += 1;
+        return hsOk(`c${handshakes}`);
+      }
+      if (m.channel === "/meta/subscribe") {
+        batchSends += 1;
+        // First batched send lands before the fresh session replicates.
+        if (batchSends === 1) {
+          return msgs.map((s) => ({
+            channel: "/meta/subscribe",
+            successful: false,
+            error: "403::Unknown client",
+            subscription: (s as BayeuxMessage).subscription,
+          }));
+        }
+        return msgs.flatMap((s) => subOk((s as BayeuxMessage).subscription as string));
+      }
+      if (m.channel === "/meta/connect") {
+        await new Promise((r) => setTimeout(r, 20));
+        return [{ channel: "/meta/connect", successful: true }];
+      }
+      return [];
+    });
+    const client = new BayeuxClient(
+      post,
+      () => {},
+      () => {}
+    );
+    expect(
+      await client.start([
+        { channel: "/event/A__e", replay: -1 },
+        { channel: "/event/B__e", replay: -1 },
+      ])
+    ).toBe(true);
+    // No re-handshake needed: the delayed same-session retry lands.
+    expect(handshakes).toBe(1);
+    expect(batchSends).toBe(2);
+    expect(client.channels).toEqual(["/event/A__e", "/event/B__e"]);
+    client.stop();
+  });
+
+  it("detects unknown-client sessions", () => {
+    expect(isUnknownClient(new Error("403::Unknown client"))).toBe(true);
+    expect(isUnknownClient(new Error("Subscribe refused for /event/X: 403::Unknown client"))).toBe(true);
+    expect(isUnknownClient(new Error("Not connected"))).toBe(false);
+    expect(isUnknownClient("nope")).toBe(false);
+  });
+
+  it("re-handshakes and retries when the server forgets the session mid-life", async () => {
+    let handshakes = 0;
+    const subAttempts = new Map<string, number>();
+    const post = vi.fn(async (msgs: BayeuxMessage[]): Promise<BayeuxMessage[]> => {
+      const [m] = msgs;
+      if (m.channel === "/meta/handshake") {
+        handshakes += 1;
+        return hsOk(`c${handshakes}`);
+      }
+      if (m.channel === "/meta/subscribe") {
+        return msgs.flatMap((s) => {
+          const ch = (s as BayeuxMessage).subscription as string;
+          subAttempts.set(ch, (subAttempts.get(ch) ?? 0) + 1);
+          // The first session is dead: every subscribe on it is refused, so
+          // the same-session retry also fails and the client must heal.
+          if (ch === "/event/B__e" && handshakes === 1) {
+            return [{ channel: "/meta/subscribe", successful: false, error: "403::Unknown client", subscription: ch }];
+          }
+          return subOk(ch);
+        });
+      }
+      if (m.channel === "/meta/connect") {
+        await new Promise((r) => setTimeout(r, 20));
+        return [{ channel: "/meta/connect", successful: true }];
+      }
+      return [];
+    });
+    const client = new BayeuxClient(
+      post,
+      () => {},
+      () => {}
+    );
+    expect(await client.start([{ channel: "/event/A__e", replay: -1 }])).toBe(true);
+    await client.addChannels([{ channel: "/event/B__e", replay: -1 }]);
+    expect(handshakes).toBe(2);
+    // Initial attempt + same-session delayed retry (both refused on the dead
+    // session) + the healed session's batched resubscribe.
+    expect(subAttempts.get("/event/B__e")).toBe(3);
+    expect(client.channels).toEqual(["/event/A__e", "/event/B__e"]);
+    client.stop();
+  });
+
+  it("retries establish once when the fresh handshake is refused as unknown", async () => {
+    let handshakes = 0;
+    const post = vi.fn(async (msgs: BayeuxMessage[]): Promise<BayeuxMessage[]> => {
+      const [m] = msgs;
+      if (m.channel === "/meta/handshake") {
+        handshakes += 1;
+        return hsOk(`c${handshakes}`);
+      }
+      if (m.channel === "/meta/subscribe") {
+        // First session is a stale upstream view: every subscribe refused.
+        if (handshakes === 1) {
+          return msgs.map((s) => ({
+            channel: "/meta/subscribe",
+            successful: false,
+            error: "403::Unknown client",
+            subscription: (s as BayeuxMessage).subscription,
+          }));
+        }
+        return msgs.map((s) => subOk((s as BayeuxMessage).subscription as string)).flat();
+      }
+      if (m.channel === "/meta/connect") {
+        await new Promise((r) => setTimeout(r, 20));
+        return [{ channel: "/meta/connect", successful: true }];
+      }
+      return [];
+    });
+    const client = new BayeuxClient(
+      post,
+      () => {},
+      () => {}
+    );
+    expect(
+      await client.start([
+        { channel: "/event/A__e", replay: -1 },
+        { channel: "/event/B__e", replay: -1 },
+        { channel: "/event/C__e", replay: -1 },
+      ])
+    ).toBe(true);
+    expect(handshakes).toBe(2);
+    expect(client.channels).toEqual(["/event/A__e", "/event/B__e", "/event/C__e"]);
+    client.stop();
+  });
+
+  it("wakes the delivery loop onto the fresh session after a heal", async () => {
+    let handshakes = 0;
+    const seen: string[] = [];
+    const post = vi.fn(async (msgs: BayeuxMessage[], signal?: AbortSignal): Promise<BayeuxMessage[]> => {
+      const [m] = msgs;
+      if (m.channel === "/meta/handshake") {
+        handshakes += 1;
+        return hsOk(`c${handshakes}`);
+      }
+      if (m.channel === "/meta/subscribe") {
+        return msgs.flatMap((s) => {
+          const ch = (s as BayeuxMessage).subscription as string;
+          // First session is dead: any subscribe on it is refused.
+          if (ch === "/event/B__e" && handshakes === 1) {
+            return [{ channel: "/meta/subscribe", successful: false, error: "403::Unknown client", subscription: ch }];
+          }
+          return subOk(ch);
+        });
+      }
+      if (m.channel === "/meta/connect") {
+        if (m.clientId === "c1") {
+          // Stale long-poll on the dead session: hang until the client
+          // aborts us after its re-handshake.
+          await new Promise<void>((resolve, reject) => {
+            if (signal?.aborted) {
+              reject(new Error("aborted"));
+              return;
+            }
+            signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+          });
+          return [{ channel: "/meta/connect", successful: false, error: "403::Unknown client" }];
+        }
+        // Fresh session delivers the new channel's event right away.
+        await new Promise((r) => setTimeout(r, 20));
+        return [
+          { channel: "/event/B__e", data: { ok: true }, event: { replayId: 7 } },
+          { channel: "/meta/connect", successful: true },
+        ];
+      }
+      return [];
+    });
+    const client = new BayeuxClient(
+      post,
+      (channel) => {
+        seen.push(channel);
+      },
+      () => {}
+    );
+    expect(await client.start([{ channel: "/event/A__e", replay: -1 }])).toBe(true);
+    await new Promise((r) => setTimeout(r, 30));
+    await client.addChannels([{ channel: "/event/B__e", replay: -1 }]);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(handshakes).toBe(2);
+    expect(seen).toContain("/event/B__e");
+    client.stop();
   });
 });
