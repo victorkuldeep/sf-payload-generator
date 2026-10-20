@@ -5,7 +5,7 @@
   // needs (including SHARE_KV for ERD share links) must be declared here.
   // Never add a wrangler.toml alongside this file - two configs break the build.
   "name": "sf-payload-generator",
-  "main": ".open-next/worker.js",
+  "main": "./worker-entry.js",
   "compatibility_date": "2025-09-01",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
@@ -21,6 +21,12 @@
       "id": "9789b9796c224298901982030e2e42f5"
     }
   ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "WEBHOOK_INBOX", "class_name": "WebhookInbox" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_classes": ["WebhookInbox"] }],
   // Workers Logs (invocation logs only, full logs off) - keeps the local
   // config in sync with the dashboard Observability settings.
   "observability": {
