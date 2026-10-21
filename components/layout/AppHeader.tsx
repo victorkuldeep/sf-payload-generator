@@ -173,7 +173,7 @@ function MegaPanel({
   );
 }
 
-export type NavMode = "home" | "builder" | "composite" | "soql" | "graphql" | "schema" | "rest" | "apex" | "events" | "webhooks";
+export type NavMode = "home" | "builder" | "composite" | "soql" | "graphql" | "schema" | "rest" | "apex" | "events" | "webhooks" | "explore";
 
 interface AppHeaderProps {
   connected?: boolean;
@@ -302,6 +302,7 @@ export function AppHeader(props: AppHeaderProps) {
       headline: "Shape every payload.",
       punch: "Accurate REST, composite and query payloads from live metadata - no manual field copy-paste.",
       items: [
+        { kind: "mode", id: "explore", label: "Explore", desc: "Org data-model explorer" },
         { kind: "mode", id: "builder", label: "Builder", desc: "Single-object payload builder" },
         { kind: "mode", id: "composite", label: "Composite", desc: "Composite batch builder" },
         { kind: "mode", id: "soql", label: "Query", desc: "SOQL + SOSL query builder" },

@@ -12,6 +12,8 @@ export interface SalesforceObject {
   label: string;
   labelPlural: string;
   custom: boolean;
+  /** True for list/hierarchy custom settings. Absent on vintage caches. */
+  customSetting?: boolean;
   createable: boolean;
   updateable: boolean;
   queryable: boolean;
@@ -30,6 +32,8 @@ export interface SalesforcePicklistValue {
 export interface SalesforceField {
   name: string;
   label: string;
+  /** True for custom fields - present in describe payloads, used for audit fallback. Absent on vintage caches. */
+  custom?: boolean;
   type: string;
   length: number;
   precision: number;

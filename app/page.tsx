@@ -15,6 +15,7 @@ import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import { apiFetch } from "@/lib/api";
 import { builderGridClass } from "@/lib/builder/panels";
 import { BuilderRail } from "@/components/BuilderRail";
+import { ExplorerPanel } from "@/components/ExplorerPanel";
 import { AppShell } from "@/components/layout/AppShell";
 import { Stepper } from "@/components/Stepper";
 import { WelcomeModal } from "@/components/WelcomeModal";
@@ -70,7 +71,7 @@ const SchemaPanel = dynamic(() => import("@/components/SchemaPanel"), {
   ),
 });
 
-type BuilderMode = "home" | "single" | "composite" | "soql" | "graphql" | "schema" | "rest" | "apex" | "events" | "webhooks";
+type BuilderMode = "home" | "single" | "composite" | "soql" | "graphql" | "schema" | "rest" | "apex" | "events" | "webhooks" | "explore";
 
 
 
@@ -250,6 +251,14 @@ const HERO_SLIDES: {
   cta: string;
   mode: Exclude<BuilderMode, "home"> | "json" | "contracts";
 }[] = [
+  {
+    eyebrow: "Org data-model explorer",
+    titleA: "Every object,",
+    titleEm: "every field, one table.",
+    copy: "Walk standard, custom, settings, metadata and big objects in a searchable grid - relationships and Excel export included.",
+    cta: "Explore",
+    mode: "explore",
+  },
   {
     eyebrow: "Metadata-driven payload builder",
     titleA: "From live metadata to",
@@ -657,13 +666,14 @@ export default function Home() {
         : mode === "apex" ? "apex"
         : mode === "events" ? "events"
         : mode === "webhooks" ? "webhooks"
+        : mode === "explore" ? "explore"
         : "builder";
       scrollToSection(id, false);
     }, 80);
   }, []);
 
   const handleNavigate = useCallback(
-    (mode: "home" | "builder" | "composite" | "soql" | "graphql" | "schema" | "rest" | "apex" | "events" | "webhooks") => {
+    (mode: "home" | "builder" | "composite" | "soql" | "graphql" | "schema" | "rest" | "apex" | "events" | "webhooks" | "explore") => {
       // Home is always available - it just shows the start screen.
       if (mode === "home") {
         goMode("home");
@@ -1571,7 +1581,7 @@ export default function Home() {
 
 
       trail={
-        state.connected && state.mode !== "home" && state.mode !== "schema" ? (
+        state.connected && state.mode !== "home" && state.mode !== "schema" && state.mode !== "explore" ? (
           <Stepper
                 steps={
                   state.mode === "composite"
@@ -1635,6 +1645,21 @@ export default function Home() {
                   onAddToCollection={requestAddToCollection}
                   collectionCount={collection.length}
                   onOpenCollection={() => setShowCollection(true)}
+                  onSessionExpired={handleSessionExpired}
+                />
+              </section>
+            </div>
+
+            {/* ── Org Explorer mode ── */}
+            <div hidden={state.mode !== "explore"}>
+              <section id="explore" aria-label="Org Explorer" className="scroll-mt-20">
+                <ExplorerPanel
+                  objects={state.objects}
+                  loadingObjects={loading.objects}
+                  objectsError={errors.objects}
+                  instanceUrl={state.instanceUrl}
+                  apiVersion={state.apiVersion}
+                  getToken={() => tokenRef.current}
                   onSessionExpired={handleSessionExpired}
                 />
               </section>

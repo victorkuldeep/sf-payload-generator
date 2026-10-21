@@ -25,7 +25,8 @@ const FIELD_HEADER = [
 
 const FIELD_WIDTHS = [28, 28, 16, 10, 10, 10, 12, 22, 50, 18, 40];
 
-function picklistText(f: SalesforceField): string {
+/** Shared with the Explorer audit workbook - same picklist vocabulary. */
+export function picklistText(f: SalesforceField): string {
   if (f.picklistValues.length === 0) return "";
   const active = f.picklistValues.filter((p) => p.active);
   const shown = active.map((p) => (p.label === p.value ? p.value : `${p.label} (${p.value})`)).join("; ");

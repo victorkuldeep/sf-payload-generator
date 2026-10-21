@@ -15,6 +15,7 @@ interface RawSobject {
   label: string;
   labelPlural: string;
   custom: boolean;
+  customSetting?: boolean;
   createable: boolean;
   updateable: boolean;
   queryable: boolean;
@@ -96,6 +97,7 @@ export async function POST(req: NextRequest) {
       label: s.label,
       labelPlural: s.labelPlural,
       custom: s.custom,
+      ...(s.customSetting ? { customSetting: true as const } : {}),
       createable: s.createable,
       updateable: s.updateable,
       queryable: s.queryable,
