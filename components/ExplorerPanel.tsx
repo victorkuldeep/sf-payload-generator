@@ -6,7 +6,9 @@ import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import type { SalesforceDescribeResult, SalesforceObject } from "@/lib/salesforce/types";
 import { bigObjectScanQuery, classifyObject, mergeBigObjects, OBJECT_KINDS, type BigObjectCandidate, type ObjectKind } from "@/lib/salesforce/objectKind";
 import { downloadExplorerWorkbook, fieldAuditQuery, parseAuditEnvelope, type AuditEnvelope, type FieldAudit } from "@/lib/salesforce/fieldAudit";
+import { objectInfoPath, parseDependencyGraph, type DepEdge } from "@/lib/salesforce/picklistDeps";
 import { toolingQueryPath } from "@/lib/salesforce/picklistValues";
+import { PicklistValuesButton } from "@/components/PicklistValuesButton";
 
 interface ExplorerPanelProps {
   objects: SalesforceObject[];
@@ -74,6 +76,32 @@ export function ExplorerPanel({
   const [collapsed, setCollapsed] = useState<"none" | "left" | "right">("none");
   const [audit, setAudit] = useState<Record<string, FieldAudit>>({});
   const [auditNote, setAuditNote] = useState<string | null>(null);
+  const [depEdges, setDepEdges] = useState<DepEdge[]>([]);
+
+  const fetchDeps = async (objectApi: string, labels: Record<string, string>) => {
+    setDepEdges([]);
+    try {
+      const token = getToken();
+      if (!token) return;
+      const response = await apiFetch("/api/salesforce/rest", {
+        instanceUrl,
+        token,
+        scope: "org",
+        method: "GET",
+        path: objectInfoPath(apiVersion, objectApi),
+        auth: { type: "bearer", token },
+      });
+      const data = (await response.json()) as {
+        success?: boolean;
+        body?: { fields?: Record<string, never> };
+        error?: string;
+      };
+      if (!response.ok || data.success === false) return;
+      setDepEdges(parseDependencyGraph((data.body ?? {}) as { fields?: Record<string, never> }, labels));
+    } catch {
+      /* dependency graph is a bonus - the table stands without it */
+    }
+  };
   const auditCache = useRef<Record<string, Record<string, FieldAudit>>>({});
   // Big objects are absent from global describe - scanned once from
   // EntityDefinition and merged locally. Silent when Tooling is unavailable.
@@ -170,7 +198,12 @@ export function ExplorerPanel({
     setFieldQuery("");
     setDescribeError(null);
     void fetchAudit(apiName);
-    if (cache[apiName]) return;
+    if (cache[apiName]) {
+      const labels: Record<string, string> = {};
+      for (const f of cache[apiName].fields) labels[f.name] = f.label;
+      void fetchDeps(apiName, labels);
+      return;
+    }
     setDescribeLoading(true);
     try {
       const response = await apiFetch("/api/salesforce/describe", {
@@ -182,6 +215,9 @@ export function ExplorerPanel({
       const data = (await response.json()) as SalesforceDescribeResult & { error?: string };
       if (!response.ok) throw new Error(data.error ?? "Failed to load object details");
       setCache((prev) => ({ ...prev, [apiName]: data }));
+      const labels: Record<string, string> = {};
+      for (const f of data.fields) labels[f.name] = f.label;
+      void fetchDeps(apiName, labels);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load object details";
       setDescribeError(message);
@@ -443,7 +479,29 @@ export function ExplorerPanel({
                       <tr key={f.name} className="border-b border-[var(--color-line)] last:border-0 hover:bg-ivory-50">
                         <td className="max-w-[11rem] truncate px-2 py-1" title={f.label}>{f.label}</td>
                         <td className="whitespace-nowrap px-2 py-1 font-mono">{f.name}</td>
-                        <td className="whitespace-nowrap px-2 py-1 font-mono">{f.type}</td>
+                        <td className="whitespace-nowrap px-2 py-1">
+                          <span className="inline-flex items-center gap-1 font-mono">
+                            {f.type}
+                            {(f.type === "picklist" || f.type === "multipicklist") && f.picklistValues.length > 0 && describe && (
+                              <PicklistValuesButton
+                                objectName={describe.name}
+                                objectLabel={describe.label}
+                                fieldName={f.name}
+                                fieldLabel={f.label}
+                                fieldType={f.type}
+                                values={f.picklistValues}
+                              />
+                            )}
+                            {depEdges.some((e) => e.dependent === f.name) && (
+                              <span
+                                title={`Controlled by ${depEdges.find((e) => e.dependent === f.name)?.controllerLabel ?? "another field"}`}
+                                className="rounded-full border border-violet-300 bg-violet-50 px-1.5 py-px font-sans text-[10px] font-semibold text-violet-700"
+                              >
+                                dependent
+                              </span>
+                            )}
+                          </span>
+                        </td>
                         <td className="whitespace-nowrap px-2 py-1 font-mono">{f.length || ""}</td>
                         <td className="whitespace-nowrap px-2 py-1">{!f.nillable && !f.defaultedOnCreate ? "Y" : "N"}</td>
                         <td className="whitespace-nowrap px-2 py-1">{f.unique ? "Y" : "N"}</td>
@@ -511,6 +569,35 @@ export function ExplorerPanel({
                 )}
               </div>
             </div>
+
+            {depEdges.length > 0 && (
+              <div>
+                <h4 className="mb-1 text-sm font-semibold">Picklist dependencies ({depEdges.length})</h4>
+                <ul className="space-y-1.5">
+                  {depEdges.map((e) => (
+                    <li key={e.dependent} className="rounded-md border border-[var(--color-line)] text-xs">
+                      <details>
+                        <summary className="cursor-pointer px-2 py-1.5">
+                          <span className="font-mono">{e.controllerLabel}</span>
+                          <span className="text-[var(--color-muted)]"> → </span>
+                          <span className="font-mono">{e.dependentLabel}</span>
+                          <span className="ml-2 text-[var(--color-muted)]">{e.map.length} controller values</span>
+                        </summary>
+                        <ul className="divide-y divide-[var(--color-line)] border-t border-[var(--color-line)]">
+                          {e.map.map((m) => (
+                            <li key={m.controller} className="flex flex-wrap items-baseline gap-x-2 px-2 py-1">
+                              <span className="shrink-0 font-mono font-semibold">{m.controller}</span>
+                              <span className="text-[var(--color-muted)]">→</span>
+                              <span className="min-w-0 flex-1">{m.values.join(", ")}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         ) : null}
       </div>
