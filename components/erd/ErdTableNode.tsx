@@ -299,7 +299,7 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
   return (
     <div
       style={data.tags.length > 0 ? { borderColor: data.tags[0].color, borderWidth: 3 } : undefined}
-      className={`group w-[300px] rounded-xl border-2 bg-[var(--color-surface)] shadow-[0_8px_28px_-10px_rgba(24,20,12,0.35)] overflow-hidden transition-all ${
+      className={`group relative w-[300px] rounded-xl border-2 bg-[var(--color-surface)] shadow-[0_8px_28px_-10px_rgba(24,20,12,0.35)] overflow-hidden transition-all ${
         data.linked || data.linkFocus
           ? "border-[#722F37] shadow-[0_0_0_3px_rgba(114,47,55,0.38),0_8px_28px_-10px_rgba(24,20,12,0.35)]"
           : data.spotlight
@@ -311,6 +311,22 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
               : "border-[var(--color-line)]"
       } ${(data.linked || data.linkFocus) ? "erd-link-glow" : ""} ${data.dimmed ? "opacity-40" : ""}`}
     >
+      {!data.isRoot && data.onRemoveClick && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            data.onRemoveClick?.(data.apiName);
+          }}
+          title={`Remove ${data.apiName} from the canvas (X)`}
+          aria-label={`Remove ${data.apiName} from the canvas`}
+          className="nodrag absolute right-1.5 top-1.5 z-10 cursor-pointer rounded-full border border-[var(--color-line)] bg-white p-1 text-ivory-500 opacity-0 shadow-sm transition-all hover:border-red-300 hover:text-red-600 hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100"
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+            <path d="M6 6l12 12M18 6 6 18" />
+          </svg>
+        </button>
+      )}
       {/* Side-edge docks: exits at header height, entries at footer height */}
       <Handle type="source" id={parentExitHandleId} position={Position.Right} style={dockStyle(data.authorMode, { top: ERD_HEADER_H / 2 })} />
       <Handle type="target" id={childEntryHandleId} position={Position.Left} style={dockStyle(data.authorMode, { top: `calc(100% - ${ERD_FOOTER_H / 2}px)` })} />
@@ -386,22 +402,6 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
           >
             {copied ? <CheckIcon /> : <CopyIcon />}
           </button>
-          {!data.isRoot && data.onRemoveClick && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                data.onRemoveClick?.(data.apiName);
-              }}
-              title={`Remove ${data.apiName} from the canvas (X)`}
-              aria-label={`Remove ${data.apiName} from the canvas`}
-              className="nodrag shrink-0 rounded p-1 transition-colors cursor-pointer text-ivory-950 hover:text-red-600 hover:bg-red-50"
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
-                <path d="M6 6l12 12M18 6 6 18" />
-              </svg>
-            </button>
-          )}
           {data.onPullCustomParents && (
             <button
               type="button"
@@ -745,7 +745,7 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
             </svg>
           </button>
         </div>
-        <div className="flex items-center justify-between gap-2">
+        <div className="relative flex items-center justify-between gap-2">
           <span className="flex min-w-0 flex-1 items-center gap-1 truncate">
             <span
               title={`${data.apiName} · ${OBJECT_KIND_LABEL[data.objectKind]}`}
@@ -753,34 +753,6 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
             >
               {OBJECT_KIND_LABEL[data.objectKind]}
             </span>
-            {data.tags.slice(0, 2).map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  data.onTagsClick?.(data.apiName);
-                }}
-                title={`Tag: ${t.name} - click to edit tags (T)`}
-                className="nodrag max-w-[76px] shrink-0 cursor-pointer truncate rounded-full border px-1.5 py-px text-[9px] font-bold"
-                style={{ borderColor: t.color, color: t.color, backgroundColor: `${t.color}14` }}
-              >
-                {t.name}
-              </button>
-            ))}
-            {data.tags.length > 2 && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  data.onTagsClick?.(data.apiName);
-                }}
-                title={`${data.tags.length - 2} more tags - click to edit (T)`}
-                className="nodrag shrink-0 cursor-pointer rounded-full bg-ivory-200 px-1.5 py-px text-[9px] font-bold text-ivory-700"
-              >
-                +{data.tags.length - 2}
-              </button>
-            )}
             {data.isJunction && (
               <span
                 title="Junction object - joins two or more parents (two required lookups, or a master-detail leg plus another lookup)"
@@ -795,6 +767,42 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
               </span>
             )}
           </span>
+          {data.tags.length > 0 && (
+            <span className="pointer-events-none absolute left-1/2 top-1/2 flex max-w-[70%] -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-1">
+              {data.tags.slice(0, 2).map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    data.onTagsClick?.(data.apiName);
+                  }}
+                  title={`Tag: ${t.name} - click to edit tags (T)`}
+                  className="nodrag pointer-events-auto flex max-w-[76px] shrink-0 cursor-pointer items-center gap-1 truncate rounded-full border px-1.5 py-px text-[9px] font-bold"
+                  style={{ borderColor: t.color, color: t.color, backgroundColor: `${t.color}14` }}
+                >
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true" className="shrink-0">
+                    <path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z" />
+                    <circle cx="7.5" cy="7.5" r="1.5" fill="currentColor" stroke="none" />
+                  </svg>
+                  <span className="truncate">{t.name}</span>
+                </button>
+              ))}
+              {data.tags.length > 2 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    data.onTagsClick?.(data.apiName);
+                  }}
+                  title={`${data.tags.length - 2} more tags - click to edit (T)`}
+                  className="nodrag pointer-events-auto shrink-0 cursor-pointer rounded-full bg-ivory-200 px-1.5 py-px text-[9px] font-bold text-ivory-700"
+                >
+                  +{data.tags.length - 2}
+                </button>
+              )}
+            </span>
+          )}
           {q ? (
             <span className="shrink-0 text-[10px] font-medium text-ivory-600">
               {`${searched!.length} match${searched!.length === 1 ? "" : "es"}${capped ? " (top 100)" : ""}`}

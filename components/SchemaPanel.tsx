@@ -15,7 +15,7 @@ import { downloadPicklistMatrix, type MatrixField, type MatrixRt } from "@/lib/s
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import { apiFetch } from "@/lib/api";
 import { ErdCanvas, type ErdCanvasHandle } from "./erd/ErdCanvas";
-import { ConfirmRemoveDialog, TagManagerDialog, TagPickerDialog } from "./erd/TagDialogs";
+import { ConfirmRemoveDialog, TagCreator, TagManagerDialog, TagPickerDialog } from "./erd/TagDialogs";
 import { AddPicklistValuesDialog } from "./erd/AddPicklistValuesDialog";
 import { AuthorFieldDialog } from "./erd/AuthorFieldDialog";
 import { AuthorObjectDialog } from "./erd/AuthorObjectDialog";
@@ -899,6 +899,19 @@ export default function SchemaPanel({
   const [tagMode, setTagMode] = useState<"dim" | "hide">("dim");
   const [tagPicker, setTagPicker] = useState<string | null>(null);
   const [tagManagerOpen, setTagManagerOpen] = useState(false);
+  // Three tag surfaces: inventory (create), filter (Dim/Hide), link (nodes).
+  const [tagsOpen, setTagsOpen] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkTagId, setLinkTagId] = useState<string | null>(null);
+  const tagsRef = useRef<HTMLSpanElement>(null);
+  const filterRef = useRef<HTMLSpanElement>(null);
+  const linkRef = useRef<HTMLSpanElement>(null);
+  const closeTagSurfaces = useCallback(() => {
+    setTagsOpen(false);
+    setFilterOpen(false);
+    setLinkOpen(false);
+  }, []);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const tagById = useMemo(() => new Map(tagRegistry.map((t) => [t.id, t])), [tagRegistry]);
 
@@ -975,9 +988,10 @@ export default function SchemaPanel({
         if (confirmRemove) setConfirmRemove(null);
         else if (tagPicker) setTagPicker(null);
         else if (tagManagerOpen) setTagManagerOpen(false);
+        else if (tagsOpen || filterOpen || linkOpen) closeTagSurfaces();
         return;
       }
-      if (confirmRemove || tagPicker || tagManagerOpen) return;
+      if (confirmRemove || tagPicker || tagManagerOpen || tagsOpen || filterOpen || linkOpen) return;
       if (typeof document !== "undefined" && document.querySelector('[role="dialog"]')) return;
       const el = document.activeElement as HTMLElement | null;
       const tag = el?.tagName ?? "";
@@ -996,7 +1010,19 @@ export default function SchemaPanel({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [view, rootName, focusName, describes, confirmRemove, tagPicker, tagManagerOpen]);
+  }, [view, rootName, focusName, describes, confirmRemove, tagPicker, tagManagerOpen, tagsOpen, filterOpen, linkOpen, closeTagSurfaces]);
+
+  // Tag surfaces: outside click closes (Esc handled by the canvas key effect).
+  useEffect(() => {
+    if (!tagsOpen && !filterOpen && !linkOpen) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as unknown as globalThis.Node;
+      if (tagsRef.current?.contains(t) || filterRef.current?.contains(t) || linkRef.current?.contains(t)) return;
+      closeTagSurfaces();
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [tagsOpen, filterOpen, linkOpen, closeTagSurfaces]);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [manageChecked, setManageChecked] = useState<Set<string>>(new Set());
   const [hideSystem, setHideSystem] = useState(true);
@@ -5008,6 +5034,10 @@ export default function SchemaPanel({
     setTagMode("dim");
     setTagPicker(null);
     setTagManagerOpen(false);
+    setTagsOpen(false);
+    setFilterOpen(false);
+    setLinkOpen(false);
+    setLinkTagId(null);
     setConfirmRemove(null);
     viewports.current = { erd: null, graph: null };
   }, [orgKey, tabId]);
@@ -5817,71 +5847,297 @@ export default function SchemaPanel({
             >
               Hide{systemHiddenCount + dismissedIds.size + dismissedEdges.size > 0 ? ` · ${systemHiddenCount + dismissedIds.size + dismissedEdges.size}` : ""}
             </button>
-            {view === "erd" && tagRegistry.length > 0 && (
-              <span role="group" aria-label="Filter by tag" className="flex flex-wrap items-center gap-1">
-                {tagRegistry.map((t) => {
-                  const active = tagFilter.has(t.id);
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => setTagFilter((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(t.id)) next.delete(t.id);
-                        else next.add(t.id);
-                        return next;
-                      })}
-                      aria-pressed={active}
-                      title={active ? `Unfilter ${t.name}` : `Show ${t.name} - ${tagMode === "dim" ? "everything else dims" : "everything else hides and the layout rebalances"}`}
-                      className={`flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
-                        active
-                          ? "border-ivory-950 bg-ivory-950 text-ivory-100"
-                          : "bg-[var(--color-surface)] border-[var(--color-line)] text-ivory-700 hover:border-[var(--color-accent)]"
-                      }`}
-                    >
-                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: t.color }} aria-hidden="true" />
-                      {t.name}
-                    </button>
-                  );
-                })}
-              </span>
-            )}
-            {view === "erd" && tagFilter.size > 0 && (
-              <span role="group" aria-label="Tag filter mode" className="flex rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] p-0.5" title="Dim keeps every node and fades the rest; Hide drops the rest so the layout rebalances">
-                {(["dim", "hide"] as const).map((m) => (
+            {view === "erd" && (
+              <>
+                <span className="relative" ref={tagsRef}>
                   <button
-                    key={m}
                     type="button"
-                    onClick={() => setTagMode(m)}
-                    aria-pressed={tagMode === m}
-                    className={`rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize transition-colors cursor-pointer ${
-                      tagMode === m ? "bg-ivory-950 text-ivory-100" : "text-ivory-600 hover:text-ivory-950"
+                    onClick={() => {
+                      const next = !tagsOpen;
+                      closeTagSurfaces();
+                      setTagsOpen(next);
+                    }}
+                    aria-expanded={tagsOpen}
+                    title="Tag inventory - create canvas tags (persisted on this canvas project)"
+                    className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
+                      tagsOpen
+                        ? "bg-ivory-950 text-ivory-100 border-ivory-950"
+                        : "bg-[var(--color-surface)] border-[var(--color-line)] text-ivory-700 hover:border-[var(--color-accent)]"
                     }`}
                   >
-                    {m}
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                      <path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z" />
+                      <path d="M12 8v6M9 11h6" />
+                    </svg>
+                    Tags{tagRegistry.length > 0 ? ` · ${tagRegistry.length}` : ""}
                   </button>
-                ))}
-              </span>
-            )}
-            {view === "erd" && tagFilter.size > 0 && (
-              <button
-                type="button"
-                onClick={() => setTagFilter(new Set())}
-                title="Clear the tag filter - show everything"
-                className="rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer"
-              >
-                Reset
-              </button>
-            )}
-            {view === "erd" && (
-              <button
-                type="button"
-                onClick={() => setTagManagerOpen(true)}
-                title="Manage canvas tags - new tag, rename, recolor, delete (persisted on this canvas project)"
-                className="rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer"
-              >
-                Tags{tagRegistry.length > 0 ? ` · ${tagRegistry.length}` : ""}
-              </button>
+                  {tagsOpen && (
+                    <div
+                      role="dialog"
+                      aria-label="Tag inventory"
+                      className="absolute left-0 top-full z-50 mt-1.5 w-72 rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-3 shadow-[0_16px_48px_-12px_rgba(24,20,12,0.4)]"
+                    >
+                      <p className="text-[11px] font-bold text-ivory-950">Tag inventory</p>
+                      <p className="mt-0.5 text-[10px] text-ivory-500">Free-text names, fixed 8 colors - persisted on this canvas project.</p>
+                      <div className="mt-2">
+                        <TagCreator onCreate={(name, color) => addTag(name, color)} idPrefix="tag-inventory" />
+                      </div>
+                      {tagRegistry.length > 0 && (
+                        <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto border-t border-[var(--color-line-soft)] pt-2">
+                          {tagRegistry.map((t) => (
+                            <li key={t.id} className="flex items-center gap-2 rounded-lg border border-[var(--color-line-soft)] px-2 py-1.5 text-[11px] font-semibold text-ivory-800">
+                              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: t.color }} aria-hidden="true" />
+                              <span className="min-w-0 flex-1 truncate">{t.name}</span>
+                              <span className="shrink-0 font-mono text-[10px] opacity-70">
+                                {(tagCounts[t.id] ?? 0)} node{(tagCounts[t.id] ?? 0) === 1 ? "" : "s"}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <div className="mt-2 flex items-center justify-between border-t border-[var(--color-line-soft)] pt-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            closeTagSurfaces();
+                            setTagManagerOpen(true);
+                          }}
+                          className="cursor-pointer text-[11px] font-semibold text-bronze-700 underline decoration-bronze-300 underline-offset-2 hover:text-bronze-800"
+                        >
+                          Rename, recolor, delete…
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTagsOpen(false)}
+                          className="cursor-pointer rounded-lg border border-ivory-950 bg-ivory-950 px-3 py-1.5 text-[11px] font-semibold text-ivory-100 transition-colors hover:bg-ivory-800"
+                        >
+                          Done
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </span>
+                <span className="relative" ref={filterRef}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !filterOpen;
+                      closeTagSurfaces();
+                      setFilterOpen(next);
+                    }}
+                    aria-expanded={filterOpen}
+                    title={
+                      tagFilter.size > 0
+                        ? `Filtering by ${tagFilter.size} tag${tagFilter.size === 1 ? "" : "s"} (${tagMode}) - click to change`
+                        : "Filter canvas by tag - multi-select, Dim or Hide, reset"
+                    }
+                    className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
+                      filterOpen || tagFilter.size > 0
+                        ? "bg-ivory-950 text-ivory-100 border-ivory-950"
+                        : "bg-[var(--color-surface)] border-[var(--color-line)] text-ivory-700 hover:border-[var(--color-accent)]"
+                    }`}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                      <path d="M4 5h16l-6.5 7.5V19l-3 2v-8.5L4 5Z" />
+                    </svg>
+                    Filter{tagFilter.size > 0 ? ` · ${tagFilter.size} on` : ""}
+                  </button>
+                  {filterOpen && (
+                    <div
+                      role="dialog"
+                      aria-label="Filter by tag"
+                      className="absolute left-0 top-full z-50 mt-1.5 w-72 rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-3 shadow-[0_16px_48px_-12px_rgba(24,20,12,0.4)]"
+                    >
+                      <p className="text-[11px] font-bold text-ivory-950">Filter canvas</p>
+                      {tagRegistry.length === 0 ? (
+                        <p className="mt-1 text-[11px] leading-relaxed text-ivory-600">No tags yet - create them under Tags first.</p>
+                      ) : (
+                        <ul className="mt-1.5 max-h-40 space-y-1 overflow-y-auto">
+                          {tagRegistry.map((t) => {
+                            const active = tagFilter.has(t.id);
+                            return (
+                              <li key={t.id}>
+                                <button
+                                  type="button"
+                                  onClick={() => setTagFilter((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(t.id)) next.delete(t.id);
+                                    else next.add(t.id);
+                                    return next;
+                                  })}
+                                  aria-pressed={active}
+                                  title={active ? `Unfilter ${t.name}` : `Show ${t.name} - ${tagMode === "dim" ? "everything else dims" : "everything else hides and the layout rebalances"}`}
+                                  className={`flex w-full cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-[11px] font-semibold transition-colors ${
+                                    active
+                                      ? "border-ivory-950 bg-ivory-950 text-ivory-100"
+                                      : "border-[var(--color-line-soft)] text-ivory-800 hover:border-[var(--color-accent)]"
+                                  }`}
+                                >
+                                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: t.color }} aria-hidden="true" />
+                                  <span className="min-w-0 flex-1 truncate">{t.name}</span>
+                                  <span className="shrink-0 font-mono text-[10px] opacity-70">{tagCounts[t.id] ?? 0}</span>
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                      {tagFilter.size > 0 && (
+                        <div className="mt-2 flex items-center gap-1.5">
+                          <span role="group" aria-label="Tag filter mode" className="flex rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] p-0.5" title="Dim keeps every node and fades the rest; Hide drops the rest so the layout rebalances">
+                            {(["dim", "hide"] as const).map((m) => (
+                              <button
+                                key={m}
+                                type="button"
+                                onClick={() => setTagMode(m)}
+                                aria-pressed={tagMode === m}
+                                className={`rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize transition-colors cursor-pointer ${
+                                  tagMode === m ? "bg-ivory-950 text-ivory-100" : "text-ivory-600 hover:text-ivory-950"
+                                }`}
+                              >
+                                {m}
+                              </button>
+                            ))}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setTagFilter(new Set())}
+                            title="Clear the tag filter - show everything"
+                            className="cursor-pointer text-[11px] font-semibold text-ivory-600 underline hover:text-ivory-950"
+                          >
+                            Reset
+                          </button>
+                        </div>
+                      )}
+                      <div className="mt-2 flex items-center justify-between border-t border-[var(--color-line-soft)] pt-2">
+                        <span className="text-[10px] text-ivory-500">
+                          {tagMode === "hide" ? `${visibleDescribes.size} of ${describes.size} shown` : `${describes.size} nodes, rest dimmed`}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setFilterOpen(false)}
+                          className="cursor-pointer rounded-lg border border-ivory-950 bg-ivory-950 px-3 py-1.5 text-[11px] font-semibold text-ivory-100 transition-colors hover:bg-ivory-800"
+                        >
+                          Done
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </span>
+                <span className="relative" ref={linkRef}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !linkOpen;
+                      closeTagSurfaces();
+                      setLinkOpen(next);
+                    }}
+                    aria-expanded={linkOpen}
+                    title="Link one tag to many nodes at once - or press T on a focused node"
+                    className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
+                      linkOpen
+                        ? "bg-ivory-950 text-ivory-100 border-ivory-950"
+                        : "bg-[var(--color-surface)] border-[var(--color-line)] text-ivory-700 hover:border-[var(--color-accent)]"
+                    }`}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                      <path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5" />
+                    </svg>
+                    Link
+                  </button>
+                  {linkOpen && (
+                    <div
+                      role="dialog"
+                      aria-label="Link tags to nodes"
+                      className="absolute left-0 top-full z-50 mt-1.5 w-80 rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-3 shadow-[0_16px_48px_-12px_rgba(24,20,12,0.4)]"
+                    >
+                      <p className="text-[11px] font-bold text-ivory-950">Link tags to nodes</p>
+                      {tagRegistry.length === 0 ? (
+                        <p className="mt-1 text-[11px] leading-relaxed text-ivory-600">No tags yet - create them under Tags first.</p>
+                      ) : (
+                        <>
+                          <div className="mt-1.5 flex flex-wrap gap-1" role="group" aria-label="Choose a tag to link">
+                            {tagRegistry.map((t) => {
+                              const sel = (linkTagId ?? tagRegistry[0].id) === t.id;
+                              return (
+                                <button
+                                  key={t.id}
+                                  type="button"
+                                  onClick={() => setLinkTagId(t.id)}
+                                  aria-pressed={sel}
+                                  title={`Link ${t.name} to nodes below`}
+                                  className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] font-semibold transition-colors ${
+                                    sel
+                                      ? "border-ivory-950 bg-ivory-950 text-ivory-100"
+                                      : "border-[var(--color-line-soft)] text-ivory-800 hover:border-[var(--color-accent)]"
+                                  }`}
+                                >
+                                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: t.color }} aria-hidden="true" />
+                                  {t.name}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {(() => {
+                            const linkTag = tagById.get(linkTagId ?? "") ?? tagRegistry[0];
+                            if (!linkTag) return null;
+                            const linked = new Set(
+                              Object.entries(nodeTags)
+                                .filter(([, ids]) => ids.includes(linkTag.id))
+                                .map(([api]) => api)
+                            );
+                            const names = [...describes.keys()].sort();
+                            return (
+                              <>
+                                <p className="mt-2 text-[10px] text-ivory-500">
+                                  Tick nodes to link <span className="font-bold" style={{ color: linkTag.color }}>{linkTag.name}</span> - {linked.size} linked.
+                                </p>
+                                <ul className="mt-1.5 max-h-48 space-y-1 overflow-y-auto">
+                                  {names.map((api) => {
+                                    const on = linked.has(api);
+                                    return (
+                                      <li key={api}>
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleNodeTag(api, linkTag.id)}
+                                          aria-pressed={on}
+                                          title={on ? `Unlink ${linkTag.name} from ${api}` : `Link ${linkTag.name} to ${api}`}
+                                          className={`flex w-full cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-[11px] font-semibold transition-colors ${
+                                            on
+                                              ? "border-ivory-950 bg-ivory-950 text-ivory-100"
+                                              : "border-[var(--color-line-soft)] text-ivory-800 hover:border-[var(--color-accent)]"
+                                          }`}
+                                        >
+                                          <span className="min-w-0 flex-1 truncate font-mono">{api}</span>
+                                          <span className="max-w-[40%] shrink-0 truncate text-[10px] opacity-70">{labels.get(api) ?? ""}</span>
+                                          {on && (
+                                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true" className="shrink-0">
+                                              <path d="m4 12.5 5 5L20 6.5" />
+                                            </svg>
+                                          )}
+                                        </button>
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              </>
+                            );
+                          })()}
+                        </>
+                      )}
+                      <div className="mt-2 flex items-center justify-end border-t border-[var(--color-line-soft)] pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setLinkOpen(false)}
+                          className="cursor-pointer rounded-lg border border-ivory-950 bg-ivory-950 px-3 py-1.5 text-[11px] font-semibold text-ivory-100 transition-colors hover:bg-ivory-800"
+                        >
+                          Done
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </span>
+              </>
             )}
             {view === "graph" && (
               <span

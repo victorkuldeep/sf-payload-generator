@@ -15,7 +15,7 @@ export function TagCreator({ onCreate, idPrefix }: { onCreate: (name: string, co
   };
   return (
     <div>
-      <div className="flex items-center gap-1.5">
+      <div className="mt-1 flex items-center gap-2">
         <input
           id={`${idPrefix}-new-tag`}
           value={name}
@@ -29,7 +29,7 @@ export function TagCreator({ onCreate, idPrefix }: { onCreate: (name: string, co
           maxLength={24}
           spellCheck={false}
           autoComplete="off"
-          className="h-7 min-w-0 flex-1 rounded-lg border border-[var(--color-line)] bg-white px-2 text-xs text-ivory-950 placeholder-ivory-500 focus:border-bronze-500 focus:outline-none"
+          className="h-8 min-w-0 flex-1 rounded-lg border border-[var(--color-line)] bg-white px-2.5 text-xs text-ivory-950 placeholder-ivory-500 focus:border-bronze-500 focus:outline-none"
         />
         <button
           type="button"
@@ -40,7 +40,7 @@ export function TagCreator({ onCreate, idPrefix }: { onCreate: (name: string, co
           Add
         </button>
       </div>
-      <div className="mt-1.5 flex items-center gap-1" role="group" aria-label="Tag color">
+      <div className="mt-2.5 flex items-center gap-1.5" role="group" aria-label="Tag color">
         {ERD_TAG_COLORS.map((c) => (
           <button
             key={c}
