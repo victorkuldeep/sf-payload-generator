@@ -20,6 +20,7 @@ import { CoveragePanel } from "./CoveragePanel";
 import { JourneyPanel } from "./JourneyPanel";
 import { ScreenCanvas } from "./ScreenCanvas";
 import { ScreenLinks } from "./ScreenLinks";
+import { setPaletteAttachContext } from "@/lib/studio/paletteContext";
 import { ScreenFieldMapper } from "./ScreenFieldMapper";
 import { AttachExisting } from "./AttachExisting";
 import { downloadBlob } from "@/lib/experience/package";
@@ -363,6 +364,39 @@ function ScreenDetail({
       if (url) revokeDisplayUrl(url);
     };
   }, [asset?.storageKey]);
+
+  // A2: this screen is a palette attach target while selected.
+  useEffect(() => {
+    const owner = {};
+    setPaletteAttachContext(
+      {
+        kind: "screen",
+        title: screen.name,
+        attachedMappingIds: screen.payloadMappingId ? [screen.payloadMappingId] : [],
+        attachedWireKey: screen.wireframeRef ? `wire:${screen.wireframeRef.experienceId}:${screen.wireframeRef.screenId}` : null,
+        onAttachWireframe: (wireframeRef) => {
+          onMutate((p) => {
+            if (!p.experience) return p;
+            const now = new Date().toISOString();
+            const next = touch({ ...p, experience: { ...p.experience, screens: p.experience.screens.map((s) => (s.id === screen.id ? { ...s, wireframeRef, updatedAt: now } : s)) } });
+            logChange(next, "screen", screen.id, "wireframe-linked", `Screen "${screen.name}" linked to a wireframe.`, now);
+            return next;
+          });
+        },
+        onAttachMapping: (payloadMappingId) => {
+          onMutate((p) => {
+            if (!p.experience) return p;
+            const now = new Date().toISOString();
+            const next = touch({ ...p, experience: { ...p.experience, screens: p.experience.screens.map((s) => (s.id === screen.id ? { ...s, payloadMappingId, updatedAt: now } : s)) } });
+            logChange(next, "screen", screen.id, "payload-linked", `Screen "${screen.name}" linked to a payload mapping.`, now);
+            return next;
+          });
+        },
+      },
+      owner
+    );
+    return () => setPaletteAttachContext(null, owner);
+  }, [screen, onMutate]);
 
   const comps = exp.components.filter((c) => c.screenId === screen.id);
   const anns = exp.annotations.filter((a) => a.screenId === screen.id).sort((a, b) => a.zIndex - b.zIndex);

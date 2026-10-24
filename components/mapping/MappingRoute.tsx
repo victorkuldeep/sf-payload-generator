@@ -37,6 +37,7 @@ import type { MappingProject, MappingRow, RecordPlan, RelationshipDef, SnapshotF
 import { attachMapping, detachMapping, upgradeToWorkspace } from "@/lib/studio/upgrade";
 import { blankStudio, type StudioProject } from "@/lib/studio/types";
 import { deleteStudio, listStudios, loadStudio, saveStudio, type StudioSummary } from "@/lib/studio/store";
+import { setPaletteAttachContext } from "@/lib/studio/paletteContext";
 
 function uid(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -251,6 +252,24 @@ export function MappingRoute() {
     refreshAll();
     void openStudio(root.id);
   };
+
+  // A2: the open project is a palette attach target on the mappings tab.
+  useEffect(() => {
+    if (!studio || module !== "mappings") return;
+    const owner = {};
+    setPaletteAttachContext(
+      {
+        kind: "project",
+        title: studio.name,
+        attachedMappingIds: studio.mappingIds,
+        attachedWireKey: null,
+        onAttachWireframe: () => undefined,
+        onAttachMapping: (id) => void attachExisting(id),
+      },
+      owner
+    );
+    return () => setPaletteAttachContext(null, owner);
+  }, [studio, module]);
 
   const attachExisting = async (id: string) => {
     if (!studio) return;

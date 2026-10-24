@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildArtifactIndex, fuzzyScore, rankEntries, searchArtifacts, type ArtifactSources } from "./artifacts";
+import { artifactAttachState, artifactTarget, buildArtifactIndex, fuzzyScore, rankEntries, searchArtifacts, type ArtifactSources } from "./artifacts";
 import { newExperience, newScreen } from "@/lib/wireframe/model";
 
 function blankMapping(id: string, name: string) {
@@ -56,6 +56,22 @@ describe("buildArtifactIndex", () => {
     expect(ranked.length).toBeGreaterThanOrEqual(2);
     expect(ranked[0].score).toBeGreaterThanOrEqual(ranked[ranked.length - 1].score);
     expect(rankEntries(entries, "").length).toBe(entries.length);
+  });
+
+  it("resolves attach state and navigate targets", () => {
+    const entries = buildArtifactIndex(fixture());
+    const wire = entries.find((e) => e.kind === "wireframe-screen")!;
+    const childMap = entries.find((e) => e.label === "Accenture / Orders")!;
+    const solo = entries.find((e) => e.label === "Solo")!;
+    const screenOpts = { kind: "screen" as const, attachedMappingIds: ["m1"], attachedWireKey: `wire:${wire.experienceId}:${wire.screenId}` };
+    expect(artifactAttachState(wire, screenOpts)).toBe("attached");
+    expect(artifactAttachState(childMap, screenOpts)).toBe("attached");
+    expect(artifactAttachState(solo, screenOpts)).toBe("attach");
+    expect(artifactAttachState(solo, { kind: "project", attachedMappingIds: [], attachedWireKey: null })).toBe("attach");
+    expect(artifactAttachState(wire, { kind: "project", attachedMappingIds: [], attachedWireKey: null })).toBe("open");
+    expect(artifactTarget(wire)).toBe("/wireframe");
+    expect(artifactTarget(solo)).toBe("/mapping?project=solo");
+    expect(artifactTarget(childMap)).toBe("/mapping");
   });
 
   it("searches across label, detail and kind", () => {

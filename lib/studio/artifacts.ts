@@ -166,6 +166,33 @@ export function fuzzyScore(hay: string, needle: string): number {
   return score;
 }
 
+export type AttachMode = "screen" | "project";
+export type AttachState = "attach" | "attached" | "open";
+
+/** Whether a palette/dialog row attaches, is already attached, or just opens. */
+export function artifactAttachState(
+  e: ArtifactEntry,
+  opts: { kind: AttachMode; attachedMappingIds: string[]; attachedWireKey: string | null }
+): AttachState {
+  if (e.kind === "contract-profile") return "open";
+  if (opts.kind === "project") {
+    if (e.kind !== "integration-mapping") return "open";
+    return opts.attachedMappingIds.includes(e.mappingId!) ? "attached" : "attach";
+  }
+  if (e.kind === "wireframe-screen") {
+    return `wire:${e.experienceId}:${e.screenId}` === opts.attachedWireKey ? "attached" : "attach";
+  }
+  return opts.attachedMappingIds.includes(e.mappingId!) ? "attached" : "attach";
+}
+
+/** Navigate target for an artifact row (attach flows keep this for discovery). */
+export function artifactTarget(e: ArtifactEntry): string {
+  if (e.kind === "wireframe-screen") return "/wireframe";
+  if (e.kind === "contract-profile") return "/contracts";
+  if (e.projectName) return "/mapping";
+  return e.mappingId ? `/mapping?project=${e.mappingId}` : "/mapping";
+}
+
 /** Fuzzy-ranked palette results across label + detail. */
 export function rankEntries(entries: ArtifactEntry[], query: string): { entry: ArtifactEntry; score: number }[] {
   const q = query.trim();

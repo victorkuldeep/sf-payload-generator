@@ -3,11 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  artifactAttachState,
+  artifactTarget,
   loadArtifactIndex,
   rankEntries,
   type ArtifactEntry,
   type ArtifactKind,
 } from "@/lib/studio/artifacts";
+import { usePaletteAttachContext } from "@/lib/studio/paletteContext";
 
 interface GoAction {
   key: string;
@@ -39,29 +42,25 @@ const KIND_LABEL: Record<ArtifactKind, string> = {
 
 const KIND_ORDER: ArtifactKind[] = ["wireframe-screen", "integration-mapping", "contract-profile"];
 
-function targetFor(e: ArtifactEntry): string {
-  if (e.kind === "wireframe-screen") return "/wireframe";
-  if (e.kind === "contract-profile") return "/contracts";
-  // Standalone mappings deep-link; attached ones open under their project.
-  if (e.projectName) return "/mapping";
-  return e.mappingId ? `/mapping?project=${e.mappingId}` : "/mapping";
-}
-
 interface Row {
   key: string;
   group: string;
   label: string;
   detail: string;
   href: string;
+  entry: ArtifactEntry | null;
 }
 
 /**
- * Global command palette (Cmd/Ctrl+K). A1: fuzzy search + grouped results +
- * navigate. Attaching lands in A2 - this phase never mutates anything.
+ * Global command palette. Navigate mode (Cmd/Ctrl+K) searches everything and
+ * opens places. Attach mode (opened with { attachOnly: true }) offers Attach
+ * actions against the registered surface context - screen or project.
  */
 export function CommandPalette() {
   const router = useRouter();
+  const ctx = usePaletteAttachContext();
   const [open, setOpen] = useState(false);
+  const [attachOnly, setAttachOnly] = useState(false);
   const [query, setQuery] = useState("");
   const [entries, setEntries] = useState<ArtifactEntry[] | null>(null);
   const [active, setActive] = useState(0);
@@ -71,12 +70,16 @@ export function CommandPalette() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
+        setAttachOnly(false);
         setOpen((v) => !v);
       } else if (e.key === "Escape") {
         setOpen(false);
       }
     };
-    const onSignal = () => setOpen(true);
+    const onSignal = (e: Event) => {
+      setAttachOnly((e as CustomEvent).detail?.attachOnly === true);
+      setOpen(true);
+    };
     window.addEventListener("keydown", onKey);
     window.addEventListener("gravenx:palette", onSignal);
     return () => {
@@ -105,14 +108,18 @@ export function CommandPalette() {
       setQuery("");
       setActive(0);
       window.setTimeout(() => inputRef.current?.focus(), 0);
+    } else {
+      setAttachOnly(false);
     }
   }, [open ]);
 
   const rows: Row[] = useMemo(() => {
     const q = query.trim();
-    const go = GO_ACTIONS.filter(
-      (g) => !q || g.label.toLowerCase().includes(q.toLowerCase()) || g.detail.toLowerCase().includes(q.toLowerCase())
-    ).map((g) => ({ key: g.key, group: "Go", label: g.label, detail: g.detail, href: g.href }));
+    const go = attachOnly
+      ? []
+      : GO_ACTIONS.filter(
+          (g) => !q || g.label.toLowerCase().includes(q.toLowerCase()) || g.detail.toLowerCase().includes(q.toLowerCase())
+        ).map((g) => ({ key: g.key, group: "Go", label: g.label, detail: g.detail, href: g.href, entry: null }));
     if (!entries) return go;
     const ranked = rankEntries(entries, q).slice(0, 30);
     const arts: Row[] = ranked.map((r) => ({
@@ -120,18 +127,38 @@ export function CommandPalette() {
       group: KIND_LABEL[r.entry.kind],
       label: r.entry.label,
       detail: `${r.entry.detail}${r.entry.usedIn.length > 0 ? ` · used in ${r.entry.usedIn.join(", ")}` : ""}`,
-      href: targetFor(r.entry),
+      href: artifactTarget(r.entry),
+      entry: r.entry,
     }));
     const order = (g: string) => (g === "Go" ? -1 : KIND_ORDER.indexOf(Object.keys(KIND_LABEL).find((k) => KIND_LABEL[k as ArtifactKind] === g)! as ArtifactKind));
     return [...go, ...arts].sort((a, b) => order(a.group) - order(b.group));
-  }, [query, entries]);
+  }, [query, entries, attachOnly]);
 
   useEffect(() => {
     setActive(0);
   }, [rows.length]);
 
+  const attach = (row: Row) => {
+    if (!row.entry || !ctx) return;
+    const e = row.entry;
+    if (e.kind === "wireframe-screen" && e.experienceId && e.screenId) {
+      const parts = e.label.split(" → ");
+      ctx.onAttachWireframe({ experienceId: e.experienceId, screenId: e.screenId, experienceName: parts[0], screenName: parts[1] });
+    } else if (e.kind === "integration-mapping" && e.mappingId) {
+      ctx.onAttachMapping(e.mappingId);
+    }
+    setOpen(false);
+  };
+
   const pick = (row: Row | undefined) => {
     if (!row) return;
+    if (attachOnly && row.entry && ctx) {
+      const state = artifactAttachState(row.entry, ctx);
+      if (state === "attach") {
+        attach(row);
+        return;
+      }
+    }
     setOpen(false);
     router.push(row.href);
   };
@@ -159,7 +186,7 @@ export function CommandPalette() {
           ref={inputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Type to search screens, mappings, contracts, places…"
+          placeholder={attachOnly ? `Attach to ${ctx?.title ?? "…"} - type to search…` : "Type to search screens, mappings, contracts, places…"}
           aria-label="Search everything"
           spellCheck={false}
           className="w-full border-b border-[#E8E2D8] px-4 py-3 text-[14px] focus:outline-none"
@@ -170,29 +197,51 @@ export function CommandPalette() {
           <p className="px-4 py-6 text-center text-[12px] text-[#777168]">No matches - try fewer letters.</p>
         ) : (
           <ul className="max-h-[50vh] overflow-y-auto p-1.5">
-            {rows.map((r, i) => (
-              <li key={r.key}>
-                {(i === 0 || rows[i - 1].group !== r.group) && (
-                  <p className="px-2.5 pb-0.5 pt-2 text-[10px] font-bold uppercase tracking-[1.6px] text-[#A39B8E]">{r.group}</p>
-                )}
-                <button
-                  type="button"
-                  onClick={() => pick(r)}
-                  onMouseEnter={() => setActive(i)}
-                  className={`flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left ${i === active ? "bg-[#FAF3E3]" : ""}`}
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-semibold text-[#27241F]">{r.label}</span>
-                    <span className="block truncate font-mono text-[10px] text-[#A39B8E]">{r.detail}</span>
-                  </span>
-                  <span className="shrink-0 font-mono text-[10px] text-[#A39B8E]">↵</span>
-                </button>
-              </li>
-            ))}
+            {rows.map((r, i) => {
+              const state = r.entry && ctx && attachOnly ? artifactAttachState(r.entry, ctx) : null;
+              return (
+                <li key={r.key}>
+                  {(i === 0 || rows[i - 1].group !== r.group) && (
+                    <p className="px-2.5 pb-0.5 pt-2 text-[10px] font-bold uppercase tracking-[1.6px] text-[#A39B8E]">{r.group}</p>
+                  )}
+                  <div className={`flex items-center gap-1 rounded-lg px-1 ${i === active ? "bg-[#FAF3E3]" : ""}`}>
+                    <button
+                      type="button"
+                      onClick={() => pick(r)}
+                      onMouseEnter={() => setActive(i)}
+                      className="min-w-0 flex-1 cursor-pointer rounded-lg px-1.5 py-1.5 text-left"
+                    >
+                      <span className="block truncate text-[13px] font-semibold text-[#27241F]">{r.label}</span>
+                      <span className="block truncate font-mono text-[10px] text-[#A39B8E]">{r.detail}</span>
+                    </button>
+                    {state === "attach" && (
+                      <button
+                        type="button"
+                        onClick={() => attach(r)}
+                        className="shrink-0 cursor-pointer rounded-lg border border-[#211F1B] bg-[#211F1B] px-2 py-1 text-[11px] font-semibold text-white"
+                      >
+                        Attach
+                      </button>
+                    )}
+                    {state === "attached" && <span className="shrink-0 px-1 font-mono text-[10px] text-[#2F7D4F]">✓</span>}
+                    {state === "open" && (
+                      <button
+                        type="button"
+                        onClick={() => pick({ ...r })}
+                        title="Open (not attachable here)"
+                        className="shrink-0 cursor-pointer rounded-lg border border-[#E8E2D8] px-2 py-1 text-[11px] font-semibold text-[#A98450]"
+                      >
+                        ↗
+                      </button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
         <p className="border-t border-[#F0EBE0] px-4 py-1.5 font-mono text-[10px] text-[#A39B8E]">
-          ↑↓ move · ↵ open · esc close · ⌘K toggle
+          ↑↓ move · ↵ open{attachOnly ? " / attach" : ""} · esc close · ⌘K toggle
         </p>
       </div>
     </div>
