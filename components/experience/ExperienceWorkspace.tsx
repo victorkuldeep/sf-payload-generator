@@ -231,7 +231,7 @@ export function ExperienceWorkspace({
             <li className="rounded-xl border border-dashed border-[#E8E2D8] p-6 text-center">
               <p className="text-[13px] font-semibold text-[#27241F]">Add your first screen</p>
               <p className="mx-auto mt-1 max-w-[220px] text-[11px] text-[#777168]">
-                Upload a PNG/WebP export or paste a screenshot to start mapping the UI to backend APIs.
+                Upload a PNG/WebP export or paste a screenshot to start mapping the UI to backend APIs. Prefer wireframes? Add the screen, then attach its wireframe as the live design (spine step 04).
               </p>
             </li>
           )}

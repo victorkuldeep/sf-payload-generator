@@ -112,7 +112,11 @@ export function QueryHistoryDialog({
         </div>
         {notice && <p className="px-4 pt-1.5 text-[11px] font-semibold text-emerald-700">{notice}</p>}
         {rows.length === 0 ? (
-          <p className="px-4 py-6 text-center text-xs text-ivory-700">No queries match.</p>
+          <p className="px-4 py-6 text-center text-xs text-ivory-700">
+            {query.trim() || saved.length > 0 || history.length > 0
+              ? "No queries match."
+              : "No runs yet and nothing saved. Run a query in the editor above, or load the training set from Mapping."}
+          </p>
         ) : (
           <ul className="max-h-[50vh] space-y-1 overflow-y-auto p-3">
             {rows.map((h) => (

@@ -117,7 +117,7 @@ export function AttachExisting({
           <p className="py-8 text-center text-[12px] text-[#777168]">Loading inventories…</p>
         ) : results.length === 0 ? (
           <p className="py-8 text-center text-[12px] text-[#777168]">
-            Nothing matches - author it in Wireframe, Mapping or Contracts first, then attach here.
+            Nothing matches - author it in Wireframe, Mapping or Contracts first, then attach here. Tip: Mapping → Load training set gives you a mapping + screen to attach right away.
           </p>
         ) : (
           <ul className="mt-3 max-h-[50vh] space-y-1.5 overflow-y-auto">
