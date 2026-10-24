@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { CommandPalette } from "@/components/studio/CommandPalette";
 import { usePathname, useRouter } from "next/navigation";
 
 type ModeEntry = { kind: "mode"; id: Exclude<NavMode, "home">; label: string; desc: string };
@@ -642,6 +643,18 @@ export function AppHeader(props: AppHeaderProps) {
               </div>
             )}
           </div>
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent("gravenx:palette"))}
+            aria-label="Search everything (Ctrl+K)"
+            title="Search everything - ⌘K / Ctrl+K"
+            className="shrink-0 cursor-pointer rounded-full border border-[var(--color-line)] p-2 text-[var(--color-ink-soft)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-ink)]"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.3-4.3" />
+            </svg>
+          </button>
           <Link
             href="/docs"
             aria-current={pathname === "/docs" ? "page" : undefined}
@@ -684,6 +697,7 @@ export function AppHeader(props: AppHeaderProps) {
         {navGroups.flatMap((group) => group.items.map(renderFlatEntry))}
         {standaloneRoutes.map(renderFlatEntry)}
       </nav>
+      <CommandPalette />
     </header>
   );
 }

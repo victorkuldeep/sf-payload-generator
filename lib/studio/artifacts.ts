@@ -21,6 +21,8 @@ export interface ArtifactEntry {
   label: string;
   detail: string;
   status?: string;
+  /** Owning project for attached mappings; null = standalone library. */
+  projectName?: string | null;
   // Targets for attach actions.
   experienceId?: string;
   screenId?: string;
@@ -85,6 +87,7 @@ export function buildArtifactIndex(sources: ArtifactSources): ArtifactEntry[] {
       detail: `${m.mappings.length} rows${m.sourceApi ? ` · ${m.sourceApi}` : ""}${projectName ? "" : " · standalone"}`,
       status: m.status,
       mappingId: m.id,
+      projectName: projectName ?? null,
       usedIn: studioNames(sources.projects, users),
     });
   };
@@ -137,4 +140,38 @@ export function searchArtifacts(entries: ArtifactEntry[], query: string, kind: A
       (kind === "all" || e.kind === kind) &&
       (!q || e.label.toLowerCase().includes(q) || e.detail.toLowerCase().includes(q) || e.kind.includes(q))
   );
+}
+
+/**
+ * Subsequence fuzzy score for the command palette. Higher is better;
+ * word-start and adjacency earn bonuses, gaps cost. Zero = no match.
+ */
+export function fuzzyScore(hay: string, needle: string): number {
+  const h = hay.toLowerCase();
+  const n = needle.trim().toLowerCase();
+  if (!n) return 1;
+  let score = 0;
+  let hi = 0;
+  let prev = -2;
+  for (let ni = 0; ni < n.length; ni++) {
+    const found = h.indexOf(n[ni], hi);
+    if (found < 0) return 0;
+    if (found === 0 || h[found - 1] === " " || h[found - 1] === "/" || h[found - 1] === "→" || h[found - 1] === "-" || h[found - 1] === "_") score += 3;
+    else if (found === prev + 1) score += 2;
+    else score += 1;
+    if (found < 8) score += 1;
+    prev = found;
+    hi = found + 1;
+  }
+  return score;
+}
+
+/** Fuzzy-ranked palette results across label + detail. */
+export function rankEntries(entries: ArtifactEntry[], query: string): { entry: ArtifactEntry; score: number }[] {
+  const q = query.trim();
+  if (!q) return entries.map((entry) => ({ entry, score: 1 }));
+  return entries
+    .map((entry) => ({ entry, score: Math.max(fuzzyScore(entry.label, q), fuzzyScore(entry.detail, q)) }))
+    .filter((r) => r.score > 0)
+    .sort((a, b) => b.score - a.score);
 }

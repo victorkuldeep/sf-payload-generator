@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildArtifactIndex, searchArtifacts, type ArtifactSources } from "./artifacts";
+import { buildArtifactIndex, fuzzyScore, rankEntries, searchArtifacts, type ArtifactSources } from "./artifacts";
 import { newExperience, newScreen } from "@/lib/wireframe/model";
 
 function blankMapping(id: string, name: string) {
@@ -46,6 +46,16 @@ describe("buildArtifactIndex", () => {
     expect(maps.map((m) => m.label).sort()).toEqual(["Accenture / Orders", "Solo"]);
     expect(maps.find((m) => m.label === "Accenture / Orders")!.usedIn).toEqual(["Accenture"]);
     expect(entries.some((e) => e.kind === "contract-profile")).toBe(true);
+  });
+
+  it("fuzzy-ranks palette matches", () => {
+    const entries = buildArtifactIndex(fixture());
+    expect(fuzzyScore("Accenture / Orders", "acc ord")).toBeGreaterThan(0);
+    expect(fuzzyScore("Accenture / Orders", "xyz")).toBe(0);
+    const ranked = rankEntries(entries, "lead");
+    expect(ranked.length).toBeGreaterThanOrEqual(2);
+    expect(ranked[0].score).toBeGreaterThanOrEqual(ranked[ranked.length - 1].score);
+    expect(rankEntries(entries, "").length).toBe(entries.length);
   });
 
   it("searches across label, detail and kind", () => {
