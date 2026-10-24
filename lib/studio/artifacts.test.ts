@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { artifactAttachState, artifactTarget, buildArtifactIndex, fuzzyScore, rankEntries, searchArtifacts, type ArtifactSources } from "./artifacts";
+import { artifactAttachState, artifactTarget, buildArtifactIndex, fuzzyScore, loadLiveEntries, rankEntries, searchArtifacts, type ArtifactSources } from "./artifacts";
 import { newExperience, newScreen } from "@/lib/wireframe/model";
 
 function blankMapping(id: string, name: string) {
@@ -72,6 +72,17 @@ describe("buildArtifactIndex", () => {
     expect(artifactTarget(wire)).toBe("/wireframe");
     expect(artifactTarget(solo)).toBe("/mapping?project=solo");
     expect(artifactTarget(childMap)).toBe("/mapping");
+    expect(artifactTarget({ kind: "salesforce-object", key: "sfobj:Account", label: "Account", detail: "", usedIn: [] })).toBe("/?mode=explore");
+    expect(artifactTarget({ kind: "saved-query", key: "q:1", label: "SELECT", detail: "", usedIn: [] })).toBe("/?mode=soql");
+    expect(artifactAttachState(
+      { kind: "saved-query", key: "q:1", label: "SELECT", detail: "", usedIn: [] },
+      { kind: "screen", attachedMappingIds: [], attachedWireKey: null }
+    )).toBe("open");
+  });
+
+  it("loads live entries without throwing off-browser", async () => {
+    const live = await loadLiveEntries();
+    expect(Array.isArray(live)).toBe(true);
   });
 
   it("searches across label, detail and kind", () => {

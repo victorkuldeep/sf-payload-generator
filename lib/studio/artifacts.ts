@@ -12,7 +12,7 @@ import { listStoredProfiles } from "@/lib/contracts/persistence";
  * `usedIn` backlinks make consumption visible before detach/delete.
  */
 
-export type ArtifactKind = "wireframe-screen" | "integration-mapping" | "contract-profile";
+export type ArtifactKind = "wireframe-screen" | "integration-mapping" | "contract-profile" | "salesforce-object" | "saved-query";
 
 export interface ArtifactEntry {
   kind: ArtifactKind;
@@ -177,7 +177,8 @@ export function artifactAttachState(
   e: ArtifactEntry,
   opts: { kind: AttachMode; attachedMappingIds: string[]; attachedWireKey: string | null }
 ): AttachState {
-  if (e.kind === "contract-profile") return "open";
+  // Live schema + queries are discovery-only: open, never attach.
+  if (e.kind === "contract-profile" || e.kind === "salesforce-object" || e.kind === "saved-query") return "open";
   if (opts.kind === "project") {
     if (e.kind !== "integration-mapping") return "open";
     return opts.attachedMappingIds.includes(e.mappingId!) ? "attached" : "attach";
@@ -192,8 +193,74 @@ export function artifactAttachState(
 export function artifactTarget(e: ArtifactEntry): string {
   if (e.kind === "wireframe-screen") return "/wireframe";
   if (e.kind === "contract-profile") return "/contracts";
+  if (e.kind === "salesforce-object") return "/?mode=explore";
+  if (e.kind === "saved-query") return "/?mode=soql";
   if (e.projectName) return "/mapping";
   return e.mappingId ? `/mapping?project=${e.mappingId}` : "/mapping";
+}
+
+export interface LiveSession {
+  instanceUrl: string;
+  token: string;
+  apiVersion: string;
+}
+
+function readLiveSession(): LiveSession | null {
+  try {
+    if (typeof window === "undefined") return null;
+    const raw = window.sessionStorage.getItem("gravenx_session");
+    if (!raw) return null;
+    const s = JSON.parse(raw) as { token?: string; instanceUrl?: string; apiVersion?: string };
+    if (!s.token || !s.instanceUrl) return null;
+    return { instanceUrl: s.instanceUrl, token: s.token, apiVersion: s.apiVersion ?? "v66.0" };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Live palette entries: saved/recent queries always, org objects when
+ * connected. Best-effort - every failure yields fewer entries, never an error.
+ */
+export async function loadLiveEntries(): Promise<ArtifactEntry[]> {
+  const out: ArtifactEntry[] = [];
+  try {
+    const { listSoqlQueries } = await import("@/lib/soql/historyDb");
+    const queries = await listSoqlQueries();
+    for (const q of queries.slice(0, 50)) {
+      out.push({
+        kind: "saved-query",
+        key: `query:${q.id}`,
+        label: q.saved && q.label ? q.label : q.soql.slice(0, 70),
+        detail: `${q.mode ?? "soql"} · ${q.rowCount ?? "?"} rows${q.saved ? " · saved" : " · history"}`,
+        usedIn: [],
+      });
+    }
+  } catch {
+    /* IndexedDB unavailable - skip */
+  }
+  const session = readLiveSession();
+  if (session) {
+    try {
+      const { apiFetch } = await import("@/lib/api");
+      const res = await apiFetch("/api/salesforce/objects", session);
+      if (res.ok) {
+        const data = (await res.json()) as { objects?: { name: string; label: string; custom?: boolean }[] };
+        for (const o of data.objects ?? []) {
+          out.push({
+            kind: "salesforce-object",
+            key: `sfobj:${o.name}`,
+            label: o.name,
+            detail: `${o.label}${o.custom ? " · custom" : ""} · live`,
+            usedIn: [],
+          });
+        }
+      }
+    } catch {
+      /* org unreachable - skip */
+    }
+  }
+  return out;
 }
 
 /** Fuzzy-ranked palette results across label + detail. */

@@ -6,6 +6,7 @@ import {
   artifactAttachState,
   artifactTarget,
   loadArtifactIndex,
+  loadLiveEntries,
   rankEntries,
   type ArtifactEntry,
   type ArtifactKind,
@@ -38,9 +39,11 @@ const KIND_LABEL: Record<ArtifactKind, string> = {
   "wireframe-screen": "Wireframes",
   "integration-mapping": "Mappings",
   "contract-profile": "Contracts",
+  "salesforce-object": "Objects",
+  "saved-query": "Queries",
 };
 
-const KIND_ORDER: ArtifactKind[] = ["wireframe-screen", "integration-mapping", "contract-profile"];
+const KIND_ORDER: ArtifactKind[] = ["salesforce-object", "saved-query", "wireframe-screen", "integration-mapping", "contract-profile"];
 
 interface Row {
   key: string;
@@ -63,6 +66,7 @@ export function CommandPalette() {
   const [attachOnly, setAttachOnly] = useState(false);
   const [query, setQuery] = useState("");
   const [entries, setEntries] = useState<ArtifactEntry[] | null>(null);
+  const [live, setLive] = useState<ArtifactEntry[]>([]);
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -89,14 +93,23 @@ export function CommandPalette() {
   }, []);
 
   useEffect(() => {
-    if (!open || entries !== null) return;
+    if (!open) return;
     let cancelled = false;
-    void loadArtifactIndex()
+    if (entries === null) {
+      void loadArtifactIndex()
+        .then((all) => {
+          if (!cancelled) setEntries(all);
+        })
+        .catch(() => {
+          if (!cancelled) setEntries([]);
+        });
+    }
+    void loadLiveEntries()
       .then((all) => {
-        if (!cancelled) setEntries(all);
+        if (!cancelled) setLive(all);
       })
       .catch(() => {
-        if (!cancelled) setEntries([]);
+        if (!cancelled) setLive([]);
       });
     return () => {
       cancelled = true;
@@ -121,7 +134,7 @@ export function CommandPalette() {
           (g) => !q || g.label.toLowerCase().includes(q.toLowerCase()) || g.detail.toLowerCase().includes(q.toLowerCase())
         ).map((g) => ({ key: g.key, group: "Go", label: g.label, detail: g.detail, href: g.href, entry: null }));
     if (!entries) return go;
-    const ranked = rankEntries(entries, q).slice(0, 30);
+    const ranked = rankEntries([...live, ...entries], q).slice(0, 30);
     const arts: Row[] = ranked.map((r) => ({
       key: r.entry.key,
       group: KIND_LABEL[r.entry.kind],
@@ -132,7 +145,7 @@ export function CommandPalette() {
     }));
     const order = (g: string) => (g === "Go" ? -1 : KIND_ORDER.indexOf(Object.keys(KIND_LABEL).find((k) => KIND_LABEL[k as ArtifactKind] === g)! as ArtifactKind));
     return [...go, ...arts].sort((a, b) => order(a.group) - order(b.group));
-  }, [query, entries, attachOnly]);
+  }, [query, entries, live, attachOnly]);
 
   useEffect(() => {
     setActive(0);

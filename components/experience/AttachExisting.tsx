@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Button from "../ui/Button";
 import {
+  artifactAttachState,
+  artifactTarget,
   loadArtifactIndex,
   searchArtifacts,
   type ArtifactEntry,
@@ -14,14 +16,23 @@ const KIND_LABEL: Record<ArtifactKind, string> = {
   "wireframe-screen": "Wireframe",
   "integration-mapping": "Mapping",
   "contract-profile": "Contract",
+  "salesforce-object": "Object",
+  "saved-query": "Query",
 };
 
-const KIND_TABS: ("all" | ArtifactKind)[] = ["all", "wireframe-screen", "integration-mapping", "contract-profile"];
+const KIND_TABS: ("all" | ArtifactKind)[] = [
+  "all",
+  "wireframe-screen",
+  "integration-mapping",
+  "salesforce-object",
+  "saved-query",
+  "contract-profile",
+];
 
 /**
  * One search across every separately-authored inventory. Attaches by
  * reference (never copies): wireframe screens and mappings onto a screen,
- * mappings under a project. Contracts are discoverable with a deep link -
+ * mappings under a project. Everything else is discovery with a deep link -
  * no fake attach. Used-in backlinks show consumption before you attach.
  */
 export function AttachExisting({
@@ -58,18 +69,6 @@ export function AttachExisting({
   }, []);
 
   const results = useMemo(() => searchArtifacts(entries ?? [], query, kind), [entries, query, kind]);
-
-  /** Null = row is out of scope for this mode (rendered as a deep link). */
-  const attachable = (e: ArtifactEntry): boolean | null => {
-    if (e.kind === "contract-profile") return null;
-    if (mode === "project") {
-      if (e.kind !== "integration-mapping") return null;
-      return !attachedMappingIds.includes(e.mappingId!);
-    }
-    // Screen: one wireframe + one payload mapping at a time.
-    if (e.kind === "wireframe-screen") return `wire:${e.experienceId}:${e.screenId}` !== attachedWireKey;
-    return !attachedMappingIds.includes(e.mappingId!);
-  };
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-4 sm:p-8" role="dialog" aria-modal="true" aria-label="Attach existing artifact">
@@ -123,7 +122,7 @@ export function AttachExisting({
         ) : (
           <ul className="mt-3 max-h-[50vh] space-y-1.5 overflow-y-auto">
             {results.map((e) => {
-              const ok = attachable(e);
+              const state = artifactAttachState(e, { kind: mode, attachedMappingIds, attachedWireKey });
               return (
                 <li key={e.key} className="flex items-center gap-2 rounded-xl border border-[#F0EBE0] px-2.5 py-2">
                   <span className="shrink-0 rounded border border-[#DCC99A] bg-[#F5EEDF] px-1.5 py-0.5 font-mono text-[9px] font-bold text-[#8A6A2F]">
@@ -136,15 +135,12 @@ export function AttachExisting({
                       {e.usedIn.length > 0 ? ` · used in ${e.usedIn.join(", ")}` : " · unused"}
                     </span>
                   </span>
-                  {(e.kind === "contract-profile" || ok === null) && (
-                    <a
-                      href={e.kind === "wireframe-screen" ? "/wireframe" : "/contracts"}
-                      className="shrink-0 rounded-lg border border-[#E8E2D8] px-2 py-1 text-[11px] font-semibold text-[#A98450] hover:underline"
-                    >
+                  {state === "open" && (
+                    <a href={artifactTarget(e)} className="shrink-0 rounded-lg border border-[#E8E2D8] px-2 py-1 text-[11px] font-semibold text-[#A98450] hover:underline">
                       Open ↗
                     </a>
                   )}
-                  {ok === true && (
+                  {state === "attach" && (
                     <Button
                       size="sm"
                       onClick={() => {
@@ -160,7 +156,7 @@ export function AttachExisting({
                       Attach
                     </Button>
                   )}
-                  {ok === false && (
+                  {state === "attached" && (
                     <span className="shrink-0 font-mono text-[10px] text-[#2F7D4F]">attached ✓</span>
                   )}
                 </li>
