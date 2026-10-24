@@ -19,7 +19,7 @@ import { ComponentInspector } from "./ComponentInspector";
 import { CoveragePanel } from "./CoveragePanel";
 import { JourneyPanel } from "./JourneyPanel";
 import { ScreenCanvas } from "./ScreenCanvas";
-import { WireframeAttach } from "./WireframeAttach";
+import { ScreenLinks } from "./ScreenLinks";
 import { ScreenFieldMapper } from "./ScreenFieldMapper";
 import { AttachExisting } from "./AttachExisting";
 import { downloadBlob } from "@/lib/experience/package";
@@ -323,6 +323,24 @@ function ScreenDetail({
   const [replacing, setReplacing] = useState(false);
   const [attaching, setAttaching] = useState(false);
   const [screenMsg, setScreenMsg] = useState<string | null>(null);
+  const detachWireframe = () => {
+    onMutate((p) => {
+      if (!p.experience) return p;
+      const now = new Date().toISOString();
+      const next = touch({ ...p, experience: { ...p.experience, screens: p.experience.screens.map((s) => (s.id === screen.id ? { ...s, wireframeRef: undefined, updatedAt: now } : s)) } });
+      logChange(next, "screen", screen.id, "wireframe-unlinked", `Screen "${screen.name}" unlinked from its wireframe.`, now);
+      return next;
+    });
+  };
+  const detachPayload = () => {
+    onMutate((p) => {
+      if (!p.experience) return p;
+      const now = new Date().toISOString();
+      const next = touch({ ...p, experience: { ...p.experience, screens: p.experience.screens.map((s) => (s.id === screen.id ? { ...s, payloadMappingId: undefined, updatedAt: now } : s)) } });
+      logChange(next, "screen", screen.id, "payload-unlinked", `Screen "${screen.name}" unlinked from its payload mapping.`, now);
+      return next;
+    });
+  };
   const [selectedAnn, setSelectedAnn] = useState<string | null>(null);
 
   useEffect(() => {
@@ -491,63 +509,13 @@ function ScreenDetail({
             className="mt-1 w-full rounded-lg border border-[#E8E2D8] bg-white px-2 py-1.5 font-mono text-[12px] focus:border-[#A98450] focus:outline-none"
           />
         </label>
-        <label className="block text-[11px] text-[#777168]">
-          Payload mapping
-          <span className="mt-1 flex gap-1.5">
-            <select
-              value={screen.payloadMappingId ?? ""}
-              onChange={(e) => {
-                const payloadMappingId = e.target.value || undefined;
-                onMutate((p) => {
-                  if (!p.experience) return p;
-                  const now = new Date().toISOString();
-                  const next = touch({ ...p, experience: { ...p.experience, screens: p.experience.screens.map((s) => (s.id === screen.id ? { ...s, payloadMappingId, updatedAt: now } : s)) } });
-                  logChange(next, "screen", screen.id, "payload-linked", `Screen "${screen.name}" linked to a payload mapping.`, now);
-                  return next;
-                });
-              }}
-              aria-label="Payload integration mapping"
-              className="w-full cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-2 py-1.5 font-mono text-[12px]"
-            >
-              <option value="">none…</option>
-              {payloadChoices.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-            {screen.payloadMappingId && (
-              <button
-                type="button"
-                onClick={() => onOpenMapping(screen.payloadMappingId!)}
-                title="Open the linked integration mapping"
-                className="shrink-0 rounded-lg border border-[#E8E2D8] bg-white px-2 py-1.5 font-mono text-[11px] text-[#A98450] hover:underline cursor-pointer"
-              >
-                open ↗
-              </button>
-            )}
-          </span>
-        </label>
-        <WireframeAttach
-          current={screen.wireframeRef}
-          onAttach={(wireframeRef) => {
-            onMutate((p) => {
-              if (!p.experience) return p;
-              const now = new Date().toISOString();
-              const next = touch({ ...p, experience: { ...p.experience, screens: p.experience.screens.map((s) => (s.id === screen.id ? { ...s, wireframeRef, updatedAt: now } : s)) } });
-              logChange(next, "screen", screen.id, "wireframe-linked", `Screen "${screen.name}" linked to a wireframe.`, now);
-              return next;
-            });
-          }}
-          onDetach={() => {
-            onMutate((p) => {
-              if (!p.experience) return p;
-              const now = new Date().toISOString();
-              const next = touch({ ...p, experience: { ...p.experience, screens: p.experience.screens.map((s) => (s.id === screen.id ? { ...s, wireframeRef: undefined, updatedAt: now } : s)) } });
-              logChange(next, "screen", screen.id, "wireframe-unlinked", `Screen "${screen.name}" unlinked from its wireframe.`, now);
-              return next;
-            });
-          }}
+        <ScreenLinks
+          screen={screen}
+          payloadLabel={payloadChoices.find((c) => c.id === screen.payloadMappingId)?.label}
+          onOpenMapping={() => screen.payloadMappingId && onOpenMapping(screen.payloadMappingId)}
+          onDetachWireframe={detachWireframe}
+          onDetachPayload={detachPayload}
+          onAttachClick={() => setAttaching(true)}
         />
         <label className="block text-[11px] text-[#777168] sm:col-span-2">
           Notes
