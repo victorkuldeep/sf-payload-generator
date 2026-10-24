@@ -24,6 +24,7 @@ import {
 import { saveStudio } from "@/lib/studio/store";
 import { saveProject } from "@/lib/mapping/store";
 import { listExperiences, saveExperience } from "@/lib/wireframe/store";
+import { spineMarkExported } from "@/lib/studio/spine";
 import type { MappingProject } from "@/lib/mapping/types";
 import type { StudioProject } from "@/lib/studio/types";
 
@@ -64,6 +65,7 @@ export function WorkspaceDeliverables({
       const { blob } = await exportWorkspaceZip(root, childMaps, loadBlob, wireframes);
       const safe = root.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "workspace";
       downloadBlob(blob, `${safe}.gravenx.zip`);
+      spineMarkExported();
     } finally {
       setExportBusy(false);
     }

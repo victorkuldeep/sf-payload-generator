@@ -23,6 +23,8 @@ export interface ArtifactEntry {
   status?: string;
   /** Owning project for attached mappings; null = standalone library. */
   projectName?: string | null;
+  /** True when the mapping carries a metadata snapshot. */
+  hasSnapshot?: boolean;
   // Targets for attach actions.
   experienceId?: string;
   screenId?: string;
@@ -88,6 +90,7 @@ export function buildArtifactIndex(sources: ArtifactSources): ArtifactEntry[] {
       status: m.status,
       mappingId: m.id,
       projectName: projectName ?? null,
+      hasSnapshot: !!m.sfSnapshot,
       usedIn: studioNames(sources.projects, users),
     });
   };

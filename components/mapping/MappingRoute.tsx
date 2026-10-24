@@ -38,6 +38,7 @@ import { attachMapping, detachMapping, upgradeToWorkspace } from "@/lib/studio/u
 import { blankStudio, type StudioProject } from "@/lib/studio/types";
 import { deleteStudio, listStudios, loadStudio, saveStudio, type StudioSummary } from "@/lib/studio/store";
 import { setPaletteAttachContext } from "@/lib/studio/paletteContext";
+import { FirstSpine } from "@/components/studio/FirstSpine";
 
 function uid(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -669,6 +670,7 @@ export function MappingRoute() {
 
         {view === "start" && (
           <div className="grid gap-2 sm:grid-cols-3">
+            <div className="sm:col-span-3"><FirstSpine /></div>
             <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
               <p className="font-mono text-[10px] font-bold uppercase tracking-[2px] text-[#A98450]">01</p>
               <p className="mt-1 text-[13px] font-semibold text-[#27241F]">Create a project</p>
