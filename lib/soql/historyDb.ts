@@ -38,3 +38,15 @@ export async function saveSoqlQuery(q: SoqlQuery): Promise<void> {
 export async function deleteSoqlQuery(id: string): Promise<void> {
   await withStore(STORE, "readwrite", (store) => store.delete(id));
 }
+
+/** Clear auto-run history (saved queries are immortal). Returns rows removed. */
+export async function clearSoqlHistory(mode?: "soql" | "sosl"): Promise<number> {
+  const all = await listSoqlQueries();
+  const victims = all.filter((x) => !x.saved && (!mode || (x.mode ?? "soql") === mode));
+  if (victims.length === 0) return 0;
+  await withStore(STORE, "readwrite", (store) => {
+    for (const x of victims) store.delete(x.id);
+    return store.get(victims[0].id);
+  });
+  return victims.length;
+}

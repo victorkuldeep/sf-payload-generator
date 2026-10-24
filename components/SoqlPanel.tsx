@@ -17,6 +17,7 @@ import {
   listSoqlQueries,
   saveSoqlQuery,
   deleteSoqlQuery,
+  clearSoqlHistory,
   type SoqlQuery,
 } from "@/lib/soql/historyDb";
 import {
@@ -197,6 +198,7 @@ export default function SoqlPanel({
   const [planError, setPlanError] = useState<string | null>(null);
 
   const [history, setHistory] = useState<SoqlQuery[]>([]);
+  const [confirmClearHistory, setConfirmClearHistory] = useState(false);
   const [saveLabel, setSaveLabel] = useState("");
   const [fieldInfoOpen, setFieldInfoOpen] = useState(false);
 
@@ -849,6 +851,18 @@ export default function SoqlPanel({
     }
   }, []);
 
+  const handleClearHistory = useCallback(async () => {
+    try {
+      const n = await clearSoqlHistory(mode);
+      setHistory((prev) => prev.filter((h) => h.saved || (h.mode ?? "soql") !== mode));
+      setNotice(n > 0 ? `Cleared ${n} ${mode.toUpperCase()} run${n === 1 ? "" : "s"} from history (saved queries kept).` : "History already empty.");
+    } catch {
+      setNotice("Couldn't clear history (IndexedDB unavailable).");
+    } finally {
+      setConfirmClearHistory(false);
+    }
+  }, [mode]);
+
   const cheapest =
     plans && plans.length > 0
       ? plans.reduce((a, b) => (a.relativeCost <= b.relativeCost ? a : b))
@@ -999,6 +1013,22 @@ export default function SoqlPanel({
             </Button>
           </div>
           <Button size="sm" variant="ghost" onClick={() => { setSoql(""); setResult(null); setBaseRecords(null); setJqlRows(null); setJqlLabel(null); }}>
+          {historyItems.length > 0 && !confirmClearHistory && (
+            <Button size="sm" variant="ghost" className="text-red-700" title={`Clear ${mode.toUpperCase()} run history (saved queries are kept)`} onClick={() => setConfirmClearHistory(true)}>
+              Clear history
+            </Button>
+          )}
+          {confirmClearHistory && (
+            <span className="inline-flex items-center gap-1.5 text-xs">
+              <span className="font-semibold text-red-700">Clear {historyItems.length} runs?</span>
+              <Button size="sm" variant="ghost" className="text-red-700" onClick={() => void handleClearHistory()}>
+                Yes
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setConfirmClearHistory(false)}>
+                No
+              </Button>
+            </span>
+          )}
             Clear
           </Button>
         </div>
