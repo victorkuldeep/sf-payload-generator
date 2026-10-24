@@ -58,6 +58,26 @@ describe("workspace package", () => {
     expect(m2[0].mappings[0].id).toBe("row1");
   });
 
+  it("bundles linked wireframes and rewrites refs on import", async () => {
+    const { root, children } = workspace();
+    root.experience!.screens[0].wireframeRef = { experienceId: "exp1", screenId: "w1" };
+    const wireframes = [
+      { id: "exp1", name: "Portal", version: 1, schemaVersion: 1, status: "draft", screens: [{ id: "w1", name: "Lead form", viewport: { width: 390, height: 844 }, position: { x: 0, y: 0 } }], components: [{ id: "c9", kind: "input", parentId: "w1", label: "Email", props: {} }], journeys: [], proposedFields: [], createdAt: 1, updatedAt: 1 },
+    ];
+    const { blob, summary } = await exportWorkspaceZip(root, children, async () => null, wireframes as never);
+    expect(summary.wireframes).toBe(1);
+    const inspected = await inspectWorkspace(blob);
+    expect(inspected.ok).toBe(true);
+    expect(inspected.wireframes).toHaveLength(1);
+    const remapped = remapWorkspaceImport(inspected.root!, inspected.mappings!, inspected.wireframes!);
+    expect(remapped.wireframes[0].id).not.toBe("exp1");
+    // Ref follows the wireframe + screen to fresh ids, components follow their screen.
+    const ref = remapped.root.experience!.screens[0].wireframeRef!;
+    expect(ref.experienceId).toBe(remapped.wireframes[0].id);
+    expect(ref.screenId).toBe(remapped.wireframes[0].screens[0].id);
+    expect(remapped.wireframes[0].components[0].parentId).toBe(ref.screenId);
+  });
+
   it("rejects traversal entries and non-packages", async () => {
     const zip = new JSZip();
     zip.file("../evil.txt", "x");

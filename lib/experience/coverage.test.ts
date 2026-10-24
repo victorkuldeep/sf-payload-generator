@@ -30,4 +30,16 @@ describe("analyzeCoverage", () => {
     // Deterministic: same input, same keys in same order.
     expect(analyzeCoverage(p).findings.map((f) => f.key)).toEqual(findings.map((f) => f.key));
   });
+
+  it("treats a linked wireframe as a design source", () => {
+    const p = blankProject({ id: "p1", name: "T", now: "2026-01-01" });
+    const exp = blankExperienceModule("e", "2026-01-01");
+    exp.screens = [
+      { id: "s1", name: "Capture", journeyIds: [], canvas: { sourceWidth: 0, sourceHeight: 0, aspectRatio: 0 }, componentIds: [], actionIds: [], bindingIds: [], status: "draft", tags: [], createdAt: "t", updatedAt: "t", wireframeRef: { experienceId: "exp1", screenId: "w1" } },
+    ];
+    p.experience = exp;
+    const types = analyzeCoverage(p).findings.map((f) => f.type);
+    expect(types).not.toContain("screen-no-image");
+    expect(types).not.toContain("screen-no-components");
+  });
 });

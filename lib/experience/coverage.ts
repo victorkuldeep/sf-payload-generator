@@ -46,8 +46,9 @@ export function analyzeCoverage(project: WorkspaceScope): { counts: CoverageCoun
   const withComps = screens.filter((s) => (exp?.components ?? []).some((c) => c.screenId === s.id)).length;
 
   for (const s of screens) {
-    if (!s.assetId) findings.push({ key: `screen-no-image:${s.id}`, severity: "warning", type: "screen-no-image", entityId: s.id, message: `Screen "${s.name}" has no screenshot.`, action: "Upload or paste a screenshot." });
-    if (!(exp?.components ?? []).some((c) => c.screenId === s.id)) findings.push({ key: `screen-no-components:${s.id}`, severity: "info", type: "screen-no-components", entityId: s.id, message: `Screen "${s.name}" has no components yet.`, action: "Annotate regions on the canvas." });
+    // A live wireframe ref is a design source - don't cry wolf about the screenshot.
+    if (!s.assetId && !s.wireframeRef) findings.push({ key: `screen-no-image:${s.id}`, severity: "warning", type: "screen-no-image", entityId: s.id, message: `Screen "${s.name}" has no screenshot.`, action: "Upload or paste a screenshot." });
+    if (!(exp?.components ?? []).some((c) => c.screenId === s.id) && !s.wireframeRef) findings.push({ key: `screen-no-components:${s.id}`, severity: "info", type: "screen-no-components", entityId: s.id, message: `Screen "${s.name}" has no components yet.`, action: "Annotate regions on the canvas." });
   }
 
   for (const c of exp?.components ?? []) {

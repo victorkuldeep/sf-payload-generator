@@ -27,6 +27,14 @@ export interface ExperienceModule {
   updatedAt: string;
 }
 
+export interface WireframeRef {
+  experienceId: string;
+  screenId: string;
+  /** Last-known labels - kept as historical context when the wireframe is deleted. */
+  experienceName?: string;
+  screenName?: string;
+}
+
 export interface Screen {
   id: string;
   name: string;
@@ -41,6 +49,8 @@ export interface Screen {
   endpoint?: string;
   /** Child integration mapping id whose payload feeds this screen. */
   payloadMappingId?: string;
+  /** Linked Wireframe Studio screen - a live wireframe acts as this screen's design. */
+  wireframeRef?: WireframeRef;
   /** Architect / workshop notes about this screen's contract. */
   notes?: string;
   canvas: { sourceWidth: number; sourceHeight: number; aspectRatio: number };

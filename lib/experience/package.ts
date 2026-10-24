@@ -10,6 +10,7 @@
 import JSZip from "jszip";
 import type { MappingProject } from "../mapping/types";
 import type { StudioProject } from "../studio/types";
+import type { Experience } from "../wireframe/model";
 
 export const WORKSPACE_PACKAGE_FORMAT = "gravenx-workspace";
 export const WORKSPACE_PACKAGE_VERSION = 1;
@@ -25,6 +26,7 @@ export interface WorkspaceManifest {
   exportedAt: string;
   workspace: { id: string; name: string; customer?: string };
   mappings: { id: string; name: string; sourceApi?: string }[];
+  wireframes: { id: string; name: string }[];
   assets: { id: string; path: string; mimeType: string }[];
   counts: {
     mappings: number;
@@ -34,6 +36,7 @@ export interface WorkspaceManifest {
     bindings: number;
     fieldMappings: number;
     decisions: number;
+    wireframes: number;
   };
 }
 
@@ -43,6 +46,7 @@ export interface WorkspaceSummary {
   screens: number;
   assets: number;
   operations: number;
+  wireframes: number;
   approxBytes: number;
 }
 
@@ -53,7 +57,8 @@ function extFor(mime: string): string {
 export async function exportWorkspaceZip(
   root: StudioProject,
   children: MappingProject[],
-  loadBlob: (storageKey: string) => Promise<Blob | null>
+  loadBlob: (storageKey: string) => Promise<Blob | null>,
+  wireframes: Experience[] = []
 ): Promise<{ blob: Blob; summary: WorkspaceSummary }> {
   const zip = new JSZip();
   const base = zip.folder("gravenx-workspace")!;
@@ -78,6 +83,9 @@ export async function exportWorkspaceZip(
   for (const child of children) {
     base.file(`mappings/${child.id}.json`, JSON.stringify(child, null, 2));
   }
+  for (const exp of wireframes) {
+    base.file(`wireframes/${exp.id}.json`, JSON.stringify(exp, null, 2));
+  }
   base.file("workspace.json", JSON.stringify(root, null, 2));
 
   const manifest: WorkspaceManifest = {
@@ -87,6 +95,7 @@ export async function exportWorkspaceZip(
     exportedAt: now,
     workspace: { id: root.id, name: root.name, customer: root.customer },
     mappings: children.map((c) => ({ id: c.id, name: c.name, sourceApi: c.sourceApi })),
+    wireframes: wireframes.map((e) => ({ id: e.id, name: e.name })),
     assets: assetEntries,
     counts: {
       mappings: children.length,
@@ -96,6 +105,7 @@ export async function exportWorkspaceZip(
       bindings: exp?.bindings.length ?? 0,
       fieldMappings: children.reduce((n, c) => n + c.mappings.length, 0),
       decisions: (root.archDecisions?.length ?? 0) + (root.assumptions?.length ?? 0),
+      wireframes: wireframes.length,
     },
   };
   base.file("manifest.json", JSON.stringify(manifest, null, 2));
@@ -114,6 +124,7 @@ export async function exportWorkspaceZip(
       ``,
       `- Integration mappings: ${manifest.counts.mappings}`,
       `- Screens: ${manifest.counts.screens} (${assetEntries.length} images)`,
+      `- Wireframes: ${manifest.counts.wireframes}`,
       `- API operations: ${manifest.counts.operations}`,
       `- Field mappings: ${manifest.counts.fieldMappings}`,
       ``,
@@ -129,6 +140,7 @@ export async function exportWorkspaceZip(
     screens: exp?.screens.length ?? 0,
     assets: assetEntries.length,
     operations: root.apiCatalog?.operations.length ?? 0,
+    wireframes: wireframes.length,
     approxBytes: assetBytes + JSON.stringify(root).length + children.reduce((n, c) => n + JSON.stringify(c).length, 0),
   };
   return { blob, summary };
@@ -139,6 +151,7 @@ export interface WorkspaceInspect {
   manifest?: WorkspaceManifest;
   root?: StudioProject;
   mappings?: MappingProject[];
+  wireframes?: Experience[];
   missingAssets?: string[];
   errors: string[];
   warnings: string[];
@@ -210,6 +223,21 @@ export async function inspectWorkspace(file: Blob): Promise<WorkspaceInspect> {
     mappings.push(child);
   }
 
+  const wireframes: Experience[] = [];
+  for (const w of manifest.wireframes ?? []) {
+    const res = await readJson(`gravenx-workspace/wireframes/${w.id}.json`);
+    if (!res.ok) {
+      warnings.push(`Wireframe "${w.name}" unreadable - skipped, linked screens keep history labels.`);
+      continue;
+    }
+    const shape = checkWireframeShape(res.value);
+    if (!shape.ok) {
+      warnings.push(`Wireframe "${w.name}" invalid (${shape.errors.join("; ")}) - skipped.`);
+      continue;
+    }
+    wireframes.push(res.value as Experience);
+  }
+
   const missingAssets: string[] = [];
   let decompressed = 0;
   for (const a of manifest.assets ?? []) {
@@ -223,7 +251,18 @@ export async function inspectWorkspace(file: Blob): Promise<WorkspaceInspect> {
     if (decompressed > MAX_DECOMPRESSED_BYTES) return bad(["Decompressed contents exceed the safety limit."]);
   }
 
-  return { ok: true, manifest, root, mappings, missingAssets, errors: [], warnings };
+  return { ok: true, manifest, root, mappings, wireframes, missingAssets, errors: [], warnings };
+}
+
+function checkWireframeShape(c: unknown): { ok: boolean; errors: string[] } {
+  const errors: string[] = [];
+  if (!c || typeof c !== "object") return { ok: false, errors: ["not an object"] };
+  const e = c as { id?: unknown; name?: unknown; screens?: unknown; components?: unknown };
+  if (typeof e.id !== "string" || !e.id) errors.push("id missing");
+  if (typeof e.name !== "string" || !e.name) errors.push("name missing");
+  if (!Array.isArray(e.screens)) errors.push(`"screens" missing`);
+  if (!Array.isArray(e.components)) errors.push(`"components" missing`);
+  return { ok: errors.length === 0, errors };
 }
 
 function checkMappingShape(c: MappingProject): { ok: boolean; errors: string[] } {
@@ -267,11 +306,36 @@ function newId(prefix: string): string {
  * dependency references rewritten, row/plan ids preserved (random uids,
  * collision-safe). References to row/plan ids stay valid.
  */
-export function remapWorkspaceImport(root: StudioProject, mappings: MappingProject[]): { root: StudioProject; mappings: MappingProject[] } {
+export function remapWorkspaceImport(
+  root: StudioProject,
+  mappings: MappingProject[],
+  wireframes: Experience[] = []
+): { root: StudioProject; mappings: MappingProject[]; wireframes: Experience[] } {
   const now = new Date().toISOString();
   const nextRoot = JSON.parse(JSON.stringify(root)) as StudioProject;
   const nextMappings = JSON.parse(JSON.stringify(mappings)) as MappingProject[];
+  const nextWireframes = JSON.parse(JSON.stringify(wireframes)) as Experience[];
   const idMap = new Map<string, string>();
+  // Wireframes get fresh ids AND fresh screen ids (component parentIds follow),
+  // so importing the same bundle twice never collides.
+  const wireIdMap = new Map<string, string>();
+  const wireScreenMap = new Map<string, string>();
+  for (const exp of nextWireframes) {
+    const freshExp = newId("exp");
+    wireIdMap.set(exp.id, freshExp);
+    exp.id = freshExp;
+    exp.updatedAt = Date.now();
+    for (const s of exp.screens) {
+      const freshScreen = newId("scr");
+      wireScreenMap.set(`${freshExp}:${s.id}`, freshScreen);
+      s.id = freshScreen;
+    }
+    for (const c of exp.components) {
+      if (c.parentId && wireScreenMap.has(`${freshExp}:${c.parentId}`)) {
+        c.parentId = wireScreenMap.get(`${freshExp}:${c.parentId}`)!;
+      }
+    }
+  }
   for (const m of nextMappings) {
     const fresh = newId("map");
     idMap.set(m.id, fresh);
@@ -283,10 +347,17 @@ export function remapWorkspaceImport(root: StudioProject, mappings: MappingProje
   nextRoot.updatedAt = now;
   nextRoot.createdAt = nextRoot.createdAt || now;
   // Screen payload links point at mapping records - rewrite them.
+  // Screen wireframe refs follow wireframes to their fresh ids.
   if (nextRoot.experience) {
     for (const s of nextRoot.experience.screens) {
       if (s.payloadMappingId && idMap.has(s.payloadMappingId)) {
         s.payloadMappingId = idMap.get(s.payloadMappingId);
+      }
+      const ref = s.wireframeRef;
+      if (ref && wireIdMap.has(ref.experienceId)) {
+        const freshExp = wireIdMap.get(ref.experienceId)!;
+        const freshScreen = wireScreenMap.get(`${freshExp}:${ref.screenId}`) ?? ref.screenId;
+        s.wireframeRef = { ...ref, experienceId: freshExp, screenId: freshScreen };
       }
     }
   }
@@ -299,7 +370,7 @@ export function remapWorkspaceImport(root: StudioProject, mappings: MappingProje
     }
   }
   void idMap;
-  return { root: nextRoot, mappings: nextMappings };
+  return { root: nextRoot, mappings: nextMappings, wireframes: nextWireframes };
 }
 
 export function downloadBlob(blob: Blob, filename: string): void {

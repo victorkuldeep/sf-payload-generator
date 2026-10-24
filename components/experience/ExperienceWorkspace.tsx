@@ -19,9 +19,15 @@ import { ComponentInspector } from "./ComponentInspector";
 import { CoveragePanel } from "./CoveragePanel";
 import { JourneyPanel } from "./JourneyPanel";
 import { ScreenCanvas } from "./ScreenCanvas";
+import { WireframeAttach } from "./WireframeAttach";
+import { ScreenFieldMapper } from "./ScreenFieldMapper";
+import { AttachExisting } from "./AttachExisting";
+import { downloadBlob } from "@/lib/experience/package";
+import { buildScreenArtifact, importScreenArtifact, parseScreenArtifact, screenArtifactFileName } from "@/lib/experience/screenArtifact";
 import type { Rect } from "@/lib/experience/geometry";
 import { deleteScreenCascade, reorderScreens, screenImpact } from "@/lib/experience/screens";
 import type { StudioProject } from "@/lib/studio/types";
+import type { MappingProject, SnapshotObject } from "@/lib/mapping/types";
 import type { Screen, ScreenAsset } from "@/lib/experience/types";
 
 function uid(prefix: string): string {
@@ -79,21 +85,28 @@ function useAssetUrls(keys: string[]): Map<string, string> {
 export function ExperienceWorkspace({
   project,
   payloadChoices,
+  snapshotObjects,
+  childMaps,
   onMutate,
   onOpenApis,
   onOpenMapping,
+  autoAddScreen,
 }: {
   project: StudioProject;
   /** Child integration mappings (id + label) for screen→payload links. */
   payloadChoices: { id: string; label: string }[];
+  snapshotObjects: SnapshotObject[];
+  childMaps: MappingProject[];
   onMutate: (fn: (p: StudioProject) => StudioProject) => void;
   onOpenApis: () => void;
   onOpenMapping: (mappingId: string) => void;
+  /** One-shot: open the Add-screen dialog on first mount (Start-with-screen). */
+  autoAddScreen?: boolean;
 }) {
   const exp = project.experience!;
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(exp.screens[0]?.id ?? null);
-  const [showAdd, setShowAdd] = useState(false);
+  const [showAdd, setShowAdd] = useState(autoAddScreen ?? false);
   const [editing, setEditing] = useState<Screen | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
@@ -236,6 +249,8 @@ export function ExperienceWorkspace({
             project={project}
             screen={selected}
             payloadChoices={payloadChoices}
+            snapshotObjects={snapshotObjects}
+            childMaps={childMaps}
             onMutate={onMutate}
             onOpenMapping={onOpenMapping}
           />
@@ -289,12 +304,16 @@ function ScreenDetail({
   project,
   screen,
   payloadChoices,
+  snapshotObjects,
+  childMaps,
   onMutate,
   onOpenMapping,
 }: {
   project: StudioProject;
   screen: Screen;
   payloadChoices: { id: string; label: string }[];
+  snapshotObjects: SnapshotObject[];
+  childMaps: MappingProject[];
   onMutate: (fn: (p: StudioProject) => StudioProject) => void;
   onOpenMapping: (mappingId: string) => void;
 }) {
@@ -302,6 +321,8 @@ function ScreenDetail({
   const asset = exp.assets.find((a) => a.screenId === screen.id);
   const [imgUrl, setImgUrl] = useState<string | null>(null);
   const [replacing, setReplacing] = useState(false);
+  const [attaching, setAttaching] = useState(false);
+  const [screenMsg, setScreenMsg] = useState<string | null>(null);
   const [selectedAnn, setSelectedAnn] = useState<string | null>(null);
 
   useEffect(() => {
@@ -374,6 +395,83 @@ function ScreenDetail({
         {asset ? ` · ${asset.width}×${asset.height} · ${(asset.byteSize / 1024).toFixed(0)} KB` : " · no image"}
       </p>
 
+      <div className="mb-2 flex flex-wrap items-center justify-end gap-1.5">
+        <button
+          type="button"
+          onClick={() => {
+            const artifact = buildScreenArtifact(project, screen.id);
+            if (!artifact) return;
+            downloadBlob(new Blob([JSON.stringify(artifact, null, 2)], { type: "application/json" }), screenArtifactFileName(screen.name));
+          }}
+          title="Download this screen as a portable artifact (fields, bindings, operations)"
+          className="cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-2.5 py-1 text-[12px] font-semibold text-[#777168] hover:text-[#27241F]"
+        >
+          Export screen
+        </button>
+        <label
+          title="Import a screen artifact as a NEW screen in this project"
+          className="cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-2.5 py-1 text-[12px] font-semibold text-[#777168] hover:text-[#27241F]"
+        >
+          Import screen…
+          <input
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (!file) return;
+              void file.text().then((text) => {
+                try {
+                  const checked = parseScreenArtifact(JSON.parse(text));
+                  if (!checked.ok || !checked.artifact) {
+                    setScreenMsg(`Import rejected: ${checked.errors.join(" ")}`);
+                    return;
+                  }
+                  onMutate((p) => importScreenArtifact(p, checked.artifact!));
+                  setScreenMsg(`Imported "${checked.artifact.screen.name}" as a new screen.`);
+                } catch {
+                  setScreenMsg("Import rejected: not valid JSON.");
+                }
+              });
+            }}
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => setAttaching(true)}
+          className="cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-2.5 py-1 text-[12px] font-semibold text-[#A98450] hover:border-[#A98450]"
+        >
+          Attach existing…
+        </button>
+      </div>
+      {attaching && (
+        <AttachExisting
+          mode="screen"
+          onClose={() => setAttaching(false)}
+          attachedMappingIds={screen.payloadMappingId ? [screen.payloadMappingId] : []}
+          attachedWireKey={screen.wireframeRef ? `wire:${screen.wireframeRef.experienceId}:${screen.wireframeRef.screenId}` : null}
+          onAttachWireframe={(wireframeRef) => {
+            onMutate((p) => {
+              if (!p.experience) return p;
+              const now = new Date().toISOString();
+              const next = touch({ ...p, experience: { ...p.experience, screens: p.experience.screens.map((s) => (s.id === screen.id ? { ...s, wireframeRef, updatedAt: now } : s)) } });
+              logChange(next, "screen", screen.id, "wireframe-linked", `Screen "${screen.name}" linked to a wireframe.`, now);
+              return next;
+            });
+          }}
+          onAttachMapping={(payloadMappingId) => {
+            onMutate((p) => {
+              if (!p.experience) return p;
+              const now = new Date().toISOString();
+              const next = touch({ ...p, experience: { ...p.experience, screens: p.experience.screens.map((s) => (s.id === screen.id ? { ...s, payloadMappingId, updatedAt: now } : s)) } });
+              logChange(next, "screen", screen.id, "payload-linked", `Screen "${screen.name}" linked to a payload mapping.`, now);
+              return next;
+            });
+          }}
+        />
+      )}
+      {screenMsg && <p className="mb-2 text-[12px] font-semibold text-[#2F7D4F]">{screenMsg}</p>}
       {/* Screen → endpoint + payload contract */}
       <div className="mt-2 grid gap-2 rounded-xl border border-[#F0EBE0] bg-[#FAF8F2] p-2.5 sm:grid-cols-2">
         <label className="block text-[11px] text-[#777168]">
@@ -430,6 +528,27 @@ function ScreenDetail({
             )}
           </span>
         </label>
+        <WireframeAttach
+          current={screen.wireframeRef}
+          onAttach={(wireframeRef) => {
+            onMutate((p) => {
+              if (!p.experience) return p;
+              const now = new Date().toISOString();
+              const next = touch({ ...p, experience: { ...p.experience, screens: p.experience.screens.map((s) => (s.id === screen.id ? { ...s, wireframeRef, updatedAt: now } : s)) } });
+              logChange(next, "screen", screen.id, "wireframe-linked", `Screen "${screen.name}" linked to a wireframe.`, now);
+              return next;
+            });
+          }}
+          onDetach={() => {
+            onMutate((p) => {
+              if (!p.experience) return p;
+              const now = new Date().toISOString();
+              const next = touch({ ...p, experience: { ...p.experience, screens: p.experience.screens.map((s) => (s.id === screen.id ? { ...s, wireframeRef: undefined, updatedAt: now } : s)) } });
+              logChange(next, "screen", screen.id, "wireframe-unlinked", `Screen "${screen.name}" unlinked from its wireframe.`, now);
+              return next;
+            });
+          }}
+        />
         <label className="block text-[11px] text-[#777168] sm:col-span-2">
           Notes
           <input
@@ -521,6 +640,14 @@ function ScreenDetail({
           onCancel={() => setReplacing(false)}
         />
       )}
+      <ScreenFieldMapper
+        project={project}
+        screen={screen}
+        snapshotObjects={snapshotObjects}
+        childMaps={childMaps}
+        payloadChoices={payloadChoices}
+        onMutate={onMutate}
+      />
       <p className="mt-3 text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">
         Components · {comps.length}
       </p>

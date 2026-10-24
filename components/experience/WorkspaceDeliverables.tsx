@@ -23,6 +23,7 @@ import {
 } from "@/lib/experience/package";
 import { saveStudio } from "@/lib/studio/store";
 import { saveProject } from "@/lib/mapping/store";
+import { listExperiences, saveExperience } from "@/lib/wireframe/store";
 import type { MappingProject } from "@/lib/mapping/types";
 import type { StudioProject } from "@/lib/studio/types";
 
@@ -58,7 +59,9 @@ export function WorkspaceDeliverables({
   const doExport = async () => {
     setExportBusy(true);
     try {
-      const { blob } = await exportWorkspaceZip(root, childMaps, loadBlob);
+      const referenced = new Set((root.experience?.screens ?? []).flatMap((s) => (s.wireframeRef ? [s.wireframeRef.experienceId] : [])));
+      const wireframes = referenced.size > 0 ? (await listExperiences().catch(() => [])).filter((e) => referenced.has(e.id)) : [];
+      const { blob } = await exportWorkspaceZip(root, childMaps, loadBlob, wireframes);
       const safe = root.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "workspace";
       downloadBlob(blob, `${safe}.gravenx.zip`);
     } finally {
@@ -85,7 +88,10 @@ export function WorkspaceDeliverables({
     if (!checked?.ok || !checked.root || !checked.manifest || !checkedFile) return;
     setImportBusy(true);
     try {
-      const { root: freshRoot, mappings } = remapWorkspaceImport(checked.root, checked.mappings ?? []);
+      const { root: freshRoot, mappings, wireframes } = remapWorkspaceImport(checked.root, checked.mappings ?? [], checked.wireframes ?? []);
+      for (const w of wireframes) {
+        await saveExperience(w).catch(() => undefined);
+      }
       const assets = await extractWorkspaceAssets(checkedFile, checked.manifest);
       for (const a of assets) {
         await saveAssetRecord({ id: a.storageKey, projectId: freshRoot.id, assetId: a.storageKey, blob: a.blob, thumbnail: a.thumbnail ?? undefined }).catch(() => undefined);
@@ -110,7 +116,7 @@ export function WorkspaceDeliverables({
         <div className="rounded-xl border border-[#E8E2D8] bg-white p-4">
           <p className="text-[11px] font-semibold uppercase tracking-[1.4px] text-[#A39B8E]">Portable workspace ZIP</p>
           <p className="mt-1 font-mono text-[11px] text-[#777168]">
-            {childMaps.length} mappings · {root.experience?.screens.length ?? 0} screens · {root.apiCatalog?.operations.length ?? 0} operations · imports as a NEW project, nothing overwritten.
+            {childMaps.length} mappings · {root.experience?.screens.length ?? 0} screens · {root.apiCatalog?.operations.length ?? 0} operations · linked wireframes bundle automatically · imports as a NEW project, nothing overwritten.
           </p>
           <div className="mt-3">
             <Button size="sm" disabled={exportBusy} onClick={() => void doExport()}>
@@ -217,7 +223,7 @@ export function WorkspaceDeliverables({
           <div className="mt-2 rounded-xl border border-[#BFD9C6] bg-[#E9F3EC] p-3">
             <p className="text-[13px] font-semibold text-[#27241F]">{checked.manifest.workspace.name}</p>
             <p className="font-mono text-[11px] text-[#2F7D4F]">
-              {checked.manifest.counts.mappings} mappings · {checked.manifest.counts.screens} screens · {checked.manifest.assets.length} images · {checked.manifest.counts.operations} operations
+              {checked.manifest.counts.mappings} mappings · {checked.manifest.counts.screens} screens · {checked.manifest.assets.length} images · {checked.manifest.counts.operations} operations · {checked.manifest.counts.wireframes ?? 0} wireframes
             </p>
             {checked.warnings.map((w) => (
               <p key={w} className="mt-0.5 text-[11px] text-[#8A6A2F]">

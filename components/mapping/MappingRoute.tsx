@@ -101,6 +101,8 @@ export function MappingRoute() {
   const [confirmDeleteWs, setConfirmDeleteWs] = useState(false);
   const [confirmDeleteChild, setConfirmDeleteChild] = useState(false);
   const [module, setModule] = useState<Module>("mappings");
+  /** One-shot: open the Add-screen dialog when Experience first mounts (Start-with-screen). */
+  const [expFresh, setExpFresh] = useState(false);
   const [wsName, setWsName] = useState("");
   const [wsCustomer, setWsCustomer] = useState("");
   const studioTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -203,6 +205,25 @@ export function MappingRoute() {
     setActivePlanId(null);
     setSaveState("saved");
   }, []);
+
+  /** Start-with-screen: umbrella + straight into a blank screen, Add dialog open. */
+  const startWithScreen = () => {
+    const now = new Date().toISOString();
+    const ws = ensureExperience(blankStudio({ id: uid("ws"), name: "Screen-first project", now }), now);
+    void persistStudio(ws).then(() => {
+      setStudio(ws);
+      setChildMaps([]);
+      setModule("experience");
+      setExpFresh(true);
+    });
+    setWsName("");
+    setWsCustomer("");
+    setView("start");
+  };
+
+  useEffect(() => {
+    if (expFresh) setExpFresh(false);
+  }, [expFresh]);
 
   const createWorkspace = () => {
     if (!wsName.trim()) return;
@@ -609,6 +630,9 @@ export function MappingRoute() {
           {view === "start" && (
             <div className="mt-4 flex flex-wrap justify-center gap-2">
               <Button onClick={() => setView("ws-wizard")}>New Project</Button>
+              <Button variant="ghost" onClick={() => startWithScreen()} title="Create a project and land straight in a blank screen">
+                Start with screen
+              </Button>
               <Button variant="ghost" onClick={() => setView("library")}>
                 Standalone mappings ({library.length})
               </Button>
@@ -1243,6 +1267,9 @@ export function MappingRoute() {
           onMutate={mutateStudio}
           onOpenApis={() => switchModule("apis")}
           onOpenMapping={(id) => void openChild(id)}
+          autoAddScreen={expFresh}
+          snapshotObjects={cross.snapshots}
+          childMaps={childMaps}
         />
       )}
 
