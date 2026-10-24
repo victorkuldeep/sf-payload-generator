@@ -298,6 +298,7 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
   };
   return (
     <div
+      style={data.tags.length > 0 ? { borderColor: data.tags[0].color, borderWidth: 3 } : undefined}
       className={`group w-[300px] rounded-xl border-2 bg-[var(--color-surface)] shadow-[0_8px_28px_-10px_rgba(24,20,12,0.35)] overflow-hidden transition-all ${
         data.linked || data.linkFocus
           ? "border-[#722F37] shadow-[0_0_0_3px_rgba(114,47,55,0.38),0_8px_28px_-10px_rgba(24,20,12,0.35)]"
@@ -385,6 +386,22 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
           >
             {copied ? <CheckIcon /> : <CopyIcon />}
           </button>
+          {!data.isRoot && data.onRemoveClick && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                data.onRemoveClick?.(data.apiName);
+              }}
+              title={`Remove ${data.apiName} from the canvas (X)`}
+              aria-label={`Remove ${data.apiName} from the canvas`}
+              className="nodrag shrink-0 rounded p-1 transition-colors cursor-pointer text-ivory-950 hover:text-red-600 hover:bg-red-50"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+                <path d="M6 6l12 12M18 6 6 18" />
+              </svg>
+            </button>
+          )}
           {data.onPullCustomParents && (
             <button
               type="button"
@@ -712,6 +729,21 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
           >
             A-Z
           </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              data.onTagsClick?.(data.apiName);
+            }}
+            title={data.tags.length > 0 ? `Tags: ${data.tags.map((t) => t.name).join(", ")} - click to edit (T)` : "Tag this object (T)"}
+            aria-label={`Edit tags for ${data.apiName}`}
+            className="nodrag flex h-6 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md border border-ivory-300 bg-white text-ivory-600 transition-colors hover:text-ivory-950 hover:border-ivory-500"
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+              <path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z" />
+              <circle cx="7.5" cy="7.5" r="1.5" fill="currentColor" stroke="none" />
+            </svg>
+          </button>
         </div>
         <div className="flex items-center justify-between gap-2">
           <span className="flex min-w-0 flex-1 items-center gap-1 truncate">
@@ -721,6 +753,34 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
             >
               {OBJECT_KIND_LABEL[data.objectKind]}
             </span>
+            {data.tags.slice(0, 2).map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  data.onTagsClick?.(data.apiName);
+                }}
+                title={`Tag: ${t.name} - click to edit tags (T)`}
+                className="nodrag max-w-[76px] shrink-0 cursor-pointer truncate rounded-full border px-1.5 py-px text-[9px] font-bold"
+                style={{ borderColor: t.color, color: t.color, backgroundColor: `${t.color}14` }}
+              >
+                {t.name}
+              </button>
+            ))}
+            {data.tags.length > 2 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  data.onTagsClick?.(data.apiName);
+                }}
+                title={`${data.tags.length - 2} more tags - click to edit (T)`}
+                className="nodrag shrink-0 cursor-pointer rounded-full bg-ivory-200 px-1.5 py-px text-[9px] font-bold text-ivory-700"
+              >
+                +{data.tags.length - 2}
+              </button>
+            )}
             {data.isJunction && (
               <span
                 title="Junction object - joins two or more parents (two required lookups, or a master-detail leg plus another lookup)"

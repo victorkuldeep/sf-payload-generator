@@ -8,12 +8,14 @@ import type {
 } from "@/lib/salesforce/types";
 import { buildErdElements, buildGraphElements, rootNeighbors, systemReason, isEffectivelyHidden, isSystemObject, AUDIT_REFERENCE_FIELDS, parentExitHandleId, childEntryHandleId, customParentTargets, customChildTargets, customParentLinks, customChildLinks, standardParentTargets, standardChildTargets, standardParentLinks, standardChildLinks, type ErdNodeData, type ErdFieldRow, type ErdEdgeData, type GraphNeighbor } from "@/lib/erd/graph";
 import { rankObjects } from "@/lib/search/rank";
+import { cleanTagName, createTag, nodeMatchesTagFilter, snapTagColor, type ErdTag } from "@/lib/erd/tags";
 import { buildFieldCopyTable, buildFieldDataCopyTable, isMasterRecordType, parseAvailability, recordTypeListQuery, toolingQueryPath, uiApiAvailabilityPath, type RecordTypeSummary } from "@/lib/salesforce/picklistValues";
 import { downloadFieldDictionary } from "@/lib/salesforce/fieldDictionary";
 import { downloadPicklistMatrix, type MatrixField, type MatrixRt } from "@/lib/salesforce/picklistMatrix";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import { apiFetch } from "@/lib/api";
 import { ErdCanvas, type ErdCanvasHandle } from "./erd/ErdCanvas";
+import { ConfirmRemoveDialog, TagManagerDialog, TagPickerDialog } from "./erd/TagDialogs";
 import { AddPicklistValuesDialog } from "./erd/AddPicklistValuesDialog";
 import { AuthorFieldDialog } from "./erd/AuthorFieldDialog";
 import { AuthorObjectDialog } from "./erd/AuthorObjectDialog";
@@ -889,6 +891,112 @@ export default function SchemaPanel({
   // Graph view + filters + detail
   const [view, setView] = useState<"erd" | "graph">("erd");
   const [filterMode, setFilterMode] = useState<"all" | "standard" | "custom" | "manual">("all");
+  // Canvas tags: the registry + per-node refs persist on the canvas project
+  // (per-org autosave); the tag filter + Dim/Hide mode are session-only.
+  const [tagRegistry, setTagRegistry] = useState<ErdTag[]>([]);
+  const [nodeTags, setNodeTags] = useState<Record<string, string[]>>({});
+  const [tagFilter, setTagFilter] = useState<Set<string>>(new Set());
+  const [tagMode, setTagMode] = useState<"dim" | "hide">("dim");
+  const [tagPicker, setTagPicker] = useState<string | null>(null);
+  const [tagManagerOpen, setTagManagerOpen] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const tagById = useMemo(() => new Map(tagRegistry.map((t) => [t.id, t])), [tagRegistry]);
+
+  // Tag mutations: registry + node refs persist on the canvas project.
+  const toggleNodeTag = useCallback((api: string, id: string) => {
+    setNodeTags((prev) => {
+      const cur = prev[api] ?? [];
+      const next = cur.includes(id) ? cur.filter((t) => t !== id) : [...cur, id];
+      if (next.length === 0) {
+        const rest = { ...prev };
+        delete rest[api];
+        return rest;
+      }
+      return { ...prev, [api]: next };
+    });
+  }, []);
+
+  const addTag = useCallback((name: string, color: string, assignTo?: string | null) => {
+    const tag = createTag(name, color, tagRegistry);
+    if (!tag) return null;
+    setTagRegistry((prev) => (prev.some((t) => t.id === tag.id) ? prev : [...prev, tag]));
+    if (assignTo) {
+      setNodeTags((prev) => {
+        const cur = prev[assignTo] ?? [];
+        return cur.includes(tag.id) ? prev : { ...prev, [assignTo]: [...cur, tag.id] };
+      });
+    }
+    return tag;
+  }, [tagRegistry]);
+
+  const deleteTag = useCallback((id: string) => {
+    setTagRegistry((prev) => prev.filter((t) => t.id !== id));
+    setNodeTags((prev) => {
+      const next: Record<string, string[]> = {};
+      for (const [api, ids] of Object.entries(prev)) {
+        const kept = ids.filter((t) => t !== id);
+        if (kept.length > 0) next[api] = kept;
+      }
+      return next;
+    });
+    setTagFilter((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const renameTag = useCallback((id: string, name: string) => {
+    const clean = cleanTagName(name);
+    if (!clean) return;
+    setTagRegistry((prev) => prev.map((t) => (t.id === id ? { ...t, name: clean } : t)));
+  }, []);
+
+  const recolorTag = useCallback((id: string, color: string) => {
+    setTagRegistry((prev) => prev.map((t) => (t.id === id ? { ...t, color: snapTagColor(color) } : t)));
+  }, []);
+
+  const tagCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const ids of Object.values(nodeTags)) for (const id of ids) counts[id] = (counts[id] ?? 0) + 1;
+    return counts;
+  }, [nodeTags]);
+
+  // Meeting-fast canvas keys (ERD view): T tags the focused node, X removes it
+  // behind the confirm modal, Esc closes tag surfaces. Ignored while typing,
+  // with modifiers held, or inside any dialog/popover.
+  useEffect(() => {
+    if (view !== "erd" || !rootName) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "escape") {
+        if (confirmRemove) setConfirmRemove(null);
+        else if (tagPicker) setTagPicker(null);
+        else if (tagManagerOpen) setTagManagerOpen(false);
+        return;
+      }
+      if (confirmRemove || tagPicker || tagManagerOpen) return;
+      if (typeof document !== "undefined" && document.querySelector('[role="dialog"]')) return;
+      const el = document.activeElement as HTMLElement | null;
+      const tag = el?.tagName ?? "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return;
+      if (k === "x") {
+        if (focusName && focusName !== rootName && describes.has(focusName)) {
+          e.preventDefault();
+          setConfirmRemove(focusName);
+        }
+      } else if (k === "t") {
+        if (focusName && describes.has(focusName)) {
+          e.preventDefault();
+          setTagPicker(focusName);
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [view, rootName, focusName, describes, confirmRemove, tagPicker, tagManagerOpen]);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [manageChecked, setManageChecked] = useState<Set<string>>(new Set());
   const [hideSystem, setHideSystem] = useState(true);
@@ -2224,10 +2332,13 @@ export default function SchemaPanel({
       if (filterMode === "standard" && isCustomName(name)) continue;
       if (filterMode === "custom" && !isCustomName(name)) continue;
       if (filterMode === "manual" && hiddenIds.has(name)) continue;
+      // Session-only tag filter in Hide mode drops non-matching nodes so the
+      // layout rebalances; Dim mode keeps every node and dims instead (below).
+      if (tagMode === "hide" && !nodeMatchesTagFilter(nodeTags[name] ?? [], tagFilter)) continue;
       out.set(name, d);
     }
     return out;
-  }, [describes, rootName, hideSystem, systemAllow, filterMode, hiddenIds, isCustomName]);
+  }, [describes, rootName, hideSystem, systemAllow, filterMode, hiddenIds, isCustomName, tagMode, tagFilter, nodeTags]);
 
   // Popover values come from live describes - drop it if metadata changes underneath
   useEffect(() => {
@@ -2472,7 +2583,9 @@ export default function SchemaPanel({
   }, [describes, getToken, instanceUrl, apiVersion]);
 
   const baseElements: { nodes: Node<ErdNodeData>[]; edges: Edge[] } = useMemo(() => {    if (visibleDescribes.size === 0 || !rootName) return { nodes: [], edges: [] };
-    const built = buildErdElements(visibleDescribes, labels, rootName, spot, enforced);
+    // Tag Hide mode rebalances: drop saved pins so dagre re-plans the survivors.
+    const tagHideActive = tagMode === "hide" && tagFilter.size > 0;
+    const built = buildErdElements(visibleDescribes, labels, rootName, spot, tagHideActive ? undefined : enforced);
     const describedSet = new Set(visibleDescribes.keys());
     return {
       edges: built.edges,
@@ -2482,11 +2595,17 @@ export default function SchemaPanel({
           (r) => r.relationshipName && describedSet.has(r.childSObject)
         ).length;
         const rows = entityLog[n.id] ?? [];
+        const ids = nodeTags[n.id] ?? [];
         return {
           ...n,
           data: {
             ...n.data,
             shownChildren: shown,
+            // Resolved user tags (persisted refs) + session-only Dim filtering.
+            tags: ids.map((id) => tagById.get(id)).filter((t): t is ErdTag => !!t),
+            dimmed: n.data.dimmed || (tagMode === "dim" && !nodeMatchesTagFilter(ids, tagFilter)),
+            onTagsClick: (api: string) => setTagPicker(api),
+            onRemoveClick: (api: string) => setConfirmRemove(api),
             // Any logged row lights the pencil - title-only tasks count,
             // red when an open task waits, bronze for notes/decisions.
             hasNote: rows.length > 0,
@@ -2506,7 +2625,7 @@ export default function SchemaPanel({
         };
       }),
     };
-  }, [visibleDescribes, describes, labels, rootName, spot, enforced, entityLog, openEntityNote, makeRoot, openRecordTypes, showCustomPull, copyFieldTable, copyFieldDataTable]);
+  }, [visibleDescribes, describes, labels, rootName, spot, enforced, entityLog, openEntityNote, makeRoot, openRecordTypes, showCustomPull, copyFieldTable, copyFieldDataTable, tagById, nodeTags, tagFilter, tagMode]);
 
   // Graph default = FULL 1-level neighborhood (parents left, children right),
   // lite previews included - this is the intent of graph view. Family
@@ -3091,6 +3210,9 @@ export default function SchemaPanel({
     enforced: [string, { x: number; y: number }][] | null;
     graphEnforced: [string, { x: number; y: number }][] | null;
     viewports: { erd: { x: number; y: number; zoom: number } | null; graph: { x: number; y: number; zoom: number } | null };
+    /** Canvas tag registry + per-node tag refs (persisted on the project). */
+    tagRegistry?: ErdTag[];
+    nodeTags?: Record<string, string[]>;
   }
   const schemaRestoredRef = useRef<string | null>(null);
   useEffect(() => {
@@ -3119,9 +3241,11 @@ export default function SchemaPanel({
       enforced: enforced ? [...enforced.entries()] : null,
       graphEnforced: graphEnforced ? [...graphEnforced.entries()] : null,
       viewports: viewports.current,
+      tagRegistry,
+      nodeTags,
     } satisfies SchemaAutosaveData, tabId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgKey, tabId, rootName, describes, hiddenIds, removedIds, dismissedIds, focusName, graphSelected, view, filterMode, familyMode, hideSystem, systemAllow, designIds, designMode, expanded, enforced, graphEnforced]);
+  }, [orgKey, tabId, rootName, describes, hiddenIds, removedIds, dismissedIds, focusName, graphSelected, view, filterMode, familyMode, hideSystem, systemAllow, designIds, designMode, expanded, enforced, graphEnforced, tagRegistry, nodeTags]);
 
   // First-class restore: reload the autosaved canvas on demand, anytime -
   // same apply path as the automatic restore on connect.
@@ -3147,6 +3271,8 @@ export default function SchemaPanel({
     if (s.enforced) setEnforced(new Map(s.enforced));
     if (s.graphEnforced) setGraphEnforced(new Map(s.graphEnforced));
     if (s.viewports) viewports.current = s.viewports;
+    if (s.tagRegistry) setTagRegistry(s.tagRegistry.filter((t) => t && typeof t.id === "string" && typeof t.name === "string" && typeof t.color === "string"));
+    if (s.nodeTags) setNodeTags(s.nodeTags);
     const count = s.describes?.length ?? 0;
     if (count > 0 && savedAt) {
       const age = Date.now() - savedAt;
@@ -4760,8 +4886,10 @@ export default function SchemaPanel({
     [picker, busy, describes, addNames, focusCanvasOn]
   );
 
-  const removeNode = useCallback(() => {
-    const target = focusName;
+  // Hard-remove from the ERD canvas (tombstone): always behind the confirm
+  // modal (header X or the explorer Remove button). Metadata stays cached,
+  // so re-adding revives the node with its tags intact.
+  const removeNode = useCallback((target: string) => {
     if (!target || target === rootName) return;
     setSpot(null);
     pruneEnforced(new Set([target]));
@@ -4776,7 +4904,9 @@ export default function SchemaPanel({
       next.delete(target);
       return next;
     });
-    setFocusName(rootName);
+    if (target === focusName) setFocusName(rootName);
+    setConfirmRemove(null);
+    setNotice(`Removed ${target} from canvas - re-add anytime, nothing deleted on the org.`);
   }, [focusName, rootName, pruneEnforced]);
 
   const removeMany = useCallback(
@@ -4872,6 +5002,13 @@ export default function SchemaPanel({
     setNotice(null);
     setError(null);
     setConfirmClear(false);
+    setTagRegistry([]);
+    setNodeTags({});
+    setTagFilter(new Set());
+    setTagMode("dim");
+    setTagPicker(null);
+    setTagManagerOpen(false);
+    setConfirmRemove(null);
     viewports.current = { erd: null, graph: null };
   }, [orgKey, tabId]);
 
@@ -5348,7 +5485,7 @@ export default function SchemaPanel({
                     </span>
                   </Button>
                   <div className="flex gap-1.5">
-                    <Button size="sm" variant="ghost" onClick={removeNode} disabled={!focusName || focusName === rootName || !!busy} className="flex-1" title="Remove the focused object from the canvas">
+                    <Button size="sm" variant="ghost" onClick={() => { if (focusName && focusName !== rootName) setConfirmRemove(focusName); }} disabled={!focusName || focusName === rootName || !!busy} className="flex-1" title="Remove the focused object from the canvas">
                       Remove
                     </Button>
                     <Button size="sm" variant="ghost" onClick={resetAll} disabled={describes.size === 0 || !!busy} className="flex-1" title="Re-run auto-layout and re-fit - keeps every node">
@@ -5680,6 +5817,72 @@ export default function SchemaPanel({
             >
               Hide{systemHiddenCount + dismissedIds.size + dismissedEdges.size > 0 ? ` · ${systemHiddenCount + dismissedIds.size + dismissedEdges.size}` : ""}
             </button>
+            {view === "erd" && tagRegistry.length > 0 && (
+              <span role="group" aria-label="Filter by tag" className="flex flex-wrap items-center gap-1">
+                {tagRegistry.map((t) => {
+                  const active = tagFilter.has(t.id);
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setTagFilter((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(t.id)) next.delete(t.id);
+                        else next.add(t.id);
+                        return next;
+                      })}
+                      aria-pressed={active}
+                      title={active ? `Unfilter ${t.name}` : `Show ${t.name} - ${tagMode === "dim" ? "everything else dims" : "everything else hides and the layout rebalances"}`}
+                      className={`flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
+                        active
+                          ? "border-ivory-950 bg-ivory-950 text-ivory-100"
+                          : "bg-[var(--color-surface)] border-[var(--color-line)] text-ivory-700 hover:border-[var(--color-accent)]"
+                      }`}
+                    >
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: t.color }} aria-hidden="true" />
+                      {t.name}
+                    </button>
+                  );
+                })}
+              </span>
+            )}
+            {view === "erd" && tagFilter.size > 0 && (
+              <span role="group" aria-label="Tag filter mode" className="flex rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] p-0.5" title="Dim keeps every node and fades the rest; Hide drops the rest so the layout rebalances">
+                {(["dim", "hide"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setTagMode(m)}
+                    aria-pressed={tagMode === m}
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize transition-colors cursor-pointer ${
+                      tagMode === m ? "bg-ivory-950 text-ivory-100" : "text-ivory-600 hover:text-ivory-950"
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </span>
+            )}
+            {view === "erd" && tagFilter.size > 0 && (
+              <button
+                type="button"
+                onClick={() => setTagFilter(new Set())}
+                title="Clear the tag filter - show everything"
+                className="rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer"
+              >
+                Reset
+              </button>
+            )}
+            {view === "erd" && (
+              <button
+                type="button"
+                onClick={() => setTagManagerOpen(true)}
+                title="Manage canvas tags - new tag, rename, recolor, delete (persisted on this canvas project)"
+                className="rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1 text-[11px] font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950 transition-colors cursor-pointer"
+              >
+                Tags{tagRegistry.length > 0 ? ` · ${tagRegistry.length}` : ""}
+              </button>
+            )}
             {view === "graph" && (
               <span
                 role="group"
@@ -5878,6 +6081,34 @@ export default function SchemaPanel({
             )}
           </div>
         )}
+        {confirmRemove && (
+          <ConfirmRemoveDialog apiName={confirmRemove} onConfirm={() => removeNode(confirmRemove)} onClose={() => setConfirmRemove(null)} />
+        )}
+        {tagPicker && (
+          <TagPickerDialog
+            apiName={tagPicker}
+            registry={tagRegistry}
+            assignedIds={nodeTags[tagPicker] ?? []}
+            onToggle={toggleNodeTag}
+            onCreate={(name, color) => addTag(name, color, tagPicker)}
+            onManage={() => {
+              setTagPicker(null);
+              setTagManagerOpen(true);
+            }}
+            onClose={() => setTagPicker(null)}
+          />
+        )}
+        {tagManagerOpen && (
+          <TagManagerDialog
+            registry={tagRegistry}
+            counts={tagCounts}
+            onRename={renameTag}
+            onRecolor={recolorTag}
+            onDelete={deleteTag}
+            onCreate={(name, color) => addTag(name, color)}
+            onClose={() => setTagManagerOpen(false)}
+          />
+        )}
         <div className="relative min-h-0 flex-1">
           {!rootName || describes.size === 0 ? (
             <div className="flex items-center justify-center rounded-xl border border-dashed border-[var(--color-line)] bg-[var(--color-surface)] p-6 h-full min-h-[420px]">
@@ -5912,6 +6143,7 @@ export default function SchemaPanel({
               }}
               nodesLocked={nodesLocked}
               onOobLockChange={setOobLocked}
+              onResetView={resetAll}
               onExportDictionary={exportDictionary}
               ref={canvasRef}
             />

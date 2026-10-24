@@ -1,6 +1,7 @@
 import dagre from "@dagrejs/dagre";
 import type { Node, Edge } from "@xyflow/react";
 import type { SalesforceDescribeResult, SalesforceRecordTypeInfo } from "@/lib/salesforce/types";
+import type { ErdTag } from "./tags";
 
 export interface ErdPickValue {
   label: string;
@@ -63,6 +64,12 @@ export interface ErdNodeData extends Record<string, unknown> {
   linkFocus: boolean;
   /** True while this node's describe is being refreshed. */
   refreshing: boolean;
+  /** User tags (persisted on the canvas project) - footer chips + border tint. */
+  tags: ErdTag[];
+  /** Open the tag picker for this table (T shortcut). */
+  onTagsClick?: (apiName: string) => void;
+  /** Remove this table from the canvas (X shortcut → confirm modal). */
+  onRemoveClick?: (apiName: string) => void;
   /** Design-note flags (entity notes) - header shows the note icon state. */
   hasNote?: boolean;
   hasTodo?: boolean;
@@ -427,6 +434,8 @@ export function buildErdElements(
         linkFocus: spot != null && spot.soft === true && spot.focus === apiName,
         // Panel overrides per live refresh state
         refreshing: false,
+        // Panel resolves user tags per node (persisted on the canvas project)
+        tags: [],
       },
     });
   }

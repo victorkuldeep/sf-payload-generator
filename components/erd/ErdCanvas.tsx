@@ -67,6 +67,8 @@ interface ErdCanvasProps {
   onConnectNodes?: (sourceApi: string, targetApi: string) => void;
   /** Reports the built-in OOB lock state upward (for mutual exclusion). */
   onOobLockChange?: (locked: boolean) => void;
+  /** Reset view from the canvas toolbar - parent re-runs layout, canvas re-fits. */
+  onResetView?: () => void;
   /** Field dictionary export (ERD view) - parent owns describes + download. */
   onExportDictionary?: () => void | Promise<void>;
 }
@@ -87,7 +89,7 @@ function pngFileName(scale: 2 | 3): string {
 }
 
 const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
-  { nodes: propNodes, edges: propEdges, onNodeClick, onEdgeClick, onPaneClick, onViewportMove, onNodeDragStop, layoutRev, enforcedPositions, storedViewport, onViewportChange, nodesLocked = false, onOobLockChange, connectable = false, onConnectNodes, onExportDictionary },
+  { nodes: propNodes, edges: propEdges, onNodeClick, onEdgeClick, onPaneClick, onViewportMove, onNodeDragStop, layoutRev, enforcedPositions, storedViewport, onViewportChange, nodesLocked = false, onOobLockChange, connectable = false, onConnectNodes, onResetView, onExportDictionary },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -387,6 +389,17 @@ const ErdFlow = forwardRef<ErdCanvasHandle, ErdCanvasProps>(function ErdFlow(
       {/* Top-left: counts + laser */}
       <div className="absolute left-3 top-3 z-30 flex flex-wrap items-center gap-1.5">
         <span className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[11px] font-medium text-ivory-700">
+          <button
+          type="button"
+          onClick={() => {
+            fitView({ padding: 0.18, maxZoom: 1 });
+            onResetView?.();
+          }}
+          title="Reset view - re-run auto-layout and re-fit, keeps every node"
+          className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[11px] font-semibold text-ivory-700 transition-colors cursor-pointer hover:border-[var(--color-accent)] hover:text-ivory-950"
+        >
+          Reset view
+        </button>
           {nodes.length} objects · {edges.length} links
         </span>
         <button
