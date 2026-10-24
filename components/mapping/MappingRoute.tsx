@@ -269,6 +269,8 @@ export function MappingRoute() {
       owner
     );
     return () => setPaletteAttachContext(null, owner);
+    // attachExisting closes only over studio + stable fns - [studio, module] is exact.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studio, module]);
 
   const attachExisting = async (id: string) => {
@@ -1350,7 +1352,8 @@ export function MappingRoute() {
   onDetach: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
-  const [attaching, setAttaching] = useState(false);
+  // B2: inline attach list superseded by palette attach mode (kept dead until LibraryList converges).
+  const attaching = false;
   const attachable = library.filter((s) => !studio.mappingIds.includes(s.id));
   const [confirmChildDelete, setConfirmChildDelete] = useState<string | null>(null);
 
@@ -1362,8 +1365,8 @@ export function MappingRoute() {
             Integration mappings · {items.length}
           </p>
           <span className="flex gap-1.5">
-            <Button size="sm" variant="ghost" onClick={() => setAttaching((v) => !v)}>
-              {attaching ? "Cancel" : "Attach existing"}
+            <Button size="sm" variant="ghost" onClick={() => window.dispatchEvent(new CustomEvent("gravenx:palette", { detail: { attachOnly: true } }))} title="Search everything to attach - mappings, wireframes, contracts">
+              Attach existing…
             </Button>
             <Button size="sm" onClick={onNew}>
               New mapping
@@ -1373,7 +1376,7 @@ export function MappingRoute() {
             </Button>
           </span>
         </div>
-        {attaching && (
+        {false && attaching && (
           <div className="mb-2 rounded-lg border border-[#F0EBE0] bg-[#FAF8F2] p-2.5">
             {attachable.length === 0 ? (
               <p className="text-[12px] text-[#A39B8E]">No standalone mappings to attach.</p>
@@ -1382,7 +1385,7 @@ export function MappingRoute() {
                 {attachable.map((s) => (
                   <li key={s.id} className="flex items-center gap-2 text-[12px]">
                     <span className="flex-1 truncate font-semibold text-[#27241F]">{s.name}</span>
-                    <Button size="sm" variant="ghost" onClick={() => { onAttach(s.id); setAttaching(false); }}>
+                    <Button size="sm" variant="ghost" onClick={() => onAttach(s.id)}>
                       Attach
                     </Button>
                   </li>
@@ -1391,7 +1394,7 @@ export function MappingRoute() {
             )}
           </div>
         )}
-        {items.length === 0 && !attaching && (
+        {items.length === 0 && (
           <p className="py-4 text-center text-[13px] text-[#A39B8E]">
             No mappings yet - create one per payload (orders, quotes, …), each with its own source JSON and Salesforce field maps.
           </p>
