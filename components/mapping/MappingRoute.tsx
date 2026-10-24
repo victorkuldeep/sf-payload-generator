@@ -80,6 +80,67 @@ export function MappingRoute() {
     setShowChildWizard(true);
   };
   const [wizardTab, setWizardTab] = useState<"paste" | "openapi">("paste");
+  const [trainState, setTrainState] = useState<"idle" | "busy" | "error">("idle");
+  // Training set: sample mapping + a project with one linked screen, so the
+  // spine completes end to end with zero org access.
+  const loadTrainingSet = async () => {
+    if (trainState === "busy") return;
+    setTrainState("busy");
+    try {
+      const res = await fetch("/samples/product-order-mapping.json");
+      const v = validateImport(await res.text());
+      if (!v.ok || !v.project) throw new Error(v.errors.join(" ") || "Sample invalid.");
+      const now = new Date().toISOString();
+      const map = { ...v.project, id: uid("map"), createdAt: now, updatedAt: now };
+      await saveProject(map);
+      let ws = ensureExperience(blankStudio({ id: uid("ws"), name: "Training", description: "Sample project - safe to break.", now }), now);
+      ws = attachMapping(ws, map.id, now);
+      const screenId = uid("scr");
+      const compIds = [uid("comp"), uid("comp")];
+      const reqIds = [uid("req"), uid("req")];
+      const fields: [string, string][] = [["Customer email", "email"], ["Order total", "total"]];
+      ws = {
+        ...ws,
+        experience: {
+          ...ws.experience!,
+          screens: [
+            ...ws.experience!.screens,
+            {
+              id: screenId, name: "Product order form", description: "Training screen - annotate regions, then map fields.",
+              journeyIds: [], componentIds: compIds, actionIds: [], bindingIds: [], payloadMappingId: map.id,
+              status: "draft", tags: ["training"], createdAt: now, updatedAt: now,
+              canvas: { sourceWidth: 1200, sourceHeight: 800, aspectRatio: 1.5 },
+            },
+          ],
+          components: [
+            ...ws.experience!.components,
+            ...compIds.map((id, i) => ({
+              id, screenId, name: fields[i][0], componentType: "input" as const, requirementIds: [reqIds[i]],
+              bindingIds: [], actionIds: [], stateIds: [], status: "draft" as const, tags: ["training"], createdAt: now, updatedAt: now,
+            })),
+          ],
+          requirements: [
+            ...ws.experience!.requirements,
+            ...reqIds.map((id, i) => ({
+              id, screenId, componentId: compIds[i], name: `Order.${fields[i][1]}`, description: `Training field ${i + 1} - edit me.`,
+              direction: "request" as const, propertyPath: fields[i][1], dataType: i === 1 ? ("number" as const) : ("string" as const),
+              required: i === 0, source: "contract" as const, status: "draft" as const, createdAt: now, updatedAt: now,
+            })),
+          ],
+          updatedAt: now,
+        },
+        updatedAt: now,
+      };
+      await persistStudio(ws);
+      setStudio(ws);
+      setChildMaps([map]);
+      setModule("experience");
+      setView("start");
+      setTrainState("idle");
+    } catch {
+      setTrainState("error");
+    }
+  };
   const [playState, setPlayState] = useState<"idle" | "busy" | "error">("idle");
   // Training playground: fetch the bundled sample, validate, save a fresh copy, open it.
   const playSample = async () => {
@@ -664,6 +725,15 @@ export function MappingRoute() {
               <a href="/samples/product-order-mapping.json" download className="inline-flex items-center rounded-lg border border-[#E8E2D8] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#777168] hover:border-[#A98450] hover:text-[#27241F]" title="A training mapping - import it to see the supported format, then break it">
                 Try a sample
               </a>
+              <button
+                type="button"
+                onClick={() => void loadTrainingSet()}
+                disabled={trainState === "busy"}
+                title="Load the sample mapping plus a training project with a linked screen - no org needed"
+                className="inline-flex items-center rounded-lg border border-[#E8E2D8] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#777168] hover:border-[#A98450] hover:text-[#27241F] disabled:opacity-50"
+              >
+                {trainState === "busy" ? "Loading…" : trainState === "error" ? "Retry training set" : "Load training set"}
+              </button>
             </div>
           )}
         </div>
