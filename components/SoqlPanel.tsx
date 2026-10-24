@@ -30,6 +30,7 @@ import {
 import type { QueryPlan } from "@/app/api/salesforce/query-plan/route";
 import Badge from "./ui/Badge";
 import Button from "./ui/Button";
+import { QueryHistoryDialog } from "./QueryHistoryDialog";
 import Input from "./ui/Input";
 
 interface SoqlPanelProps {
@@ -198,7 +199,7 @@ export default function SoqlPanel({
   const [planError, setPlanError] = useState<string | null>(null);
 
   const [history, setHistory] = useState<SoqlQuery[]>([]);
-  const [confirmClearHistory, setConfirmClearHistory] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [saveLabel, setSaveLabel] = useState("");
   const [fieldInfoOpen, setFieldInfoOpen] = useState(false);
 
@@ -851,15 +852,15 @@ export default function SoqlPanel({
     }
   }, []);
 
-  const handleClearHistory = useCallback(async () => {
+  const handleClearHistory = useCallback(async (): Promise<number> => {
     try {
       const n = await clearSoqlHistory(mode);
       setHistory((prev) => prev.filter((h) => h.saved || (h.mode ?? "soql") !== mode));
       setNotice(n > 0 ? `Cleared ${n} ${mode.toUpperCase()} run${n === 1 ? "" : "s"} from history (saved queries kept).` : "History already empty.");
+      return n;
     } catch {
       setNotice("Couldn't clear history (IndexedDB unavailable).");
-    } finally {
-      setConfirmClearHistory(false);
+      return 0;
     }
   }, [mode]);
 
@@ -951,54 +952,20 @@ export default function SoqlPanel({
               <option key={t.name} value={t.name}>{t.name}</option>
             ))}
           </select>
-          <select
-            aria-label="Load from history"
-            defaultValue=""
-            onChange={(e) => {
-              const h = historyItems.find((x) => x.id === e.target.value);
-              if (h) loadQuery(h.soql, h.tooling, (h.mode ?? "soql") as "soql" | "sosl");
-              e.target.value = "";
-            }}
-            className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-xs text-ivory-900 focus:outline-none focus:border-bronze-500 cursor-pointer max-w-[220px]"
-          >
-            <option value="" disabled>History ({historyItems.length})…</option>
-            {historyItems.slice(0, 30).map((h) => (
-              <option key={h.id} value={h.id}>
-                {(h.rowCount ?? "?") + " rows · "}{h.soql.slice(0, 60)}
-              </option>
-            ))}
-          </select>
-          <select
-            aria-label="Load a saved query"
-            defaultValue=""
-            onChange={(e) => {
-              const h = savedItems.find((x) => x.id === e.target.value);
-              if (h) loadQuery(h.soql, h.tooling, (h.mode ?? "soql") as "soql" | "sosl");
-              e.target.value = "";
-            }}
-            className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-xs text-ivory-900 focus:outline-none focus:border-bronze-500 cursor-pointer max-w-[220px]"
-          >
-            <option value="" disabled>Saved ({savedItems.length})…</option>
-            {savedItems.map((h) => (
-              <option key={h.id} value={h.id}>{h.label}</option>
-            ))}
-          </select>
-          {savedItems.length > 0 && (
-            <select
-              aria-label="Delete a saved query"
-              defaultValue=""
-              onChange={(e) => {
-                if (e.target.value) void handleDeleteSaved(e.target.value);
-                e.target.value = "";
-              }}
-              className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2 py-1.5 text-xs text-red-700 focus:outline-none cursor-pointer max-w-[160px]"
-            >
-              <option value="" disabled>Delete saved…</option>
-              {savedItems.map((h) => (
-                <option key={h.id} value={h.id}>{h.label}</option>
-              ))}
-            </select>
+          <Button size="sm" variant="ghost" onClick={() => setHistoryOpen(true)} title="Searchable history and saved queries">
+            History ({historyItems.length + savedItems.length})…
+          </Button>
+          {historyOpen && (
+            <QueryHistoryDialog
+              history={historyItems}
+              saved={savedItems}
+              onClose={() => setHistoryOpen(false)}
+              onLoad={(h) => loadQuery(h.soql, h.tooling, (h.mode ?? "soql") as "soql" | "sosl")}
+              onDelete={(id) => void handleDeleteSaved(id)}
+              onClearHistory={() => handleClearHistory()}
+            />
           )}
+          {/* Saved + delete live in the History dialog now */}
           <div className="flex gap-1.5 flex-1 min-w-[200px]">
             <div className="flex-1">
               <Input
@@ -1013,22 +980,6 @@ export default function SoqlPanel({
             </Button>
           </div>
           <Button size="sm" variant="ghost" onClick={() => { setSoql(""); setResult(null); setBaseRecords(null); setJqlRows(null); setJqlLabel(null); }}>
-          {historyItems.length > 0 && !confirmClearHistory && (
-            <Button size="sm" variant="ghost" className="text-red-700" title={`Clear ${mode.toUpperCase()} run history (saved queries are kept)`} onClick={() => setConfirmClearHistory(true)}>
-              Clear history
-            </Button>
-          )}
-          {confirmClearHistory && (
-            <span className="inline-flex items-center gap-1.5 text-xs">
-              <span className="font-semibold text-red-700">Clear {historyItems.length} runs?</span>
-              <Button size="sm" variant="ghost" className="text-red-700" onClick={() => void handleClearHistory()}>
-                Yes
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setConfirmClearHistory(false)}>
-                No
-              </Button>
-            </span>
-          )}
             Clear
           </Button>
         </div>

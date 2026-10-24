@@ -20,6 +20,7 @@ import { CoveragePanel } from "./CoveragePanel";
 import { JourneyPanel } from "./JourneyPanel";
 import { ScreenCanvas } from "./ScreenCanvas";
 import { ScreenLinks } from "./ScreenLinks";
+import { ExportSheet } from "@/components/studio/ExportSheet";
 import { setPaletteAttachContext } from "@/lib/studio/paletteContext";
 import { ScreenFieldMapper } from "./ScreenFieldMapper";
 import { AttachExisting } from "./AttachExisting";
@@ -324,6 +325,7 @@ function ScreenDetail({
   const [replacing, setReplacing] = useState(false);
   const [attaching, setAttaching] = useState(false);
   const [screenMsg, setScreenMsg] = useState<string | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
   const detachWireframe = () => {
     onMutate((p) => {
       if (!p.experience) return p;
@@ -450,45 +452,42 @@ function ScreenDetail({
       <div className="mb-2 flex flex-wrap items-center justify-end gap-1.5">
         <button
           type="button"
-          onClick={() => {
-            const artifact = buildScreenArtifact(project, screen.id);
-            if (!artifact) return;
-            downloadBlob(new Blob([JSON.stringify(artifact, null, 2)], { type: "application/json" }), screenArtifactFileName(screen.name));
-          }}
-          title="Download this screen as a portable artifact (fields, bindings, operations)"
+          onClick={() => setShareOpen(true)}
+          title="Export or import this screen as a portable artifact"
           className="cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-2.5 py-1 text-[12px] font-semibold text-[#777168] hover:text-[#27241F]"
         >
-          Export screen
+          Share…
         </button>
-        <label
-          title="Import a screen artifact as a NEW screen in this project"
-          className="cursor-pointer rounded-lg border border-[#E8E2D8] bg-white px-2.5 py-1 text-[12px] font-semibold text-[#777168] hover:text-[#27241F]"
-        >
-          Import screen…
-          <input
-            type="file"
-            accept="application/json,.json"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = "";
-              if (!file) return;
-              void file.text().then((text) => {
-                try {
-                  const checked = parseScreenArtifact(JSON.parse(text));
-                  if (!checked.ok || !checked.artifact) {
-                    setScreenMsg(`Import rejected: ${checked.errors.join(" ")}`);
-                    return;
-                  }
-                  onMutate((p) => importScreenArtifact(p, checked.artifact!));
-                  setScreenMsg(`Imported "${checked.artifact.screen.name}" as a new screen.`);
-                } catch {
-                  setScreenMsg("Import rejected: not valid JSON.");
-                }
-              });
-            }}
-          />
-        </label>
+      {shareOpen && (
+        <ExportSheet
+          title={`Share "${screen.name}"}`}
+          options={[
+            {
+              id: "screen",
+              label: "Screen artifact (.json)",
+              desc: "Screen + components, annotations, requirements, bindings, referenced operations. Imports as a NEW screen elsewhere.",
+              onExport: () => {
+                const artifact = buildScreenArtifact(project, screen.id);
+                if (artifact) downloadBlob(new Blob([JSON.stringify(artifact, null, 2)], { type: "application/json" }), screenArtifactFileName(screen.name));
+              },
+            },
+          ]}
+          importLabel="Import a screen artifact as a NEW screen…"
+          onImportFile={async (file) => {
+            const text = await file.text();
+            try {
+              const checked = parseScreenArtifact(JSON.parse(text));
+              if (!checked.ok || !checked.artifact) return `Import rejected: ${checked.errors.join(" ")}`;
+              onMutate((p) => importScreenArtifact(p, checked.artifact!));
+              setScreenMsg(`Imported "${checked.artifact.screen.name}" as a new screen.`);
+              return null;
+            } catch {
+              return "Import rejected: not valid JSON.";
+            }
+          }}
+          onClose={() => setShareOpen(false)}
+        />
+      )}
         <button
           type="button"
           onClick={() => setAttaching(true)}
