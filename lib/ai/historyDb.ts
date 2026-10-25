@@ -99,9 +99,14 @@ export async function saveAiSession(orgKey: string, id: string, draft: SessionDr
 }
 
 export async function listAiSessions(orgKey: string): Promise<AiSession[]> {
+  return (await listAllAiSessions()).filter((r) => r.orgKey === orgKey);
+}
+
+/** Every session in this browser, newest first - powers Setup usage + recent orgs. */
+export async function listAllAiSessions(): Promise<AiSession[]> {
   try {
     const all = await withStore<AiSession[]>(STORES.aiSessions, "readonly", (s) => s.getAll());
-    return all.filter((r) => r.orgKey === orgKey).sort((a, b) => b.updatedAt - a.updatedAt);
+    return all.sort((a, b) => b.updatedAt - a.updatedAt);
   } catch {
     return [];
   }

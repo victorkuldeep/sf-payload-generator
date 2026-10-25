@@ -13,6 +13,7 @@ import { generateSampleValues, getSampleValueForField } from "@/lib/payload/samp
 import { getWritableFields, isRequiredField } from "@/lib/salesforce/metadata";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
 import { apiFetch } from "@/lib/api";
+import { getPreferences } from "@/lib/setup/preferences";
 import { builderGridClass } from "@/lib/builder/panels";
 import { BuilderRail } from "@/components/BuilderRail";
 import { ExplorerPanel } from "@/components/ExplorerPanel";
@@ -96,7 +97,7 @@ const initialState: AppState = {
   connected: false,
   instanceUrl: "",
   token: "",
-  apiVersion: "v66.0",
+  apiVersion: defaultApiVersion(),
   mode: "home",
   objectCount: 0,
   objects: [],
@@ -199,8 +200,14 @@ const GRAPHQL_STEPS = [
   { label: "Run", hint: "Read-only" },
 ];
 
-const DEFAULT_API_VERSION =
-  process.env.NEXT_PUBLIC_DEFAULT_SF_API_VERSION ?? "v66.0";
+/**
+ * Connect default: deploy-time env wins, then the Setup preference,
+ * then the code fallback. Read at call time so a preference change
+ * applies to the next connection without a reload.
+ */
+function defaultApiVersion(): string {
+  return process.env.NEXT_PUBLIC_DEFAULT_SF_API_VERSION ?? getPreferences().defaultApiVersion;
+}
 
 function readSavedCreds() {
   try {
@@ -214,13 +221,13 @@ function readSavedCreds() {
       return {
         instanceUrl: parsed.instanceUrl ?? "",
         token: parsed.token ?? "",
-        apiVersion: parsed.apiVersion ?? DEFAULT_API_VERSION,
+        apiVersion: parsed.apiVersion ?? defaultApiVersion(),
       };
     }
   } catch {
     /* ignore */
   }
-  return { instanceUrl: "", token: "", apiVersion: DEFAULT_API_VERSION };
+  return { instanceUrl: "", token: "", apiVersion: defaultApiVersion() };
 }
 
 /**

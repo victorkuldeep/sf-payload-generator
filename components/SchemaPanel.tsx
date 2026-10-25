@@ -8,6 +8,7 @@ import type {
 } from "@/lib/salesforce/types";
 import { buildErdElements, buildGraphElements, rootNeighbors, systemReason, isEffectivelyHidden, isSystemObject, AUDIT_REFERENCE_FIELDS, parentExitHandleId, childEntryHandleId, customParentTargets, customChildTargets, customParentLinks, customChildLinks, standardParentTargets, standardChildTargets, standardParentLinks, standardChildLinks, type ErdNodeData, type ErdFieldRow, type ErdEdgeData, type GraphNeighbor } from "@/lib/erd/graph";
 import { rankObjects } from "@/lib/search/rank";
+import { getPreferences } from "@/lib/setup/preferences";
 import { cleanTagName, createTag, nodeMatchesTagFilter, snapTagColor, type ErdTag } from "@/lib/erd/tags";
 import { buildFieldCopyTable, buildFieldDataCopyTable, isMasterRecordType, parseAvailability, recordTypeListQuery, toolingQueryPath, uiApiAvailabilityPath, type RecordTypeSummary } from "@/lib/salesforce/picklistValues";
 import { downloadFieldDictionary } from "@/lib/salesforce/fieldDictionary";
@@ -1025,7 +1026,7 @@ export default function SchemaPanel({
   }, [tagsOpen, filterOpen, linkOpen, closeTagSurfaces]);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [manageChecked, setManageChecked] = useState<Set<string>>(new Set());
-  const [hideSystem, setHideSystem] = useState(true);
+  const [hideSystem, setHideSystem] = useState(() => getPreferences().erdHideSystem);
   // Allow-list from the Hide-system review modal: explicitly force-shown
   // names survive both the graph/ERD filter AND Neural sweeps.
   const [systemAllow, setSystemAllow] = useState<Set<string>>(new Set());

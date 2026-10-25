@@ -3,11 +3,10 @@
 import { useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { isSessionExpiredMessage } from "@/lib/salesforce/client";
+import { getPreferences } from "@/lib/setup/preferences";
 import {
   LOG_CATEGORIES,
   LOG_LEVELS,
-  DEFAULT_LOG_CATEGORY,
-  DEFAULT_LOG_LEVEL,
   apexHeaderLine,
   apexSummary,
   type ApexRunResult,
@@ -41,8 +40,8 @@ const editorClass =
  */
 export function ApexPanel({ instanceUrl, apiVersion, getToken, onSessionExpired }: ApexPanelProps) {
   const [code, setCode] = useState("System.debug('Hello from GRAVENX');");
-  const [logCategory, setLogCategory] = useState<LogCategory>(DEFAULT_LOG_CATEGORY);
-  const [logLevel, setLogLevel] = useState<LogLevel>(DEFAULT_LOG_LEVEL);
+  const [logCategory, setLogCategory] = useState<LogCategory>(() => getPreferences().apexLogCategory as LogCategory);
+  const [logLevel, setLogLevel] = useState<LogLevel>(() => getPreferences().apexLogLevel as LogLevel);
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
   const [result, setResult] = useState<ApexRunResult | null>(null);

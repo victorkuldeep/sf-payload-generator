@@ -2,8 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { STORES, withStore, DB_NAME } from "@/lib/db";
-import { readLiveSession, type LiveSession } from "@/lib/ai/gate";
+import { STORES, withStore, DB_NAME, DB_VERSION } from "@/lib/db";
+import { LOG_CATEGORIES, LOG_LEVELS } from "@/lib/salesforce/apex";
+import { getPreferences, resetPreferences, savePreferences, type Preferences } from "@/lib/setup/preferences";
+import { isSalesforceConnected, readLiveSession, type LiveSession } from "@/lib/ai/gate";
+import { listAllAiSessions, type AiSession } from "@/lib/ai/historyDb";
+import { apiFetch } from "@/lib/api";
 import { PROVIDER_PRESETS } from "@/lib/ai/providers";
 import { hasProviderKey } from "@/lib/ai/keyVault";
 import { getPolicy, savePolicy } from "@/lib/setup/policy";
@@ -30,11 +34,20 @@ function Card({ title, hint, right, children }: { title: string; hint?: string; 
 export function ConnectionsPanel() {
   const [conn, setConn] = useState<LiveSession | null>(null);
   const [keyed, setKeyed] = useState<string[]>([]);
+  const [usage, setUsage] = useState<{
+    sessions: number;
+    totalIn: number;
+    totalOut: number;
+    byModel: { key: string; sessions: number; totalIn: number; totalOut: number }[];
+  } | null>(null);
+  const [orgs, setOrgs] = useState<{ key: string; sessions: number; lastActive: number; live: boolean }[] | null>(null);
   const refresh = () => {
+    let live: LiveSession | null = null;
     try {
       // Same two-source read as the AI gate: module cache, else the tab's
       // restore record - a reloaded tab is still connected.
-      setConn(readLiveSession());
+      live = readLiveSession();
+      setConn(live);
     } catch {
       setConn(null);
     }
@@ -45,6 +58,45 @@ export function ConnectionsPanel() {
         return false;
       }
     }).map((p) => p.id));
+    void (async () => {
+      try {
+        const all: AiSession[] = await listAllAiSessions();
+        let totalIn = 0;
+        let totalOut = 0;
+        const byModel = new Map<string, { sessions: number; totalIn: number; totalOut: number }>();
+        const byOrg = new Map<string, { sessions: number; last: number }>();
+        for (const s of all) {
+          totalIn += s.totalIn || 0;
+          totalOut += s.totalOut || 0;
+          const mk = `${s.providerId} / ${s.modelId}`;
+          const m = byModel.get(mk) ?? { sessions: 0, totalIn: 0, totalOut: 0 };
+          m.sessions += 1;
+          m.totalIn += s.totalIn || 0;
+          m.totalOut += s.totalOut || 0;
+          byModel.set(mk, m);
+          const o = byOrg.get(s.orgKey) ?? { sessions: 0, last: 0 };
+          o.sessions += 1;
+          o.last = Math.max(o.last, s.updatedAt);
+          byOrg.set(s.orgKey, o);
+        }
+        setUsage({
+          sessions: all.length,
+          totalIn,
+          totalOut,
+          byModel: [...byModel.entries()]
+            .map(([key, v]) => ({ key, ...v }))
+            .sort((a, b) => b.totalIn + b.totalOut - (a.totalIn + a.totalOut)),
+        });
+        setOrgs(
+          [...byOrg.entries()]
+            .map(([key, v]) => ({ key, sessions: v.sessions, lastActive: v.last, live: !!live && live.orgKey === key }))
+            .sort((a, b) => b.lastActive - a.lastActive)
+        );
+      } catch {
+        setUsage(null);
+        setOrgs(null);
+      }
+    })();
   };
   useEffect(() => {
     refresh();
@@ -113,6 +165,56 @@ export function ConnectionsPanel() {
           })}
         </ul>
       </Card>
+      <Card title="AI usage" hint="Token totals across every saved session in this browser.">
+        {!usage || usage.sessions === 0 ? (
+          <p className="text-xs text-ivory-600">No saved sessions yet - ask the agent something first.</p>
+        ) : (
+          <>
+            <p className="text-xs text-ivory-800">
+              <span className="font-bold text-ivory-950">{usage.sessions}</span> sessions ·{" "}
+              <span className="font-mono">{usage.totalIn.toLocaleString()}</span> in /{" "}
+              <span className="font-mono">{usage.totalOut.toLocaleString()}</span> out
+            </p>
+            <ul className="mt-2 space-y-1">
+              {usage.byModel.map((m) => (
+                <li key={m.key} className="flex items-center gap-2 rounded-lg border border-[var(--color-line-soft)] px-2 py-1 text-xs">
+                  <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ivory-800">{m.key}</span>
+                  <span className="shrink-0 font-mono text-[10px] text-ivory-600">
+                    {m.sessions} chats · {m.totalIn.toLocaleString()}/{m.totalOut.toLocaleString()}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </Card>
+      <Card
+        title="Recent orgs"
+        hint="Org keys from saved sessions - hosts only, never tokens. Reconnect from the Studio home."
+      >
+        {!orgs || orgs.length === 0 ? (
+          <p className="text-xs text-ivory-600">No sessions yet - connect an org and chat first.</p>
+        ) : (
+          <ul className="space-y-1">
+            {orgs.map((o) => (
+              <li key={o.key} className="flex items-center gap-2 rounded-lg border border-[var(--color-line-soft)] px-2 py-1.5 text-xs">
+                {o.live ? (
+                  <span className="shrink-0 rounded-full bg-[#2F5D3A] px-1.5 py-px text-[9px] font-bold text-white">LIVE</span>
+                ) : (
+                  <span className="h-2 w-2 shrink-0 rounded-full bg-ivory-300" aria-hidden="true" />
+                )}
+                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ivory-950">{o.key}</span>
+                <span className="shrink-0 font-mono text-[10px] text-ivory-600">
+                  {o.sessions} chats · {new Date(o.lastActive).toLocaleDateString()}
+                </span>
+                <Link href="/" title="Open the Studio home to connect" className="shrink-0 font-semibold text-bronze-700 underline decoration-bronze-300 underline-offset-2 hover:text-bronze-800">
+                  Connect
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
     </div>
   );
 }
@@ -122,6 +224,7 @@ export function WorkspacePanel() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [confirmImport, setConfirmImport] = useState<unknown | null>(null);
+  const [armClear, setArmClear] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const refresh = async () => {
@@ -248,6 +351,47 @@ export function WorkspacePanel() {
                 <li key={name} className="flex items-center gap-2 rounded-lg border border-[var(--color-line-soft)] px-2 py-1.5">
                   <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ivory-800">{name}</span>
                   <span className="font-mono text-[11px] font-bold text-ivory-950">{n < 0 ? "n/a" : n}</span>
+                  {n > 0 ? (
+                    armClear === name ? (
+                      <span className="flex shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const storeName = name as (typeof STORES)[keyof typeof STORES];
+                            void (async () => {
+                              try {
+                                await withStore(storeName, "readwrite", (s) => s.clear());
+                              } catch {
+                                /* count refresh reports the truth */
+                              }
+                              setArmClear(null);
+                              await refresh();
+                            })();
+                          }}
+                          title={`Wipe every record in ${name}`}
+                          className="cursor-pointer rounded bg-red-700 px-1.5 py-0.5 text-[10px] font-bold text-white hover:bg-red-800"
+                        >
+                          Yes
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setArmClear(null)}
+                          className="cursor-pointer rounded bg-ivory-200 px-1.5 py-0.5 text-[10px] font-bold text-ivory-700 hover:text-ivory-950"
+                        >
+                          No
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setArmClear(name)}
+                        title={`Clear ${name}`}
+                        className="shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[10px] font-semibold text-red-700 hover:bg-red-50"
+                      >
+                        Clear
+                      </button>
+                    )
+                  ) : null}
                 </li>
               ))}
           </ul>
@@ -433,6 +577,294 @@ export function AboutPanel() {
           </div>
         )}
       </Card>
+    </div>
+  );
+}
+
+export function PreferencesPanel() {
+  const [prefs, setPrefs] = useState<Preferences>(() => getPreferences());
+  const [note, setNote] = useState<string | null>(null);
+  const update = (fn: (p: Preferences) => void) => {
+    setPrefs((prev) => {
+      const next = { ...prev };
+      fn(next);
+      return savePreferences(next);
+    });
+  };
+  return (
+    <div className="space-y-3">
+      <Card title="Defaults" hint="Applies to new connections and newly opened panels - already-open tabs keep their values.">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block">
+            <span className="text-xs font-semibold text-ivory-800">Default API version</span>
+            <input
+              key={prefs.defaultApiVersion}
+              defaultValue={prefs.defaultApiVersion}
+              onBlur={(e) => {
+                const v = e.target.value.trim();
+                if (/^v\d+\.0$/.test(v)) {
+                  update((p) => {
+                    p.defaultApiVersion = v;
+                  });
+                  setNote(null);
+                } else {
+                  e.target.value = prefs.defaultApiVersion;
+                  setNote("API version must look like v66.0 - kept the previous value.");
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              }}
+              spellCheck={false}
+              autoComplete="off"
+              placeholder="v66.0"
+              aria-label="Default API version"
+              className="mt-1 h-8 w-full rounded-lg border border-[var(--color-line)] bg-white px-2.5 font-mono text-xs text-ivory-950 focus:border-bronze-500 focus:outline-none"
+            />
+            <span className="mt-0.5 block text-[10px] text-ivory-500">Deploy-time env override still wins when set.</span>
+          </label>
+          <label className="block">
+            <span className="text-xs font-semibold text-ivory-800">ERD hides system objects</span>
+            <span className="mt-1 flex h-8 items-center gap-2">
+              <input
+                type="checkbox"
+                checked={prefs.erdHideSystem}
+                onChange={(e) => update((p) => {
+                  p.erdHideSystem = e.target.checked;
+                })}
+                className="h-4 w-4 accent-[#722F37]"
+              />
+              <span className="text-[11px] text-ivory-600">System sweep on fresh canvases</span>
+            </span>
+          </label>
+          <label className="block">
+            <span className="text-xs font-semibold text-ivory-800">Apex default log category</span>
+            <select
+              value={prefs.apexLogCategory}
+              onChange={(e) => update((p) => {
+                p.apexLogCategory = e.target.value;
+              })}
+              aria-label="Apex default log category"
+              className="mt-1 h-8 w-full cursor-pointer rounded-lg border border-[var(--color-line)] bg-white px-2 text-xs text-ivory-950 focus:border-bronze-500 focus:outline-none"
+            >
+              {LOG_CATEGORIES.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-xs font-semibold text-ivory-800">Apex default log level</span>
+            <select
+              value={prefs.apexLogLevel}
+              onChange={(e) => update((p) => {
+                p.apexLogLevel = e.target.value;
+              })}
+              aria-label="Apex default log level"
+              className="mt-1 h-8 w-full cursor-pointer rounded-lg border border-[var(--color-line)] bg-white px-2 text-xs text-ivory-950 focus:border-bronze-500 focus:outline-none"
+            >
+              {LOG_LEVELS.map((l) => (
+                <option key={l} value={l}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="mt-3 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setPrefs(resetPreferences());
+              setNote("Preferences reset to code defaults.");
+            }}
+            className="cursor-pointer rounded-full border border-[var(--color-line)] px-3 py-1.5 text-[11px] font-semibold text-ivory-700 hover:text-ivory-950"
+          >
+            Reset preferences
+          </button>
+          {note ? <span className="text-xs text-ivory-700">{note}</span> : null}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+const SHORTCUT_GROUPS: { title: string; items: [string, string][] }[] = [
+  {
+    title: "Everywhere",
+    items: [
+      ["Ctrl / ⌘ + K", "Command palette"],
+      ["Enter", "Confirm dialogs and submit forms"],
+      ["Esc", "Close dialogs, popups and pickers"],
+    ],
+  },
+  {
+    title: "Ask AI",
+    items: [
+      ["Enter", "Send message"],
+      ["Shift + Enter", "New line"],
+    ],
+  },
+  {
+    title: "ERD canvas",
+    items: [
+      ["T", "Tag the focused table"],
+      ["X", "Remove the focused table (asks first)"],
+      ["Esc", "Close tag surfaces, exit laser"],
+    ],
+  },
+  {
+    title: "Connect",
+    items: [
+      ["Enter", "Test & connect"],
+      ["Esc", "Close without connecting"],
+    ],
+  },
+];
+
+export function ShortcutsPanel() {
+  return (
+    <div className="space-y-3">
+      {SHORTCUT_GROUPS.map((g) => (
+        <div key={g.title} className="arch-card overflow-hidden">
+          <div className="arch-card__head px-4 py-2.5">
+            <p className="text-sm font-bold text-ivory-950">{g.title}</p>
+          </div>
+          <ul className="divide-y divide-[var(--color-line-soft)]">
+            {g.items.map(([keys, what]) => (
+              <li key={keys + what} className="flex items-center gap-3 px-4 py-2">
+                <kbd className="shrink-0 rounded-md border border-[var(--color-line)] bg-white px-2 py-1 font-mono text-[11px] font-bold text-ivory-950">
+                  {keys}
+                </kbd>
+                <span className="text-xs text-ivory-800">{what}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+interface DiagResult {
+  ok: boolean | null;
+  detail: string;
+}
+
+export function DiagnosticsPanel() {
+  const [results, setResults] = useState<Record<string, DiagResult>>({});
+  const [running, setRunning] = useState(false);
+
+  const runAll = async () => {
+    setRunning(true);
+    setResults({});
+    const set = (id: string, r: DiagResult) => setResults((prev) => ({ ...prev, [id]: r }));
+    try {
+      localStorage.setItem("__gx_diag", "1");
+      localStorage.removeItem("__gx_diag");
+      set("storage", { ok: true, detail: "read + write ok" });
+    } catch {
+      set("storage", { ok: false, detail: "blocked (private mode?)" });
+    }
+    try {
+      const version: number = await new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME);
+        req.onsuccess = () => {
+          const v = req.result.version;
+          req.result.close();
+          resolve(v);
+        };
+        req.onerror = () => reject(req.error);
+      });
+      set("idb", version === DB_VERSION ? { ok: true, detail: `open at v${version}` } : { ok: false, detail: `open at v${version}, expected v${DB_VERSION} - reload` });
+    } catch {
+      set("idb", { ok: false, detail: "could not open" });
+    }
+    try {
+      const p = getPolicy();
+      set("policy", p.version === 1 ? { ok: true, detail: `v1, ${Object.keys(p.skills).length} skills` } : { ok: false, detail: "unknown version" });
+    } catch {
+      set("policy", { ok: false, detail: "unreadable" });
+    }
+    let live: ReturnType<typeof readLiveSession> = null;
+    try {
+      live = readLiveSession();
+    } catch {
+      live = null;
+    }
+    if (live) {
+      let host = live.instanceUrl;
+      try {
+        host = new URL(live.instanceUrl).hostname;
+      } catch {
+        /* keep raw */
+      }
+      set("session", { ok: isSalesforceConnected(), detail: `${host} · ${live.apiVersion}` });
+    } else {
+      set("session", { ok: false, detail: "not connected" });
+    }
+    if (!live) {
+      set("api", { ok: null, detail: "needs a connection" });
+    } else {
+      try {
+        const res = await apiFetch("/api/salesforce/versions", { instanceUrl: live.instanceUrl, token: live.token }, 15000);
+        set("api", res.ok ? { ok: true, detail: `reachable (HTTP ${res.status})` } : { ok: false, detail: `HTTP ${res.status}` });
+      } catch (e) {
+        set("api", { ok: false, detail: e instanceof Error ? e.message : "failed" });
+      }
+    }
+    try {
+      const est = await navigator.storage?.estimate();
+      const mb = (v?: number) => (typeof v === "number" ? `${(v / 1048576).toFixed(1)} MB` : "unknown");
+      set("quota", { ok: true, detail: `${mb(est?.usage)} of ${mb(est?.quota)}` });
+    } catch {
+      set("quota", { ok: null, detail: "unavailable in this browser" });
+    }
+    setRunning(false);
+  };
+
+  useEffect(() => {
+    void runAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const rows: [string, string][] = [
+    ["storage", "Browser storage writable"],
+    ["idb", "IndexedDB opens at current version"],
+    ["policy", "Agent policy loads"],
+    ["session", "Salesforce session live"],
+    ["api", "Salesforce API reachable"],
+    ["quota", "Storage quota"],
+  ];
+  return (
+    <div className="arch-card overflow-hidden">
+      <div className="arch-card__head flex items-center gap-2 px-4 py-2.5">
+        <p className="min-w-0 flex-1 text-sm font-bold text-ivory-950">Health checks</p>
+        <button
+          type="button"
+          onClick={() => void runAll()}
+          disabled={running}
+          className="cursor-pointer rounded-full border border-[var(--color-line)] px-2.5 py-1 text-[11px] font-semibold text-ivory-700 hover:text-ivory-950 disabled:opacity-50"
+        >
+          {running ? "Running…" : "Run again"}
+        </button>
+      </div>
+      <ul className="divide-y divide-[var(--color-line-soft)]">
+        {rows.map(([id, label]) => {
+          const r = results[id];
+          return (
+            <li key={id} className="flex items-center gap-2.5 px-4 py-2">
+              <span
+                className={`h-2 w-2 shrink-0 rounded-full ${r ? (r.ok === true ? "bg-[#2F5D3A]" : r.ok === false ? "bg-red-600" : "bg-ivory-300") : "bg-ivory-200 animate-pulse"}`}
+                aria-hidden="true"
+              />
+              <span className="min-w-0 flex-1 text-xs font-semibold text-ivory-950">{label}</span>
+              <span className="font-mono text-[10px] text-ivory-600">{r ? r.detail : "checking…"}</span>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

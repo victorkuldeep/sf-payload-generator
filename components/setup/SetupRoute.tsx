@@ -1,23 +1,28 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { SKILL_PACKS } from "@/lib/ai/skills";
 import { policyInventory } from "@/lib/ai/toolsSystem";
 import {
+  buildDefaultPolicy,
   copyPolicy,
   getPolicy,
+  mergePolicy,
   resetPolicy,
   savePolicy,
   type AgentPolicy,
   type ApprovalOverride,
 } from "@/lib/setup/policy";
 import { clearAudit, listAuditRuns, type AuditEvent } from "@/lib/setup/audit";
-import { AboutPanel, CompliancePanel, ConnectionsPanel, WorkspacePanel } from "./SetupPanels";
+import { AboutPanel, CompliancePanel, ConnectionsPanel, DiagnosticsPanel, PreferencesPanel, ShortcutsPanel, WorkspacePanel } from "./SetupPanels";
 
 const SECTIONS = [
   { id: "agent", label: "Agent Control", desc: "Skills, tools, approvals, caps, audit" },
+  { id: "preferences", label: "Preferences", desc: "Connect + panel defaults" },
   { id: "connections", label: "Connections", desc: "Salesforce session + AI providers" },
   { id: "workspace", label: "Workspace", desc: "Local data, export, import" },
+  { id: "shortcuts", label: "Shortcuts", desc: "Every shortcut in one place" },
+  { id: "diagnostics", label: "Diagnostics", desc: "Health checks that run" },
   { id: "compliance", label: "Compliance", desc: "Privacy, terms, what stays local" },
   { id: "about", label: "About", desc: "Version, storage, danger zone" },
 ] as const;
@@ -35,6 +40,9 @@ function AgentControl() {
   const [audit, setAudit] = useState<AuditEvent[]>([]);
   const [confirmReset, setConfirmReset] = useState(false);
   const [expandedTool, setExpandedTool] = useState<string | null>(null);
+  const [confirmImport, setConfirmImport] = useState<AgentPolicy | null>(null);
+  const [packMessage, setPackMessage] = useState<string | null>(null);
+  const packFileRef = useRef<HTMLInputElement>(null);
   const inventory = useMemo(() => policyInventory(), []);
   const labels = useMemo(() => new Map(SKILL_PACKS.map((s) => [s.name, s.label])), []);
   const totalTools = inventory.reduce((n, s) => n + s.tools.length, 0);
@@ -79,7 +87,81 @@ function AgentControl() {
           />
           Read-only mode
         </label>
-        {confirmReset ? (
+        <button
+          type="button"
+          onClick={() => {
+            try {
+              const blob = new Blob([JSON.stringify(getPolicy(), null, 2)], { type: "application/json" });
+              const a = document.createElement("a");
+              a.href = URL.createObjectURL(blob);
+              a.download = "gravenx-agent-policy.json";
+              a.click();
+              URL.revokeObjectURL(a.href);
+              setPackMessage("Policy pack exported - share the file, import it on another browser.");
+            } catch {
+              setPackMessage("Export failed in this browser.");
+            }
+          }}
+          title="Download this policy as a shareable JSON pack"
+          className="cursor-pointer rounded-full border border-[var(--color-line)] px-3 py-1.5 text-xs font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950"
+        >
+          Export pack
+        </button>
+        <button
+          type="button"
+          onClick={() => packFileRef.current?.click()}
+          title="Load a policy pack file (applies on confirm)"
+          className="cursor-pointer rounded-full border border-[var(--color-line)] px-3 py-1.5 text-xs font-semibold text-ivory-700 hover:border-[var(--color-accent)] hover:text-ivory-950"
+        >
+          Import pack…
+        </button>
+        <input
+          ref={packFileRef}
+          type="file"
+          accept="application/json"
+          className="hidden"
+          aria-label="Agent policy pack file"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (packFileRef.current) packFileRef.current.value = "";
+            if (!file) return;
+            void file
+              .text()
+              .then((text) => {
+                try {
+                  const parsed = JSON.parse(text) as unknown;
+                  const merged = mergePolicy(buildDefaultPolicy(policyInventory()), parsed);
+                  setConfirmImport(merged);
+                  setPackMessage(null);
+                } catch {
+                  setPackMessage("That file is not a valid policy pack.");
+                }
+              })
+              .catch(() => setPackMessage("Could not read that file."));
+          }}
+        />
+        {confirmImport ? (
+          <span className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setPolicy(savePolicy(confirmImport));
+                setConfirmImport(null);
+                setPackMessage("Policy pack applied.");
+              }}
+              className="cursor-pointer rounded-full bg-ivory-950 px-3 py-1.5 text-xs font-semibold text-ivory-100 hover:bg-ivory-800"
+            >
+              Apply pack
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmImport(null)}
+              className="cursor-pointer rounded-full border border-[var(--color-line)] px-3 py-1.5 text-xs font-semibold text-ivory-700 hover:text-ivory-950"
+            >
+              Cancel
+            </button>
+          </span>
+        ) : confirmReset ? (
           <span className="flex items-center gap-1.5">
             <button
               type="button"
@@ -110,6 +192,15 @@ function AgentControl() {
           </button>
         )}
       </div>
+      {packMessage ? <p className="px-1 text-xs text-ivory-700">{packMessage}</p> : null}
+      {confirmImport ? (
+        <div className="arch-card border-[#C9A86A] px-4 py-3">
+          <p className="text-xs font-semibold text-ivory-950">Apply this pack? Unknown entries are dropped, missing tools heal to defaults.</p>
+          <p className="mt-0.5 font-mono text-[10px] text-ivory-600">
+            {Object.keys(confirmImport.skills).length} skills · read-only {confirmImport.globalReadOnly ? "on" : "off"} · {confirmImport.caps.maxRows} rows/page
+          </p>
+        </div>
+      ) : null}
 
       <div className="arch-card px-4 py-3">
         <p className="text-xs font-bold uppercase tracking-[1.5px] text-ivory-500">Caps</p>
@@ -320,8 +411,11 @@ export function SetupRoute() {
         </nav>
         <div className="min-w-0">
           {section === "agent" && <AgentControl />}
+          {section === "preferences" && <PreferencesPanel />}
           {section === "connections" && <ConnectionsPanel />}
           {section === "workspace" && <WorkspacePanel />}
+          {section === "shortcuts" && <ShortcutsPanel />}
+          {section === "diagnostics" && <DiagnosticsPanel />}
           {section === "compliance" && <CompliancePanel />}
           {section === "about" && <AboutPanel />}
         </div>
