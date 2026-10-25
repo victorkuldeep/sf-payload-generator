@@ -27,7 +27,6 @@ import { CollectionTrayButton } from "@/components/CollectionTrayButton";
 import { CollectionPicker } from "@/components/CollectionPicker";
 import { HomeZigZag, type ZigZagTarget } from "@/components/HomeZigZag";
 import { PrivacyBanner } from "@/components/PrivacyBanner";
-import { FirstSpine } from "@/components/studio/FirstSpine";
 import { useRouter } from "next/navigation";
 import type { Collection, CollectionItem, NewCollectionItem } from "@/lib/collection/types";
 import { newItemId } from "@/lib/collection/types";
@@ -1603,7 +1602,6 @@ export default function Home() {
       <main className={`mx-auto w-full space-y-5 ${state.mode === "schema" ? "px-1 pt-1 pb-1" : "px-5 pt-3 pb-1"}`}>
         {!state.connected ? (
           <>
-            <FirstSpine />
             <HomeHero
               connected={false}
               loadingConnect={loading.connect}
@@ -1617,7 +1615,6 @@ export default function Home() {
           </>
         ) : (
           <>
-            <FirstSpine />
             {/* ── Connected home: the same home hero ── */}
             {state.mode === "home" && (
               <>
