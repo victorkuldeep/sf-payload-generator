@@ -3,6 +3,7 @@ import {
   soapVersion,
   escapeXml,
   categoryLevels,
+  soapCategory,
   buildExecuteAnonymousEnvelope,
   parseApexSoapResponse,
   parseSoapFault,
@@ -40,8 +41,20 @@ describe("buildExecuteAnonymousEnvelope", () => {
   it("carries session, debug levels and escaped code", () => {
     const xml = buildExecuteAnonymousEnvelope(`System.debug("x");`, "ApexCode", "Debug", "SID");
     expect(xml).toContain("<apex:sessionId>SID</apex:sessionId>");
-    expect(xml).toContain("<apex:category>ApexCode</apex:category><apex:level>Debug</apex:level>");
+    expect(xml).toContain("<apex:category>Apex_code</apex:category><apex:level>Debug</apex:level>");
     expect(xml).toContain("System.debug(&quot;x&quot;);");
+  });
+  it("uses SOAP LogCategory enum names (Apex_code, Apex_profiling)", () => {
+    expect(soapCategory("ApexCode")).toBe("Apex_code");
+    expect(soapCategory("ApexProfiling")).toBe("Apex_profiling");
+    expect(soapCategory("Db")).toBe("Db");
+    for (const cat of ["ApexCode", "ApexProfiling"] as const) {
+      const xml = buildExecuteAnonymousEnvelope("System.debug(1);", cat, "Debug", "SID");
+      expect(xml).not.toContain(`<apex:category>${cat}</apex:category>`);
+    }
+    expect(buildExecuteAnonymousEnvelope("System.debug(1);", "Db", "Info", "SID")).toContain(
+      "<apex:category>Apex_code</apex:category><apex:level>DEBUG</apex:level>"
+    );
   });
 });
 

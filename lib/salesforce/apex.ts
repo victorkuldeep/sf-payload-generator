@@ -7,7 +7,8 @@
  * session memory, never in a URL.
  */
 
-/** Log categories exactly as Workbench lists them (id = SOAP name). */
+/** Log categories exactly as Workbench lists them (UI ids; the SOAP enum
+ * spells two of them differently - see SOAP_CATEGORY below). */
 export const LOG_CATEGORIES = [
   { id: "Db", label: "Database" },
   { id: "Workflow", label: "Workflow" },
@@ -91,6 +92,20 @@ export function categoryLevels(category: LogCategory, level: LogLevel): Record<s
   return out;
 }
 
+/**
+ * SOAP LogCategory enum names. The server rejects the camelCase UI ids:
+ * "ApexCode" is not a valid value - it must be "Apex_code" (same for
+ * Apex_profiling). Db/Workflow/Validation/Callout match as-is.
+ */
+const SOAP_CATEGORY: Record<string, string> = {
+  ApexCode: "Apex_code",
+  ApexProfiling: "Apex_profiling",
+};
+
+export function soapCategory(category: string): string {
+  return SOAP_CATEGORY[category] ?? category;
+}
+
 /** SOAP executeAnonymous envelope with Workbench's DebuggingHeader. */
 export function buildExecuteAnonymousEnvelope(
   code: string,
@@ -100,7 +115,7 @@ export function buildExecuteAnonymousEnvelope(
 ): string {
   const levels = categoryLevels(category, level);
   const cats = Object.entries(levels)
-    .map(([c, l]) => `<apex:categories><apex:category>${c}</apex:category><apex:level>${l}</apex:level></apex:categories>`)
+    .map(([c, l]) => `<apex:categories><apex:category>${soapCategory(c)}</apex:category><apex:level>${l}</apex:level></apex:categories>`)
     .join("");
   return (
     `<?xml version="1.0" encoding="UTF-8"?>` +
