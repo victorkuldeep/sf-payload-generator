@@ -5,7 +5,7 @@ import { markSessionExpired } from "./gate";
 import { looksLikeSosl } from "@/lib/salesforce/sosl";
 import { LOG_LEVELS } from "@/lib/salesforce/apex";
 import { looksLikeSoql } from "./toolsStudio";
-import type { AgentTool } from "./tools";
+import type { AgentTool, ToolOutcome } from "./tools";
 
 /**
  * Session-bound Salesforce tools: the tab's live connection, never the
@@ -85,6 +85,69 @@ function stripAttrs(row: unknown): unknown {
 }
 
 const MAX_ROWS = 25;
+const MAX_FIELDS = 80;
+
+/**
+ * Shared SOQL executor (REST + Tooling). First page only, model gets up to
+ * MAX_ROWS stripped rows plus totals - never a full table dump.
+ */
+async function runSoqlQuery(statement: string, useTooling: boolean): Promise<ToolOutcome> {
+  const noun = useTooling ? "Tooling query" : "Query";
+  const clean = statement.trim();
+  if (!looksLikeSoql(clean)) {
+    return { ok: false, error: "That does not look like SOQL - it should read SELECT <fields> FROM <Object>." };
+  }
+  const session = liveSession();
+  if (!isSession(session)) return { ok: false, error: session.error };
+  let res: Response;
+  try {
+    res = await apiFetch(
+      "/api/salesforce/soql",
+      {
+        instanceUrl: session.instanceUrl,
+        token: session.token,
+        apiVersion: session.apiVersion,
+        soql: clean,
+        ...(useTooling ? { tooling: true } : {}),
+      },
+      60000
+    );
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : `${noun} request failed.` };
+  }
+  if (res.status === 401) {
+    try {
+      markSessionExpired();
+    } catch {
+      /* gate flag alone still closes AI */
+    }
+    return { ok: false, error: "Salesforce session expired - reconnect on the Studio home, then ask again." };
+  }
+  let body: { success?: boolean; error?: unknown; records?: unknown[]; totalSize?: number; done?: boolean; nextRecordsUrl?: string | null };
+  try {
+    body = (await res.json()) as typeof body;
+  } catch {
+    return { ok: false, error: `${noun} failed (HTTP ${res.status}).` };
+  }
+  if (!res.ok) return { ok: false, error: errorMessage(body, `${noun} failed (HTTP ${res.status}).`) };
+  if (typeof body.error === "string" && body.error) return { ok: false, error: body.error };
+  const records = Array.isArray(body.records) ? body.records : [];
+  const total = typeof body.totalSize === "number" ? body.totalSize : records.length;
+  const hasMore = body.nextRecordsUrl != null || body.done === false;
+  const rows = records.slice(0, MAX_ROWS).map(stripAttrs);
+  return {
+    ok: true,
+    result: {
+      totalSize: total,
+      returned: rows.length,
+      hasMore,
+      records: rows,
+      ...(total > rows.length
+        ? { note: `First ${rows.length} of ${total} - narrow with LIMIT / WHERE, or open the result in /query for paging.` }
+        : {}),
+    },
+  };
+}
 
 const soqlRunArgs = z.object({
   soql: z.string().min(1).max(10000).describe("Full SOQL statement, e.g. SELECT Id, Name FROM Account LIMIT 10"),
@@ -105,54 +168,30 @@ const soqlRun: AgentTool = {
   schema: soqlRunArgs,
   execute: async (raw) => {
     const args = raw as z.infer<typeof soqlRunArgs>;
-    const statement = args.soql.trim();
-    if (!looksLikeSoql(statement)) {
-      return { ok: false, error: "That does not look like SOQL - it should read SELECT <fields> FROM <Object>." };
-    }
-    const session = liveSession();
-    if (!isSession(session)) return { ok: false, error: session.error };
-    let res: Response;
-    try {
-      res = await apiFetch(
-        "/api/salesforce/soql",
-        { instanceUrl: session.instanceUrl, token: session.token, apiVersion: session.apiVersion, soql: statement },
-        60000
-      );
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : "Query request failed." };
-    }
-    if (res.status === 401) {
-      try {
-        markSessionExpired();
-      } catch {
-        /* gate flag alone still closes AI */
-      }
-      return { ok: false, error: "Salesforce session expired - reconnect on the Studio home, then ask again." };
-    }
-    let body: { success?: boolean; error?: unknown; records?: unknown[]; totalSize?: number; done?: boolean; nextRecordsUrl?: string | null };
-    try {
-      body = (await res.json()) as typeof body;
-    } catch {
-      return { ok: false, error: `Query failed (HTTP ${res.status}).` };
-    }
-    if (!res.ok) return { ok: false, error: errorMessage(body, `Query failed (HTTP ${res.status}).`) };
-    if (typeof body.error === "string" && body.error) return { ok: false, error: body.error };
-    const records = Array.isArray(body.records) ? body.records : [];
-    const total = typeof body.totalSize === "number" ? body.totalSize : records.length;
-    const hasMore = body.nextRecordsUrl != null || body.done === false;
-    const rows = records.slice(0, MAX_ROWS).map(stripAttrs);
-    return {
-      ok: true,
-      result: {
-        totalSize: total,
-        returned: rows.length,
-        hasMore,
-        records: rows,
-        ...(total > rows.length
-          ? { note: `First ${rows.length} of ${total} - narrow with LIMIT / WHERE, or open the result in /query for paging.` }
-          : {}),
-      },
-    };
+    return runSoqlQuery(args.soql, false);
+  },
+};
+
+const toolingRunArgs = z.object({
+  soql: z.string().min(1).max(10000).describe("Tooling API SOQL, e.g. SELECT Id, Name FROM ApexClass LIMIT 10"),
+});
+
+const toolingRun: AgentTool = {
+  name: "query_tooling_run",
+  description:
+    "Execute a Tooling API SOQL query on the CONNECTED org for live metadata: ApexClass, ApexTrigger, EntityDefinition, FieldDefinition, ValidationRule, WorkflowRule, RecordType, FlowDefinition and friends. Same first-page cap as query_soql_run. Requires a live connection.",
+  parameters: {
+    type: "object",
+    properties: { soql: { type: "string" } },
+    required: ["soql"],
+    additionalProperties: false,
+  },
+  needsApproval: false,
+  label: () => "Run Tooling query",
+  schema: toolingRunArgs,
+  execute: async (raw) => {
+    const args = raw as z.infer<typeof toolingRunArgs>;
+    return runSoqlQuery(args.soql, true);
   },
 };
 
@@ -323,4 +362,97 @@ const apexRun: AgentTool = {
   },
 };
 
-export const SALESFORCE_TOOLS: AgentTool[] = [soqlRun, soslRun, apexRun];
+const describeArgs = z.object({
+  objectName: z
+    .string()
+    .min(1)
+    .max(80)
+    .regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, "Object name must start with a letter and hold letters, digits, underscores.")
+    .describe("sObject API name, e.g. Account or Invoice__c"),
+});
+
+const metadataDescribe: AgentTool = {
+  name: "metadata_describe",
+  description:
+    "Describe one sObject on the CONNECTED org: label, custom flags, field list with API names, labels, types, required and custom flags, plus child relationships. Grounds architecture answers in live metadata - never schema from memory. Requires a live connection.",
+  parameters: {
+    type: "object",
+    properties: { objectName: { type: "string" } },
+    required: ["objectName"],
+    additionalProperties: false,
+  },
+  needsApproval: false,
+  label: (args) => `Describe ${(args as z.infer<typeof describeArgs>).objectName ?? "object"}`,
+  schema: describeArgs,
+  execute: async (raw) => {
+    const args = raw as z.infer<typeof describeArgs>;
+    const session = liveSession();
+    if (!isSession(session)) return { ok: false, error: session.error };
+    let res: Response;
+    try {
+      res = await apiFetch(
+        "/api/salesforce/describe",
+        { instanceUrl: session.instanceUrl, token: session.token, apiVersion: session.apiVersion, objectName: args.objectName },
+        60000
+      );
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Describe request failed." };
+    }
+    if (res.status === 401) {
+      try {
+        markSessionExpired();
+      } catch {
+        /* gate flag alone still closes AI */
+      }
+      return { ok: false, error: "Salesforce session expired - reconnect on the Studio home, then ask again." };
+    }
+    let body: {
+      error?: unknown;
+      name?: string;
+      label?: string;
+      labelPlural?: string;
+      custom?: boolean;
+      createable?: boolean;
+      updateable?: boolean;
+      fields?: { name?: unknown; label?: unknown; type?: unknown; nillable?: unknown; custom?: unknown }[];
+      childRelationships?: { childSObject?: unknown; relationshipName?: unknown }[];
+    };
+    try {
+      body = (await res.json()) as typeof body;
+    } catch {
+      return { ok: false, error: `Describe failed (HTTP ${res.status}).` };
+    }
+    if (!res.ok) return { ok: false, error: errorMessage(body, `Describe failed (HTTP ${res.status}).`) };
+    if (typeof body.error === "string" && body.error) return { ok: false, error: body.error };
+    const fields = Array.isArray(body.fields) ? body.fields : [];
+    const children = Array.isArray(body.childRelationships) ? body.childRelationships : [];
+    return {
+      ok: true,
+      result: {
+        object: typeof body.name === "string" ? body.name : args.objectName,
+        label: body.label ?? null,
+        plural: body.labelPlural ?? null,
+        custom: body.custom === true,
+        createable: body.createable === true,
+        updateable: body.updateable === true,
+        fieldCount: fields.length,
+        fields: fields.slice(0, MAX_FIELDS).map((f) => ({
+          api: typeof f.name === "string" ? f.name : "?",
+          label: typeof f.label === "string" ? f.label : null,
+          type: typeof f.type === "string" ? f.type : "?",
+          required: f.nillable === false,
+          custom: f.custom === true,
+        })),
+        ...(fields.length > MAX_FIELDS
+          ? { note: `First ${MAX_FIELDS} of ${fields.length} fields - ask for a specific field or run targeted SOQL.` }
+          : {}),
+        childCount: children.length,
+        children: children
+          .slice(0, 20)
+          .map((c) => (typeof c.relationshipName === "string" && c.relationshipName ? `${c.relationshipName} (${String(c.childSObject ?? "?")})` : String(c.childSObject ?? "?"))),
+      },
+    };
+  },
+};
+
+export const SALESFORCE_TOOLS: AgentTool[] = [soqlRun, soslRun, toolingRun, metadataDescribe, apexRun];

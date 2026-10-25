@@ -64,17 +64,27 @@ describe("salesforce session tools", () => {
       "erd_snapshots",
       "query_soql_run",
       "query_sosl_run",
+      "query_tooling_run",
+      "metadata_describe",
       "apex_run",
     ]);
     expect(tool("apex_run").needsApproval).toBe(true);
     expect(tool("query_soql_run").needsApproval).toBe(false);
     expect(tool("query_sosl_run").needsApproval).toBe(false);
+    expect(tool("query_tooling_run").needsApproval).toBe(false);
+    expect(tool("metadata_describe").needsApproval).toBe(false);
   });
 
   it("refuses without a live connection - never asks for tokens", async () => {
-    for (const name of ["query_soql_run", "query_sosl_run", "apex_run"]) {
+    for (const name of ["query_soql_run", "query_sosl_run", "query_tooling_run", "metadata_describe", "apex_run"]) {
       const args =
-        name === "apex_run" ? { code: "System.debug(1);" } : name === "query_soql_run" ? { soql: "SELECT Id FROM Account LIMIT 1" } : { sosl: "FIND {x} RETURNING Account(Id)" };
+        name === "apex_run"
+          ? { code: "System.debug(1);" }
+          : name === "metadata_describe"
+            ? { objectName: "Account" }
+            : name === "query_sosl_run"
+              ? { sosl: "FIND {x} RETURNING Account(Id)" }
+              : { soql: "SELECT Id FROM Account LIMIT 1" };
       const r = await run(name, args);
       expect(r.ok).toBe(false);
       expect(String((r as { error?: unknown }).error)).toMatch(/connect/i);
@@ -141,6 +151,71 @@ describe("salesforce session tools", () => {
     const result = (r as { result: { compiled: boolean; problem: string; line: number } }).result;
     expect(result.compiled).toBe(false);
     expect(result.problem).toBe("Unexpected token");
+  });
+
+  it("sends tooling queries through the Tooling API flag", async () => {
+    seedSession();
+    const seen: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: unknown, init: { body?: unknown }) => {
+        seen.push(init?.body);
+        return { ok: true, status: 200, json: async () => ({ success: true, records: [], totalSize: 0, done: true }) };
+      })
+    );
+    const r = await run("query_tooling_run", { soql: "SELECT Id, Name FROM ApexClass LIMIT 5" });
+    expect(r.ok).toBe(true);
+    const sent = JSON.parse(String(seen[0])) as { tooling?: boolean; soql?: string };
+    expect(sent.tooling).toBe(true);
+    expect(sent.soql).toContain("ApexClass");
+  });
+
+  it("rejects bad object names before any network call", async () => {
+    seedSession();
+    const spy = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({}) }));
+    vi.stubGlobal("fetch", spy);
+    expect((await run("metadata_describe", { objectName: "12 Nope!" })).ok).toBe(false);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("describes one object capped with counts", async () => {
+    seedSession();
+    const fields = Array.from({ length: 90 }, (_, i) => ({
+      name: `Field${i}__c`,
+      label: `Field ${i}`,
+      type: "string",
+      nillable: i !== 0,
+      custom: true,
+    }));
+    stubFetch({
+      name: "Invoice__c",
+      label: "Invoice",
+      labelPlural: "Invoices",
+      custom: true,
+      createable: true,
+      updateable: true,
+      fields,
+      childRelationships: [{ childSObject: "Invoice_Line__c", field: "Invoice__c", relationshipName: "Lines" }],
+    });
+    const r = await run("metadata_describe", { objectName: "Invoice__c" });
+    expect(r.ok).toBe(true);
+    const result = (
+      r as {
+        result: {
+          fieldCount: number;
+          fields: { api: string; required: boolean }[];
+          note?: string;
+          childCount: number;
+          children: string[];
+        };
+      }
+    ).result;
+    expect(result.fieldCount).toBe(90);
+    expect(result.fields).toHaveLength(80);
+    expect(result.fields[0]).toEqual({ api: "Field0__c", label: "Field 0", type: "string", required: true, custom: true });
+    expect(typeof result.note).toBe("string");
+    expect(result.childCount).toBe(1);
+    expect(result.children).toEqual(["Lines (Invoice_Line__c)"]);
   });
 
   it("closes the AI gate on an expired session", async () => {
