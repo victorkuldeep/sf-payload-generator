@@ -7,6 +7,7 @@ import {
 } from "@/lib/system-design/model";
 import { getSystemBridge } from "./systemBridge";
 import { JSON_TOOLS, STUDIO_TOOLS } from "./toolsStudio";
+import { SALESFORCE_TOOLS } from "./toolsSalesforce";
 import { WIREFRAME_TOOLS } from "./toolsWireframe";
 import { SEQUENCE_TOOLS } from "./toolsSequence";
 import { DIAGRAM_STUDIO_TOOLS } from "./toolsDiagramStudio";
@@ -189,7 +190,7 @@ export const SYSTEM_TOOLS: AgentTool[] = [describeCanvas, addSystem, connectSyst
  */
 export function toolsForSkill(skillName: string): AgentTool[] {
   if (skillName === "system") return SYSTEM_TOOLS;
-  if (skillName === "studio") return STUDIO_TOOLS;
+  if (skillName === "studio") return [...STUDIO_TOOLS, ...SALESFORCE_TOOLS];
   if (skillName === "json") return JSON_TOOLS;
   if (skillName === "wireframe") return WIREFRAME_TOOLS;
   if (skillName === "sequence") return SEQUENCE_TOOLS;

@@ -55,7 +55,7 @@ export function AiDock() {
   const [lastUsage, setLastUsage] = useState<ChatUsage | null>(null);
   const [totals, setTotals] = useState({ in: 0, out: 0 });
   const [trace, setTrace] = useState<string[]>([]);
-  const [approval, setApproval] = useState<{ label: string; tool: string; undoable: boolean; resolve: (d: "apply" | "discard") => void } | null>(null);
+  const [approval, setApproval] = useState<{ label: string; tool: string; hint: string; undoable: boolean; resolve: (d: "apply" | "discard") => void } | null>(null);
   const [sessionId, setSessionId] = useState(() => newSessionId());
   const [historyOpen, setHistoryOpen] = useState(false);
   const [sessions, setSessions] = useState<AiSession[]>([]);
@@ -237,6 +237,7 @@ export function AiDock() {
               setApproval({
                 label: req.label,
                 tool: req.tool.name,
+                hint: req.tool.approvalHint ?? "applies to the live canvas",
                 undoable: req.tool.undoable === true,
                 resolve: (d) => {
                   setApproval(null);
@@ -467,7 +468,7 @@ export function AiDock() {
               <div className="mb-2 rounded-xl border border-[#C9A86A] bg-[#FBF6EC] px-3 py-2.5" role="alertdialog" aria-label="Approve agent change">
                 <p className="text-[10px] font-semibold uppercase tracking-[1.5px] text-[#8A6A2F]">Needs your approval</p>
                 <p className="mt-0.5 text-xs font-semibold text-ivory-950">{approval.label}</p>
-                <p className="mt-0.5 font-mono text-[10px] text-ivory-600">{approval.tool} · applies to the live canvas{approval.undoable ? ", undoable" : ""}</p>
+                <p className="mt-0.5 font-mono text-[10px] text-ivory-600">{approval.tool} · {approval.hint}{approval.undoable ? ", undoable" : ""}</p>
                 <div className="mt-2 flex gap-1.5">
                   <Button size="sm" onClick={() => approval.resolve("apply")}>
                     Apply

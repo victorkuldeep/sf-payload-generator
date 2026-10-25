@@ -14,6 +14,8 @@ import type { ChatMessage, ChatUsage } from "./providers";
 export interface AgentTool {
   name: string;
   description: string;
+  /** Approval-card scope line. Defaults to the canvas line in AiDock. */
+  approvalHint?: string;
   /** JSON Schema object for the provider's function-calling shape. */
   parameters: Record<string, unknown>;
   /** Mutations wait for explicit Apply in the panel. */

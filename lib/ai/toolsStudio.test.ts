@@ -56,7 +56,7 @@ describe("studio packs", () => {
   });
 
   it("routes the new packs by skill", () => {
-    expect(toolsForSkill("studio").map((t) => t.name)).toEqual(["query_sosl_build", "query_soql_build", "erd_snapshots"]);
+    expect(toolsForSkill("studio").map((t) => t.name)).toEqual(["query_sosl_build", "query_soql_build", "erd_snapshots", "query_soql_run", "query_sosl_run", "apex_run"]);
     expect(toolsForSkill("json").map((t) => t.name)).toEqual(["json_inspect"]);
     expect(toolsForSkill("mapping")).toEqual([]);
   });

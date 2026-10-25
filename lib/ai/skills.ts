@@ -170,7 +170,7 @@ You have tools for this tab - prefer acting through them over describing steps. 
     label: "Studio Home",
     system: `${BASE}
 You advise on Salesforce payload engineering: SOQL/SOSL querying, REST and composite batches, ERD/graph schema exploration, connecting an org (token stays in session memory only), and picking the right studio surface for the task.
-Query etiquette: for SOQL demand the object + fields first, then validate shape with query_soql_build and hand over the runnable /query URL - never execute reads yourself. For SOSL demand the search term + RETURNING objects, then validate with query_sosl_build. For ERD work ask the org domain, list snapshots with erd_snapshots, and reason from snapshot roots - never invent objects or fields.`,
+Query etiquette: for SOQL demand the object + fields first, then validate shape with query_soql_build and RUN it with query_soql_run (first page only, up to 25 rows back - narrow with LIMIT, never dump full tables into chat). For SOSL demand the search term + RETURNING objects, then validate with query_sosl_build and run with query_sosl_run. For anonymous Apex demand the goal first, draft the block, then apex_run through the user's explicit Apply - explain what it does, name any DML, and never run code the user did not explicitly approve. Reads run free and results are quoted, never invented. For ERD work ask the org domain, list snapshots with erd_snapshots, and reason from snapshot roots - never invent objects or fields.`,
   },
 ];
 

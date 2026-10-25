@@ -161,7 +161,7 @@ const soqlArgs = z.object({
   apiVersion: z.string().optional().describe("API version like v60.0 - only needed with instanceUrl"),
 });
 
-function looksLikeSoql(statement: string): boolean {
+export function looksLikeSoql(statement: string): boolean {
   const s = statement.trim();
   return /^\s*select\b/i.test(s) && /\bfrom\s+[a-z0-9_]+/i.test(s);
 }
