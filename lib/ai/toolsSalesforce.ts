@@ -2,6 +2,7 @@ import { z } from "zod";
 import { apiFetch } from "@/lib/api";
 import { getCachedConnection } from "@/lib/session/cache";
 import { markSessionExpired } from "./gate";
+import { policyCaps } from "@/lib/setup/policy";
 import { looksLikeSosl } from "@/lib/salesforce/sosl";
 import { LOG_LEVELS } from "@/lib/salesforce/apex";
 import { looksLikeSoql } from "./toolsStudio";
@@ -84,12 +85,9 @@ function stripAttrs(row: unknown): unknown {
   return row;
 }
 
-const MAX_ROWS = 25;
-const MAX_FIELDS = 80;
-
 /**
  * Shared SOQL executor (REST + Tooling). First page only, model gets up to
- * MAX_ROWS stripped rows plus totals - never a full table dump.
+ * the policy row cap of stripped rows plus totals - never a full table dump.
  */
 async function runSoqlQuery(statement: string, useTooling: boolean): Promise<ToolOutcome> {
   const noun = useTooling ? "Tooling query" : "Query";
@@ -134,7 +132,7 @@ async function runSoqlQuery(statement: string, useTooling: boolean): Promise<Too
   const records = Array.isArray(body.records) ? body.records : [];
   const total = typeof body.totalSize === "number" ? body.totalSize : records.length;
   const hasMore = body.nextRecordsUrl != null || body.done === false;
-  const rows = records.slice(0, MAX_ROWS).map(stripAttrs);
+  const rows = records.slice(0, policyCaps().maxRows).map(stripAttrs);
   return {
     ok: true,
     result: {
@@ -155,6 +153,7 @@ const soqlRunArgs = z.object({
 
 const soqlRun: AgentTool = {
   name: "query_soql_run",
+  orgTouch: true,
   description:
     "Execute a read-only SOQL query on the CONNECTED org and report the first page (totalSize plus up to 25 rows back to the model). Use for data questions; never for writes. Requires a live connection.",
   parameters: {
@@ -178,6 +177,7 @@ const toolingRunArgs = z.object({
 
 const toolingRun: AgentTool = {
   name: "query_tooling_run",
+  orgTouch: true,
   description:
     "Execute a Tooling API SOQL query on the CONNECTED org for live metadata: ApexClass, ApexTrigger, EntityDefinition, FieldDefinition, ValidationRule, WorkflowRule, RecordType, FlowDefinition and friends. Same first-page cap as query_soql_run. Requires a live connection.",
   parameters: {
@@ -201,6 +201,7 @@ const soslRunArgs = z.object({
 
 const soslRun: AgentTool = {
   name: "query_sosl_run",
+  orgTouch: true,
   description:
     "Execute a SOSL search on the CONNECTED org and report matches grouped by object (up to 25 rows back to the model). Requires a live connection.",
   parameters: {
@@ -257,7 +258,7 @@ const soslRun: AgentTool = {
       result: {
         total: typeof body.totalSize === "number" ? body.totalSize : rows.length,
         byObject,
-        records: rows.slice(0, MAX_ROWS).map(stripAttrs),
+        records: rows.slice(0, policyCaps().maxRows).map(stripAttrs),
       },
     };
   },
@@ -272,10 +273,9 @@ const apexRunArgs = z.object({
   logLevel: z.enum(LOG_LEVELS).optional().describe("Debug log level - default Debug"),
 });
 
-const MAX_LOG = 4000;
-
 const apexRun: AgentTool = {
   name: "apex_run",
+  orgTouch: true,
   description:
     "Execute an anonymous Apex block on the CONNECTED org (Workbench-style: debug log comes back inline). Executes ARBITRARY code as the connected user - use for exploration and diagnostics; DML only when the user explicitly asked for it. Always pauses for Apply. Requires a live connection.",
   parameters: {
@@ -297,6 +297,9 @@ const apexRun: AgentTool = {
   schema: apexRunArgs,
   execute: async (raw) => {
     const args = raw as z.infer<typeof apexRunArgs>;
+    if (args.code.length > policyCaps().maxApexChars) {
+      return { ok: false, error: `Code block is ${args.code.length} chars - the workspace cap is ${policyCaps().maxApexChars}. Split it and run in parts.` };
+    }
     const session = liveSession();
     if (!isSession(session)) return { ok: false, error: session.error };
     let res: Response;
@@ -356,7 +359,7 @@ const apexRun: AgentTool = {
         column: r.column ?? null,
         problem: r.compileProblem ?? r.exceptionMessage ?? null,
         stack: typeof r.exceptionStackTrace === "string" ? r.exceptionStackTrace.slice(0, 2000) : null,
-        debugLog: log.length > MAX_LOG ? `${log.slice(0, MAX_LOG)}\n…(truncated, full log in the Apex panel)` : log,
+        debugLog: log.length > policyCaps().maxLogChars ? `${log.slice(0, policyCaps().maxLogChars)}\n…(truncated, full log in the Apex panel)` : log,
       },
     };
   },
@@ -373,6 +376,7 @@ const describeArgs = z.object({
 
 const metadataDescribe: AgentTool = {
   name: "metadata_describe",
+  orgTouch: true,
   description:
     "Describe one sObject on the CONNECTED org: label, custom flags, field list with API names, labels, types, required and custom flags, plus child relationships. Grounds architecture answers in live metadata - never schema from memory. Requires a live connection.",
   parameters: {
@@ -436,15 +440,15 @@ const metadataDescribe: AgentTool = {
         createable: body.createable === true,
         updateable: body.updateable === true,
         fieldCount: fields.length,
-        fields: fields.slice(0, MAX_FIELDS).map((f) => ({
+        fields: fields.slice(0, policyCaps().maxFields).map((f) => ({
           api: typeof f.name === "string" ? f.name : "?",
           label: typeof f.label === "string" ? f.label : null,
           type: typeof f.type === "string" ? f.type : "?",
           required: f.nillable === false,
           custom: f.custom === true,
         })),
-        ...(fields.length > MAX_FIELDS
-          ? { note: `First ${MAX_FIELDS} of ${fields.length} fields - ask for a specific field or run targeted SOQL.` }
+        ...(fields.length > policyCaps().maxFields
+          ? { note: `First ${policyCaps().maxFields} of ${fields.length} fields - ask for a specific field or run targeted SOQL.` }
           : {}),
         childCount: children.length,
         children: children

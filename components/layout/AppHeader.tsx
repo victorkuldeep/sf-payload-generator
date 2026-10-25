@@ -671,6 +671,22 @@ export function AppHeader(props: AppHeaderProps) {
               <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
             </svg>
           </Link>
+          <Link
+            href="/setup"
+            aria-current={pathname === "/setup" ? "page" : undefined}
+            aria-label="Setup"
+            title="Setup - admin console: agent control, connections, workspace, compliance, about"
+            className={`shrink-0 rounded-full border p-2 transition-colors ${
+              pathname === "/setup"
+                ? "border-[var(--color-accent)] bg-[var(--color-surface)] text-[var(--color-ink)]"
+                : "border-[var(--color-line)] text-[var(--color-ink-soft)] hover:border-[var(--color-accent)] hover:text-[var(--color-ink)]"
+            }`}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+            </svg>
+          </Link>
         </div>
       </div>
       <nav className="md:hidden flex items-center gap-4 overflow-x-auto px-5 pb-2.5 text-xs font-medium text-[var(--color-ink-soft)]" aria-label="Product">
@@ -696,6 +712,14 @@ export function AppHeader(props: AppHeaderProps) {
         )}
         {navGroups.flatMap((group) => group.items.map(renderFlatEntry))}
         {standaloneRoutes.map(renderFlatEntry)}
+        <Link
+          href="/setup"
+          aria-current={pathname === "/setup" ? "page" : undefined}
+          title="Setup - admin console"
+          className={`whitespace-nowrap ${pathname === "/setup" ? activeClass : idleClass}`}
+        >
+          Setup
+        </Link>
       </nav>
       <CommandPalette />
     </header>

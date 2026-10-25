@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ChatMessage, ChatUsage } from "./providers";
+import { policyCaps, resolveNeedsApproval } from "@/lib/setup/policy";
 
 /**
  * Headless tool registry + agent loop (Phase 2).
@@ -16,6 +17,8 @@ export interface AgentTool {
   description: string;
   /** Approval-card scope line. Defaults to the canvas line in AiDock. */
   approvalHint?: string;
+  /** True when execute() reaches the live Salesforce org - global read-only forces Apply. */
+  orgTouch?: boolean;
   /** JSON Schema object for the provider's function-calling shape. */
   parameters: Record<string, unknown>;
   /** Mutations wait for explicit Apply in the panel. */
@@ -55,7 +58,7 @@ export interface LoopResult {
   stopped?: string;
 }
 
-const MAX_STEPS = 8;
+// Step cap lives in the agent policy (Setup tab) - see policyCaps().
 
 interface PendingCall {
   id: string;
@@ -173,6 +176,7 @@ function parseArgs(text: string): { ok: true; value: unknown } | { ok: false; er
  * answer (or the step cap). Approval-gated tools pause for the panel.
  */
 export async function runAgentLoop(args: {
+  skill?: string;
   baseURL: string;
   apiKey: string;
   model: string;
@@ -183,11 +187,11 @@ export async function runAgentLoop(args: {
   events?: LoopEvents;
   fetchImpl?: typeof fetch;
 }): Promise<LoopResult> {
-  const { baseURL, apiKey, model, system, history, tools, signal, events, fetchImpl } = args;
+  const { skill, baseURL, apiKey, model, system, history, tools, signal, events, fetchImpl } = args;
   const byName = new Map(tools.map((t) => [t.name, t]));
   const messages: ChatMessage[] = [{ role: "system", content: system }, ...history];
   let finalText = "";
-  for (let step = 0; step < MAX_STEPS; step++) {
+  for (let step = 0; step < policyCaps().maxSteps; step++) {
     const r = await streamWithTools({
       baseURL,
       apiKey,
@@ -229,7 +233,8 @@ export async function runAgentLoop(args: {
         continue;
       }
       const label = tool.label(checked.data);
-      if (tool.needsApproval) {
+      const needsApproval = resolveNeedsApproval(skill ?? "", tool);
+      if (needsApproval) {
         const decision = events?.onApproval
           ? await events.onApproval({ callId: call.id, tool, args: checked.data, label })
           : "discard";
@@ -244,7 +249,7 @@ export async function runAgentLoop(args: {
       } catch (e) {
         outcome = { ok: false, error: e instanceof Error ? e.message : "Tool crashed." };
       }
-      if (!tool.needsApproval) events?.onToolAuto?.(tool.name, label, outcome);
+      if (!needsApproval) events?.onToolAuto?.(tool.name, label, outcome);
       toolResults.push({
         name: call.name,
         ok: outcome.ok,
@@ -257,5 +262,6 @@ export async function runAgentLoop(args: {
     });
     finalText += (finalText ? "\n" : "") + r.text;
   }
-  return { text: finalText, steps: MAX_STEPS, stopped: `Step cap (${MAX_STEPS}) reached - summarize what is done and what remains.` };
+  const stepCap = policyCaps().maxSteps;
+  return { text: finalText, steps: stepCap, stopped: `Step cap (${stepCap}) reached - summarize what is done and what remains.` };
 }

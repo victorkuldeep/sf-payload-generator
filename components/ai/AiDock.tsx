@@ -16,6 +16,7 @@ import { runAgentLoop } from "@/lib/ai/tools";
 import { toolsForSkill } from "@/lib/ai/toolsSystem";
 import { aiHistoryKey, isSalesforceConnected, SESSION_EXPIRED_EVENT } from "@/lib/ai/gate";
 import { deleteAiSession, listAiSessions, loadAiSession, newSessionId, saveAiSession, type AiSession } from "@/lib/ai/historyDb";
+import { logToolRun } from "@/lib/setup/audit";
 import { AiMarkdown } from "./Markdown";
 import { ModelStudio } from "./ModelStudio";
 
@@ -220,6 +221,7 @@ export function AiDock() {
       if (!r.ok && r.text === "" && r.error && r.error !== "Stopped.") setSendError(r.error);
     } else {
       const r = await runAgentLoop({
+        skill: skill.name,
         baseURL,
         apiKey: key,
         model,
@@ -230,8 +232,16 @@ export function AiDock() {
         events: {
           onToken,
           onUsage: noteUsage,
-          onToolAuto: (name, label, outcome) =>
-            setTrace((prev) => [...prev, `${label} — ${outcome.ok ? "ok" : `failed: ${outcome.error ?? "error"}`}`]),
+          onToolAuto: (name, label, outcome) => {
+            setTrace((prev) => [...prev, `${label} — ${outcome.ok ? "ok" : `failed: ${outcome.error ?? "error"}`}`]);
+            void logToolRun({
+              skill: skill.name,
+              tool: name,
+              label,
+              ok: outcome.ok,
+              detail: outcome.ok ? undefined : (outcome.error ?? "error"),
+            });
+          },
           onApproval: (req) =>
             new Promise<"apply" | "discard">((resolve) => {
               setApproval({
@@ -242,6 +252,13 @@ export function AiDock() {
                 resolve: (d) => {
                   setApproval(null);
                   setTrace((prev) => [...prev, `${req.label} — ${d === "apply" ? "applied" : "discarded"}`]);
+                  void logToolRun({
+                    skill: skill.name,
+                    tool: req.tool.name,
+                    label: req.label,
+                    ok: d === "apply",
+                    detail: d === "apply" ? "approved" : "discarded by the user",
+                  });
                   resolve(d);
                 },
               });
@@ -258,6 +275,16 @@ export function AiDock() {
   useEffect(() => {
     if (!busy && turns.length > 0) void persist();
   }, [busy, turns, persist]);
+
+  // Setup tab deep-links here ("gravenx:model-studio") - same pattern as the palette event.
+  useEffect(() => {
+    const open = () => {
+      setOpen(true);
+      setStudioOpen(true);
+    };
+    window.addEventListener("gravenx:model-studio", open);
+    return () => window.removeEventListener("gravenx:model-studio", open);
+  }, []);
 
   const stop = () => abortRef.current?.abort();
 

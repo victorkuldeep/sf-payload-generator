@@ -8,6 +8,7 @@ import {
 import { getSystemBridge } from "./systemBridge";
 import { JSON_TOOLS, STUDIO_TOOLS } from "./toolsStudio";
 import { SALESFORCE_TOOLS } from "./toolsSalesforce";
+import { buildDefaultPolicy, setPolicyDefaults, skillEnabled, toolEnabled } from "@/lib/setup/policy";
 import { WIREFRAME_TOOLS } from "./toolsWireframe";
 import { SEQUENCE_TOOLS } from "./toolsSequence";
 import { DIAGRAM_STUDIO_TOOLS } from "./toolsDiagramStudio";
@@ -188,17 +189,58 @@ export const SYSTEM_TOOLS: AgentTool[] = [describeCanvas, addSystem, connectSyst
  * Mapping, Validate, Architect and Contracts stay in advisor mode
  * until their bridges exist.
  */
+/**
+ * Tool inventory for the Control Plane: every skill with the tools the
+ * model may call. The policy store derives its defaults from this, so
+ * adding a tool here automatically surfaces it in Setup - no second list.
+ */
+export function policyInventory(): { skill: string; tools: { name: string; needsApproval: boolean }[] }[] {
+  const packs: [string, AgentTool[]][] = [
+    ["system", SYSTEM_TOOLS],
+    ["studio", [...STUDIO_TOOLS, ...SALESFORCE_TOOLS]],
+    ["json", JSON_TOOLS],
+    ["wireframe", WIREFRAME_TOOLS],
+    ["sequence", SEQUENCE_TOOLS],
+    ["diagram-studio", DIAGRAM_STUDIO_TOOLS],
+    ["draw", DRAW_TOOLS],
+    ["console", [...CONSOLE_TOOLS, ...PMO_TOOLS]],
+    ["knowledge", GRAPH_TOOLS],
+    ["decisions", DECISION_TOOLS],
+    ["requirements", REQUIREMENT_TOOLS],
+  ];
+  return packs.map(([skill, tools]) => ({
+    skill,
+    tools: tools.map((t) => ({ name: t.name, needsApproval: t.needsApproval })),
+  }));
+}
+
+let policyBooted = false;
+
+/** Register code defaults once - Setup edits layer on top from localStorage. */
+function bootPolicy(): void {
+  if (policyBooted) return;
+  policyBooted = true;
+  try {
+    setPolicyDefaults(buildDefaultPolicy(policyInventory()));
+  } catch {
+    /* policy store degrades to code defaults */
+  }
+}
+
 export function toolsForSkill(skillName: string): AgentTool[] {
-  if (skillName === "system") return SYSTEM_TOOLS;
-  if (skillName === "studio") return [...STUDIO_TOOLS, ...SALESFORCE_TOOLS];
-  if (skillName === "json") return JSON_TOOLS;
-  if (skillName === "wireframe") return WIREFRAME_TOOLS;
-  if (skillName === "sequence") return SEQUENCE_TOOLS;
-  if (skillName === "diagram-studio") return DIAGRAM_STUDIO_TOOLS;
-  if (skillName === "draw") return DRAW_TOOLS;
-  if (skillName === "console") return [...CONSOLE_TOOLS, ...PMO_TOOLS];
-  if (skillName === "knowledge") return GRAPH_TOOLS;
-  if (skillName === "decisions") return DECISION_TOOLS;
-  if (skillName === "requirements") return REQUIREMENT_TOOLS;
+  bootPolicy();
+  if (!skillEnabled(skillName)) return [];
+  const pick = (tools: AgentTool[]): AgentTool[] => tools.filter((t) => toolEnabled(skillName, t.name));
+  if (skillName === "system") return pick(SYSTEM_TOOLS);
+  if (skillName === "studio") return pick([...STUDIO_TOOLS, ...SALESFORCE_TOOLS]);
+  if (skillName === "json") return pick(JSON_TOOLS);
+  if (skillName === "wireframe") return pick(WIREFRAME_TOOLS);
+  if (skillName === "sequence") return pick(SEQUENCE_TOOLS);
+  if (skillName === "diagram-studio") return pick(DIAGRAM_STUDIO_TOOLS);
+  if (skillName === "draw") return pick(DRAW_TOOLS);
+  if (skillName === "console") return pick([...CONSOLE_TOOLS, ...PMO_TOOLS]);
+  if (skillName === "knowledge") return pick(GRAPH_TOOLS);
+  if (skillName === "decisions") return pick(DECISION_TOOLS);
+  if (skillName === "requirements") return pick(REQUIREMENT_TOOLS);
   return [];
 }

@@ -9,7 +9,7 @@ export const DB_NAME = "gravenx-studio";
 // v23: additive heal - recreates any store missing from an already-upgraded
 // DB (e.g. decision-records), so a stuck browser self-repairs on next open.
 // v25: canvas image blobs for System Design pasted screenshots.
-export const DB_VERSION = 27;
+export const DB_VERSION = 28;
 
 export const STORES = {
   items: "request-collection",
@@ -40,6 +40,7 @@ export const STORES = {
   requirementRecords: "requirement-records",
   diagramStudios: "diagram-studios",
   diagramSketches: "diagram-sketches",
+  agentAudit: "agent-audit",
 } as const;
 
 export type StoreName = (typeof STORES)[keyof typeof STORES];
