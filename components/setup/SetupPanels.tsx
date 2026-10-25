@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { STORES, withStore, DB_NAME } from "@/lib/db";
-import { getCachedConnection, type CachedConnection } from "@/lib/session/cache";
+import { readLiveSession, type LiveSession } from "@/lib/ai/gate";
 import { PROVIDER_PRESETS } from "@/lib/ai/providers";
 import { hasProviderKey } from "@/lib/ai/keyVault";
 import { getPolicy, savePolicy } from "@/lib/setup/policy";
@@ -28,11 +28,13 @@ function Card({ title, hint, right, children }: { title: string; hint?: string; 
 }
 
 export function ConnectionsPanel() {
-  const [conn, setConn] = useState<CachedConnection | null>(null);
+  const [conn, setConn] = useState<LiveSession | null>(null);
   const [keyed, setKeyed] = useState<string[]>([]);
   const refresh = () => {
     try {
-      setConn(getCachedConnection());
+      // Same two-source read as the AI gate: module cache, else the tab's
+      // restore record - a reloaded tab is still connected.
+      setConn(readLiveSession());
     } catch {
       setConn(null);
     }
@@ -72,8 +74,8 @@ export function ConnectionsPanel() {
               [
                 ["Org host", (() => { try { return new URL(conn.instanceUrl).hostname; } catch { return conn.instanceUrl; } })()],
                 ["API version", conn.apiVersion],
-                ["Objects cached", String(conn.objectCount)],
-                ["Org key", conn.orgKey],
+                ["Objects cached", typeof conn.objectCount === "number" ? String(conn.objectCount) : "live - open Schema to cache"],
+                ["Org key", conn.orgKey ?? "live - resolves on Schema"],
                 ["Token", "present in this tab (never shown, never stored)"],
               ] as const
             ).map(([k, v]) => (

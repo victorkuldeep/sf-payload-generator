@@ -66,6 +66,53 @@ export function aiHistoryKey(): string {
   return "local";
 }
 
+export interface LiveSession {
+  instanceUrl: string;
+  token: string;
+  apiVersion: string;
+  orgKey?: string;
+  objectCount?: number;
+}
+
+/**
+ * Full live session, same two sources as the gate: module cache first
+ * (fast path after connect / client-side trips), then the tab's restore
+ * record (survives reloads). Panels and agent tools share this - never
+ * read only one source or a reloaded tab looks disconnected.
+ */
+export function readLiveSession(): LiveSession | null {
+  try {
+    const c = getCachedConnection();
+    if (c && typeof c.token === "string" && c.token && typeof c.instanceUrl === "string" && c.instanceUrl) {
+      return {
+        instanceUrl: c.instanceUrl,
+        token: c.token,
+        apiVersion: c.apiVersion || "v60.0",
+        orgKey: c.orgKey,
+        objectCount: c.objectCount,
+      };
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (typeof sessionStorage === "undefined") return null;
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw) as { instanceUrl?: unknown; token?: unknown; apiVersion?: unknown };
+    if (s && typeof s.instanceUrl === "string" && s.instanceUrl && typeof s.token === "string" && s.token) {
+      return {
+        instanceUrl: s.instanceUrl,
+        token: s.token,
+        apiVersion: typeof s.apiVersion === "string" && s.apiVersion ? s.apiVersion : "v60.0",
+      };
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 export function isSalesforceConnected(): boolean {
   if (sessionDead) return false;
   try {

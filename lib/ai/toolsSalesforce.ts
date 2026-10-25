@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { apiFetch } from "@/lib/api";
-import { getCachedConnection } from "@/lib/session/cache";
-import { markSessionExpired } from "./gate";
+import { markSessionExpired, readLiveSession, type LiveSession } from "./gate";
 import { policyCaps } from "@/lib/setup/policy";
 import { looksLikeSosl } from "@/lib/salesforce/sosl";
 import { LOG_LEVELS } from "@/lib/salesforce/apex";
@@ -16,40 +15,9 @@ import type { AgentTool, ToolOutcome } from "./tools";
  * a token ask: the gate + connect flow own credentials.
  */
 
-const SESSION_KEY = "gravenx_session";
-
-interface LiveSession {
-  instanceUrl: string;
-  token: string;
-  apiVersion: string;
-}
-
-/** Live connection from the module cache, else the tab's restore record. */
+/** Live connection via the shared gate reader (cache, else the tab restore record). */
 function liveSession(): LiveSession | { error: string } {
-  try {
-    const c = getCachedConnection();
-    if (c && typeof c.token === "string" && c.token && typeof c.instanceUrl === "string" && c.instanceUrl) {
-      return { instanceUrl: c.instanceUrl, token: c.token, apiVersion: c.apiVersion || "v60.0" };
-    }
-  } catch {
-    /* fall through to the restore record */
-  }
-  try {
-    if (typeof sessionStorage !== "undefined") {
-      const raw = sessionStorage.getItem(SESSION_KEY);
-      const s = raw ? (JSON.parse(raw) as { instanceUrl?: unknown; token?: unknown; apiVersion?: unknown }) : null;
-      if (s && typeof s.instanceUrl === "string" && s.instanceUrl && typeof s.token === "string" && s.token) {
-        return {
-          instanceUrl: s.instanceUrl,
-          token: s.token,
-          apiVersion: typeof s.apiVersion === "string" && s.apiVersion ? s.apiVersion : "v60.0",
-        };
-      }
-    }
-  } catch {
-    /* fall through to the error */
-  }
-  return { error: "No live Salesforce connection - connect on the Studio home first, then ask again." };
+  return readLiveSession() ?? { error: "No live Salesforce connection - connect on the Studio home first, then ask again." };
 }
 
 function isSession(o: LiveSession | { error: string }): o is LiveSession {

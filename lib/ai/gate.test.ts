@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import { clearCachedConnection, setCachedConnection } from "@/lib/session/cache";
-import { aiHistoryKey, clearSessionExpired, isSalesforceConnected, markSessionExpired } from "./gate";
+import { aiHistoryKey, clearSessionExpired, isSalesforceConnected, markSessionExpired, readLiveSession } from "./gate";
 
 const conn = {
   instanceUrl: "https://x.my.salesforce.com",
@@ -47,6 +47,23 @@ describe("salesforce gate", () => {
     expect(isSalesforceConnected()).toBe(false);
     clearSessionExpired();
     expect(isSalesforceConnected()).toBe(true);
+  });
+});
+
+describe("live session reader", () => {
+  it("returns null with nothing stored", () => {
+    expect(readLiveSession()).toBeNull();
+  });
+
+  it("prefers the module cache", () => {
+    setCachedConnection(conn);
+    sessionStorage.setItem("gravenx_session", JSON.stringify({ instanceUrl: "https://other", token: "x", apiVersion: "v1" }));
+    expect(readLiveSession()).toMatchObject({ instanceUrl: conn.instanceUrl, token: "tok", apiVersion: "v66.0", orgKey: "org" });
+  });
+
+  it("falls back to the tab restore record after a reload", () => {
+    sessionStorage.setItem("gravenx_session", JSON.stringify({ instanceUrl: "https://myorg.my.salesforce.com", token: "t", apiVersion: "v61.0" }));
+    expect(readLiveSession()).toEqual({ instanceUrl: "https://myorg.my.salesforce.com", token: "t", apiVersion: "v61.0" });
   });
 });
 
