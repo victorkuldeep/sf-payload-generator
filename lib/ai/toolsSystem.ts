@@ -194,7 +194,7 @@ export const SYSTEM_TOOLS: AgentTool[] = [describeCanvas, addSystem, connectSyst
  * model may call. The policy store derives its defaults from this, so
  * adding a tool here automatically surfaces it in Setup - no second list.
  */
-export function policyInventory(): { skill: string; tools: { name: string; needsApproval: boolean }[] }[] {
+export function policyInventory(): { skill: string; tools: { name: string; needsApproval: boolean; description: string; schema: unknown }[] }[] {
   const packs: [string, AgentTool[]][] = [
     ["system", SYSTEM_TOOLS],
     ["studio", [...STUDIO_TOOLS, ...SALESFORCE_TOOLS]],
@@ -210,7 +210,7 @@ export function policyInventory(): { skill: string; tools: { name: string; needs
   ];
   return packs.map(([skill, tools]) => ({
     skill,
-    tools: tools.map((t) => ({ name: t.name, needsApproval: t.needsApproval })),
+    tools: tools.map((t) => ({ name: t.name, needsApproval: t.needsApproval, description: t.description, schema: t.parameters })),
   }));
 }
 

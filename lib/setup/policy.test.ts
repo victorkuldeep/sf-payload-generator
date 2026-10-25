@@ -15,9 +15,16 @@ import {
   type PolicyInventorySkill,
 } from "./policy";
 
+const tool = (name: string, needsApproval: boolean): PolicyInventorySkill["tools"][number] => ({
+  name,
+  needsApproval,
+  description: `${name} contract`,
+  schema: { type: "object" },
+});
+
 const INVENTORY: PolicyInventorySkill[] = [
-  { skill: "studio", tools: [{ name: "query_soql_run", needsApproval: false }, { name: "apex_run", needsApproval: true }] },
-  { skill: "system", tools: [{ name: "system_add", needsApproval: true }] },
+  { skill: "studio", tools: [tool("query_soql_run", false), tool("apex_run", true)] },
+  { skill: "system", tools: [tool("system_add", true)] },
 ];
 
 beforeEach(() => {
@@ -81,7 +88,7 @@ describe("policy persistence", () => {
     clearPolicyCache();
     setPolicyDefaults(
       buildDefaultPolicy([
-        { skill: "studio", tools: [{ name: "apex_run", needsApproval: true }, { name: "shiny_new", needsApproval: false }] },
+        { skill: "studio", tools: [tool("apex_run", true), tool("shiny_new", false)] },
       ])
     );
     const p = getPolicy();

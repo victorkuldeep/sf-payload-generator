@@ -34,6 +34,7 @@ function AgentControl() {
   const [policy, setPolicy] = useState<AgentPolicy>(() => getPolicy());
   const [audit, setAudit] = useState<AuditEvent[]>([]);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [expandedTool, setExpandedTool] = useState<string | null>(null);
   const inventory = useMemo(() => policyInventory(), []);
   const labels = useMemo(() => new Map(SKILL_PACKS.map((s) => [s.name, s.label])), []);
   const totalTools = inventory.reduce((n, s) => n + s.tools.length, 0);
@@ -182,7 +183,8 @@ function AgentControl() {
                   const tp = sp?.tools[t.name];
                   const enabled = tp?.enabled !== false;
                   return (
-                    <li key={t.name} className="flex flex-wrap items-center gap-2 px-4 py-2">
+                    <li key={t.name} className="px-4 py-2">
+                      <div className="flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         role="switch"
@@ -197,7 +199,15 @@ function AgentControl() {
                           className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${enabled ? "left-[18px]" : "left-0.5"}`}
                         />
                       </button>
-                      <span className="min-w-0 flex-1 font-mono text-xs text-ivory-950">{t.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedTool((prev) => (prev === `${pack.skill}/${t.name}` ? null : `${pack.skill}/${t.name}`))}
+                        aria-expanded={expandedTool === `${pack.skill}/${t.name}`}
+                        title="Show description and parameter schema"
+                        className="min-w-0 flex-1 cursor-pointer truncate text-left font-mono text-xs text-ivory-950 hover:underline"
+                      >
+                        {t.name}
+                      </button>
                       <select
                         aria-label={`Approval for ${t.name}`}
                         value={tp?.approval ?? "default"}
@@ -213,6 +223,16 @@ function AgentControl() {
                           </option>
                         ))}
                       </select>
+                      </div>
+                      {expandedTool === `${pack.skill}/${t.name}` && (
+                        <div className="mt-1.5 rounded-lg border border-[var(--color-line-soft)] bg-white px-2.5 py-2">
+                          <p className="text-[11px] leading-relaxed text-ivory-800">{t.description}</p>
+                          <p className="mb-1 mt-2 text-[10px] font-bold uppercase tracking-[1.5px] text-ivory-500">Parameters</p>
+                          <pre className="max-h-48 overflow-auto rounded-lg bg-ivory-950 p-2.5 font-mono text-[10px] leading-relaxed text-ivory-100">
+                            {JSON.stringify(t.schema, null, 2)}
+                          </pre>
+                        </div>
+                      )}
                     </li>
                   );
                 })}

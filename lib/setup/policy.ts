@@ -45,6 +45,10 @@ export interface AgentPolicy {
 export interface PolicyInventoryTool {
   name: string;
   needsApproval: boolean;
+  /** Human-readable contract - shown in Setup, never sent to the model as policy. */
+  description: string;
+  /** JSON-schema parameters object, as declared on the tool. */
+  schema: unknown;
 }
 
 export interface PolicyInventorySkill {
