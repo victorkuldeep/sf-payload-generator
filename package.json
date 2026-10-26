@@ -18,7 +18,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "mcp": "tsx mcp/server.ts"
+    "mcp": "tsx mcp/server.ts",
+    "mcp:bundle": "esbuild mcp/server.ts --bundle --platform=node --format=cjs --outfile=mcp/dist/gravenx-mcp.cjs"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.1.1",

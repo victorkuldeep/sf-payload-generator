@@ -1,39 +1,48 @@
 # gravenx-mcp — headless GRAVENX for terminal agents
 
-`mcp/server.ts` is a local **stdio MCP server** that lets Cursor, Claude Code,
-Muse, Codex and OpenCode operate the studio's domain models through files:
-sequences, wireframe experiences, system projects, ERD canvases, decisions,
-requirements and console tasks. It reuses the exact `lib/` validators the
-studio UI uses, so anything the agent writes the studio can open.
+A local **stdio MCP server** that lets Cursor, Claude Code, Muse, Codex and
+OpenCode operate the studio's domain models through files: sequences,
+wireframe experiences, system projects, ERD canvases, decisions, requirements
+and console tasks. It reuses the exact `lib/` validators the studio UI uses,
+so anything the agent writes the studio can open.
 
 **Direction of travel:** MCP sits between the terminal agent and GRAVENX.
-The agent authors `gravenx-workspace/*.json`; the architect opens them with
+The agent authors workspace `*.json` files; the architect opens them with
 the studio **Import** buttons. No Ask-AI detour, no API keys in the loop.
 
-## Setup
+## Distribution (no source needed)
 
-Replace `<REPO_ROOT>` with this repo's absolute path (keep it on one line).
-
-**Cursor** — copy `mcp/clients/cursor-mcp.json` to `<REPO_ROOT>/.cursor/mcp.json`
-(or merge the `gravenx` entry into the existing file), then restart Cursor.
-
-**Claude Code** — copy `mcp/clients/claude-mcp.json` to
-`<REPO_ROOT>/.mcp.json`, or register imperatively:
+The server ships as **one self-contained file** — no repo clone, no
+`node_modules`, no source on the target machine. Only system `node` is
+required. Build it with:
 
 ```sh
-cd <REPO_ROOT>
+npm run mcp:bundle   # -> mcp/dist/gravenx-mcp.cjs (~860 KB)
+```
+
+Copy `gravenx-mcp.cjs` to any machine (laptop, showcase laptop, MD's desk)
+and point the client at it. Replace `<DIST_DIR>` with the folder holding the
+file and `<WORKSPACE_DIR>` with where record files should live.
+
+**Cursor** — copy `mcp/clients/cursor-mcp.json` to `.cursor/mcp.json`
+(or merge the `gravenx` entry), then restart Cursor.
+
+**Claude Code** — copy `mcp/clients/claude-mcp.json` to `.mcp.json`,
+or register imperatively:
+
+```sh
 claude mcp add --transport stdio gravenx \
-  --env GRAVENX_WORKSPACE=<REPO_ROOT>/gravenx-workspace \
-  -- npx tsx mcp/server.ts
+  --env GRAVENX_WORKSPACE=<WORKSPACE_DIR> \
+  --env GRAVENX_BASE_URL=https://studio.yourdomain.com \
+  -- node <DIST_DIR>/gravenx-mcp.cjs
 ```
 
 **Muse** — same shape as Claude Code:
 
 ```sh
-cd <REPO_ROOT>
 muse mcp add --transport stdio gravenx \
-  --env GRAVENX_WORKSPACE=<REPO_ROOT>/gravenx-workspace \
-  -- npx tsx mcp/server.ts
+  --env GRAVENX_WORKSPACE=<WORKSPACE_DIR> \
+  -- node <DIST_DIR>/gravenx-mcp.cjs
 ```
 
 **OpenCode** — merge `mcp/clients/opencode.json` into your `opencode.json`.
@@ -42,13 +51,13 @@ muse mcp add --transport stdio gravenx \
 
 ```toml
 [mcp_servers.gravenx]
-command = "npx"
-args = ["tsx", "mcp/server.ts"]
-cwd = "<REPO_ROOT>"
-env = { GRAVENX_WORKSPACE = "<REPO_ROOT>/gravenx-workspace" }
+command = "node"
+args = ["<DIST_DIR>/gravenx-mcp.cjs"]
+env = { GRAVENX_WORKSPACE = "<WORKSPACE_DIR>" }
 ```
 
-Run the server directly any time with `npm run mcp`.
+**Developing from source** (studio contributors only): `npm run mcp`
+runs `mcp/server.ts` via tsx with live `@/lib` imports.
 
 ## Environment
 

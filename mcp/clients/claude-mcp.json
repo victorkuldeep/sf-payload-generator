@@ -1,12 +1,11 @@
 {
   "mcpServers": {
     "gravenx": {
-      "command": "npx",
-      "args": ["tsx", "mcp/server.ts"],
-      "cwd": "<REPO_ROOT>",
+      "command": "node",
+      "args": ["<DIST_DIR>/gravenx-mcp.cjs"],
       "env": {
-        "GRAVENX_WORKSPACE": "<REPO_ROOT>/gravenx-workspace",
-        "GRAVENX_BASE_URL": "http://localhost:3000"
+        "GRAVENX_WORKSPACE": "<WORKSPACE_DIR>",
+        "GRAVENX_BASE_URL": "https://studio.yourdomain.com"
       }
     }
   }
