@@ -8,13 +8,18 @@ function fakeHub() {
 }
 
 describe("live bridge MCP tools", () => {
-  it("exposes the 9 tab commands with stable names", () => {
+  it("exposes the tab commands with stable names", () => {
     const { hub } = fakeHub();
     const names = liveTools(hub).map((t) => t.name);
     expect(names).toEqual([
       "bridge_status",
       "erd_live_snapshot",
       "erd_live_objects",
+      "activity_live_list",
+      "system_live_snapshot",
+      "system_live_place",
+      "system_live_connect",
+      "system_live_remove",
       "erd_live_discover",
       "erd_live_place",
       "erd_live_hide",

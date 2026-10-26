@@ -16,6 +16,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { resolveWorkspace } from "./workspace";
 import { sequenceTools } from "./tools/sequence";
+import { builderTools } from "./tools/builder";
+import { postmanTools } from "./tools/postman";
+import { skillTools } from "./tools/skills";
+import { contractTools } from "./tools/contracts";
+import { noteTools } from "./tools/notes";
+import { mappingTools } from "./tools/mapping";
 import { wireframeTools } from "./tools/wireframe";
 import { systemTools } from "./tools/system";
 import { erdTools } from "./tools/erd";
@@ -28,6 +34,12 @@ const VERSION = "1.0.0";
 
 const ALL_TOOLS: McpTool[] = [
   ...sequenceTools,
+  ...builderTools,
+  ...postmanTools,
+  ...skillTools,
+  ...contractTools,
+  ...noteTools,
+  ...mappingTools,
   ...wireframeTools,
   ...systemTools,
   ...erdTools,

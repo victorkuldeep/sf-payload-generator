@@ -3,7 +3,8 @@
  *
  * Pure mapping layer between the tab↔hub bridge protocol
  * (`erd.snapshot`, `erd.discover`, `erd.place`, `erd.focus`, `erd.mode`,
- * `erd.filter`, `erd.author_field`, `erd.author_object`, `bridge.ping`)
+ * `erd.filter`, `erd.author_field`, `erd.author_object`, `arch.activity`,
+ * `bridge.ping`)
  * and the live SchemaPanel state. SchemaPanel builds one context object from
  * its state and registers these handlers once; every handler reads the latest
  * state through the context getters so results never go stale.
@@ -15,6 +16,7 @@
 
 import { BRIDGE_PROTOCOL_V } from "./protocol";
 import type { BridgeHandler } from "./registry";
+import { listArchActivity } from "../erd-activity";
 import { createTag, ERD_TAG_COLORS } from "../erd/tags";
 import type {
   DesignFieldType,
@@ -69,6 +71,7 @@ export interface ErdBridgeContext {
 
 export const ERD_BRIDGE_KINDS = [
   "bridge.ping",
+  "arch.activity",
   "erd.snapshot",
   "erd.objects",
   "erd.discover",
@@ -208,6 +211,30 @@ function buildSnapshot(ctx: ErdBridgeContext): ErdSnapshot {
 export function buildErdBridgeHandlers(ctx: ErdBridgeContext): Record<string, BridgeHandler> {
   return {
     "bridge.ping": async () => ({ ok: true, protocol: BRIDGE_PROTOCOL_V, tab: "erd" }),
+
+    // Arch Activity audit trail: read-only, lives in this tab's IndexedDB.
+    // Lets agents review what changed on the org, summarize risk, and draft
+    // JIRA stories from real actions - no org calls, no approval needed.
+    "arch.activity": async (args) => {
+      const rawLimit = args.limit;
+      const limit =
+        typeof rawLimit === "number" && Number.isFinite(rawLimit)
+          ? Math.min(Math.max(1, Math.floor(rawLimit)), 200)
+          : 50;
+      const actor = strArg(args, "actor");
+      if (actor && actor !== "architect" && actor !== "agent-bridge") {
+        throw new Error(`Unknown actor "${actor}" - use "architect" or "agent-bridge".`);
+      }
+      const category = strArg(args, "category");
+      if (category && category !== "metadata" && category !== "data") {
+        throw new Error(`Unknown category "${category}" - use "metadata" or "data".`);
+      }
+      const all = await listArchActivity(200);
+      const entries = all
+        .filter((e) => (!actor || e.actor === actor) && (!category || e.category === category))
+        .slice(0, limit);
+      return { entries, count: entries.length };
+    },
 
     "erd.snapshot": async () => buildSnapshot(ctx),
 

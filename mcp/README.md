@@ -84,9 +84,32 @@ runs `mcp/server.ts` via tsx with live `@/lib` imports.
 | `erd_validate` / `erd_list` | Backend-grade check / inventory |
 | `erd_share_canvas` | POST the structure to your running studio, get a 30-min link (opt-in network) |
 | `decision_create` / `decision_list` | ADR records, auto-numbered, studio-importable |
+| `decision_update` | Status trail (proposed→in-review→accepted) + text revision, history appended |
+| `decision_link` | Link a decision to system/wireframe/sequence/draw/schema |
+| `decision_summarize` | Review digest: counts, open items, accepted governance |
 | `requirement_create` / `requirement_list` | REQ records, auto-numbered, studio-importable |
+| `requirement_update` | Move open→covered→verified, revise body |
+| `requirement_link` | Link a requirement to coverage (incl. decisions) |
+| `jira_draft` | Story draft with acceptance criteria from open decisions/requirements/mapping, saved as a note |
 | `console_create_task` / `console_list_tasks` | Console queue entries (task/note/question/decision) |
+| `mapping_create` / `mapping_add_plan` / `mapping_add_rule` | Screen/payload→Salesforce mappings, plans + field rules |
+| `mapping_validate` / `mapping_spec` / `mapping_list` | Studio-import check / JIRA handoff Markdown / inventory |
+| `payload_build` | One REST payload: method + object + fields → runnable URL + JSON |
+| `composite_create` / `composite_add_request` | Ordered subrequest batches with @{ref.id} references |
+| `composite_validate` / `composite_payload` / `composite_list` | Structural check / runnable Composite JSON + order / inventory |
+| `contract_create` / `contract_add_field` | Consumer↔Salesforce contracts, field mappings |
+| `contract_validate` / `contract_spec` / `contract_list` | Studio-import check / review Markdown / inventory |
+| `note_create` / `note_append` / `note_get` / `note_list` | Markdown design notes, paste into Notes |
+| `system_import_postman` | Postman Collection → system project (draft edges, secrets dropped) |
+| `skill_list` / `skill_read` | Playbooks per surface - read before planning |
 | `workspace_files` | Every file + envelope type |
+| `bridge_status` | Hub health + pairing instructions when no tab is connected |
+| `erd_live_snapshot/objects/discover` | Read canvas, browse org schema, parents/children (reads free) |
+| `erd_live_place/hide/remove/focus/mode/filter` | Curate the live canvas (approval-gated unless auto mode) |
+| `erd_live_tags` | List/create/assign/unassign/delete canvas tags |
+| `erd_live_author_field/object` | Author-mode deploys through the tab session (audited) |
+| `activity_live_list` | Read the tab's org-mutation audit trail |
+| `system_live_snapshot/place/connect/remove` | Read, place, draft-connect, and remove on the System canvas |
 
 ## Demo script (MD showcase)
 
@@ -99,8 +122,10 @@ runs `mcp/server.ts` via tsx with live `@/lib` imports.
 5. Ask for Mermaid (`sequence_mermaid`) and paste it into the review doc.
 
 Same loop works for wireframes (`wireframe_*` → Wireframe Studio Import),
-topologies (`system_create_sample` → System Import), canvases
-(`erd_share_canvas` → link), and governance (`decision_create` → Import).
+topologies (`system_create_sample` / `system_import_postman` → System Import),
+mappings (`mapping_*` → Mapping Import), batches (`composite_payload` → REST
+runner), contracts (`contract_*` → Contracts Import), and governance
+(`decision_create`, `jira_draft` → Import / JIRA).
 
 ## Security posture (V1, by design)
 

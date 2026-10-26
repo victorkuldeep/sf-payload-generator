@@ -134,10 +134,10 @@ describe("resolveObjectRef", () => {
 });
 
 describe("erd bridge handlers", () => {
-  it("registers all 13 protocol kinds", () => {
+  it("registers all 14 protocol kinds", () => {
     const handlers = buildErdBridgeHandlers(setupCtx());
     for (const kind of ERD_BRIDGE_KINDS) expect(handlers[kind]).toBeTypeOf("function");
-    expect(ERD_BRIDGE_KINDS).toHaveLength(13);
+    expect(ERD_BRIDGE_KINDS).toHaveLength(14);
   });
 
   it("ping reports protocol v1", async () => {
@@ -210,6 +210,19 @@ describe("erd bridge handlers", () => {
     const out = (await handlers["erd.remove"]!({ apiNames: ["Account"] })) as { removed: string[] };
     expect(out).toEqual({ removed: ["Account"] });
     expect(ctx.calls.removed).toEqual([["Account"]]);
+  });
+
+  it("arch.activity reads the audit trail with actor/category filters", async () => {
+    const ctx = setupCtx();
+    const handlers = buildErdBridgeHandlers(ctx);
+    // No IndexedDB in the test env - the trail reads empty instead of throwing.
+    const out = (await handlers["arch.activity"]!({ limit: 10 })) as {
+      entries: unknown[];
+      count: number;
+    };
+    expect(out).toEqual({ entries: [], count: 0 });
+    await expect(handlers["arch.activity"]!({ actor: "someone" })).rejects.toThrow(/Unknown actor/);
+    await expect(handlers["arch.activity"]!({ category: "everything" })).rejects.toThrow(/Unknown category/);
   });
 
   it("place resolves refs then focuses the first placed node", async () => {

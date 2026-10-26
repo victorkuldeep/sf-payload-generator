@@ -21,6 +21,8 @@ import {
 import "@xyflow/react/dist/style.css";
 import { toPng } from "html-to-image";
 import Button from "../ui/Button";
+import { registerBridgeHandler, unregisterBridgeHandler } from "@/lib/bridge/registry";
+import { buildSystemBridgeHandlers, resolveSystemByName, resolveSystemType, type SystemBridgeContext } from "@/lib/bridge/system";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import Input from "../ui/Input";
 import Badge from "../ui/Badge";
@@ -1393,12 +1395,12 @@ export function SystemDesigner() {
     })();
   }, [mutate]);
 
-  const connectSystems = useCallback((sourceId: string, targetId: string) => {
+  const connectSystems = useCallback((sourceId: string, targetId: string, label = "") => {
     if (!project || !project.systems.some((s) => s.id === sourceId) || !project.systems.some((s) => s.id === targetId)) return;
     const id = newId("conn");
     mutate((p) => ({
       ...p,
-      connections: [...p.connections, { id, sourceId, targetId, label: "", status: "draft" as const }],
+      connections: [...p.connections, { id, sourceId, targetId, label, status: "draft" as const }],
     }));
     // Reveal the new edge in the inspector immediately: label it, bind
     // operations, watch readiness flip. A drawn edge is topology - it never
@@ -1406,6 +1408,72 @@ export function SystemDesigner() {
     setSelEdgeId(id);
     setSelNodeId(null);
   }, [mutate, project]);
+
+  // Live agent bridge (sys.* commands): the tab-side context mirroring the
+  // ERD bridge. projectRef (declared with the other refs) keeps handlers
+  // fresh; registration re-runs when the stable callbacks change.
+  const systemBridgeCtx = useMemo<SystemBridgeContext>(() => ({
+    getProject: () => projectRef.current,
+    placeSystems: (specs) => {
+      const p = projectRef.current;
+      if (!p) throw new Error("No system project open - open or create one in System Design first.");
+      // Validate every type before mutating so failures save nothing.
+      const templates = specs.map((s) => {
+        const { templateIndex } = resolveSystemType(s.type);
+        return SYSTEM_TEMPLATES[templateIndex];
+      });
+      const systems = [...p.systems];
+      const interfaces = [...p.interfaces];
+      const placed: string[] = [];
+      templates.forEach((template, i) => {
+        const s = specs[i];
+        const n = systems.filter((x) => x.systemType === template.systemType).length + 1;
+        const pos = {
+          x: s.x ?? 120 + (systems.length % 5) * 220,
+          y: s.y ?? 160 + Math.floor(systems.length / 5) * 180,
+        };
+        const sys = newSystemFromTemplate(template, pos, n);
+        if (s.name) sys.name = s.name;
+        systems.push(sys);
+        interfaces.push(defaultInterfaceFor(sys.id));
+        placed.push(sys.name);
+      });
+      mutate((prev) => ({ ...prev, systems: [...prev.systems, ...systems.slice(p.systems.length)], interfaces: [...prev.interfaces, ...interfaces.slice(p.interfaces.length)] }));
+      return { placed };
+    },
+    connectByName: (from, to, label) => {
+      const p = projectRef.current;
+      if (!p) throw new Error("No system project open - open or create one in System Design first.");
+      const a = resolveSystemByName(p.systems, from);
+      const b = resolveSystemByName(p.systems, to);
+      if (a.id === b.id) throw new Error("Cannot connect a system to itself.");
+      connectSystems(a.id, b.id, label ?? "");
+      return { from: a.name, to: b.name };
+    },
+    removeByName: (names) => {
+      const p = projectRef.current;
+      if (!p) throw new Error("No system project open - open or create one in System Design first.");
+      // Resolve all first so an unknown name removes nothing.
+      const doomed = names.map((n) => resolveSystemByName(p.systems, n));
+      const gone = new Set(doomed.map((s) => s.id));
+      mutate((prev) => ({
+        ...prev,
+        systems: prev.systems.filter((s) => !gone.has(s.id)),
+        connections: prev.connections.filter((c) => !gone.has(c.sourceId) && !gone.has(c.targetId)),
+      }));
+      setSelIds((prevIds) => prevIds.filter((id) => !gone.has(id)));
+      if (selNodeId && gone.has(selNodeId)) setSelNodeId(null);
+      return { removed: doomed.map((s) => s.name) };
+    },
+  }), [mutate, connectSystems, selNodeId]);
+
+  useEffect(() => {
+    const handlers = buildSystemBridgeHandlers(systemBridgeCtx);
+    for (const [kind, fn] of Object.entries(handlers)) registerBridgeHandler(kind, fn);
+    return () => {
+      for (const kind of Object.keys(handlers)) unregisterBridgeHandler(kind);
+    };
+  }, [systemBridgeCtx]);
 
   const moveSystems = useCallback((moves: { id: string; x: number; y: number }[]) => {
     setProject((prev) => {

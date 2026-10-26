@@ -62,6 +62,41 @@ export function liveTools(hub: BridgeHub): McpTool[] {
       "erd.objects",
     ),
     live(
+      hub,
+      "activity_live_list",
+      "Read the live tab's org-mutation audit trail (Arch Activity): who deployed what, when, and whether it worked. Read-only - for review, risk summaries and JIRA drafts.",
+      {
+        limit: z.number().int().min(1).max(200).optional().describe("Max entries, newest first (default 50)"),
+        actor: z.enum(["architect", "agent-bridge"]).optional().describe("Filter by who acted"),
+        category: z.enum(["metadata", "data"]).optional().describe("Metadata deploys vs record edits"),
+      },
+      "arch.activity",
+      undefined,
+      30000,
+    ),
+    live(
+      hub, "system_live_snapshot", "Read the open System Design project: systems with types/positions, connections with status, counts. Read-only.",
+      {},
+      "sys.snapshot",
+      undefined,
+      30000,
+    ),
+    live(
+      hub, "system_live_place", "Place systems on the live System Design canvas by type (salesforce, middleware, queue, ...) with optional names/positions.",
+      { systems: z.array(z.object({ type: z.string().min(1).max(40), name: z.string().max(80).optional(), x: z.number().optional(), y: z.number().optional() })).min(1).max(10) },
+      "sys.place",
+    ),
+    live(
+      hub, "system_live_connect", "Connect two live systems by name with a draft edge (architect confirms topology on canvas).",
+      { from: z.string().min(1).describe("Source system name"), to: z.string().min(1).describe("Target system name"), label: z.string().max(120).optional() },
+      "sys.connect",
+    ),
+    live(
+      hub, "system_live_remove", "Remove live systems by name (dangling connections go with them).",
+      { names: z.array(z.string().min(1).max(80)).min(1).max(10) },
+      "sys.remove",
+    ),
+    live(
       hub, "erd_live_discover", "Ask the live org (via the tab session) for parents/children of an object - relationships only, nothing placed yet.",
       { apiName: str("Object api name"), direction: z.enum(["parents", "children", "both"]).default("both") },
       "erd.discover",
