@@ -127,6 +127,7 @@ const SKILLS: Record<string, { when: string; body: string }> = {
       "5. `system_live_remove` drops systems and their dangling connections.",
       "6. Pair with `system_import_postman`: import the collection, snapshot it, then rewire the drafts",
       "   into the real topology with the architect.",
+      "7. `system_live_rebalance` tidies the canvas into a readable flow when the architect drags things around.",
       "Pitfalls: names resolve exactly-then-substring; ambiguity errors list candidates. Start blank with `system_live_new` when nothing is open.",
     ].join("\n"),
   },

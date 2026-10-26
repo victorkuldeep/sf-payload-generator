@@ -80,6 +80,11 @@ export function liveTools(hub: BridgeHub): McpTool[] {
       "sys.new",
     ),
     live(
+      hub, "system_live_rebalance", "Rebalance the open canvas into a readable flow (sources left, sinks right, staggered rows). Keeps all connections; undoes with Ctrl+Z.",
+      {},
+      "sys.rebalance",
+    ),
+    live(
       hub, "system_live_snapshot", "Read the open System Design project: systems with types/positions, connections with status, counts. Read-only.",
       {},
       "sys.snapshot",

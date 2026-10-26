@@ -17,6 +17,7 @@ describe("live bridge MCP tools", () => {
       "erd_live_objects",
       "activity_live_list",
       "system_live_new",
+      "system_live_rebalance",
       "system_live_snapshot",
       "system_live_place",
       "system_live_connect",

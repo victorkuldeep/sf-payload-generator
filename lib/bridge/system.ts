@@ -22,6 +22,7 @@ export interface SystemBridgeContext {
   /** Current project (null when no project is open). */
   getProject: () => SystemProject | null;
   newBlankProject: (name?: string) => { id: string; name: string };
+  rebalance: () => { moved: number };
   placeSystems: (specs: { type: string; name?: string; x?: number; y?: number }[]) => { placed: string[] };
   connectByName: (from: string, to: string, label?: string) => { from: string; to: string };
   removeByName: (names: string[]) => { removed: string[] };
@@ -33,6 +34,7 @@ export const SYSTEM_BRIDGE_KINDS = [
   "sys.place",
   "sys.connect",
   "sys.remove",
+  "sys.rebalance",
 ] as const;
 
 function strArg(args: Record<string, unknown>, key: string): string {
@@ -78,6 +80,8 @@ export function buildSystemBridgeHandlers(ctx: SystemBridgeContext): Record<stri
       const name = strArg(args, "name");
       return ctx.newBlankProject(name || undefined);
     },
+
+    "sys.rebalance": async () => ctx.rebalance(),
 
     "sys.snapshot": async () => {
       const p = ctx.getProject();

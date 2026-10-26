@@ -29,6 +29,7 @@ import Badge from "../ui/Badge";
 import {
   SYSTEM_TEMPLATES,
   newProject,
+  rebalanceLayout,
   newSystemFromTemplate,
   defaultInterfaceFor,
   ensureDefaultInterfaces,
@@ -192,6 +193,7 @@ function DesignerCanvas({
   onUngroup,
   canDelete,
   onDeleteSelection,
+  onRebalance,
 }: {
   project: SystemProject;
   onMoveSystems: (moves: { id: string; x: number; y: number }[]) => void;
@@ -228,6 +230,7 @@ function DesignerCanvas({
   onUngroup: () => void;
   canDelete: boolean;
   onDeleteSelection: () => void;
+  onRebalance: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition, fitView, getNodes, getNodesBounds } = useReactFlow();
@@ -629,6 +632,16 @@ function DesignerCanvas({
           className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-1.5 text-ivory-700 transition-colors cursor-pointer hover:border-red-400 hover:text-red-700 disabled:cursor-default disabled:opacity-40 disabled:hover:border-[var(--color-line)] disabled:hover:text-ivory-700"
         >
           <Trash2 size={13} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          onClick={onRebalance}
+          disabled={project.systems.length === 0}
+          title="Rebalance layout - flow sources left, sinks right"
+          aria-label="Rebalance layout"
+          className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-1.5 text-ivory-700 transition-colors cursor-pointer hover:border-[var(--color-accent)] hover:text-ivory-950 disabled:cursor-default disabled:opacity-40"
+        >
+          <Shuffle size={13} aria-hidden="true" />
         </button>
         <button
           type="button"
@@ -1450,6 +1463,22 @@ export function SystemDesigner() {
     setSaveState("dirty");
   }, []);
 
+  // Rebalance: layered auto-layout (sources left, sinks right) with undo
+  // via the mutate path. Declared above the bridge context like loadBuilt.
+  const rebalanceCanvas = useCallback(() => {
+    const p = projectRef.current;
+    if (!p || p.systems.length === 0) return 0;
+    const spots = rebalanceLayout(p);
+    mutate((prev) => ({
+      ...prev,
+      systems: prev.systems.map((s) => {
+        const at = spots.get(s.id);
+        return at ? { ...s, position: { ...at } } : s;
+      }),
+    }));
+    return p.systems.length;
+  }, [mutate]);
+
   // Live agent bridge (sys.* commands): the tab-side context mirroring the
   // ERD bridge. projectRef (declared with the other refs) keeps handlers
   // fresh; registration re-runs when the stable callbacks change.
@@ -1475,9 +1504,12 @@ export function SystemDesigner() {
       templates.forEach((template, i) => {
         const s = specs[i];
         const n = systems.filter((x) => x.systemType === template.systemType).length + 1;
+        // Agent-placed nodes land in a readable left-to-right row: 360px
+        // pitch clears the ~260px node cards so draft edges stay visible.
+        // The canvas pans, so later rows drop well below instead of crowding.
         const pos = {
-          x: s.x ?? 120 + (systems.length % 5) * 220,
-          y: s.y ?? 160 + Math.floor(systems.length / 5) * 180,
+          x: s.x ?? 120 + (systems.length % 5) * 360,
+          y: s.y ?? 160 + Math.floor(systems.length / 5) * 280,
         };
         const sys = newSystemFromTemplate(template, pos, n);
         if (s.name) sys.name = s.name;
@@ -1512,7 +1544,8 @@ export function SystemDesigner() {
       if (selNodeId && gone.has(selNodeId)) setSelNodeId(null);
       return { removed: doomed.map((s) => s.name) };
     },
-  }), [mutate, connectSystems, selNodeId, loadBuilt]);
+    rebalance: () => ({ moved: rebalanceCanvas() }),
+  }), [mutate, connectSystems, selNodeId, loadBuilt, rebalanceCanvas]);
 
   useEffect(() => {
     const handlers = buildSystemBridgeHandlers(systemBridgeCtx);
@@ -2153,6 +2186,7 @@ export function SystemDesigner() {
                 onUngroup={() => { ungroupSelection(); }}
                 canDelete={Boolean(selNodeId || selEdgeId || selNoteId || selIds.length > 0)}
                 onDeleteSelection={deleteSelection}
+                onRebalance={rebalanceCanvas}
               />
             )}
           </ReactFlowProvider>

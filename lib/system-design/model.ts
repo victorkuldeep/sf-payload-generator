@@ -678,6 +678,56 @@ export function newSystemFromTemplate(t: SystemTemplate, position: { x: number; 
   };
 }
 
+/**
+ * Layered auto-layout: sources left, sinks right, staggered rows so edges
+ * and labels stay readable instead of one robotic line. Pure - returns
+ * positions, never mutates. X pitch 380 clears the ~260px node cards;
+ * Y pitch 260 keeps stacked edges apart. Within a layer the current
+ * top-to-bottom order is kept, so rebalancing feels stable, not shuffled.
+ */
+export function rebalanceLayout(project: SystemProject): Map<string, { x: number; y: number }> {
+  const ids = project.systems.map((s) => s.id);
+  const preds = new Map<string, string[]>();
+  for (const id of ids) preds.set(id, []);
+  for (const c of project.connections) {
+    if (c.sourceId === c.targetId || !preds.has(c.sourceId) || !preds.has(c.targetId)) continue;
+    preds.get(c.targetId)!.push(c.sourceId);
+  }
+  // Longest-path depth; cycles stop shallow instead of looping forever.
+  const depthCache = new Map<string, number>();
+  const depthOf = (id: string, trail: Set<string>): number => {
+    const hit = depthCache.get(id);
+    if (hit !== undefined) return hit;
+    if (trail.has(id)) return 0;
+    trail.add(id);
+    let d = 0;
+    for (const p of preds.get(id) ?? []) d = Math.max(d, depthOf(p, trail) + 1);
+    trail.delete(id);
+    depthCache.set(id, d);
+    return d;
+  };
+  const layers = new Map<number, string[]>();
+  for (const id of ids) {
+    const d = depthOf(id, new Set());
+    if (!layers.has(d)) layers.set(d, []);
+    layers.get(d)!.push(id);
+  }
+  const byId = new Map(project.systems.map((s) => [s.id, s] as const));
+  const out = new Map<string, { x: number; y: number }>();
+  const sortedLayers = [...layers.entries()].sort((e1, e2) => e1[0] - e2[0]);
+  for (const entry of sortedLayers) {
+    const d = entry[0];
+    const members = entry[1];
+    const ordered = [...members].sort((a, b) => {
+      const pa = byId.get(a)!.position;
+      const pb = byId.get(b)!.position;
+      return pa.y - pb.y || pa.x - pb.x;
+    });
+    ordered.forEach((id, i) => out.set(id, { x: 120 + d * 380, y: 160 + i * 260 }));
+  }
+  return out;
+}
+
 export interface ProjectIssue {
   path: string;
   message: string;

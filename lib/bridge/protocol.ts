@@ -24,6 +24,7 @@ export const BRIDGE_WRITES = [
   "sys.place",
   "sys.connect",
   "sys.remove",
+  "sys.rebalance",
   "erd.discover",
   "erd.place",
   "erd.focus",
@@ -108,6 +109,8 @@ export function describeCommand(command: string, args: Record<string, unknown>):
       return "Read the org-mutation audit trail";
     case "sys.new":
       return `Start a new blank system project${args.name ? `: ${str(args.name)}` : ""} (replaces the current canvas; the old project stays saved)`;
+    case "sys.rebalance":
+      return "Rebalance the canvas layout (readable flow, keeps connections)";
     case "sys.snapshot":
       return "Read the open system project (systems, connections)";
     case "sys.place":
