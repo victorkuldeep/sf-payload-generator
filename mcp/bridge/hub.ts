@@ -6,6 +6,7 @@ import {
   type BridgeResult,
   type BridgeWelcome,
 } from "./protocol.js";
+import { clearBeacon, writeBeacon } from "./beacon.js";
 
 /**
  * Agent bridge hub: a localhost-only WebSocket server the MCP process hosts.
@@ -68,7 +69,11 @@ export class BridgeHub {
     this.wss.on("listening", () => {
       const addr = this.wss?.address();
       if (addr && typeof addr === "object") this.port = addr.port;
+      // Beacon for same-machine auto-discovery (Setup > Find local hub).
+      // Manual pairing with the printed code always keeps working.
+      writeBeacon(this.port, this.code);
     });
+    this.wss.on("close", () => clearBeacon());
     this.wss.on("connection", (ws: WebSocket) => this.onConnection(ws));
     this.wss.on("error", (err: Error) => {
       console.error(`[gravenx-bridge] listen failed on 127.0.0.1:${port}: ${err.message}`);

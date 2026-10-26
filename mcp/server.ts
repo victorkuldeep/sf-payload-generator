@@ -49,6 +49,9 @@ async function main(): Promise<void> {
   console.error(
     `[gravenx-mcp] agent bridge on 127.0.0.1:${hub.port} - pairing code ${hub.code} (show it to the architect; they enter it in Setup > Terminal Bridge)`
   );
+  console.error(
+    `[gravenx-mcp] one-click pair: open <your-studio-URL>/setup?bridge=${hub.code}&port=${hub.port} (or Setup > Terminal Bridge > Find local hub)`
+  );
 
   for (const tool of ALL_TOOLS) {
     server.tool(tool.name, tool.description, tool.shape, async (args) => {

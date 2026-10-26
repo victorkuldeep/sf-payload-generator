@@ -14,6 +14,8 @@ import {
   type ApprovalOverride,
 } from "@/lib/setup/policy";
 import { clearAudit, listAuditRuns, type AuditEvent } from "@/lib/setup/audit";
+import { clearArchActivity, listArchActivity, renderActivityReport, type ArchActivityEntry } from "@/lib/erd-activity";
+import { aiHistoryKey } from "@/lib/ai/gate";
 import { AboutPanel, CompliancePanel, ConnectionsPanel, DiagnosticsPanel, PreferencesPanel, ShortcutsPanel, WorkspacePanel } from "./SetupPanels";
 import { BridgeSetupPanel } from "./BridgeSetupPanel";
 
@@ -65,6 +67,32 @@ function AgentControl() {
   useEffect(() => {
     void refreshAudit();
   }, []);
+  const [activity, setActivity] = useState<ArchActivityEntry[]>([]);
+  const [activityMsg, setActivityMsg] = useState<string | null>(null);
+  const refreshActivity = async () => setActivity(await listArchActivity(200).catch(() => []));
+  useEffect(() => {
+    void refreshActivity();
+  }, []);
+  const downloadActivity = (format: "md" | "json") => {
+    try {
+      const body =
+        format === "md"
+          ? renderActivityReport(activity, aiHistoryKey())
+          : JSON.stringify({ exportedAt: new Date().toISOString(), org: aiHistoryKey(), entries: activity }, null, 2);
+      const blob = new Blob([body], { type: format === "md" ? "text/markdown" : "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `arch-activity-${new Date().toISOString().slice(0, 10)}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setActivityMsg(`Exported ${activity.length} actions as ${format.toUpperCase()}.`);
+    } catch {
+      setActivityMsg("Export failed in this browser.");
+    }
+  };
 
   return (
     <div className="space-y-3">
@@ -373,12 +401,70 @@ function AgentControl() {
           </ul>
         )}
       </div>
+
+      <div className="arch-card overflow-hidden">
+        <div className="arch-card__head flex items-center gap-2 px-4 py-2.5">
+          <p className="min-w-0 flex-1 text-sm font-bold text-ivory-950">Arch Activity</p>
+          <span className="font-mono text-[10px] text-ivory-500">{activity.length} org mutations</span>
+          <button
+            type="button"
+            onClick={() => void refreshActivity()}
+            className="cursor-pointer rounded-full border border-[var(--color-line)] px-2.5 py-1 text-[11px] font-semibold text-ivory-700 hover:text-ivory-950"
+          >
+            Refresh
+          </button>
+          <button
+            type="button"
+            onClick={() => void downloadActivity("md")}
+            className="cursor-pointer rounded-full border border-[var(--color-line)] px-2.5 py-1 text-[11px] font-semibold text-ivory-700 hover:text-ivory-950"
+          >
+            Export MD
+          </button>
+          <button
+            type="button"
+            onClick={() => void downloadActivity("json")}
+            className="cursor-pointer rounded-full border border-[var(--color-line)] px-2.5 py-1 text-[11px] font-semibold text-ivory-700 hover:text-ivory-950"
+          >
+            Export JSON
+          </button>
+          <button
+            type="button"
+            onClick={() => void clearArchActivity().then(() => void refreshActivity())}
+            className="cursor-pointer rounded-full border border-red-300 px-2.5 py-1 text-[11px] font-semibold text-red-700 hover:text-red-800"
+          >
+            Clear
+          </button>
+        </div>
+        <p className="border-b border-[var(--color-line-soft)] px-4 py-1.5 text-[11px] leading-snug text-ivory-600">
+          Every org mutation from the ERD - object/field deploys and record edits, by architect or agent-bridge.
+          Canvas curation stays out by design. Paste the MD export straight into JIRA.
+        </p>
+        {activityMsg && <p className="border-b border-[var(--color-line-soft)] px-4 py-1.5 text-[11px] text-ivory-700">{activityMsg}</p>}
+        {activity.length === 0 ? (
+          <p className="px-4 py-3 text-xs text-ivory-600">No org mutations yet - deploy a field or save a record from the ERD and it lands here.</p>
+        ) : (
+          <ul className="max-h-64 divide-y divide-[var(--color-line-soft)] overflow-y-auto">
+            {activity.map((e) => (
+              <li key={e.id} className="flex items-center gap-2 px-4 py-1.5 text-xs">
+                <span className={`h-2 w-2 shrink-0 rounded-full ${e.ok ? "bg-[#2F5D3A]" : "bg-red-600"}`} aria-hidden="true" />
+                <span className="shrink-0 font-mono text-[10px] text-ivory-500">
+                  {new Date(e.at).toLocaleString()}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-ivory-950">
+                  <span className="font-mono text-[10px] text-ivory-500">{e.actor}/{e.action}</span> · {e.target}
+                  <span className="text-ivory-500"> — {e.message}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
 
-export function SetupRoute() {
-  const [section, setSection] = useState<SectionId>("agent");
+export function SetupRoute({ linkCode, linkPort }: { linkCode?: string; linkPort?: string }) {
+  const [section, setSection] = useState<SectionId>(linkCode ? "bridge" : "agent");
   return (
     <div>
       <div className="mb-3 flex items-center gap-2.5">
@@ -413,7 +499,7 @@ export function SetupRoute() {
         </nav>
         <div className="min-w-0">
           {section === "agent" && <AgentControl />}
-          {section === "bridge" && <BridgeSetupPanel />}
+          {section === "bridge" && <BridgeSetupPanel linkCode={linkCode} linkPort={linkPort} />}
           {section === "preferences" && <PreferencesPanel />}
           {section === "connections" && <ConnectionsPanel />}
           {section === "workspace" && <WorkspacePanel />}

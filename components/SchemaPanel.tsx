@@ -21,6 +21,7 @@ import { AddPicklistValuesDialog } from "./erd/AddPicklistValuesDialog";
 import { AuthorFieldDialog } from "./erd/AuthorFieldDialog";
 import { AuthorObjectDialog } from "./erd/AuthorObjectDialog";
 import { buildCustomFieldBody, buildCustomObjectBody, describeTypeFor, looksLikeSandbox, newAuthorId, parseToolingResult, syntheticDescribeForObject, toolingCreatePath, type AuthorChange, type DesignFieldType, type FieldDraft, type ObjectDraft } from "@/lib/salesforce/design";
+import { logArchActivity, type ArchAction, type ArchActor } from "@/lib/erd-activity";
 import { DiscoverPicker, type DiscoverCandidate } from "./erd/DiscoverPicker";
 import { HidePanel } from "./erd/HidePanel";
 import { PicklistPopover, type PicklistPopoverData } from "./erd/PicklistPopover";
@@ -156,6 +157,23 @@ function timeAgo(ts: number): string {
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
+}
+
+/** Arch Activity mapping: an AuthorChange kind becomes an auditable action. */
+function authorActivityAction(kind: string): ArchAction {
+  if (kind === "object") return "create-object";
+  if (kind === "relationship") return "create-relationship";
+  return "create-field";
+}
+
+/**
+ * Arch Activity target: field/relationship labels already carry the dotted
+ * name ("Account.Tier__c (Picklist)"); objects log their api name.
+ */
+function authorActivityTarget(kind: string, label: string, targetApi: string): string {
+  if (kind === "object") return targetApi;
+  const dotted = label.split(" ")[0];
+  return dotted || targetApi;
 }
 
 type GraphDetail =
@@ -836,6 +854,9 @@ export default function SchemaPanel({
 }: SchemaPanelProps) {
   const [rootSearch, setRootSearch] = useState("");
   const [rootName, setRootName] = useState("");
+  // Arch Activity actor: human submissions log as "architect"; bridge-issued
+  // author calls (same choke points) scope this to "agent-bridge" instead.
+  const activityActor = useRef<ArchActor>("architect");
   const [focusName, setFocusName] = useState("");
   const [describes, setDescribes] = useState<Map<string, SalesforceDescribeResult>>(new Map());
   const [busy, setBusy] = useState<string | null>(null);
@@ -1710,11 +1731,33 @@ export default function SchemaPanel({
         message = issues.map((i) => i.message).join("; ");
       }
       if (isSessionExpiredMessage(message)) onSessionExpired?.();
+      void logArchActivity({
+        actor: activityActor.current,
+        surface: "erd",
+        view,
+        root: rootName || undefined,
+        category: "data",
+        action: "update-record",
+        target: `${apiName}/${id}`,
+        ok: false,
+        message: `${apiName} save failed - ${message}`.slice(0, 500),
+      });
       throw new Error(message);
     }
     await pullSingle(apiName, id);
     setNotice(`${apiName} saved - box refreshed from the server.`);
-  }, [instanceUrl, apiVersion, getToken, onSessionExpired, pullSingle]);
+    void logArchActivity({
+      actor: activityActor.current,
+      surface: "erd",
+      view,
+      root: rootName || undefined,
+      category: "data",
+      action: "update-record",
+      target: `${apiName}/${id}`,
+      ok: true,
+      message: `${apiName} record saved.`,
+    });
+  }, [instanceUrl, apiVersion, getToken, onSessionExpired, pullSingle, view, rootName]);
 
   /** Raw (typed) fields for any aboard record: full singles first, then child pages. */
   const editRawFields = useCallback((apiName: string, id: string): Record<string, unknown> | null => {
@@ -3074,6 +3117,17 @@ export default function SchemaPanel({
               : c
           )
         );
+        void logArchActivity({
+          actor: activityActor.current,
+          surface: "erd",
+          view,
+          root: rootName || undefined,
+          category: "metadata",
+          action: authorActivityAction(change.kind),
+          target: authorActivityTarget(change.kind, change.label, change.targetApi),
+          ok: false,
+          message: `${change.label} blocked - session token unavailable.`,
+        });
         return false;
       }
       try {
@@ -3110,6 +3164,17 @@ export default function SchemaPanel({
         setAuthorQueue((prev) =>
           prev.map((c) => (c.id === change.id ? { ...c, status: "failed" as const, error: message } : c))
         );
+        void logArchActivity({
+          actor: activityActor.current,
+          surface: "erd",
+          view,
+          root: rootName || undefined,
+          category: "metadata",
+          action: "deploy-failed",
+          target: authorActivityTarget(change.kind, change.label, change.targetApi),
+          ok: false,
+          message: `${change.label} failed - ${message}`.slice(0, 500),
+        });
         // Object sketches roll back; field/relationship sketches derive from
         // the deploying queue so they vanish on their own.
         if (change.kind === "object") {
@@ -3134,9 +3199,20 @@ export default function SchemaPanel({
         /* describe refresh failed - canvas keeps prior data */
       }
       setNotice(`${change.label} deployed - canvas refreshed from the org.`);
+      void logArchActivity({
+        actor: activityActor.current,
+        surface: "erd",
+        view,
+        root: rootName || undefined,
+        category: "metadata",
+        action: authorActivityAction(change.kind),
+        target: authorActivityTarget(change.kind, change.label, change.targetApi),
+        ok: true,
+        message: `${change.label} deployed to the org.`,
+      });
       return true;
     },
-    [instanceUrl, apiVersion, getToken, onSessionExpired, fetchDescribe, mergeDescribes]
+    [instanceUrl, apiVersion, getToken, onSessionExpired, fetchDescribe, mergeDescribes, view, rootName]
   );
 
   const [pendingProdField, setPendingProdField] = useState<{ draft: FieldDraft; childApi: string } | null>(null);
@@ -3789,8 +3865,20 @@ export default function SchemaPanel({
       describeCached: (name) => need().describeCached(name),
       hideNames: (names, hide) => need().hideNames(names, hide),
       removeNames: (names) => need().removeNames(names),
-      submitAuthorField: (draft, childApi) => need().submitAuthorField(draft, childApi),
-      submitAuthorObject: (draft) => need().submitAuthorObject(draft),
+      // Bridge-issued author calls share the human choke points; scope the
+      // audit actor so the trail shows who really deployed.
+      submitAuthorField: (draft, childApi) => {
+        activityActor.current = "agent-bridge";
+        return need().submitAuthorField(draft, childApi).finally(() => {
+          activityActor.current = "architect";
+        });
+      },
+      submitAuthorObject: (draft) => {
+        activityActor.current = "agent-bridge";
+        return need().submitAuthorObject(draft).finally(() => {
+          activityActor.current = "architect";
+        });
+      },
     };
     const handlers = buildErdBridgeHandlers(live);
     for (const kind of ERD_BRIDGE_KINDS) {
