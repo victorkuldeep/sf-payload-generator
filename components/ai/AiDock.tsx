@@ -287,7 +287,7 @@ export function AiDock() {
     }
     setBusy(false);
     abortRef.current = null;
-  }, [draft, busy, providerId, modelId, turns, baseURL, skill.name, skill.system]);
+  }, [draft, busy, providerId, modelId, turns, baseURL, skill]);
 
   // Flush completed chats to per-org history once the turn settles.
   useEffect(() => {

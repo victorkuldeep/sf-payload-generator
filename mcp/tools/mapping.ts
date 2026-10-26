@@ -2,7 +2,7 @@ import { z } from "zod";
 import {
   ALL_STATUSES,
   blankProject,
-  MAPPING_FORMAT,
+  // (format comes from the serialized envelope)
   type MappingKind,
   type MappingProject,
   type MappingRow,

@@ -84,7 +84,7 @@ export function AuthorFieldDialog({
     relationshipName: initial?.referenceTo ? "" : "",
   }));
   const [apiTouched, setApiTouched] = useState(false);
-  const [relTouched, setRelTouched] = useState(false);
+  const [, setRelTouched] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
   const isRelationship = draft.type === "Lookup" || draft.type === "MasterDetail";

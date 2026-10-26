@@ -53,8 +53,8 @@ export function parseStoredScene(raw: string | null | undefined): StoredScene | 
 /** Slim retry payload: drawings survive even when embedded images cannot. */
 export function slimSceneJson(sceneJson: string): string {
   const parsed = JSON.parse(sceneJson) as Record<string, unknown>;
-  const { files: _dropped, ...rest } = parsed;
-  return JSON.stringify(rest);
+  delete parsed.files;
+  return JSON.stringify(parsed);
 }
 
 export async function readStoredScene(): Promise<StoredScene | null> {

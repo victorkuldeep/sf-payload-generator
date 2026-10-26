@@ -169,8 +169,8 @@ export function ScreenCanvas({
     gesture.current = { mode: "handle", startPx: px, startPy: py, annId, handle, origRect: { ...ann.geometry } };
   };
 
-  const img = toView(vp, sourceW, sourceH);
-  const selected = annotations.find((a) => a.id === selectedId) ?? null;
+
+
   const showLabels = vp.scale > 0.55;
 
   return (

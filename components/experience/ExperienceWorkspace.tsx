@@ -4,14 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import Button from "../ui/Button";
 import {
   assetDisplayUrl,
-  checkImageFile,
-  decodeDimensions,
+
+
   deleteAssetRecord,
   getAssetRecord,
-  hashBlob,
-  makeThumbnail,
+
+
   revokeDisplayUrl,
-  saveAssetRecord,
+
 } from "@/lib/experience/assets";
 import { logChange } from "@/lib/experience/migrate";
 import { AddScreenDialog, EditScreenDialog, ReplaceImage } from "./ScreenDialogs";
@@ -30,7 +30,7 @@ import type { Rect } from "@/lib/experience/geometry";
 import { deleteScreenCascade, reorderScreens, screenImpact } from "@/lib/experience/screens";
 import type { StudioProject } from "@/lib/studio/types";
 import type { MappingProject, SnapshotObject } from "@/lib/mapping/types";
-import type { Screen, ScreenAsset } from "@/lib/experience/types";
+import type { Screen } from "@/lib/experience/types";
 
 function uid(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -321,6 +321,7 @@ function ScreenDetail({
 }) {
   const exp = project.experience!;
   const asset = exp.assets.find((a) => a.screenId === screen.id);
+  const storageKey = asset?.storageKey ?? null;
   const [imgUrl, setImgUrl] = useState<string | null>(null);
   const [replacing, setReplacing] = useState(false);
   const [attaching, setAttaching] = useState(false);
@@ -349,8 +350,8 @@ function ScreenDetail({
   useEffect(() => {
     let cancelled = false;
     let url: string | null = null;
-    if (asset) {
-      void getAssetRecord(asset.storageKey)
+    if (storageKey) {
+      void getAssetRecord(storageKey)
         .then((rec) => {
           if (!cancelled && rec) {
             url = assetDisplayUrl(rec.blob);
@@ -365,7 +366,7 @@ function ScreenDetail({
       cancelled = true;
       if (url) revokeDisplayUrl(url);
     };
-  }, [asset?.storageKey]);
+  }, [storageKey]);
 
   // A2: this screen is a palette attach target while selected.
   useEffect(() => {

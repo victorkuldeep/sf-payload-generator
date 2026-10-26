@@ -26,10 +26,10 @@ import {
   AggSpec,
   SearchResult,
 } from "./types";
-import { parseQuery, validateQuery } from "./parser";
-import { getPath, cloneJson } from "./utils";
+import { validateQuery } from "./parser";
+
 import { evalExpr, compareForSort } from "./engine";
-import { IndexSet, FieldIndex } from "./indexes";
+import { IndexSet } from "./indexes";
 import { ResultCache, EngineMetrics, parseQueryCached, setQueryCacheSize } from "./cache";
 import { aggregateItems } from "./aggregates";
 
@@ -44,8 +44,6 @@ const MAX_RESULT_ROWS = 1_000_000;
 
 /** Next engine ID */
 let nextEngineId = 1;
-/** Registry of active engines */
-const engines = new Map<number, SearchEngine>();
 
 /**
  * Main SearchEngine class.

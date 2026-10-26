@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it } from "vitest";
 import { clampK, loadViewport, panBy, screenToWorld, storeViewport, worldToScreen, zoomAt } from "./viewport";
 
 describe("viewport math", () => {

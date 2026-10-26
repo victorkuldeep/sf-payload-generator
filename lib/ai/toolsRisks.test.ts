@@ -3,7 +3,7 @@ import { registerSystemBridge } from "./systemBridge";
 import { DECISION_TOOLS } from "./toolsDecisions";
 import { RISK_TOOLS, setRisksBackend } from "./toolsRisks";
 import { toolsForSkill } from "./toolsSystem";
-import { newDecision, type Decision } from "@/lib/decisions/model";
+import { type Decision } from "@/lib/decisions/model";
 import type { SystemProject } from "@/lib/system-design/model";
 
 const project = {

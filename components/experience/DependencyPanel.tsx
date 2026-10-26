@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import Button from "../ui/Button";
 import { logChange } from "@/lib/experience/migrate";
-import { checkDependencies } from "@/lib/experience/bridge";
 import type { StudioProject } from "@/lib/studio/types";
 import type { SnapshotObject } from "@/lib/mapping/types";
 import type { APIOperation, BackendDependency, DependencyKind } from "@/lib/experience/types";
@@ -72,7 +71,6 @@ export function DependencyPanel({
   const otherOps = operations.filter((o) => o.id !== operation.id);
 
   const add = () => {
-    const now = new Date().toISOString();
     const id = uid("dep");
     let reference: BackendDependency["reference"];
     let depLabel = label.trim();

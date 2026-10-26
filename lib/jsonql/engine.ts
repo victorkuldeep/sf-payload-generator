@@ -13,7 +13,7 @@
  * @module engine
  */
 
-import { JsonValue, Expr, Op, Predicate, Query, ValueLit, EvalOptions, OrderBy, IndexHit, ScoreContext } from "./types";
+import { JsonValue, Expr, Op, Predicate, ValueLit, EvalOptions, OrderBy, ScoreContext } from "./types";
 import { getPath } from "./utils";
 
 // ============================================================================

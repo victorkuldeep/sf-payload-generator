@@ -46,7 +46,7 @@
     "jszip": "^3.10.2",
     "lucide-react": "^1.51.0",
     "mammoth": "1.13.0",
-    "next": "15.5.27",
+    "next": "^15.5.28",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
@@ -55,7 +55,7 @@
     "virtual-react-json-diff": "^1.0.20",
     "ws": "^8.22.0",
     "yaml": "^2.9.1",
-    "zod": "^3.23.8"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@opennextjs/cloudflare": "^1.20.6",
@@ -67,7 +67,7 @@
     "esbuild": "^0.28.1",
     "eslint": "^8",
     "eslint-config-next": "15.5.27",
-    "happy-dom": "^20.14.5",
+    "happy-dom": "^21.0.4",
     "postcss": "^8.5.28",
     "tailwindcss": "^3.4.1",
     "tsx": "^4.23.15",

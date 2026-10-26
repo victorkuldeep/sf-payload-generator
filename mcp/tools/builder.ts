@@ -10,7 +10,7 @@ import {
   type StudioFieldValue,
   type StudioRequest,
 } from "@/lib/composite/studio";
-import { claimFile, findRecords, listKind, readJson, writeJson } from "../workspace";
+import { claimFile, findRecords, listKind, writeJson } from "../workspace";
 import type { McpTool, ToolResult } from "./types";
 
 const KIND = "composite";

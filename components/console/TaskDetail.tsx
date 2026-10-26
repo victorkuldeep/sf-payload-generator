@@ -92,7 +92,7 @@ export function TaskDetail({
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Fresh detail state whenever another task is picked from the queue.
+  // Fresh detail state whenever another task is picked from the queue. Field deps (not the task object): the parent rebuilds task per render and identity deps would wipe in-progress drafts.
   useEffect(() => {
     setTitle(task.title);
     setDescDraft(consoleBodyToNote(task));
@@ -102,7 +102,7 @@ export function TaskDetail({
     setAttachError(null);
     setLightbox(null);
     void listAttachments(task.id).then(setAttachments);
-  }, [task.id, task.title, task.body, task.bodyFormat, task.bodyHtml]);
+  }, [task.id, task.title, task.body, task.bodyFormat, task.bodyHtml]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const commitTitle = () => {
     const clean = title.trim().slice(0, 160);

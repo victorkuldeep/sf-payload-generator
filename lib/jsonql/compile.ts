@@ -172,12 +172,7 @@ export function compile(query: string, options?: CompileOptions): CompiledQuery 
   };
   
   const ast = parseQueryCached(query);
-  
-  const evalOpts: EvalOptions = {
-    caseSensitive: opts.caseSensitive ?? false,
-    strict: opts.strict ?? false
-  };
-  
+
   const execPlan = plan(ast, opts);
   
   return {

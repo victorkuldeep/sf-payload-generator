@@ -90,8 +90,6 @@ import { ViewsDialog } from "../c4/ViewsDialog";
 import { hiddenNodeIds, type C4View } from "@/lib/c4/views";
 import { ImpactSection } from "../graph/ImpactSection";
 import {
-  findMissingVars,
-  resolveEnvVars,
   looksLikeSecret,
   type CredVault,
 } from "@/lib/system-design/credentials";

@@ -9,7 +9,7 @@ import { newConsoleTask } from "@/lib/console/model";
 import { importConsoleTasks } from "@/lib/console/store";
 import type { ConsoleTask } from "@/lib/console/model";
 import type { InboxItemKind } from "@/lib/inbox/types";
-import { claimFile, listKind, readJson, writeJson } from "../workspace";
+import { claimFile, listKind, writeJson } from "../workspace";
 import type { McpTool } from "./types";
 
 function decisionsIn(data: unknown): Decision[] {

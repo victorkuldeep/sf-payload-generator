@@ -8,10 +8,8 @@ import { RichBody } from "../notes/RichBody";
 import { firstLine, queryInbox, countInbox } from "@/lib/inbox/normalize";
 import { compileActionPack } from "@/lib/inbox/actionPack";
 import {
-  EMPTY_QUERY,
   inboxBodyToNote,
   type ArchitectureInboxItem,
-  type InboxAnchor,
   type InboxItemKind,
   type InboxMeta,
   type InboxStatus,
@@ -217,7 +215,7 @@ export function ArchitectureInbox({
     }));
   }, [filtered, canvases]);
 
-  const canvasNameOf = (id: string) => canvases.find((c) => c.id === id)?.name ?? id;
+
 
   const toggle = <T,>(arr: T[], v: T): T[] => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
 

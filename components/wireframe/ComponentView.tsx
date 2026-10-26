@@ -91,7 +91,7 @@ export function ComponentView({
   onDelete: () => void;
 }) {
   const props = comp.props as Record<string, unknown>;
-  const str = (v: unknown, fb = ""): string => (typeof v === "string" ? v : fb);
+
   const list = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
   const num = (v: unknown, fb: number): number => (typeof v === "number" ? v : fb);
 

@@ -25,7 +25,7 @@ export interface StdNote {
 
 const KIND = "note" as const;
 
-export const stdNoteSchema: z.ZodType<StdNote, z.ZodTypeDef, unknown> = z.object({
+export const stdNoteSchema: z.ZodType<StdNote> = z.object({
   id: z.string().min(1),
   title: z.string().max(160).default("Untitled note"),
   body: z.string().max(12000).optional(),

@@ -60,13 +60,16 @@ export default function CompositePanel({
   onOpenCollection,
   onSessionExpired,
 }: CompositePanelProps) {
-  const freshBundleDoc = (name = "Untitled transaction"): StudioDocument => ({
-    name,
-    apiVersion,
-    allOrNone: true,
-    requests: [emptyStudioRequest(newStudioId("req"))],
-    mappings: [],
-  });
+  const freshBundleDoc = useCallback(
+    (name = "Untitled transaction"): StudioDocument => ({
+      name,
+      apiVersion,
+      allOrNone: true,
+      requests: [emptyStudioRequest(newStudioId("req"))],
+      mappings: [],
+    }),
+    [apiVersion]
+  );
   const [bundles, setBundles] = useState<{ tabId: string; doc: StudioDocument }[]>(() => [
     { tabId: newStudioId("bundle"), doc: freshBundleDoc() },
   ]);
@@ -154,7 +157,7 @@ export default function CompositePanel({
     setTestResult(null);
     setTestError(null);
     setOrderNotice(null);
-  }, [bundles.length]);
+  }, [bundles.length, freshBundleDoc]);
 
   const [pendingCloseBundle, setPendingCloseBundle] = useState<string | null>(null);
 
@@ -178,7 +181,7 @@ export default function CompositePanel({
     setTestResult(null);
     setTestError(null);
     setOrderNotice(null);
-  }, [bundles]);
+  }, [bundles, freshBundleDoc]);
 
   const requestCloseBundle = useCallback((tabId: string) => {
     const tab = bundles.find((t) => t.tabId === tabId);
@@ -243,7 +246,7 @@ export default function CompositePanel({
       }
       return null;
     },
-    [instanceUrl, apiVersion, getToken, onSessionExpired]
+    [instanceUrl, apiVersion, getToken, onSessionExpired, setDoc]
   );
 
   // ── request actions ──
@@ -266,7 +269,7 @@ export default function CompositePanel({
       touch();
       void fetchDescribe(id, objectName);
     },
-    [doc.requests, objects, fetchDescribe, touch]
+    [doc.requests, objects, fetchDescribe, touch, setDoc]
   );
 
   const handleDescribeObject = useCallback(
@@ -289,7 +292,7 @@ export default function CompositePanel({
       touch();
       await fetchDescribe(id, objectName);
     },
-    [objects, fetchDescribe, touch]
+    [objects, fetchDescribe, touch, setDoc]
   );
 
   const handleDuplicate = useCallback(
@@ -341,7 +344,7 @@ export default function CompositePanel({
       setSelectedId(cloneId);
       touch();
     },
-    [doc.requests, touch]
+    [doc.requests, touch, setDoc]
   );
 
   const handleDelete = useCallback(
@@ -362,7 +365,7 @@ export default function CompositePanel({
       });
       touch();
     },
-    [doc.requests, touch]
+    [doc.requests, touch, setDoc]
   );
 
   const handleMove = useCallback(
@@ -377,7 +380,7 @@ export default function CompositePanel({
       });
       touch();
     },
-    [touch]
+    [touch, setDoc]
   );
 
   const handleUpdateRequest = useCallback(
@@ -385,7 +388,7 @@ export default function CompositePanel({
       setDoc((p) => ({ ...p, requests: p.requests.map((r) => (r.id === id ? { ...r, ...patch } : r)) }));
       touch();
     },
-    [touch]
+    [touch, setDoc]
   );
 
   // ── field actions ──
@@ -412,7 +415,7 @@ export default function CompositePanel({
       }));
       touch();
     },
-    [touch]
+    [touch, setDoc]
   );
 
   const handleRemoveField = useCallback(
@@ -438,7 +441,7 @@ export default function CompositePanel({
       });
       touch();
     },
-    [touch, doc.requests, describes]
+    [touch, doc.requests, describes, setDoc]
   );
 
   const handleSetLiteral = useCallback(
@@ -453,7 +456,7 @@ export default function CompositePanel({
       }));
       touch();
     },
-    [touch]
+    [touch, setDoc]
   );
 
   const handleSetMode = useCallback(
@@ -491,7 +494,7 @@ export default function CompositePanel({
       }));
       touch();
     },
-    [touch]
+    [touch, setDoc]
   );
 
   // ── mapping actions (single source of truth for links) ──
@@ -524,7 +527,7 @@ export default function CompositePanel({
       });
       touch();
     },
-    [touch]
+    [touch, setDoc]
   );
 
   const handleRemoveMapping = useCallback(
@@ -543,7 +546,7 @@ export default function CompositePanel({
       }));
       touch();
     },
-    [touch]
+    [touch, setDoc]
   );
 
   const handleFixOrder = useCallback(() => {
@@ -556,18 +559,18 @@ export default function CompositePanel({
     setDoc((p) => ({ ...p, requests: order.map((id) => byId.get(id)).filter((r): r is StudioRequest => Boolean(r)) }));
     setOrderNotice("Reordered so every source executes before its dependents - independents kept their places.");
     touch();
-  }, [doc, touch]);
+  }, [doc, touch, setDoc]);
 
   const handlePosition = useCallback(
     (id: string, pos: { x: number; y: number }) => {
       setDoc((p) => ({ ...p, requests: p.requests.map((r) => (r.id === id ? { ...r, position: pos } : r)) }));
     },
-    []
+    [setDoc]
   );
 
   const handleResetLayout = useCallback(() => {
     setDoc((p) => ({ ...p, requests: p.requests.map((r) => ({ ...r, position: undefined })) }));
-  }, []);
+  }, [setDoc]);
 
   const gotoRequest = useCallback((id: string) => {
     setSelectedId(id);

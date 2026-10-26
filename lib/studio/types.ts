@@ -15,7 +15,6 @@ import type {
   ChangeLogEntry,
   ExperienceModule,
 } from "../experience/types";
-import { MAPPING_SCHEMA_VERSION } from "../mapping/types";
 
 export const STUDIO_FORMAT_VERSION = 1;
 

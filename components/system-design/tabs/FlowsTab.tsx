@@ -33,7 +33,7 @@ function FlowEditor({ project, flow, mutate }: { project: SystemProject; flow: F
     mutate((prev) => ({ ...prev, flows: prev.flows.map((f) => (f.id === flow.id ? { ...f, ...p } : f)) }));
 
   const laneEdges = useMemo(() => {
-    const seen = new Map<string, (typeof project.connections)[number]>();
+    const seen = new Map<string, SystemProject["connections"][number]>();
     for (const n of flow.lanes) {
       for (const e of lanes[n - 1]?.edges ?? []) seen.set(e.id, e);
     }

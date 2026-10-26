@@ -124,13 +124,13 @@ export function ComponentInspector({
       )}
 
       {tab === "requirements" && (
-        <RequirementEditor project={project} component={component} requirements={requirements} onMutate={onMutate} />
+        <RequirementEditor component={component} requirements={requirements} onMutate={onMutate} />
       )}
       {tab === "actions" && (
-        <ActionEditor project={project} component={component} actions={actions} onMutate={onMutate} />
+        <ActionEditor component={component} actions={actions} onMutate={onMutate} />
       )}
       {tab === "states" && (
-        <StateEditor project={project} component={component} states={states} onMutate={onMutate} />
+        <StateEditor component={component} states={states} onMutate={onMutate} />
       )}
       {tab === "bindings" && (
         <BindingEditor project={project} component={component} bindings={bindings} onMutate={onMutate} />
@@ -150,12 +150,10 @@ export function StatusSelect({ value, onChange }: { value: ExperienceStatus; onC
 }
 
 function RequirementEditor({
-  project,
   component,
   requirements,
   onMutate,
 }: {
-  project: StudioProject;
   component: UIComponent;
   requirements: UIDataRequirement[];
   onMutate: (fn: (p: StudioProject) => StudioProject) => void;
@@ -253,12 +251,10 @@ function RequirementEditor({
 }
 
 function ActionEditor({
-  project,
   component,
   actions,
   onMutate,
 }: {
-  project: StudioProject;
   component: UIComponent;
   actions: UIAction[];
   onMutate: (fn: (p: StudioProject) => StudioProject) => void;
@@ -313,7 +309,7 @@ function ActionEditor({
               type="button"
               onClick={() => onMutate((p) => (!p.experience ? p : { ...p, experience: { ...p.experience, actions: p.experience.actions.filter((x) => x.id !== a.id) } }))}
               aria-label={`Remove action ${a.name}`}
-              className="rounded px-1 text-[#B3261E] hover:bg-[#F9E8E6] cursor-pointer"
+              className="rounded px-1 text-[11px] text-[#B3261E] hover:bg-[#F9E8E6] cursor-pointer"
             >
               ✕
             </button>
@@ -328,12 +324,10 @@ function ActionEditor({
 const STATE_KINDS: UIStateKind[] = ["loading", "success", "empty", "validation-error", "authorization-error", "not-found", "server-error", "timeout", "partial", "disabled", "custom"];
 
 function StateEditor({
-  project,
   component,
   states,
   onMutate,
 }: {
-  project: StudioProject;
   component: UIComponent;
   states: UIStateDefinition[];
   onMutate: (fn: (p: StudioProject) => StudioProject) => void;

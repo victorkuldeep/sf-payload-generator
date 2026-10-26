@@ -16,20 +16,14 @@
  * @module cache
  */
 
-import { CacheStats, EngineMetricsSnapshot, EvalOptions, Expr, JsonValue, Query, PagedResult, ValueLit } from "./types";
-import { evalExpr, compareForSort } from "./engine";
-import { collectIndexFilters, IndexSet } from "./indexes";
-import { getPath, cloneJson } from "./utils";
+import { CacheStats, EngineMetricsSnapshot, Query } from "./types";
 import { parseQuery } from "./parser";
 
-/** Default fields to index */
-const DEFAULT_INDEX_FIELDS = ["category", "country", "active"];
 /** Default result cache capacity */
 const DEFAULT_RESULT_CACHE_CAP = 128;
 /** Minimum hits before caching result */
 const DEFAULT_RESULT_CACHE_MIN_HITS = 2;
-/** Maximum rows to process */
-const MAX_RESULT_ROWS = 1_000_000;
+
 
 // ============================================================================
 // Result Cache

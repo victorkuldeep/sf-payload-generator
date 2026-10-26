@@ -438,7 +438,7 @@ export default function SoqlPanel({
         abortRef.current = null;
       }
     },
-    [instanceUrl, apiVersion, getToken, onSessionExpired]
+    [instanceUrl, apiVersion, onSessionExpired]
   );
 
   const handleRun = useCallback(async () => {

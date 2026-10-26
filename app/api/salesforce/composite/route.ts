@@ -7,7 +7,7 @@ const compositeRequestItemSchema = z.object({
   method: z.enum(["POST", "PATCH", "GET", "DELETE"]),
   url: z.string().min(1),
   referenceId: z.string().min(1),
-  body: z.record(z.unknown()).optional(),
+  body: z.record(z.string(), z.unknown()).optional(),
 });
 
 const schema = z.object({

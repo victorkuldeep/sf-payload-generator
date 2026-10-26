@@ -95,10 +95,12 @@ const blockSchema = z.object({
   elseChildren: z.array(z.lazy((): z.ZodTypeAny => seqNodeSchema)).max(500).optional(),
 });
 
-const seqNodeSchema: z.ZodType<SeqNode, z.ZodTypeDef, unknown> = z.discriminatedUnion("nodeType", [
+// v4 cannot infer the recursive union back to the hand-maintained SeqNode
+// (lazy children widen); the cast is guarded by model.test.ts round-trips.
+const seqNodeSchema = z.discriminatedUnion("nodeType", [
   messageSchema,
   blockSchema,
-]);
+]) as unknown as z.ZodType<SeqNode>;
 
 export const SEQ_STATUSES = ["draft", "in-review", "approved"] as const;
 export type SeqStatus = (typeof SEQ_STATUSES)[number];

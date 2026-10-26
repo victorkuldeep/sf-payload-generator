@@ -34,7 +34,7 @@ export function ApiCatalogPanel({
   onOpenIntegration: () => void;
 }) {
   const catalog: ApiCatalog = project.apiCatalog!;
-  const bindings = project.experience?.bindings ?? [];
+  const bindings = useMemo(() => project.experience?.bindings ?? [], [project.experience?.bindings]);
   const [query, setQuery] = useState("");
   const [method, setMethod] = useState("all");
   const [layer, setLayer] = useState("all");

@@ -15,7 +15,7 @@
  * @module aggregates
  */
 
-import { JsonValue, AggSpec, AggDef } from "./types";
+import { JsonValue, AggSpec } from "./types";
 import { getPath } from "./utils";
 import { parseQueryCached } from "./cache";
 import { evalExpr } from "./engine";

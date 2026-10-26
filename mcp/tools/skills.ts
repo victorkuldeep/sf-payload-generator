@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { McpTool, ToolResult } from "./types";
+import type { McpTool } from "./types";
 
 /**
  * Skill packs: opinionated GRAVENX playbooks per surface. Agents read the

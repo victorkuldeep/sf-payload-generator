@@ -40,7 +40,7 @@ const schema = z.object({
       pass: z.string().max(500).optional().default(""),
     })
     .optional()
-    .default({ type: "none" }),
+    .default({ type: "none", token: "", user: "", pass: "" }),
 });
 
 const SAFE_RESPONSE_HEADERS = new Set([

@@ -14,7 +14,7 @@ const INK = "#27241F";
 const MUTED = "#A39B8E";
 const BRONZE = "#9A7653";
 const GOLD = "#C9A86A";
-const PAPER = "#FFFFFF";
+
 const FRAME_BG = "#FDFBF6";
 
 export function SequenceDiagram({

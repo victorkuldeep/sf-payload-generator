@@ -7,7 +7,6 @@
  */
 
 import { STORES, withStore } from "../db";
-import type { ScreenAsset } from "./types";
 
 export const ACCEPTED_MIME = ["image/png", "image/webp"] as const;
 export const MAX_ASSET_BYTES = 10 * 1024 * 1024;

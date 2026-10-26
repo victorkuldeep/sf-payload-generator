@@ -28,7 +28,7 @@ export function SnapshotsPanel({
   onOpenScreen: (screenId: string) => void;
   onOpenApis: () => void;
 }) {
-  const snaps = project.experienceSnapshots ?? [];
+  const snaps = useMemo(() => project.experienceSnapshots ?? [], [project.experienceSnapshots]);
   const [label, setLabel] = useState("");
   const [compareA, setCompareA] = useState("");
   const [compareB, setCompareB] = useState("");

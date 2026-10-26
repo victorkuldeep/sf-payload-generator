@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Button from "../ui/Button";
 import { analyzeRow } from "@/lib/mapping/diagnostics";
 import { STATUS_LABELS, type EnumValueMap, type MappingProject, type MappingRow, type MappingStatus, type SnapshotField } from "@/lib/mapping/types";
@@ -59,12 +59,16 @@ export function MappingTable({
     return leaves.map((leaf) => ({ leaf, mapping: bySource.get(leaf.id) ?? null }));
   }, [project]);
 
-  const rowStatus = (leafId: string, mapping: MappingRow | null): MappingStatus => {
-    if (!mapping) return "unmapped";
-    if (mapping.kind === "excluded") return "excluded";
-    if (mapping.kind === "hardcoded" && !mapping.fieldName) return "hardcoded";
-    return analyzeRow(project, mapping).suggested;
-  };
+  const rowStatus = useCallback(
+    (leafId: string, mapping: MappingRow | null): MappingStatus => {
+      void leafId;
+      if (!mapping) return "unmapped";
+      if (mapping.kind === "excluded") return "excluded";
+      if (mapping.kind === "hardcoded" && !mapping.fieldName) return "hardcoded";
+      return analyzeRow(project, mapping).suggested;
+    },
+    [project]
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -85,7 +89,7 @@ export function MappingTable({
     const set = new Set<MappingStatus>();
     rows.forEach(({ leaf, mapping }) => set.add(rowStatus(leaf.id, mapping)));
     return [...set];
-  }, [rows, project]);
+  }, [rows, rowStatus]);
 
   const editing = project.mappings.find((m) => m.id === editingId) ?? null;
 

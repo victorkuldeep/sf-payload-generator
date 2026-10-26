@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { claimFile, findRecords, listKind, readJson, writeJson } from "../workspace";
+import { claimFile, findRecords, listKind, writeJson } from "../workspace";
 import type { McpTool, ToolResult } from "./types";
 
 const KIND = "note";

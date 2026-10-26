@@ -40,7 +40,6 @@ export function JourneyPanel({
 
   const create = () => {
     if (!name.trim()) return;
-    const now = new Date().toISOString();
     const j: UserJourney = { id: uid("jrn"), name: name.trim(), screenIds: [], transitionIds: [], status: "draft" };
     mutateExp((e) => ({ ...e, journeys: [...e.journeys, j] }), `Journey "${j.name}" created.`, j.id);
     setName("");

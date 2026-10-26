@@ -9,7 +9,7 @@ const schema = z.object({
   apiVersion: z.string().min(1),
   objectName: z.string().min(1).regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, "Invalid object name"),
   operation: z.enum(["POST", "PATCH"]),
-  payload: z.record(z.unknown()),
+  payload: z.record(z.string(), z.unknown()),
   recordId: z.string().optional(),
 });
 

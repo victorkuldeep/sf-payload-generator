@@ -246,8 +246,7 @@ function toRow(
     referenceTo: string[];
     refKind?: "lookup" | "master-detail";
     picklistValues?: { label: string; value: string; active: boolean; defaultValue: boolean }[] | null;
-  },
-  targetLabels: Map<string, string>
+  }
 ): ErdFieldRow {
   const isPick = f.type === "picklist" || f.type === "multipicklist";
   return {
@@ -404,8 +403,7 @@ export function buildErdElements(
                   : "lookup"
                 : undefined,
             picklistValues: f.picklistValues ?? null,
-          },
-          labels
+          }
         )
       )
     );

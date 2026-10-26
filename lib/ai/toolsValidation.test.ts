@@ -33,7 +33,7 @@ function seed() {
   registerSystemBridge({
     getSnapshot: () => null,
     getProject: () => project,
-    apply: (fn, _label) => {
+    apply: (fn) => {
       const next = fn(project);
       applied.push(next);
       Object.assign(project, next);

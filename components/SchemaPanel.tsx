@@ -1217,7 +1217,7 @@ export default function SchemaPanel({
       }
       setEntityLog(logs);
     })();
-  }, [orgKey]);
+  }, [orgKey, tabId]);
 
   const touchNotes = useCallback(() => setNotesSavedAt(Date.now()), []);
 
@@ -1862,12 +1862,19 @@ export default function SchemaPanel({
   /** Prefetch stub: lookup jumps resolve on click (one query each), so
    * rows stay plain links until the jump panel proves out. Kept as the
    * seam for batched labels later. */
-  const prefetchRefLabels = useCallback(async (_sourceApi: string, _values: Record<string, unknown>) => {}, []);
+  const prefetchRefLabels = useCallback(async (_sourceApi: string, _values: Record<string, unknown>) => {
+    void _sourceApi;
+    void _values;
+  }, []);
 
   /** Row ref labels for one visualized record: field -> "label".
    * Currently always empty (prefetch off) - the row keeps its plain
    * on-demand link. Returns the cached map when prefetch returns. */
-  const refLabelsFor = useCallback((_sourceApi: string, _values: Record<string, unknown> | null): Record<string, string> => ({}), []);
+  const refLabelsFor = useCallback((_sourceApi: string, _values: Record<string, unknown> | null): Record<string, string> => {
+    void _sourceApi;
+    void _values;
+    return {};
+  }, []);
 
   // Late-bound ref so early callbacks (openNodeRecord/select) can prefetch
   // without a declaration-order cycle.
@@ -2117,7 +2124,7 @@ export default function SchemaPanel({
         .filter((f) => !f.nillable && f.name !== "Id")
         .map((f) => f.name),
     };
-  }, [labels, recordStore, recordSel, recordBusy, recordPopError, recordCtx, recordPop, recordLookup, describes]);
+  }, [labels, recordStore, recordSel, recordBusy, recordMoreBusy, recordPopError, recordCtx, recordPop, recordLookup, describes]);
 
   // ── Inbox lifecycle writers (Phase 2): meta merges onto the canonical
   // entity/snapshot records with history entries. Legacy todo/done flags
@@ -2758,7 +2765,7 @@ export default function SchemaPanel({
     }
     const nodes = stampNotes(built.nodes.filter((n) => !n.id.startsWith("x:") || linked.has(n.id)));
     return { nodes, edges, overflow: built.overflow, extended: nodes.filter((n) => n.id.startsWith("x:")).length };
-  }, [view, rootName, describes, labels, isCustomName, hideSystem, filterMode, hiddenIds, removedIds, dismissedIds, dismissedEdges, designMode, designIds, spot, graphEnforced, expanded, familyMode, entityLog]);
+  }, [view, rootName, describes, labels, isCustomName, hideSystem, filterMode, hiddenIds, removedIds, dismissedIds, dismissedEdges, designMode, designIds, spot, graphEnforced, expanded, familyMode, entityLog, systemHidden]);
 
   // The review list behind Hide-system: every swept neighbor with its
   // reason, label and custom flag. The modal allow-lists from this list.
@@ -3609,7 +3616,7 @@ export default function SchemaPanel({
         },
       })),
     }),
-    [baseElements, refreshingIds, refreshNode, openPicklist, openRecordTypes, recordNodeData, authorMode, openAuthorField, authorPendingApis, withSketchRows, sketchRowsByApi, authorEdges]
+    [baseElements, refreshingIds, refreshNode, openPicklist, recordNodeData, authorMode, openAuthorField, authorPendingApis, withSketchRows, sketchRowsByApi, authorEdges]
   );
 
   // Retired with the recursive "Discover full": the chain explorer walks
@@ -3629,19 +3636,6 @@ export default function SchemaPanel({
       return out;
     },
     []
-  );
-
-  /** Fresh describes through the live /describe path (kept for the custom
-   * sweep below). Family panels prefer describeCached + familyCache. */
-  const fetchDescribeSafe = useCallback(
-    async (objectName: string): Promise<SalesforceDescribeResult | null> => {
-      try {
-        return await fetchDescribe(objectName);
-      } catch {
-        return null;
-      }
-    },
-    [fetchDescribe]
   );
 
   const toggleStage = useCallback((apiName: string) => {
