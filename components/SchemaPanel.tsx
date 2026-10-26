@@ -3698,10 +3698,65 @@ export default function SchemaPanel({
     setFocusName,
     setView,
     setHideSystem,
+    setFilterMode,
+    tagRegistry,
+    nodeTags,
+    upsertTag: (tag) => {
+      setTagRegistry((prev) =>
+        prev.some((t) => t.id === tag.id) ? prev.map((t) => (t.id === tag.id ? tag : t)) : [...prev, tag],
+      );
+    },
+    assignTag: (tagId, names, on) => {
+      setNodeTags((prev) => {
+        const next = { ...prev };
+        for (const n of names) {
+          const cur = new Set(next[n] ?? []);
+          if (on) cur.add(tagId);
+          else cur.delete(tagId);
+          next[n] = [...cur];
+        }
+        return next;
+      });
+    },
+    deleteTag,
     addNames,
     describeCached,
     submitAuthorField,
     submitAuthorObject,
+    hideNames: (names, hide) => {
+      setHiddenIds((prev) => {
+        const next = new Set(prev);
+        for (const n of names) {
+          if (hide) next.add(n);
+          else next.delete(n);
+        }
+        return next;
+      });
+      if (!hide) {
+        setDismissedIds((prev) => {
+          const next = new Set(prev);
+          for (const n of names) next.delete(n);
+          return next;
+        });
+      }
+    },
+    removeNames: (names) => {
+      // Mirror the UI remove path: drop the describe so the ERD node goes
+      // away, tombstone for the graph, prune saved positions.
+      const gone = new Set(names.filter((n) => n !== rootName));
+      if (gone.size === 0) return;
+      pruneEnforced(gone);
+      setSpot(null);
+      setDescribes((prev) => {
+        const next = new Map(prev);
+        for (const n of gone) next.delete(n);
+        return next;
+      });
+      setRemovedIds((prev) => new Set([...prev, ...gone]));
+      setHiddenIds((prev) => new Set([...prev].filter((n) => !gone.has(n))));
+      setDismissedIds((prev) => new Set([...prev].filter((n) => !gone.has(n))));
+      if (gone.has(focusName)) setFocusName(rootName);
+    },
   };
   useEffect(() => {
     const ref = erdBridgeCtx;
@@ -3718,14 +3773,22 @@ export default function SchemaPanel({
       get view() { return need().view; },
       get hideSystem() { return need().hideSystem; },
       get filterMode() { return need().filterMode; },
+      get tagRegistry() { return need().tagRegistry; },
+      get nodeTags() { return need().nodeTags; },
       get authorMode() { return need().authorMode; },
       nodePositions: () => need().nodePositions(),
       focusCanvasOn: (name) => need().focusCanvasOn(name),
       setFocusName: (name) => need().setFocusName(name),
       setView: (v) => need().setView(v),
       setHideSystem: (hide) => need().setHideSystem(hide),
+      setFilterMode: (mode) => need().setFilterMode(mode),
+      upsertTag: (tag) => need().upsertTag(tag),
+      assignTag: (tagId, names, on) => need().assignTag(tagId, names, on),
+      deleteTag: (tagId) => need().deleteTag(tagId),
       addNames: (names) => need().addNames(names),
       describeCached: (name) => need().describeCached(name),
+      hideNames: (names, hide) => need().hideNames(names, hide),
+      removeNames: (names) => need().removeNames(names),
       submitAuthorField: (draft, childApi) => need().submitAuthorField(draft, childApi),
       submitAuthorObject: (draft) => need().submitAuthorObject(draft),
     };

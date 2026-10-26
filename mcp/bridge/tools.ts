@@ -4,9 +4,10 @@ import type { McpTool } from "../tools/types.js";
 
 /**
  * Live ERD tools: forward to the paired studio tab through the bridge hub
- * instead of writing files. Reads return immediately; writes pause for the
- * architect's in-tab approval (the tool waits, then relays allow/deny).
- * No tab connected -> every tool fails with pairing instructions.
+ * instead of writing files. Reads return immediately; writes run
+ * autonomously once paired (pairing is the approval - auto-mode is on by
+ * default, audited in the tab; turn it off in Setup to require per-command
+ * approval). No tab connected -> every tool fails with pairing instructions.
  */
 
 function live(
@@ -51,6 +52,16 @@ export function liveTools(hub: BridgeHub): McpTool[] {
     live(hub, "bridge_status", "Bridge state: listening port, pairing code, whether a studio tab is connected.", {}, "bridge.ping", () => ({}), 15000),
     live(hub, "erd_live_snapshot", "Read the live canvas: nodes on canvas, focus object, view mode, active filters.", {}, "erd.snapshot", () => ({}), 30000),
     live(
+      hub,
+      "erd_live_objects",
+      "Browse the live org schema: search objects by name or label (read-only, no canvas change).",
+      {
+        query: z.string().max(120).optional().describe("Substring to match against api name or label; omit for the first page"),
+        limit: z.number().int().min(1).max(100).optional().describe("Max objects to return (default 25)"),
+      },
+      "erd.objects",
+    ),
+    live(
       hub, "erd_live_discover", "Ask the live org (via the tab session) for parents/children of an object - relationships only, nothing placed yet.",
       { apiName: str("Object api name"), direction: z.enum(["parents", "children", "both"]).default("both") },
       "erd.discover",
@@ -59,6 +70,27 @@ export function liveTools(hub: BridgeHub): McpTool[] {
       hub, "erd_live_place", "Describe and drop objects onto the live canvas (asks approval in the tab).",
       { apiNames: z.array(z.string().min(1).max(255)).min(1).max(25) },
       "erd.place",
+    ),
+    live(
+      hub, "erd_live_hide", "Hide (or unhide with hide=false) objects on the live canvas - reversible curation, needs approval in the tab.",
+      { apiNames: z.array(z.string().min(1).max(255)).min(1).max(25), hide: z.boolean().optional() },
+      "erd.hide",
+    ),
+    live(
+      hub, "erd_live_remove", "Remove objects from the live canvas (re-add anytime with place) - needs approval in the tab.",
+      { apiNames: z.array(z.string().min(1).max(255)).min(1).max(25) },
+      "erd.remove",
+    ),
+    live(
+      hub, "erd_live_tags", "List, create, assign and delete canvas tags (list/create/assign/unassign/delete) - needs approval in the tab.",
+      {
+        action: z.enum(["list", "create", "assign", "unassign", "delete"]).default("list"),
+        name: z.string().max(24).optional().describe("Tag name for create"),
+        color: z.string().max(7).optional().describe("Hex color for create (snapped to palette)"),
+        tag: z.string().max(64).optional().describe("Tag name or id for assign/unassign"),
+        apiNames: z.array(z.string().min(1).max(255)).min(1).max(25).optional().describe("Objects for assign/unassign"),
+      },
+      "erd.tags",
     ),
     live(
       hub, "erd_live_focus", "Center the live canvas on an object already placed.",
@@ -71,8 +103,8 @@ export function liveTools(hub: BridgeHub): McpTool[] {
       "erd.mode", undefined, 30000,
     ),
     live(
-      hub, "erd_live_filter", "Change live canvas filters (e.g. hideSystem true/false).",
-      { hideSystem: z.boolean().optional() },
+      hub, "erd_live_filter", "Change live canvas filters (hideSystem true/false, mode all/standard/custom/manual).",
+      { hideSystem: z.boolean().optional(), mode: z.enum(["all", "standard", "custom", "manual"]).optional() },
       "erd.filter", undefined, 30000,
     ),
     live(

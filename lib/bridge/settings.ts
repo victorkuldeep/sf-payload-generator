@@ -17,11 +17,20 @@ export interface BridgeSettings {
   status: BridgeStatus;
   tabId: string | null;
   error: string | null;
+  /** Bumped on every explicit pairing attempt so redials fire even when the code is unchanged. */
+  attempt: number;
+  /**
+   * Auto-approve agent writes: once paired, the agent draws without a modal
+   * per command. Pairing itself (code entry) is the authorization; every
+   * write is still written to the agent audit trail. Off = approve each write.
+   */
+  autoApprove: boolean;
 }
 
 const PORT_KEY = "gravenx-bridge-port";
 const ENABLED_KEY = "gravenx-bridge-enabled";
 const TAB_KEY = "gravenx-bridge-tab";
+const AUTO_KEY = "gravenx-bridge-autoapprove";
 
 function readTabId(): string {
   try {
@@ -54,6 +63,17 @@ function readPort(): number {
   return 49321;
 }
 
+function readAutoApprove(): boolean {
+  try {
+    const v = localStorage.getItem(AUTO_KEY);
+    // Default ON: pairing authorizes the session; writes stay audited.
+    if (v === null) return true;
+    return v === "1";
+  } catch {
+    return true;
+  }
+}
+
 let state: BridgeSettings = {
   enabled: readEnabled(),
   code: "",
@@ -61,6 +81,8 @@ let state: BridgeSettings = {
   status: "off",
   tabId: null,
   error: null,
+  attempt: 0,
+  autoApprove: readAutoApprove(),
 };
 
 const listeners = new Set<() => void>();
@@ -79,6 +101,7 @@ export function setBridgeSettings(patch: Partial<BridgeSettings>): void {
       localStorage.setItem(ENABLED_KEY, patch.enabled ? "1" : "0");
     }
     if (patch.port !== undefined) localStorage.setItem(PORT_KEY, String(patch.port));
+    if (patch.autoApprove !== undefined) localStorage.setItem(AUTO_KEY, patch.autoApprove ? "1" : "0");
   } catch {
     /* private mode - session only */
   }

@@ -14,8 +14,12 @@ describe("live bridge MCP tools", () => {
     expect(names).toEqual([
       "bridge_status",
       "erd_live_snapshot",
+      "erd_live_objects",
       "erd_live_discover",
       "erd_live_place",
+      "erd_live_hide",
+      "erd_live_remove",
+      "erd_live_tags",
       "erd_live_focus",
       "erd_live_mode",
       "erd_live_filter",

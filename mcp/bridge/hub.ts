@@ -76,6 +76,7 @@ export class BridgeHub {
   }
 
   private onConnection(ws: WebSocket): void {
+    console.error("[gravenx-bridge] incoming connection.");
     if (this.socket) {
       try {
         ws.send(
@@ -88,6 +89,7 @@ export class BridgeHub {
     let paired = false;
     const helloTimer = setTimeout(() => {
       if (!paired) {
+        console.error("[gravenx-bridge] pairing timeout (no valid hello in 30s).");
         try { ws.close(4401, "Pairing timeout"); } catch { /* ignore */ }
       }
     }, 30000);
@@ -101,6 +103,8 @@ export class BridgeHub {
       if (!paired) {
         const hello = msg as unknown as BridgeHello;
         if (hello.type !== "hello" || hello.v !== BRIDGE_PROTOCOL_V || hello.code !== this.code) {
+          const why = hello.type !== "hello" ? "not-a-hello" : hello.v !== BRIDGE_PROTOCOL_V ? `version-${hello.v}` : "code-mismatch";
+          console.error(`[gravenx-bridge] pairing rejected (${why}).`);
           try { ws.close(4403, "Pairing failed"); } catch { /* ignore */ }
           clearTimeout(helloTimer);
           return;
@@ -109,6 +113,7 @@ export class BridgeHub {
         clearTimeout(helloTimer);
         this.socket = ws;
         this.tabName = typeof hello.tab === "string" ? hello.tab.slice(0, 80) : "studio";
+        console.error(`[gravenx-bridge] tab paired: ${this.tabName}.`);
         this.session = `${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
         const welcome: BridgeWelcome = { v: BRIDGE_PROTOCOL_V, type: "welcome", session: this.session };
         try { ws.send(JSON.stringify(welcome)); } catch { /* ignore */ }

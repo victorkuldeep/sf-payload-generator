@@ -61,9 +61,11 @@ function describeOf(
 }
 
 function setupCtx(): ErdBridgeContext & {
-  calls: { focus: string[]; views: string[]; hides: boolean[]; fieldDrafts: { childApi: string; apiName: string }[]; objectDrafts: string[] };
+  calls: { focus: string[]; views: string[]; hides: boolean[]; modes: string[]; hidden: { names: string[]; hide: boolean }[]; removed: string[][]; upserted: { id: string; name: string; color: string }[]; assigned: { tagId: string; names: string[]; on: boolean }[]; deleted: string[]; fieldDrafts: { childApi: string; apiName: string }[]; objectDrafts: string[] };
 } {
-  const calls = { focus: [] as string[], views: [] as string[], hides: [] as boolean[], fieldDrafts: [] as { childApi: string; apiName: string }[], objectDrafts: [] as string[] };
+  const tagRegistry = [{ id: "tag-1", name: "Core", color: "#722F37" }];
+  const nodeTags: Record<string, string[]> = { Account: ["tag-1"] };
+  const calls = { focus: [] as string[], views: [] as string[], hides: [] as boolean[], modes: [] as string[], hidden: [] as { names: string[]; hide: boolean }[], removed: [] as string[][], upserted: [] as { id: string; name: string; color: string }[], assigned: [] as { tagId: string; names: string[]; on: boolean }[], deleted: [] as string[], fieldDrafts: [] as { childApi: string; apiName: string }[], objectDrafts: [] as string[] };
   const account = describeOf("Account", [], [{ child: "Contact", via: "AccountId" }]);
   const contact = describeOf("Contact", [{ field: "AccountId", to: "Account", label: "Account" }], []);
   const ctx: ErdBridgeContext = {
@@ -73,17 +75,25 @@ function setupCtx(): ErdBridgeContext & {
       { name: "Custom__c", label: "Custom Thing" },
     ],
     describes: new Map([["Account", account]]),
-    rootName: "Account",
+    rootName: "Root__c",
     focusName: "Account",
     view: "erd",
     hideSystem: false,
     filterMode: "all",
+    tagRegistry,
+    nodeTags,
     authorMode: true,
     nodePositions: () => ({ Account: { x: 10, y: 20 } }),
     focusCanvasOn: (name) => { calls.focus.push(name); },
     setFocusName: () => {},
     setView: (v) => { ctx.view = v; calls.views.push(v); },
     setHideSystem: (hide) => { ctx.hideSystem = hide; calls.hides.push(hide); },
+    hideNames: (names, hide) => { calls.hidden.push({ names, hide }); },
+    removeNames: (names) => { calls.removed.push(names); for (const n of names) ctx.describes.delete(n); },
+    setFilterMode: (mode) => { ctx.filterMode = mode; calls.modes.push(mode); },
+    upsertTag: (tag) => { calls.upserted.push(tag); ctx.tagRegistry.push(tag); },
+    assignTag: (tagId, names, on) => { calls.assigned.push({ tagId, names, on }); },
+    deleteTag: (tagId) => { calls.deleted.push(tagId); },
     addNames: async (names) => {
       const fresh = names.map((n) => (n === "Contact" ? contact : describeOf(n)));
       for (const d of fresh) ctx.describes.set(d.name, d);
@@ -124,10 +134,10 @@ describe("resolveObjectRef", () => {
 });
 
 describe("erd bridge handlers", () => {
-  it("registers all 9 protocol kinds", () => {
+  it("registers all 13 protocol kinds", () => {
     const handlers = buildErdBridgeHandlers(setupCtx());
     for (const kind of ERD_BRIDGE_KINDS) expect(handlers[kind]).toBeTypeOf("function");
-    expect(ERD_BRIDGE_KINDS).toHaveLength(9);
+    expect(ERD_BRIDGE_KINDS).toHaveLength(13);
   });
 
   it("ping reports protocol v1", async () => {
@@ -172,6 +182,36 @@ describe("erd bridge handlers", () => {
     await expect(handlers["erd.discover"]!({ apiName: "Nope__c" })).rejects.toThrow(/Unknown object/);
   });
 
+  it("objects searches by name or label with canvas flags", async () => {
+    const handlers = buildErdBridgeHandlers(setupCtx());
+    const all = (await handlers["erd.objects"]!({})) as {
+      query: string;
+      count: number;
+      objects: { apiName: string; custom: boolean; onCanvas: boolean }[];
+    };
+    expect(all.count).toBe(3);
+    expect(all.objects.find((o) => o.apiName === "Custom__c")).toMatchObject({ custom: true, onCanvas: false });
+    const filtered = (await handlers["erd.objects"]!({ query: "cont", limit: 5 })) as typeof all;
+    expect(filtered.objects.map((o) => o.apiName)).toEqual(["Contact"]);
+    expect(filtered.objects[0]).toMatchObject({ label: "Contact", onCanvas: false });
+  });
+
+  it("hide and remove curate on-canvas nodes, refusing off-canvas refs", async () => {
+    const ctx = setupCtx();
+    const handlers = buildErdBridgeHandlers(ctx);
+    await expect(handlers["erd.hide"]!({ apiNames: [] })).rejects.toThrow(/at least one/);
+    await expect(handlers["erd.hide"]!({ apiNames: ["Contact"] })).rejects.toThrow(/not on the canvas/);
+    await expect(handlers["erd.remove"]!({ apiNames: ["Contact"] })).rejects.toThrow(/not on the canvas/);
+    const hid = (await handlers["erd.hide"]!({ apiNames: ["Account"] })) as { hidden: string[] };
+    expect(hid).toEqual({ hidden: ["Account"] });
+    expect(ctx.calls.hidden).toEqual([{ names: ["Account"], hide: true }]);
+    const shown = (await handlers["erd.hide"]!({ apiNames: ["account"], hide: false })) as { shown: string[] };
+    expect(shown).toEqual({ shown: ["Account"] });
+    const out = (await handlers["erd.remove"]!({ apiNames: ["Account"] })) as { removed: string[] };
+    expect(out).toEqual({ removed: ["Account"] });
+    expect(ctx.calls.removed).toEqual([["Account"]]);
+  });
+
   it("place resolves refs then focuses the first placed node", async () => {
     const ctx = setupCtx();
     const out = (await buildErdBridgeHandlers(ctx)["erd.place"]!({ apiNames: ["contact"] })) as {
@@ -209,6 +249,54 @@ describe("erd bridge handlers", () => {
     const f = (await handlers["erd.filter"]!({ hideSystem: true })) as { hideSystem: boolean };
     expect(f.hideSystem).toBe(true);
     expect(ctx.calls.hides).toEqual([true]);
+    const m = (await handlers["erd.filter"]!({ mode: "custom" })) as { filterMode: string };
+    expect(m.filterMode).toBe("custom");
+    expect(ctx.calls.modes).toEqual(["custom"]);
+    await expect(handlers["erd.filter"]!({ mode: "bogus" })).rejects.toThrow(/Unknown filter mode/);
+  });
+
+  it("tags list, create, assign and unassign through the registry", async () => {
+    const ctx = setupCtx();
+    const handlers = buildErdBridgeHandlers(ctx);
+    const listed = (await handlers["erd.tags"]!({})) as {
+      tags: { name: string }[];
+      assigned: Record<string, string[]>;
+    };
+    expect(listed.tags.map((t) => t.name)).toEqual(["Core"]);
+    expect(listed.assigned).toEqual({ Account: ["tag-1"] });
+    await expect(handlers["erd.tags"]!({ action: "frobnicate" })).rejects.toThrow(/list, create, assign/);
+    await expect(handlers["erd.tags"]!({ action: "create", name: "   " })).rejects.toThrow(/tag name/);
+    const created = (await handlers["erd.tags"]!({ action: "create", name: "  Billing  " })) as {
+      created: { id: string; name: string; color: string };
+    };
+    expect(created.created.name).toBe("Billing");
+    expect(created.created.id).not.toBe("tag-1");
+    expect(ctx.calls.upserted.map((t) => t.name)).toContain("Billing");
+    await expect(handlers["erd.tags"]!({ action: "assign", tag: "Nope", apiNames: ["Account"] })).rejects.toThrow(
+      /Unknown tag/,
+    );
+    await expect(handlers["erd.tags"]!({ action: "assign", tag: "Core", apiNames: ["Nope__c"] })).rejects.toThrow(
+      /Unknown object/,
+    );
+    await expect(handlers["erd.tags"]!({ action: "assign", tag: "Core", apiNames: ["Contact"] })).rejects.toThrow(
+      /not on the canvas/,
+    );
+    const assigned = (await handlers["erd.tags"]!({ action: "assign", tag: "core", apiNames: ["Account"] })) as {
+      tag: string;
+      assigned: string[];
+    };
+    expect(assigned).toEqual({ tag: "Core", assigned: ["Account"] });
+    expect(ctx.calls.assigned).toEqual([{ tagId: "tag-1", names: ["Account"], on: true }]);
+    const unassigned = (await handlers["erd.tags"]!({ action: "unassign", tag: "tag-1", apiNames: ["Account"] })) as {
+      tag: string;
+      unassigned: string[];
+    };
+    expect(unassigned).toEqual({ tag: "Core", unassigned: ["Account"] });
+    const deleted = (await handlers["erd.tags"]!({ action: "delete", tag: "Core" })) as {
+      deleted: string;
+    };
+    expect(deleted).toEqual({ deleted: "Core" });
+    expect(ctx.calls.deleted).toEqual(["tag-1"]);
   });
 
   it("author_field builds a draft and routes through submit", async () => {

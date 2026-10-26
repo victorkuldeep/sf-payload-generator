@@ -9,6 +9,22 @@ import { isSalesforceConnected } from "@/lib/ai/gate";
 import { logToolRun } from "@/lib/setup/audit";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 
+const POS_KEY = "gravenx-bridge-pos";
+
+function readDockPos(): { x: number; y: number } | null {
+  try {
+    const raw = localStorage.getItem(POS_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as { x?: unknown; y?: unknown };
+    if (typeof p.x === "number" && typeof p.y === "number" && Number.isFinite(p.x) && Number.isFinite(p.y)) {
+      return { x: Math.max(8, p.x), y: Math.max(8, p.y) };
+    }
+  } catch {
+    /* fall through */
+  }
+  return null;
+}
+
 /**
  * Agent bridge dock: owns the tab-side inbox lifecycle, renders the
  * connection pill + pairing panel, and surfaces the approval modal every
@@ -23,6 +39,18 @@ export function BridgeDock() {
   const [pending, setPending] = useState<BridgeCall | null>(null);
   const [codeDraft, setCodeDraft] = useState("");
   const [portDraft, setPortDraft] = useState("");
+  const [justPaired, setJustPaired] = useState(false);
+  // Draggable pill: null = docked bottom-left; a position pins it anywhere so
+  // it never covers canvas controls. Survives reloads via localStorage.
+  const [dockPos, setDockPos] = useState<{ x: number; y: number } | null>(() => readDockPos());
+  const pillRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{ sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
+  const suppressClickRef = useRef(false);
+  useEffect(() => {
+    if (!justPaired) return;
+    const t = window.setTimeout(() => setJustPaired(false), 9000);
+    return () => window.clearTimeout(t);
+  }, [justPaired]);
 
   useEffect(() => {
     if (!settings.enabled) {
@@ -44,7 +72,10 @@ export function BridgeDock() {
       return;
     }
     const inbox = new BridgeInbox({
-      onStatus: (status, error) => setBridgeSettings({ status, error: error ?? null }),
+      onStatus: (status, error) => {
+        setBridgeSettings({ status, error: error ?? null });
+        if (status === "live") setJustPaired(true);
+      },
       onApproval: (call, approve) => {
         approveRef.current = approve;
         setPending(call);
@@ -60,7 +91,7 @@ export function BridgeDock() {
       inbox.close();
       if (inboxRef.current === inbox) inboxRef.current = null;
     };
-  }, [settings.enabled, settings.code, settings.port]);
+  }, [settings.enabled, settings.code, settings.port, settings.attempt]);
 
   const decide = (ok: boolean) => {
     const call = pending;
@@ -77,6 +108,14 @@ export function BridgeDock() {
     }
   };
 
+  // Popover placement follows the dragged pill: it opens above the pill when
+  // there is no room below, and hugs the pill's right edge near the viewport's
+  // right side, so it never renders clipped off-screen.
+  const vw = typeof window === "undefined" ? 1280 : window.innerWidth;
+  const vh = typeof window === "undefined" ? 800 : window.innerHeight;
+  const openUp = dockPos ? dockPos.y > vh - 460 : true;
+  const alignRight = dockPos ? dockPos.x > vw - 320 : false;
+
   const dot =
     settings.status === "live" ? "bg-emerald-500" : settings.status === "connecting" ? "bg-amber-400 animate-pulse" : settings.status === "error" ? "bg-red-500" : "bg-ivory-400";
   const label =
@@ -88,27 +127,87 @@ export function BridgeDock() {
           ? "Bridge error"
           : "Bridge off";
 
+  const beginPillDrag = (e: React.PointerEvent) => {
+    const el = pillRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    dragRef.current = { sx: e.clientX, sy: e.clientY, ox: rect.left, oy: rect.top, moved: false };
+  };
+  const movePillDrag = (e: React.PointerEvent) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const dx = e.clientX - d.sx;
+    const dy = e.clientY - d.sy;
+    if (!d.moved && Math.abs(dx) + Math.abs(dy) < 5) return;
+    d.moved = true;
+    const w = typeof window === "undefined" ? 1200 : window.innerWidth;
+    const h = typeof window === "undefined" ? 800 : window.innerHeight;
+    setDockPos({
+      x: Math.min(Math.max(8, d.ox + dx), Math.max(8, w - 140)),
+      y: Math.min(Math.max(8, d.oy + dy), Math.max(8, h - 48)),
+    });
+  };
+  const endPillDrag = () => {
+    const d = dragRef.current;
+    dragRef.current = null;
+    if (d?.moved) {
+      suppressClickRef.current = true;
+      try {
+        const el = pillRef.current;
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          localStorage.setItem(POS_KEY, JSON.stringify({ x: Math.round(rect.left), y: Math.round(rect.top) }));
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+
   return (
     <>
-      <div className="fixed bottom-4 left-4 z-40">
+      <div
+        ref={pillRef}
+        className={dockPos ? "fixed z-40" : "fixed bottom-4 left-4 z-40"}
+        style={dockPos ? { left: dockPos.x, top: dockPos.y } : undefined}
+      >
         <button
           type="button"
+          onPointerDown={beginPillDrag}
+          onPointerMove={movePillDrag}
+          onPointerUp={endPillDrag}
+          onPointerCancel={() => { dragRef.current = null; }}
+          onDoubleClick={() => {
+            setDockPos(null);
+            try { localStorage.removeItem(POS_KEY); } catch { /* ignore */ }
+          }}
           onClick={() => {
+            if (suppressClickRef.current) {
+              suppressClickRef.current = false;
+              return;
+            }
             setOpen((v) => !v);
             setCodeDraft(getBridgeSettings().code);
             setPortDraft(String(getBridgeSettings().port));
           }}
-          title="Agent bridge - let a paired terminal agent drive the live canvas"
-          className="flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[11px] font-semibold text-ivory-800 shadow-sm hover:border-bronze-500"
+          title="Agent bridge - drag to move, double-click to re-dock"
+          className="flex cursor-grab items-center gap-1.5 rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[11px] font-semibold text-ivory-800 shadow-sm hover:border-bronze-500 active:cursor-grabbing"
         >
           <span className={`h-2 w-2 rounded-full ${dot}`} />
           {label}
         </button>
         {open && (
-          <div className="mt-2 w-72 rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-3 shadow-lg">
+          <div
+            className={`w-72 rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-3 shadow-lg ${
+              openUp ? "absolute bottom-full mb-2" : "absolute top-full mt-2"
+            } ${alignRight ? "right-0" : "left-0"}`}
+          >
             <p className="text-xs font-bold text-ivory-950">Agent bridge</p>
             <p className="mt-0.5 text-[11px] leading-snug text-ivory-600">
-              A paired terminal agent (via MCP) drives this tab like you do. Reads are free; every change waits for your allow.
+              A paired terminal agent (via MCP) drives this tab like you do. Reads are free;{" "}
+              {settings.autoApprove
+                ? "writes run immediately in auto mode and stay audited."
+                : "every change waits for your allow."}
             </p>
             <label className="mt-2 flex items-center gap-2 text-xs font-semibold text-ivory-800">
               <input
@@ -133,7 +232,13 @@ export function BridgeDock() {
                 />
                 <button
                   type="button"
-                  onClick={() => setBridgeSettings({ code: codeDraft.trim() })}
+                  onClick={() => setBridgeSettings({
+                    enabled: true,
+                    code: codeDraft.trim(),
+                    status: "connecting",
+                    error: null,
+                    attempt: Date.now(),
+                  })}
                   className="cursor-pointer rounded-lg border border-[var(--color-line)] px-2.5 text-xs font-semibold text-ivory-800 hover:border-bronze-500"
                 >
                   Pair
@@ -175,6 +280,16 @@ export function BridgeDock() {
           tone={pending.command.startsWith("erd.author") ? "danger" : "default"}
           onCancel={() => decide(false)}
           onConfirm={() => decide(true)}
+        />
+      )}
+      {justPaired && settings.status === "live" && !pending && (
+        <ConfirmDialog
+          title="Terminal agent connected"
+          message="Pairing succeeded - the terminal agent can now drive this tab. Reads run free; writes follow your auto-mode setting. This closes on its own."
+          confirmLabel="Start driving"
+          tone="default"
+          onCancel={() => setJustPaired(false)}
+          onConfirm={() => setJustPaired(false)}
         />
       )}
     </>

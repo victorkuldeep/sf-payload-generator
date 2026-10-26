@@ -9,6 +9,7 @@ import {
   type BridgeWelcome,
 } from "./protocol";
 import { hasBridgeHandler, runBridgeHandler } from "./registry";
+import { getBridgeSettings } from "./settings";
 
 /**
  * Tab-side inbox: dials the localhost bridge, pairs with the session code,
@@ -27,6 +28,7 @@ export interface InboxEvents {
 export interface SocketLike {
   send: (text: string) => void;
   close: () => void;
+  onopen: (() => void) | null;
   onmessage: ((text: string) => void) | null;
   onclose: (() => void) | null;
   onerror: (() => void) | null;
@@ -39,10 +41,12 @@ const defaultFactory: SocketFactory = (url: string) => {
   const socket: SocketLike = {
     send: (text: string) => ws.send(text),
     close: () => ws.close(),
+    onopen: null,
     onmessage: null,
     onclose: null,
     onerror: null,
   };
+  ws.onopen = () => socket.onopen?.();
   ws.onmessage = (ev: MessageEvent) => socket.onmessage?.(String(ev.data));
   ws.onclose = () => socket.onclose?.();
   ws.onerror = () => socket.onerror?.();
@@ -111,12 +115,15 @@ export class BridgeInbox {
     socket.onclose = fail;
     socket.onerror = fail;
     const hello: BridgeHello = { v: BRIDGE_PROTOCOL_V, type: "hello", code, tab };
-    // Native WebSocket queues until open; the factory contract matches.
-    try {
-      socket.send(JSON.stringify(hello));
-    } catch {
-      /* send hookup varies by factory - failure surfaces via onclose */
-    }
+    // Send on open (never pre-open): mirrors the proven manual handshake and
+    // avoids any queueing edge in wrappers around the native socket.
+    socket.onopen = () => {
+      try {
+        socket.send(JSON.stringify(hello));
+      } catch {
+        /* send hookup varies by factory - failure surfaces via onclose */
+      }
+    };
   }
 
   private async dispatch(call: BridgeCall): Promise<void> {
@@ -135,6 +142,20 @@ export class BridgeInbox {
         const message = e instanceof Error ? e.message : "Handler failed.";
         this.events.onEvent(label, false, message);
         this.reply(call.id, { ok: false, error: message });
+      }
+      return;
+    }
+    if (getBridgeSettings().autoApprove) {
+      // Auto mode: pairing authorized the session - run without a modal.
+      // Still fully audited through onEvent like an approval.
+      try {
+        const data = await runBridgeHandler(call.command, call.args);
+        this.events.onEvent(label, true, "Auto-approved (bridge auto mode) and executed.");
+        this.reply(call.id, { ok: true, data });
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : "Bridge call failed.";
+        this.events.onEvent(label, false, detail);
+        this.reply(call.id, { ok: false, error: detail });
       }
       return;
     }

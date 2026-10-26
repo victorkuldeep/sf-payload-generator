@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { CommandPalette } from "@/components/studio/CommandPalette";
 import { usePathname, useRouter } from "next/navigation";
+import { setBridgeSettings, useBridgeSettings } from "@/lib/bridge/settings";
 
 type ModeEntry = { kind: "mode"; id: Exclude<NavMode, "home">; label: string; desc: string };
 type RouteEntry = { kind: "route"; href: string; label: string; desc: string; plus?: boolean };
@@ -194,6 +195,7 @@ const ROUTE_OFFLINE = { connected: false, instanceUrl: "", apiVersion: "", objec
 export function AppHeader(props: AppHeaderProps) {
   const { onNavigate, activeMode } = props;
   const router = useRouter();
+  const bridge = useBridgeSettings();
   // Route pages render bare: the session comes from the tab-scoped store,
   // exactly like the old ToolHeader did. Home passes live props instead.
   const [routeSession, setRouteSession] = useState(ROUTE_OFFLINE);
@@ -615,6 +617,51 @@ export function AppHeader(props: AppHeaderProps) {
                     {apiVersion}
                     {objectCount > 0 && <> · {objectCount.toLocaleString()} objects</>}
                   </p>
+                </div>
+                <div className="border-b border-[var(--color-line-soft)] px-3.5 py-2.5">
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${bridge.status === "connecting" ? "animate-pulse" : ""}`}
+                      style={{
+                        backgroundColor:
+                          bridge.status === "live" ? "#4A7C59" : bridge.status === "connecting" ? "#B7791F" : bridge.status === "error" ? "#B3261E" : "#AEA48E",
+                      }}
+                      aria-hidden="true"
+                    />
+                    <span className="text-[10px] font-semibold uppercase tracking-[1.6px] text-[var(--color-accent-dark)]">
+                      Agent bridge
+                    </span>
+                    <span className="ml-auto text-[11px] font-semibold text-ivory-600">
+                      {bridge.status === "live" ? "Live" : bridge.status === "connecting" ? "Pairing…" : bridge.status === "error" ? "Error" : "Off"}
+                    </span>
+                  </div>
+                  {bridge.status === "live" ? (
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <p className="min-w-0 flex-1 text-[11px] leading-snug text-ivory-600">
+                        Paired terminal agent can drive this tab{bridge.autoApprove ? " (auto mode)" : " (asks per write)"}.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setBridgeSettings({ enabled: false })}
+                        className="shrink-0 rounded-lg border border-red-300 px-2 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-50 transition-colors cursor-pointer"
+                        title="Unpair the terminal agent"
+                      >
+                        Disconnect
+                      </button>
+                    </div>
+                  ) : bridge.status === "connecting" ? (
+                    <p className="mt-1 text-[11px] text-ivory-600">Contacting the local MCP hub…</p>
+                  ) : bridge.status === "error" ? (
+                    <p className="mt-1 text-[11px] font-semibold text-red-700">{bridge.error ?? "Bridge error."}</p>
+                  ) : (
+                    <Link
+                      href="/setup"
+                      onClick={() => setMenuOpen(false)}
+                      className="mt-1 inline-block text-[11px] font-semibold text-bronze-600 hover:underline"
+                    >
+                      Pair a terminal agent in Setup →
+                    </Link>
+                  )}
                 </div>
                 <div className="flex items-center gap-1 p-1.5">
                   <button

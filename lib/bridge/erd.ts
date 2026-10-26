@@ -15,6 +15,7 @@
 
 import { BRIDGE_PROTOCOL_V } from "./protocol";
 import type { BridgeHandler } from "./registry";
+import { createTag, ERD_TAG_COLORS } from "../erd/tags";
 import type {
   DesignFieldType,
   FieldDraft,
@@ -27,6 +28,8 @@ import {
 } from "../salesforce/design";
 import type { SalesforceDescribeResult } from "../salesforce/types";
 
+export type ErdFilterMode = "all" | "standard" | "custom" | "manual";
+
 /** Minimal ERD state surface the handlers need. */
 export interface ErdBridgeContext {
   /** All known objects (SchemaPanel `objects` prop: { name, label }). */
@@ -37,7 +40,9 @@ export interface ErdBridgeContext {
   focusName: string;
   view: "erd" | "graph";
   hideSystem: boolean;
-  filterMode: "all" | "standard" | "custom" | "manual";
+  filterMode: ErdFilterMode;
+  tagRegistry: { id: string; name: string; color: string }[];
+  nodeTags: Record<string, string[]>;
   authorMode: boolean;
   /** Current ReactFlow node positions keyed by object api name. */
   nodePositions: () => Record<string, { x: number; y: number }>;
@@ -49,6 +54,14 @@ export interface ErdBridgeContext {
   addNames: (names: string[]) => Promise<SalesforceDescribeResult[]>;
   /** Describe through the org cache (null on failure, no throw). */
   describeCached: (name: string) => Promise<SalesforceDescribeResult | null>;
+  /** Hide (reversible) or unhide canvas nodes. */
+  hideNames: (names: string[], hide: boolean) => void;
+  /** Remove nodes from the canvas (re-add via place). */
+  removeNames: (names: string[]) => void;
+  setFilterMode: (mode: ErdFilterMode) => void;
+  upsertTag: (tag: { id: string; name: string; color: string }) => void;
+  assignTag: (tagId: string, names: string[], on: boolean) => void;
+  deleteTag: (tagId: string) => void;
   /** Author-mode submit paths - open the same deploy confirms as the UI. */
   submitAuthorField: (draft: FieldDraft, childApi: string) => Promise<void>;
   submitAuthorObject: (draft: ObjectDraft) => Promise<void>;
@@ -57,7 +70,11 @@ export interface ErdBridgeContext {
 export const ERD_BRIDGE_KINDS = [
   "bridge.ping",
   "erd.snapshot",
+  "erd.objects",
   "erd.discover",
+  "erd.hide",
+  "erd.remove",
+  "erd.tags",
   "erd.place",
   "erd.focus",
   "erd.mode",
@@ -131,6 +148,28 @@ export interface ErdSnapshot {
   authorMode: boolean;
 }
 
+const FILTER_MODES: ErdFilterMode[] = ["all", "standard", "custom", "manual"];
+
+function resolveTagRef(
+  registry: { id: string; name: string; color: string }[],
+  ref: string,
+): { id: string; name: string; color: string } {
+  const q = ref.trim();
+  if (!q) throw new Error("Tag reference is empty.");
+  const lower = q.toLowerCase();
+  const byId = registry.find((t) => t.id === q || t.id.toLowerCase() === lower);
+  if (byId) return byId;
+  const byName = registry.find((t) => t.name.toLowerCase() === lower);
+  if (byName) return byName;
+  const hits = registry.filter((t) => t.name.toLowerCase().includes(lower));
+  if (hits.length === 1) return hits[0];
+  if (hits.length === 0) {
+    const known = registry.length > 0 ? registry.map((t) => t.name).join(", ") : "none yet - create one first";
+    throw new Error(`Unknown tag "${q}". Known tags: ${known}.`);
+  }
+  throw new Error(`Ambiguous tag "${q}" - matches ${hits.map((t) => t.name).join(", ")}. Use the exact name.`);
+}
+
 function buildSnapshot(ctx: ErdBridgeContext): ErdSnapshot {
   const positions = ctx.nodePositions();
   const nodes = [...ctx.describes.values()].map((d) => ({
@@ -171,6 +210,29 @@ export function buildErdBridgeHandlers(ctx: ErdBridgeContext): Record<string, Br
     "bridge.ping": async () => ({ ok: true, protocol: BRIDGE_PROTOCOL_V, tab: "erd" }),
 
     "erd.snapshot": async () => buildSnapshot(ctx),
+
+    "erd.objects": async (args) => {
+      const q = strArg(args, "query").toLowerCase();
+      const rawLimit = args.limit;
+      const limit = Math.min(
+        Math.max(typeof rawLimit === "number" && Number.isFinite(rawLimit) ? Math.floor(rawLimit) : 25, 1),
+        100,
+      );
+      const hits = (q
+        ? ctx.objects.filter(
+            (o) => o.name.toLowerCase().includes(q) || o.label.toLowerCase().includes(q),
+          )
+        : [...ctx.objects]
+      )
+        .slice(0, limit)
+        .map((o) => ({
+          apiName: o.name,
+          label: o.label,
+          custom: o.name.endsWith("__c"),
+          onCanvas: ctx.describes.has(o.name),
+        }));
+      return { query: strArg(args, "query"), count: hits.length, objects: hits };
+    },
 
     "erd.discover": async (args) => {
       const apiName = resolveObjectRef(ctx.objects, strArg(args, "apiName"));
@@ -240,6 +302,39 @@ export function buildErdBridgeHandlers(ctx: ErdBridgeContext): Record<string, Br
       return { placed, focused: first ?? null };
     },
 
+    "erd.hide": async (args) => {
+      const refs = strListArg(args, "apiNames");
+      if (refs.length === 0) throw new Error("Provide at least one object api name to hide or show.");
+      const names = refs.map((r) => resolveObjectRef(ctx.objects, r));
+      const missing = names.filter((n) => !ctx.describes.has(n));
+      if (missing.length > 0) {
+        throw new Error(`${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not on the canvas - place first.`);
+      }
+      const hide = args.hide !== false;
+      ctx.hideNames(names, hide);
+      return hide ? { hidden: names } : { shown: names };
+    },
+
+    "erd.remove": async (args) => {
+      const refs = strListArg(args, "apiNames");
+      if (refs.length === 0) throw new Error("Provide at least one object api name to remove.");
+      const names = refs.map((r) => resolveObjectRef(ctx.objects, r));
+      const missing = names.filter((n) => !ctx.describes.has(n));
+      if (missing.length > 0) {
+        throw new Error(`${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not on the canvas - nothing removed.`);
+      }
+      const removable = names.filter((n) => n !== ctx.rootName);
+      if (removable.length === 0) {
+        throw new Error(`${ctx.rootName} is the canvas root - switch root before removing it.`);
+      }
+      ctx.removeNames(removable);
+      if (names.includes(ctx.focusName) && ctx.rootName) {
+        ctx.setFocusName(ctx.rootName);
+        ctx.focusCanvasOn(ctx.rootName);
+      }
+      return { removed: names };
+    },
+
     "erd.focus": async (args) => {
       const apiName = resolveObjectRef(ctx.objects, strArg(args, "apiName"));
       if (!ctx.describes.has(apiName)) {
@@ -261,7 +356,49 @@ export function buildErdBridgeHandlers(ctx: ErdBridgeContext): Record<string, Br
 
     "erd.filter": async (args) => {
       if (typeof args.hideSystem === "boolean") ctx.setHideSystem(args.hideSystem);
+      const rawMode = strArg(args, "mode").toLowerCase();
+      if (rawMode) {
+        const match = FILTER_MODES.find((m) => m === rawMode);
+        if (!match) throw new Error(`Unknown filter mode "${rawMode}" - use ${FILTER_MODES.join(", ")}.`);
+        ctx.setFilterMode(match);
+      }
       return { hideSystem: ctx.hideSystem, filterMode: ctx.filterMode };
+    },
+
+    "erd.tags": async (args) => {
+      const action = strArg(args, "action") || "list";
+      if (action === "list") {
+        const assigned: Record<string, string[]> = {};
+        for (const [node, ids] of Object.entries(ctx.nodeTags)) {
+          if (ids.length > 0) assigned[node] = ids;
+        }
+        return { tags: ctx.tagRegistry, assigned };
+      }
+      if (action === "create") {
+        const tag = createTag(strArg(args, "name"), strArg(args, "color") || ERD_TAG_COLORS[0], ctx.tagRegistry);
+        if (!tag) throw new Error("Provide a tag name (up to 24 characters).");
+        ctx.upsertTag(tag);
+        return { created: tag };
+      }
+      if (action === "delete") {
+        const tag = resolveTagRef(ctx.tagRegistry, strArg(args, "tag"));
+        ctx.deleteTag(tag.id);
+        return { deleted: tag.name };
+      }
+      if (action === "assign" || action === "unassign") {
+        const tag = resolveTagRef(ctx.tagRegistry, strArg(args, "tag"));
+        const refs = strListArg(args, "apiNames");
+        if (refs.length === 0) throw new Error("Provide at least one object api name.");
+        const names = refs.map((r) => resolveObjectRef(ctx.objects, r));
+        const missing = names.filter((n) => !ctx.describes.has(n));
+        if (missing.length > 0) {
+          throw new Error(`${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not on the canvas - place first.`);
+        }
+        const on = action === "assign";
+        ctx.assignTag(tag.id, names, on);
+        return { tag: tag.name, [on ? "assigned" : "unassigned"]: names };
+      }
+      throw new Error(`Unknown action "${action}" - use list, create, assign, unassign or delete.`);
     },
 
     "erd.author_field": async (args) => {

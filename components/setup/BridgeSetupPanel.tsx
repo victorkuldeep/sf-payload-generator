@@ -44,11 +44,20 @@ export function BridgeSetupPanel() {
   const [codeDraft, setCodeDraft] = useState(settings.code);
   const [portDraft, setPortDraft] = useState(String(settings.port));
 
+  const codeReady = codeDraft.trim().length > 0;
   const savePairing = () => {
+    if (!codeReady) return;
     const port = Number(portDraft);
+    // Saving a pairing implies intent to connect: switch on, clear the last
+    // error, and bump the attempt so the dial fires even when the code did
+    // not change - every click visibly dials (Pairing... -> Live/error).
     setBridgeSettings({
+      enabled: true,
       code: codeDraft.trim(),
       port: Number.isFinite(port) && port > 0 && port < 65536 ? port : settings.port,
+      status: "connecting",
+      error: null,
+      attempt: Date.now(),
     });
   };
 
@@ -78,15 +87,6 @@ export function BridgeSetupPanel() {
         }
       >
         <div className="flex flex-wrap items-end gap-3">
-          <label className="flex cursor-pointer items-center gap-2 rounded-full border border-[var(--color-line)] px-3 py-1.5 text-xs font-semibold text-ivory-800">
-            <input
-              type="checkbox"
-              checked={settings.enabled}
-              onChange={(e) => setBridgeSettings({ enabled: e.target.checked })}
-              className="h-3.5 w-3.5 accent-[#722F37]"
-            />
-            Bridge enabled
-          </label>
           <label className="block text-xs font-semibold text-ivory-800">
             Port
             <input
@@ -109,16 +109,43 @@ export function BridgeSetupPanel() {
           <button
             type="button"
             onClick={savePairing}
-            className="rounded-lg bg-ivory-950 px-3 py-1.5 text-xs font-bold text-ivory-100 hover:bg-ivory-800"
+            disabled={!codeReady}
+            title={codeReady ? "Dial the MCP hub now" : "Enter the pairing code first"}
+            className="rounded-lg bg-ivory-950 px-3 py-1.5 text-xs font-bold text-ivory-100 hover:bg-ivory-800 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Save pairing
           </button>
+          <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-ivory-800" title="Once paired, the agent draws without asking per command. Pairing itself is the authorization; every write stays in the audit trail.">
+            <input
+              type="checkbox"
+              checked={settings.autoApprove}
+              onChange={(e) => setBridgeSettings({ autoApprove: e.target.checked })}
+              className="h-3.5 w-3.5 accent-[#722F37]"
+            />
+            Auto mode - draw without asking
+          </label>
         </div>
         {settings.error ? <p className="mt-2 text-xs font-semibold text-red-700">{settings.error}</p> : null}
+        {settings.status === "live" ? (
+          <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2">
+            <p className="min-w-0 flex-1 text-xs font-semibold text-emerald-900">
+              Connected successfully - the paired terminal agent can now drive this tab
+              {settings.autoApprove ? " (auto mode: writes run without asking)." : "."}
+            </p>
+            <button
+              type="button"
+              onClick={() => setBridgeSettings({ enabled: false })}
+              className="shrink-0 rounded-lg border border-red-300 bg-white px-2.5 py-1 text-[11px] font-bold text-red-700 hover:bg-red-50"
+            >
+              Disconnect
+            </button>
+          </div>
+        ) : null}
         <p className="mt-2 text-[11px] leading-relaxed text-ivory-600">
           Requires a connected Salesforce session - the bridge borrows the tab session and the agent never sees
-          tokens. Reads run immediately; every write opens an approval dialog in this tab and is written to the
-          agent audit trail.
+          tokens. {settings.autoApprove
+            ? "Auto mode is on: paired writes run immediately and every one is written to the agent audit trail."
+            : "Reads run immediately; every write opens an approval dialog in this tab and is written to the agent audit trail."}
         </p>
       </Card>
 
@@ -158,7 +185,7 @@ export function BridgeSetupPanel() {
           </div>
           <div>
             <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ivory-500">
-              Writes - need your approval
+              {settings.autoApprove ? "Writes - run immediately in auto mode" : "Writes - need your approval"}
             </p>
             <ul className="space-y-1.5">
               {BRIDGE_WRITES.map((kind) => (

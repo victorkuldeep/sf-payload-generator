@@ -64,6 +64,24 @@ export function AiDock() {
   const shownRef = useRef(0);
   const flushRef = useRef<{ acc: string; timer: ReturnType<typeof setInterval> | null }>({ acc: "", timer: null });
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // Draggable pill: null = docked bottom-right; a position pins it anywhere
+  // so it never covers canvas controls. Survives reloads via localStorage.
+  const [dockPos, setDockPos] = useState<{ x: number; y: number } | null>(() => {
+    try {
+      const raw = localStorage.getItem("gravenx-ai-pos");
+      if (!raw) return null;
+      const p = JSON.parse(raw) as { x?: unknown; y?: unknown };
+      if (typeof p.x === "number" && typeof p.y === "number" && Number.isFinite(p.x) && Number.isFinite(p.y)) {
+        return { x: Math.max(8, p.x), y: Math.max(8, p.y) };
+      }
+    } catch {
+      /* ignore */
+    }
+    return null;
+  });
+  const aiPillRef = useRef<HTMLButtonElement | null>(null);
+  const aiDragRef = useRef<{ sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
+  const aiSuppressClickRef = useRef(false);
 
   const preset = presetById(providerId);
   const baseURL = preset.baseURL;
@@ -288,16 +306,69 @@ export function AiDock() {
 
   const stop = () => abortRef.current?.abort();
 
+  const beginAiDrag = (e: React.PointerEvent) => {
+    const el = aiPillRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    aiDragRef.current = { sx: e.clientX, sy: e.clientY, ox: rect.left, oy: rect.top, moved: false };
+  };
+  const moveAiDrag = (e: React.PointerEvent) => {
+    const d = aiDragRef.current;
+    if (!d) return;
+    const dx = e.clientX - d.sx;
+    const dy = e.clientY - d.sy;
+    if (!d.moved && Math.abs(dx) + Math.abs(dy) < 5) return;
+    d.moved = true;
+    const w = typeof window === "undefined" ? 1200 : window.innerWidth;
+    const h = typeof window === "undefined" ? 800 : window.innerHeight;
+    setDockPos({
+      x: Math.min(Math.max(8, d.ox + dx), Math.max(8, w - 140)),
+      y: Math.min(Math.max(8, d.oy + dy), Math.max(8, h - 48)),
+    });
+  };
+  const endAiDrag = () => {
+    const d = aiDragRef.current;
+    aiDragRef.current = null;
+    if (d?.moved) {
+      aiSuppressClickRef.current = true;
+      try {
+        const el = aiPillRef.current;
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          localStorage.setItem("gravenx-ai-pos", JSON.stringify({ x: Math.round(rect.left), y: Math.round(rect.top) }));
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+
   const tools = toolsForSkill(skill.name);
 
   return (
     <>
       <button
+        ref={aiPillRef}
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        title="Ask the GRAVENX agent"
+        onPointerDown={beginAiDrag}
+        onPointerMove={moveAiDrag}
+        onPointerUp={endAiDrag}
+        onPointerCancel={() => { aiDragRef.current = null; }}
+        onDoubleClick={() => {
+          setDockPos(null);
+          try { localStorage.removeItem("gravenx-ai-pos"); } catch { /* ignore */ }
+        }}
+        onClick={() => {
+          if (aiSuppressClickRef.current) {
+            aiSuppressClickRef.current = false;
+            return;
+          }
+          setOpen((v) => !v);
+        }}
+        title="Ask the GRAVENX agent - drag to move, double-click to re-dock"
         aria-label="Toggle AI agent panel"
-        className="fixed bottom-5 right-5 z-50 flex h-11 items-center gap-2 rounded-full border border-[var(--color-line)] bg-ivory-950 px-4 text-[13px] font-semibold text-ivory-100 shadow-xl transition-colors hover:bg-bronze-600 cursor-pointer"
+        style={dockPos ? { left: dockPos.x, top: dockPos.y, bottom: "auto", right: "auto" } : undefined}
+        className={`fixed z-50 flex h-11 items-center gap-2 rounded-full border border-[var(--color-line)] bg-ivory-950 px-4 text-[13px] font-semibold text-ivory-100 shadow-xl transition-colors hover:bg-bronze-600 cursor-grab active:cursor-grabbing ${dockPos ? "" : "bottom-5 right-5"}`}
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" />
