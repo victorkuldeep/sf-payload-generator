@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "gravenx": {
+      "command": "npx",
+      "args": ["tsx", "mcp/server.ts"],
+      "cwd": "<REPO_ROOT>",
+      "env": {
+        "GRAVENX_WORKSPACE": "<REPO_ROOT>/gravenx-workspace"
+      }
+    }
+  }
+}

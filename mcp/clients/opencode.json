@@ -1,0 +1,15 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "gravenx": {
+      "type": "local",
+      "command": ["npx", "tsx", "mcp/server.ts"],
+      "directory": "<REPO_ROOT>",
+      "environment": {
+        "GRAVENX_WORKSPACE": "<REPO_ROOT>/gravenx-workspace",
+        "GRAVENX_BASE_URL": "http://localhost:3000"
+      },
+      "enabled": true
+    }
+  }
+}
