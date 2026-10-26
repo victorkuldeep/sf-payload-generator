@@ -15,9 +15,11 @@ import {
 } from "@/lib/setup/policy";
 import { clearAudit, listAuditRuns, type AuditEvent } from "@/lib/setup/audit";
 import { AboutPanel, CompliancePanel, ConnectionsPanel, DiagnosticsPanel, PreferencesPanel, ShortcutsPanel, WorkspacePanel } from "./SetupPanels";
+import { BridgeSetupPanel } from "./BridgeSetupPanel";
 
 const SECTIONS = [
   { id: "agent", label: "Agent Control", desc: "Skills, tools, approvals, caps, audit" },
+  { id: "bridge", label: "Terminal Bridge", desc: "Pair terminal agents to this tab" },
   { id: "preferences", label: "Preferences", desc: "Connect + panel defaults" },
   { id: "connections", label: "Connections", desc: "Salesforce session + AI providers" },
   { id: "workspace", label: "Workspace", desc: "Local data, export, import" },
@@ -411,6 +413,7 @@ export function SetupRoute() {
         </nav>
         <div className="min-w-0">
           {section === "agent" && <AgentControl />}
+          {section === "bridge" && <BridgeSetupPanel />}
           {section === "preferences" && <PreferencesPanel />}
           {section === "connections" && <ConnectionsPanel />}
           {section === "workspace" && <WorkspacePanel />}

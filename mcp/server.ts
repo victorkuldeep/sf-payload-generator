@@ -20,6 +20,8 @@ import { wireframeTools } from "./tools/wireframe";
 import { systemTools } from "./tools/system";
 import { erdTools } from "./tools/erd";
 import { governanceTools } from "./tools/governance";
+import { BridgeHub } from "./bridge/hub.js";
+import { liveTools } from "./bridge/tools.js";
 import type { McpTool } from "./tools/types";
 
 const VERSION = "1.0.0";
@@ -35,6 +37,18 @@ const ALL_TOOLS: McpTool[] = [
 async function main(): Promise<void> {
   const dir = resolveWorkspace();
   const server = new McpServer({ name: "gravenx", version: VERSION });
+
+  // Agent bridge: localhost WS hub for the live tab. Always on - costs
+  // nothing until a tab pairs; live tools fail clearly without one.
+  const hub = new BridgeHub();
+  const bridgePort = Number(process.env.GRAVENX_BRIDGE_PORT ?? 49321);
+  hub.listen(Number.isFinite(bridgePort) ? bridgePort : 49321);
+  for (const tool of liveTools(hub)) {
+    ALL_TOOLS.push(tool);
+  }
+  console.error(
+    `[gravenx-mcp] agent bridge on 127.0.0.1:${hub.port} - pairing code ${hub.code} (show it to the architect; they enter it in Setup > Terminal Bridge)`
+  );
 
   for (const tool of ALL_TOOLS) {
     server.tool(tool.name, tool.description, tool.shape, async (args) => {

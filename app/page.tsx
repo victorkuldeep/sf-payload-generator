@@ -46,6 +46,7 @@ import { clearSessionExpired, markSessionExpired } from "@/lib/ai/gate";
 import { loadAutosave, queueAutosave, flushAutosaves, clearAutosave, migrateLegacyWorkspace } from "@/lib/workspace/autosave";
 import Button from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { BridgeDock } from "@/components/bridge/BridgeDock";
 import type { SchemaNavRequest } from "@/components/SchemaPanel";
 import { useDeepParam } from "@/lib/deep/deep";
 import ObjectPanel from "@/components/ObjectPanel";
@@ -1659,6 +1660,7 @@ export default function Home() {
             onConfirm={() => doCloseSchemaTab(pendingCloseSchema)}
           />
         )}
+        <BridgeDock />
         {!state.connected ? (
           <>
             <HomeHero

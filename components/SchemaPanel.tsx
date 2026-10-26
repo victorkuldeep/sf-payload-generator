@@ -51,6 +51,8 @@ import {
 } from "@/lib/notes/notebody";
 import { RecordPopover, type RecordPopData, type RecordFieldMeta } from "./erd/RecordPopover";
 import { RecordEditModal } from "./erd/RecordEditModal";
+import { registerBridgeHandler, unregisterBridgeHandler } from "@/lib/bridge/registry";
+import { buildErdBridgeHandlers, ERD_BRIDGE_KINDS, type ErdBridgeContext } from "@/lib/bridge/erd";
 import type { LookupHit } from "./erd/LookupPickerModal";
 import { parseLayouts, type ObjectLayout } from "@/lib/salesforce/layouts";
 import {
@@ -3670,6 +3672,72 @@ export default function SchemaPanel({
     },
     [fetchDescribe, mergeDescribes, pinCurrentLayout]
   );
+
+  // ---- Live agent bridge: terminal agents drive this canvas via MCP ----
+  // The context ref is refreshed every render; the registered handlers are
+  // stable and always read the latest state through it. No tokens flow here -
+  // handlers reuse the same session-backed callbacks as the UI.
+  const erdBridgeCtx = useRef<ErdBridgeContext | null>(null);
+  erdBridgeCtx.current = {
+    objects,
+    describes,
+    rootName,
+    focusName,
+    view,
+    hideSystem,
+    filterMode,
+    authorMode,
+    nodePositions: () => {
+      const out: Record<string, { x: number; y: number }> = {};
+      for (const n of canvasRef.current?.getNodes() ?? []) {
+        out[n.id] = { x: n.position.x, y: n.position.y };
+      }
+      return out;
+    },
+    focusCanvasOn,
+    setFocusName,
+    setView,
+    setHideSystem,
+    addNames,
+    describeCached,
+    submitAuthorField,
+    submitAuthorObject,
+  };
+  useEffect(() => {
+    const ref = erdBridgeCtx;
+    const need = (): ErdBridgeContext => {
+      const ctx = ref.current;
+      if (!ctx) throw new Error("ERD bridge is not ready - open the Schema tab first.");
+      return ctx;
+    };
+    const live: ErdBridgeContext = {
+      get objects() { return need().objects; },
+      get describes() { return need().describes; },
+      get rootName() { return need().rootName; },
+      get focusName() { return need().focusName; },
+      get view() { return need().view; },
+      get hideSystem() { return need().hideSystem; },
+      get filterMode() { return need().filterMode; },
+      get authorMode() { return need().authorMode; },
+      nodePositions: () => need().nodePositions(),
+      focusCanvasOn: (name) => need().focusCanvasOn(name),
+      setFocusName: (name) => need().setFocusName(name),
+      setView: (v) => need().setView(v),
+      setHideSystem: (hide) => need().setHideSystem(hide),
+      addNames: (names) => need().addNames(names),
+      describeCached: (name) => need().describeCached(name),
+      submitAuthorField: (draft, childApi) => need().submitAuthorField(draft, childApi),
+      submitAuthorObject: (draft) => need().submitAuthorObject(draft),
+    };
+    const handlers = buildErdBridgeHandlers(live);
+    for (const kind of ERD_BRIDGE_KINDS) {
+      const fn = handlers[kind];
+      if (fn) registerBridgeHandler(kind, fn);
+    }
+    return () => {
+      for (const kind of ERD_BRIDGE_KINDS) unregisterBridgeHandler(kind);
+    };
+  }, []);
 
   const applyStaged = useCallback(async () => {
     if (staged.size === 0 || busy) return;
