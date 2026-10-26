@@ -6,9 +6,13 @@ import Button from "../ui/Button";
 import { DraftDialog, type DraftConfirmation } from "../draw/DraftDialog";
 import { SYSTEM_DRAFT_KEY, buildSystemProject, type TopologyDraft } from "@/lib/draw/toSystemDraft";
 import { canTransition, cloneExperience, newExperience, renameExperience, type Experience, type SnapshotStatus } from "@/lib/wireframe/model";
-import { importExperiencePackage } from "@/lib/wireframe/packageIo";
+import { WIREFRAME_SAMPLES, type WireframeSample } from "@/lib/wireframe/samples";
+import { experiencePackage, importExperiencePackage } from "@/lib/wireframe/packageIo";
 import { deleteExperience, listExperiences, saveExperience } from "@/lib/wireframe/store";
-import { findDeepRecord, useDeepParam } from "@/lib/deep/deep";
+import { findDeepRecord, syncDeepParam, useDeepParam } from "@/lib/deep/deep";
+import { validateShareEnvelope } from "@/lib/share/envelope";
+import { DeepLinkButton } from "../ui/DeepLinkButton";
+import { ShareButton } from "../share/ShareButton";
 import { experienceToDraft } from "@/lib/wireframe/systemBridge";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { InventoryAside } from "../ui/InventoryAside";
@@ -99,6 +103,7 @@ export function WireframeRoute() {
   const [q, setQ] = useState("");
   const nameRef = useRef<HTMLInputElement | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [showSamples, setShowSamples] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const refresh = useCallback(async () => {
@@ -122,12 +127,65 @@ export function WireframeRoute() {
     }
   }, [loaded, deepExp, items]);
 
+  // Keep the URL on the open experience so every design is linkable and a
+  // reload restores it. Library view clears the key.
+  useEffect(() => {
+    if (!loaded) return;
+    syncDeepParam("exp", activeId);
+  }, [loaded, activeId]);
+
+  // Collaboration entry: ?share=<id> imports the shared package as a local
+  // copy, then selects it. Consumed once; the key is cleared either way.
+  const deepShare = useDeepParam("share");
+  const shareDone = useRef(false);
+  useEffect(() => {
+    if (shareDone.current || !loaded || deepShare === null) return;
+    shareDone.current = true;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/share/${encodeURIComponent(deepShare)}`);
+        const raw: unknown = await res.json().catch(() => null);
+        const env = validateShareEnvelope(raw);
+        if (!res.ok || !env || env.kind !== "experience") {
+          setImportError("That share link is expired, invalid, or not an experience.");
+          return;
+        }
+        const r = importExperiencePackage(JSON.stringify(env.data));
+        if (!r.ok || !r.experience) {
+          setImportError(r.error ?? "Could not import the shared experience.");
+          return;
+        }
+        if (await saveExperience(r.experience).catch(() => false)) {
+          setActiveId(r.experience.id);
+          await refresh();
+        } else {
+          setImportError("Could not save the shared experience.");
+        }
+      } catch {
+        setImportError("Could not read that share link.");
+      } finally {
+        syncDeepParam("share", null);
+      }
+    })();
+  }, [loaded, deepShare, refresh]);
+
   const create = async () => {
     const exp = newExperience(name);
     if (await saveExperience(exp).catch(() => false)) {
       setName("");
       setActiveId(exp.id);
       await refresh();
+    }
+  };
+
+  const loadWireSample = async (sample: WireframeSample) => {
+    setImportError(null);
+    const exp = sample.build();
+    if (await saveExperience(exp).catch(() => false)) {
+      setActiveId(exp.id);
+      await refresh();
+    } else {
+      setImportError("Could not save the sample.");
     }
   };
 
@@ -293,6 +351,32 @@ export function WireframeRoute() {
             <Button size="sm" variant="secondary" onClick={() => setHistoryOpen(true)} title="Snapshots and export">
               History
             </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                try {
+                  const text = JSON.stringify(experiencePackage(active), null, 2);
+                  const safe = active.name.toLowerCase().replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "") || "experience";
+                  const blob = new Blob([text], { type: "application/json" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `${safe}-package.json`;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                  URL.revokeObjectURL(url);
+                } catch {
+                  /* download unavailable */
+                }
+              }}
+              title="Download this experience as a portable package JSON"
+            >
+              Export
+            </Button>
+            <DeepLinkButton path="/wireframe" param="exp" value={active.id} />
+            <ShareButton kind="experience" name={active.name} getPayload={() => experiencePackage(active)} />
             <Button size="sm" variant="secondary" onClick={() => void clone(active)} title="Duplicate this experience and open the copy">
               Clone
             </Button>
@@ -428,6 +512,9 @@ export function WireframeRoute() {
                 <Button variant="secondary" onClick={() => fileRef.current?.click()} title="Import a package JSON from a fellow dev">
                   Import
                 </Button>
+                <Button variant="secondary" onClick={() => setShowSamples((v) => !v)} title="Browse training samples - load one to start" aria-expanded={showSamples}>
+                  {showSamples ? "Hide samples" : "Samples"}
+                </Button>
                 <input
                   ref={fileRef}
                   type="file"
@@ -442,6 +529,23 @@ export function WireframeRoute() {
                 />
               </div>
               {importError && <p className="mt-2 text-[11px] text-red-700">{importError}</p>}
+              {showSamples && (
+                <ul className="mt-2 grid gap-1.5 sm:grid-cols-3">
+                  {WIREFRAME_SAMPLES.map((s) => (
+                    <li key={s.name} className="rounded-lg border border-[#EFE9DC] bg-[#FAF8F2] px-2.5 py-2">
+                      <p className="truncate text-[12px] font-semibold text-[#27241F]" title={s.name}>{s.name.replace(/^Sample: /, "")}</p>
+                      <p className="mt-0.5 line-clamp-2 min-h-7 text-[11px] leading-snug text-[#777168]">{s.hint}</p>
+                      <button
+                        type="button"
+                        onClick={() => void loadWireSample(s)}
+                        className="mt-1.5 cursor-pointer rounded-md border border-[#E3D9C6] bg-white px-2 py-1 text-[11px] font-semibold text-[#3A352D] transition-colors hover:border-[#C9A86A] hover:text-[#27241F]"
+                      >
+                        Load sample
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
             <div className="grid gap-2 sm:grid-cols-3">
               <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">

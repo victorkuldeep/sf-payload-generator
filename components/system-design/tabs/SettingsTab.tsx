@@ -8,6 +8,7 @@
 
 import { useEffect, useState } from "react";
 import Button from "../../ui/Button";
+import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { deleteSystemRun, listSystemRuns } from "@/lib/system-design/runStore";
 import { newId, type SystemProject } from "@/lib/system-design/model";
 import { fieldLabel, monoInput, panelShell, textInput, type Mutate } from "./shared";
@@ -20,6 +21,8 @@ interface Props {
 export function SettingsTab({ project, mutate }: Props) {
   const [runCount, setRunCount] = useState<number | null>(null);
   const [draft, setDraft] = useState({ name: "", baseUrl: "" });
+  const [pendingDeleteEnv, setPendingDeleteEnv] = useState<string | null>(null);
+  const [confirmClearRuns, setConfirmClearRuns] = useState(false);
 
   /** Per-system URL inside one environment. Blank clears back to the node URL. */
   const setOverride = (envId: string, sysId: string, url: string) =>
@@ -97,19 +100,28 @@ export function SettingsTab({ project, mutate }: Props) {
                   </label>
                   <button
                     type="button"
-                    onClick={() => {
-                      if (!window.confirm(`Delete environment "${e.name}"?`)) return;
-                      mutate((p) => ({
-                        ...p,
-                        environments: p.environments.filter((x) => x.id !== e.id),
-                        activeEnvironmentId: p.activeEnvironmentId === e.id ? null : p.activeEnvironmentId,
-                      }));
-                    }}
+                    onClick={() => setPendingDeleteEnv(e.id)}
                     aria-label={`Delete environment ${e.name}`}
                     className="ml-auto rounded px-1.5 text-ivory-400 hover:text-red-700 cursor-pointer"
                   >
                     ×
                   </button>
+                  {pendingDeleteEnv === e.id && (
+                    <ConfirmDialog
+                      title={`Delete environment "${e.name}"?`}
+                      message="Per-system URL overrides inside it go with it. This cannot be undone."
+                      confirmLabel="Delete environment"
+                      onCancel={() => setPendingDeleteEnv(null)}
+                      onConfirm={() => {
+                        setPendingDeleteEnv(null);
+                        mutate((p) => ({
+                          ...p,
+                          environments: p.environments.filter((x) => x.id !== e.id),
+                          activeEnvironmentId: p.activeEnvironmentId === e.id ? null : p.activeEnvironmentId,
+                        }));
+                      }}
+                    />
+                  )}
                 </div>
                 <div className="mt-1.5 flex items-center gap-1.5">
                   <span className="w-28 shrink-0 truncate text-[10px] font-semibold uppercase tracking-wider text-ivory-600">Fallback URL</span>
@@ -210,15 +222,27 @@ export function SettingsTab({ project, mutate }: Props) {
             size="sm"
             variant="ghost"
             disabled={!runCount}
-            onClick={async () => {
-              if (!window.confirm("Delete ALL saved run evidence in this browser?")) return;
-              const all = await listSystemRuns(100);
-              for (const r of all) await deleteSystemRun(r.id);
-              setRunCount(0);
-            }}
+            onClick={() => setConfirmClearRuns(true)}
           >
             Clear all runs
           </Button>
+          {confirmClearRuns && (
+            <ConfirmDialog
+              title="Delete ALL saved run evidence?"
+              message="Every run in this browser is purged - the Runs tab goes empty. This cannot be undone."
+              confirmLabel="Delete everything"
+              tone="danger"
+              onCancel={() => setConfirmClearRuns(false)}
+              onConfirm={() => {
+                setConfirmClearRuns(false);
+                void (async () => {
+                  const all = await listSystemRuns(100);
+                  for (const r of all) await deleteSystemRun(r.id);
+                  setRunCount(0);
+                })();
+              }}
+            />
+          )}
         </div>
         <p className="mt-1.5 text-[11px] leading-relaxed text-ivory-600">
           <span className={fieldLabel}>Safety</span>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { validateShareStructure, newShareId, SHARE_MAX_BODY_BYTES } from "@/lib/erd/shareLink";
+import { validateShareEnvelope, SHARE_ENVELOPE_MAX_BYTES } from "@/lib/share/envelope";
 import { shareKv, SHARE_TTL_SECONDS } from "./store";
 
 /**
@@ -68,7 +69,7 @@ export async function POST(req: NextRequest) {
     );
   }
   const contentLength = Number(req.headers.get("content-length") ?? 0);
-  if (contentLength > SHARE_MAX_BODY_BYTES + 4096) {
+  if (contentLength > Math.max(SHARE_MAX_BODY_BYTES, SHARE_ENVELOPE_MAX_BYTES) + 4096) {
     return NextResponse.json({ error: "Share payload too large." }, { status: 413 });
   }
   let body: unknown;
@@ -77,13 +78,19 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
-  const parsed = shareBodySchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid share structure." }, { status: 400 });
-  }
-  const structure = validateShareStructure(parsed.data);
-  if (!structure) {
-    return NextResponse.json({ error: "Invalid share structure." }, { status: 400 });
+  // Generic envelope first (sequence / experience / system-project), then
+  // the legacy ERD structure shape. Stored verbatim either way.
+  const envelope = validateShareEnvelope(body);
+  let structure: unknown = envelope;
+  if (!envelope) {
+    const parsed = shareBodySchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Invalid share structure." }, { status: 400 });
+    }
+    structure = validateShareStructure(parsed.data);
+    if (!structure) {
+      return NextResponse.json({ error: "Invalid share structure." }, { status: 400 });
+    }
   }
   const id = newShareId();
   try {

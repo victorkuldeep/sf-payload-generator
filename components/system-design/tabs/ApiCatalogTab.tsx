@@ -9,6 +9,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Button from "../../ui/Button";
+import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import Input from "../../ui/Input";
 import { listSystemRuns } from "@/lib/system-design/runStore";
 import {
@@ -158,6 +159,7 @@ export function ApiCatalogTab({ project, mutate, onTest, onLocate, onBind }: Pro
   const [query, setQuery] = useState("");
   const [orphansOnly, setOrphansOnly] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [pendingDeleteOp, setPendingDeleteOp] = useState<string | null>(null);
   const [tested, setTested] = useState<Set<string>>(new Set());
   const [draft, setDraft] = useState({ systemId: "", interfaceId: "", name: "", path: "", method: "GET" as OperationMethod });
 
@@ -352,8 +354,20 @@ export function ApiCatalogTab({ project, mutate, onTest, onLocate, onBind }: Pro
                             <div className="flex justify-end">
                               <button
                                 type="button"
-                                onClick={() => {
-                                  if (!window.confirm(`Delete operation "${op.name}"? Edge bindings to it read as unbound.`)) return;
+                                onClick={() => setPendingDeleteOp(op.id)}
+                                className="text-[11px] font-semibold text-red-700 hover:underline cursor-pointer"
+                              >
+                                Delete operation
+                              </button>
+                            </div>
+                            {pendingDeleteOp === op.id && (
+                              <ConfirmDialog
+                                title={`Delete operation "${op.name}"?`}
+                                message="Edge bindings to it read as unbound. This cannot be undone."
+                                confirmLabel="Delete operation"
+                                onCancel={() => setPendingDeleteOp(null)}
+                                onConfirm={() => {
+                                  setPendingDeleteOp(null);
                                   setExpandedId(null);
                                   mutate((p) => ({
                                     ...p,
@@ -365,11 +379,8 @@ export function ApiCatalogTab({ project, mutate, onTest, onLocate, onBind }: Pro
                                     })),
                                   }));
                                 }}
-                                className="text-[11px] font-semibold text-red-700 hover:underline cursor-pointer"
-                              >
-                                Delete operation
-                              </button>
-                            </div>
+                              />
+                            )}
                           </div>
                         )}
                       </li>

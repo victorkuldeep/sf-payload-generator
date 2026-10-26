@@ -16,10 +16,14 @@ import {
   type SeqStatus,
 } from "@/lib/sequence/model";
 import { deleteSequence, listSequences, saveSequence } from "@/lib/sequence/store";
-import { importSequenceFile } from "@/lib/sequence/packageIo";
+import { importSequenceFile, sequencePackage } from "@/lib/sequence/packageIo";
+import { SEQUENCE_SAMPLES, type SequenceSample } from "@/lib/sequence/samples";
 import { parseStatements } from "@/lib/sequence/dsl";
 import { downloadSequenceMatrix } from "@/lib/sequence/matrix";
-import { findDeepRecord, useDeepParam } from "@/lib/deep/deep";
+import { findDeepRecord, syncDeepParam, useDeepParam } from "@/lib/deep/deep";
+import { validateShareEnvelope } from "@/lib/share/envelope";
+import { DeepLinkButton } from "../ui/DeepLinkButton";
+import { ShareButton } from "../share/ShareButton";
 
 const STATUS_STYLE: Record<SeqStatus, string> = {
   draft: "bg-[#F5F1E8] text-[#777168] border-[#E3D9C6]",
@@ -52,6 +56,7 @@ export function SequenceRoute() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [rev, setRev] = useState(0);
   const [importError, setImportError] = useState<string | null>(null);
+  const [showSamples, setShowSamples] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const refresh = useCallback(async () => {
@@ -75,6 +80,48 @@ export function SequenceRoute() {
     }
   }, [loaded, deepId, items]);
 
+  // Keep the URL on the open record so every sequence is linkable and a
+  // reload restores it. Library view clears the key.
+  useEffect(() => {
+    if (!loaded) return;
+    syncDeepParam("id", activeId);
+  }, [loaded, activeId]);
+
+  // Collaboration entry: ?share=<id> imports the shared package as a local
+  // copy, then selects it. Consumed once; the key is cleared either way.
+  const deepShare = useDeepParam("share");
+  const shareDone = useRef(false);
+  useEffect(() => {
+    if (shareDone.current || !loaded || deepShare === null) return;
+    shareDone.current = true;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/share/${encodeURIComponent(deepShare)}`);
+        const raw: unknown = await res.json().catch(() => null);
+        const env = validateShareEnvelope(raw);
+        if (!res.ok || !env || env.kind !== "sequence") {
+          setImportError("That share link is expired, invalid, or not a sequence.");
+          return;
+        }
+        const r = importSequenceFile(JSON.stringify(env.data), "shared-sequence.json");
+        if (!r.ok || !r.document) {
+          setImportError(r.error ?? "Could not import the shared sequence.");
+          return;
+        }
+        if (await saveSequence(r.document).catch(() => false)) {
+          setActiveId(r.document.id);
+          await refresh();
+        } else {
+          setImportError("Could not save the shared sequence.");
+        }
+      } catch {
+        setImportError("Could not read that share link.");
+      } finally {
+        syncDeepParam("share", null);
+      }
+    })();
+  }, [loaded, deepShare, refresh]);
+
   const create = async () => {
     const doc = newSequence(name);
     if (await saveSequence(doc).catch(() => false)) {
@@ -84,27 +131,14 @@ export function SequenceRoute() {
     }
   };
 
-  const SAMPLE_DSL = [
-    "participant React",
-    "participant Salesforce",
-    "React -> Salesforce: Configure request",
-    "Salesforce --> React: Transaction context",
-    "if valid",
-    "React -> Salesforce: Update attributes",
-    "Salesforce --> React: Final pricing",
-    "else",
-    "Salesforce --> React: Validation errors",
-    "end",
-  ].join("\n");
-
-  const loadSample = async () => {
+  const loadSample = async (sample: SequenceSample) => {
     setImportError(null);
-    const r = parseStatements(SAMPLE_DSL);
+    const r = parseStatements(sample.dsl);
     if (r.errors.length > 0 || r.participants.length === 0) {
       setImportError("Sample failed to parse.");
       return;
     }
-    const doc = { ...newSequence("Sample: RCA configure flow"), participants: r.participants, nodes: r.nodes };
+    const doc = { ...newSequence(sample.name), participants: r.participants, nodes: r.nodes };
     if (await saveSequence(doc).catch(() => false)) {
       setActiveId(doc.id);
       await refresh();
@@ -250,6 +284,32 @@ export function SequenceRoute() {
             >
               {matrixBusy ? "Building…" : "Matrix (.xlsx)"}
             </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                try {
+                  const text = JSON.stringify(sequencePackage(active), null, 2);
+                  const safe = active.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "sequence";
+                  const blob = new Blob([text], { type: "application/json" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `${safe}-package.json`;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                  URL.revokeObjectURL(url);
+                } catch {
+                  /* download unavailable */
+                }
+              }}
+              title="Download this sequence as a portable package JSON"
+            >
+              Export
+            </Button>
+            <DeepLinkButton path="/sequence" param="id" value={active.id} />
+            <ShareButton kind="sequence" name={active.name} getPayload={() => sequencePackage(active)} />
             <a
               href="/console"
               title="Open Console - track this sequence as tasks"
@@ -358,8 +418,8 @@ export function SequenceRoute() {
                 <Button variant="secondary" onClick={() => fileRef.current?.click()} title="Import a package JSON, DSL text or Mermaid (.mmd) file from a fellow dev">
                   Import
                 </Button>
-                <Button variant="secondary" onClick={() => void loadSample()} title="Load the RCA configure-flow sample - sync, response and a condition branch">
-                  Sample
+                <Button variant="secondary" onClick={() => setShowSamples((v) => !v)} title="Browse training samples - load one to start" aria-expanded={showSamples}>
+                  {showSamples ? "Hide samples" : "Samples"}
                 </Button>
                 <input
                   ref={fileRef}
@@ -375,6 +435,23 @@ export function SequenceRoute() {
                 />
               </div>
               {importError && <p className="mt-2 text-[11px] text-red-700">{importError}</p>}
+              {showSamples && (
+                <ul className="mt-2 grid gap-1.5 sm:grid-cols-3">
+                  {SEQUENCE_SAMPLES.map((s) => (
+                    <li key={s.name} className="rounded-lg border border-[#EFE9DC] bg-[#FAF8F2] px-2.5 py-2">
+                      <p className="truncate text-[12px] font-semibold text-[#27241F]" title={s.name}>{s.name.replace(/^Sample: /, "")}</p>
+                      <p className="mt-0.5 line-clamp-2 min-h-7 text-[11px] leading-snug text-[#777168]">{s.hint}</p>
+                      <button
+                        type="button"
+                        onClick={() => void loadSample(s)}
+                        className="mt-1.5 cursor-pointer rounded-md border border-[#E3D9C6] bg-white px-2 py-1 text-[11px] font-semibold text-[#3A352D] transition-colors hover:border-[#C9A86A] hover:text-[#27241F]"
+                      >
+                        Load sample
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
             <div className="grid gap-2 sm:grid-cols-3">
               <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">

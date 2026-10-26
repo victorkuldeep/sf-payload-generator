@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Button from "../../ui/Button";
+import { ConfirmDialog, PromptDialog } from "../../ui/ConfirmDialog";
 import { deleteSystemRun, listSystemRuns, saveSystemRun, type SystemRunRecord } from "@/lib/system-design/runStore";
 import { computeVerdict } from "@/lib/system-design/verdict";
 import { downloadRunMarkdown, renderRunMarkdown } from "@/lib/system-design/runMarkdown";
@@ -60,9 +61,13 @@ export function RunsTab({ project }: Props) {
   const retentionMs = project.settings.retentionDays * 24 * 3600 * 1000;
   const stale = runs.filter((r) => Date.now() - r.createdAt > retentionMs);
 
+  const [confirmPrune, setConfirmPrune] = useState(false);
+  const [pendingDeleteRun, setPendingDeleteRun] = useState<string | null>(null);
+  const [signRun, setSignRun] = useState<SystemRunRecord | null>(null);
+
   const prune = async () => {
     if (stale.length === 0) return;
-    if (!window.confirm(`Delete ${stale.length} run${stale.length === 1 ? "" : "s"} older than ${project.settings.retentionDays} days?`)) return;
+    setConfirmPrune(false);
     setBusy(true);
     try {
       for (const r of stale) await deleteSystemRun(r.id);
@@ -78,12 +83,21 @@ export function RunsTab({ project }: Props) {
         <h2 className="text-sm font-bold text-ivory-950">Runs & Observability · {runs.length}</h2>
         <span className="text-[11px] text-ivory-500">pinned evidence · retention {project.settings.retentionDays}d (Settings)</span>
         <div className="ml-auto flex gap-1.5">
-          <Button size="sm" variant="ghost" disabled={busy || stale.length === 0} onClick={() => void prune()}>
+          <Button size="sm" variant="ghost" disabled={busy || stale.length === 0} onClick={() => setConfirmPrune(true)}>
             Prune {stale.length > 0 ? `${stale.length} stale` : "stale"}
           </Button>
           <Button size="sm" variant="ghost" onClick={() => void refresh()}>Refresh</Button>
         </div>
       </div>
+      {confirmPrune && (
+        <ConfirmDialog
+          title={`Delete ${stale.length} stale run${stale.length === 1 ? "" : "s"}?`}
+          message={`Runs older than ${project.settings.retentionDays} days are purged. This cannot be undone.`}
+          confirmLabel="Delete stale runs"
+          onCancel={() => setConfirmPrune(false)}
+          onConfirm={() => void prune()}
+        />
+      )}
 
       {runs.length === 0 ? (
         <p className="mt-3 text-xs text-ivory-500">No runs saved yet - test an operation or run a chain and the evidence lands here.</p>
@@ -122,15 +136,24 @@ export function RunsTab({ project }: Props) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      if (!window.confirm("Delete this run evidence?")) return;
-                      void deleteSystemRun(r.id).then(refresh);
-                    }}
+                    onClick={() => setPendingDeleteRun(r.id)}
                     aria-label="Delete run"
                     className="rounded px-1.5 py-0.5 text-ivory-400 hover:text-red-700 cursor-pointer"
                   >
                     ×
                   </button>
+                  {pendingDeleteRun === r.id && (
+                    <ConfirmDialog
+                      title="Delete this run evidence?"
+                      message="The pinned request, response and timings are removed. This cannot be undone."
+                      confirmLabel="Delete run"
+                      onCancel={() => setPendingDeleteRun(null)}
+                      onConfirm={() => {
+                        setPendingDeleteRun(null);
+                        void deleteSystemRun(r.id).then(refresh);
+                      }}
+                    />
+                  )}
                 </div>
                 {open && (
                   <div className="mt-2 space-y-1.5 border-t border-[var(--color-line-soft)] pt-2">
@@ -158,20 +181,31 @@ export function RunsTab({ project }: Props) {
                             Clear override
                           </button>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const note = window.prompt("Sign this override - why does this run count as handled?", "");
-                              if (note === null) return;
-                              const signed: SystemRunRecord = { ...r, verdict: "override-pass" };
-                              const trimmed = note.slice(0, 500);
-                              if (trimmed) signed.verdictNote = trimmed;
-                              void saveSystemRun(signed).then(refresh);
-                            }}
-                            className="rounded px-1.5 py-0.5 text-[11px] font-semibold text-bronze-600 hover:bg-bronze-500/10 cursor-pointer"
-                          >
-                            Mark handled
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setSignRun(r)}
+                              className="rounded px-1.5 py-0.5 text-[11px] font-semibold text-bronze-600 hover:bg-bronze-500/10 cursor-pointer"
+                            >
+                              Mark handled
+                            </button>
+                            {signRun?.id === r.id && (
+                              <PromptDialog
+                                title="Sign this override"
+                                message="Why does this run count as handled? The note is pinned to the evidence."
+                                inputLabel="Override reason"
+                                placeholder="e.g. downstream returned 202 after retry - verified in logs"
+                                confirmLabel="Sign override"
+                                onCancel={() => setSignRun(null)}
+                                onConfirm={(note) => {
+                                  setSignRun(null);
+                                  const signed: SystemRunRecord = { ...r, verdict: "override-pass" };
+                                  if (note) signed.verdictNote = note.slice(0, 500);
+                                  void saveSystemRun(signed).then(refresh);
+                                }}
+                              />
+                            )}
+                          </>
                         )}
                       </div>
                     )}

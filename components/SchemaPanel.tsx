@@ -92,6 +92,7 @@ import { EmptyState } from "./EmptyState";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
 import Badge from "./ui/Badge";
+import { ConfirmDialog } from "./ui/ConfirmDialog";
 
 /**
  * Cross-tab navigation request: some other tab's inbox asked to land here
@@ -3136,16 +3137,12 @@ export default function SchemaPanel({
     [instanceUrl, apiVersion, getToken, onSessionExpired, fetchDescribe, mergeDescribes]
   );
 
-  const submitAuthorField = useCallback(
+  const [pendingProdField, setPendingProdField] = useState<{ draft: FieldDraft; childApi: string } | null>(null);
+
+  const fireAuthorField = useCallback(
     async (draft: FieldDraft, childApi: string) => {
       const isRel = draft.type === "Lookup" || draft.type === "MasterDetail";
       const label = `${childApi}.${draft.apiName.trim()} (${draft.type})`;
-      if (
-        isProductionOrg &&
-        !window.confirm(`Deploy ${label} to PRODUCTION ${instanceUrl}? This goes live immediately.`)
-      ) {
-        return;
-      }
       const change: AuthorChange = {
         id: newAuthorId(),
         kind: isRel ? "relationship" : "field",
@@ -3159,21 +3156,28 @@ export default function SchemaPanel({
       setAuthorDialog(null);
       await deployAuthorChange(change);
     },
-    [isProductionOrg, instanceUrl, deployAuthorChange]
+    [deployAuthorChange]
   );
 
-  const submitAuthorObject = useCallback(
+  const submitAuthorField = useCallback(
+    async (draft: FieldDraft, childApi: string) => {
+      if (isProductionOrg) {
+        setPendingProdField({ draft, childApi });
+        return;
+      }
+      await fireAuthorField(draft, childApi);
+    },
+    [isProductionOrg, fireAuthorField]
+  );
+
+  const [pendingProdObject, setPendingProdObject] = useState<ObjectDraft | null>(null);
+
+  const fireAuthorObject = useCallback(
     async (draft: ObjectDraft) => {
       const api = draft.apiName.trim();
       if (describes.has(api)) {
         setNotice(`${api} is already on the canvas - find it in Discover.`);
         setAuthorDialog(null);
-        return;
-      }
-      if (
-        isProductionOrg &&
-        !window.confirm(`Create object ${api} on PRODUCTION ${instanceUrl}? This goes live immediately.`)
-      ) {
         return;
       }
       // Optimistic sketch through the normal pipeline; replaced by the live
@@ -3197,7 +3201,18 @@ export default function SchemaPanel({
       setAuthorDialog(null);
       await deployAuthorChange(change);
     },
-    [describes, isProductionOrg, instanceUrl, filterMode, deployAuthorChange]
+    [describes, filterMode, deployAuthorChange]
+  );
+
+  const submitAuthorObject = useCallback(
+    async (draft: ObjectDraft) => {
+      if (isProductionOrg) {
+        setPendingProdObject(draft);
+        return;
+      }
+      await fireAuthorObject(draft);
+    },
+    [isProductionOrg, fireAuthorObject]
   );
 
   const retryAuthorChange = useCallback(
@@ -6899,6 +6914,34 @@ export default function SchemaPanel({
           isProduction={isProductionOrg}
           onClose={() => setAuthorDialog(null)}
           onDeploy={(draft) => void submitAuthorObject(draft)}
+        />
+      )}
+      {pendingProdField && (
+        <ConfirmDialog
+          title={`Deploy ${pendingProdField.childApi}.${pendingProdField.draft.apiName.trim()} to PRODUCTION?`}
+          message={`${instanceUrl} - this goes live immediately and cannot be undone from here.`}
+          confirmLabel="Deploy to production"
+          tone="danger"
+          onCancel={() => setPendingProdField(null)}
+          onConfirm={() => {
+            const p = pendingProdField;
+            setPendingProdField(null);
+            void fireAuthorField(p.draft, p.childApi);
+          }}
+        />
+      )}
+      {pendingProdObject && (
+        <ConfirmDialog
+          title={`Create object ${pendingProdObject.apiName.trim()} on PRODUCTION?`}
+          message={`${instanceUrl} - this goes live immediately and cannot be undone from here.`}
+          confirmLabel="Create on production"
+          tone="danger"
+          onCancel={() => setPendingProdObject(null)}
+          onConfirm={() => {
+            const p = pendingProdObject;
+            setPendingProdObject(null);
+            void fireAuthorObject(p);
+          }}
         />
       )}
       {addValues && (

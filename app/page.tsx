@@ -45,6 +45,7 @@ import { getCachedConnection, setCachedConnection, clearCachedConnection } from 
 import { clearSessionExpired, markSessionExpired } from "@/lib/ai/gate";
 import { loadAutosave, queueAutosave, flushAutosaves, clearAutosave, migrateLegacyWorkspace } from "@/lib/workspace/autosave";
 import Button from "@/components/ui/Button";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import type { SchemaNavRequest } from "@/components/SchemaPanel";
 import { useDeepParam } from "@/lib/deep/deep";
 import ObjectPanel from "@/components/ObjectPanel";
@@ -717,7 +718,9 @@ export default function Home() {
     [state.connected, openConnect, goMode, router]
   );
 
-  // Deep link: ?tab= lands on the exact home mode (schema links use it).
+  // Deep link: ?tab= lands on the exact home mode (schema links use it), or
+  // on a standalone route tab (system, sequence, wireframe, console, draw,
+  // json, contracts, architect, decisions, notes, requirements, knowledge).
   // Runs once - offline visitors connect first, then land automatically.
   const deepTabDone = useRef(false);
   useEffect(() => {
@@ -730,11 +733,28 @@ export default function Home() {
       tab = null;
     }
     if (!tab) return;
+    const routes = [
+      "system", "sequence", "wireframe", "console", "draw", "json", "contracts",
+      "architect", "decisions", "notes", "requirements", "knowledge", "setup", "docs",
+    ];
+    if (routes.includes(tab)) {
+      deepTabDone.current = true;
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("tab");
+        url.searchParams.delete("mode");
+        window.history.replaceState(null, "", `/${tab}${url.search}${url.hash}`);
+      } catch {
+        /* fall through to plain navigation */
+      }
+      router.push(`/${tab}`);
+      return;
+    }
     const mode = tab === "builder" ? "single" : tab;
     if (mode !== "single" && mode !== "composite" && mode !== "soql" && mode !== "graphql" && mode !== "schema" && mode !== "rest" && mode !== "apex" && mode !== "events") return;
     deepTabDone.current = true;
     jumpToMode(mode as Exclude<BuilderMode, "home">);
-  }, [jumpToMode]);
+  }, [jumpToMode, router]);
 
   // Zig-zag capability opener: modes via jump flow, routes direct.
   const openZigZag = useCallback(
@@ -1225,15 +1245,12 @@ export default function Home() {
     });
   }, []);
 
-  const closeBuilderTab = useCallback((tabId: string) => {
+  const [pendingCloseBuilder, setPendingCloseBuilder] = useState<string | null>(null);
+
+  const doCloseBuilderTab = useCallback((tabId: string) => {
+    setPendingCloseBuilder(null);
     setBuilderTabs((prev) => {
-      const tab = prev.find((t) => t.tabId === tabId);
-      if (!tab) return prev;
-      const dirty =
-        tab.draft.selectedObject !== null ||
-        tab.draft.selectedFieldNames.size > 0 ||
-        tab.draft.generatedPayload !== null;
-      if (dirty && !window.confirm(`Close "${tab.name ?? tab.draft.selectedObject?.label ?? "untitled request"}"? Unsaved request work will be lost.`)) return prev;
+      if (!prev.some((t) => t.tabId === tabId)) return prev;
       if (prev.length <= 1) return [{ tabId, name: null, draft: freshBuilderDraft() }];
       const remaining = prev.filter((t) => t.tabId !== tabId);
       if (activeBuilderTabRef.current === tabId) {
@@ -1245,6 +1262,17 @@ export default function Home() {
       return remaining;
     });
   }, []);
+
+  const closeBuilderTab = useCallback((tabId: string) => {
+    const tab = builderTabs.find((t) => t.tabId === tabId);
+    if (!tab) return;
+    const dirty =
+      tab.draft.selectedObject !== null ||
+      tab.draft.selectedFieldNames.size > 0 ||
+      tab.draft.generatedPayload !== null;
+    if (dirty) setPendingCloseBuilder(tabId);
+    else doCloseBuilderTab(tabId);
+  }, [builderTabs, doCloseBuilderTab]);
 
   const renameBuilderTab = useCallback((tabId: string, name: string) => {
     setBuilderTabs((prev) =>
@@ -1392,21 +1420,27 @@ export default function Home() {
     });
   }, []);
 
-  const closeSchemaTab = useCallback((tabId: string) => {
+  const [pendingCloseSchema, setPendingCloseSchema] = useState<string | null>(null);
+
+  const doCloseSchemaTab = useCallback((tabId: string) => {
+    setPendingCloseSchema(null);
+    if (orgKey) {
+      void clearAutosave(orgKey, "schema", tabId);
+      void clearAutosave(orgKey, "notes", tabId);
+    }
     setSchemaTabs((prev) => {
-      const tab = prev.find((t) => t.tabId === tabId);
-      if (!tab) return prev;
-      if (!window.confirm(`Close tab "${tab.name}"? Its canvas will be deleted.`)) return prev;
-      if (orgKey) {
-        void clearAutosave(orgKey, "schema", tabId);
-        void clearAutosave(orgKey, "notes", tabId);
-      }
+      if (!prev.some((t) => t.tabId === tabId)) return prev;
       if (prev.length <= 1) return [{ tabId, name: "Canvas 1" }];
       const remaining = prev.filter((t) => t.tabId !== tabId);
       setActiveSchemaTabId((cur) => (cur === tabId || !cur ? remaining[remaining.length - 1].tabId : cur));
       return remaining;
     });
   }, [orgKey]);
+
+  const closeSchemaTab = useCallback((tabId: string) => {
+    if (!schemaTabs.some((t) => t.tabId === tabId)) return;
+    setPendingCloseSchema(tabId);
+  }, [schemaTabs]);
 
   const renameSchemaTab = useCallback((tabId: string, name: string) => {
     setSchemaTabs((prev) =>
@@ -1607,6 +1641,24 @@ export default function Home() {
       }
     >
       <main className={`mx-auto w-full space-y-5 ${state.mode === "schema" ? "px-1 pt-1 pb-1" : "px-5 pt-3 pb-1"}`}>
+        {pendingCloseBuilder && (
+          <ConfirmDialog
+            title={`Close "${builderTabs.find((t) => t.tabId === pendingCloseBuilder)?.name ?? builderTabs.find((t) => t.tabId === pendingCloseBuilder)?.draft.selectedObject?.label ?? "untitled request"}"?`}
+            message="Unsaved request work will be lost. This cannot be undone."
+            confirmLabel="Close tab"
+            onCancel={() => setPendingCloseBuilder(null)}
+            onConfirm={() => doCloseBuilderTab(pendingCloseBuilder)}
+          />
+        )}
+        {pendingCloseSchema && (
+          <ConfirmDialog
+            title={`Close tab "${schemaTabs.find((t) => t.tabId === pendingCloseSchema)?.name ?? "canvas"}"?`}
+            message="Its canvas will be deleted. This cannot be undone."
+            confirmLabel="Close tab"
+            onCancel={() => setPendingCloseSchema(null)}
+            onConfirm={() => doCloseSchemaTab(pendingCloseSchema)}
+          />
+        )}
         {!state.connected ? (
           <>
             <HomeHero

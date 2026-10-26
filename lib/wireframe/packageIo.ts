@@ -1,4 +1,5 @@
-import { ExperienceSchema, type Experience } from "./model";
+import { ExperienceSchema, buildOdaManifest, type Experience } from "./model";
+import { buildSpec } from "./buildSpec";
 
 /**
  * Experience package import: the mirror of the History dialog export.
@@ -21,6 +22,26 @@ export interface ExperienceImport {
   ok: boolean;
   experience?: Experience;
   error?: string;
+}
+
+/** Portable package: the exact shape the History dialog downloads, so file
+ * export, KV share and file import all round-trip through one builder. */
+export function experiencePackage(exp: Experience): {
+  kind: string;
+  packageVersion: number;
+  exportedAt: string;
+  experience: Experience;
+  manifest: ReturnType<typeof buildOdaManifest>;
+  spec: ReturnType<typeof buildSpec>;
+} {
+  return {
+    kind: "gravenx-experience-package",
+    packageVersion: 1,
+    exportedAt: new Date().toISOString(),
+    experience: exp,
+    manifest: buildOdaManifest(exp),
+    spec: buildSpec(exp),
+  };
 }
 
 export function importExperiencePackage(text: string): ExperienceImport {

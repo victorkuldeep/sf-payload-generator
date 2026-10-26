@@ -19,6 +19,15 @@ describe("importSequenceFile", () => {
     expect(r.document?.participants.map((p) => p.name)).toEqual(["Salesforce", "Middleware"]);
   });
 
+  it("round-trips the shared builder through the importer", async () => {
+    const { sequencePackage } = await import("./packageIo");
+    const { newSequence } = await import("./model");
+    const doc = newSequence("Round trip");
+    const r = importSequenceFile(JSON.stringify(sequencePackage(doc)), "shared-sequence.json");
+    expect(r.ok).toBe(true);
+    expect(r.document?.name).toBe("Round trip (imported)");
+  });
+
   it("rejects bad JSON, bad schema and bad DSL", () => {
     expect(importSequenceFile("nope", "x.json").ok).toBe(false);
     expect(importSequenceFile(JSON.stringify({ document: { name: 1 } }), "x.json").ok).toBe(false);

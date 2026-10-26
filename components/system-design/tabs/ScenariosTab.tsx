@@ -10,6 +10,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Button from "../../ui/Button";
+import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import {
   newId,
   type OperationMock,
@@ -212,6 +213,7 @@ function ScenarioEditor({ project, scenario, mutate }: { project: SystemProject;
 
 export function ScenariosTab({ project, mutate, onRunScenario }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [pendingDeleteScenario, setPendingDeleteScenario] = useState<string | null>(null);
   const [runs, setRuns] = useState<SystemRunRecord[]>([]);
 
   useEffect(() => {
@@ -294,16 +296,25 @@ export function ScenariosTab({ project, mutate, onRunScenario }: Props) {
                   <Button size="sm" disabled={!flow} title={flow ? "Apply mocks, seed input, open chain runner" : "Pick a flow first"} onClick={() => onRunScenario(s)}>Run</Button>
                   <button
                     type="button"
-                    onClick={() => {
-                      if (!window.confirm(`Delete scenario "${s.name}"?`)) return;
-                      setExpandedId(null);
-                      mutate((p) => ({ ...p, scenarios: p.scenarios.filter((x) => x.id !== s.id) }));
-                    }}
+                    onClick={() => setPendingDeleteScenario(s.id)}
                     aria-label={`Delete scenario ${s.name}`}
                     className="rounded px-1.5 py-0.5 text-ivory-400 hover:text-red-700 cursor-pointer"
                   >
                     ×
                   </button>
+                  {pendingDeleteScenario === s.id && (
+                    <ConfirmDialog
+                      title={`Delete scenario "${s.name}"?`}
+                      message="Its seed input and mock overrides are removed. This cannot be undone."
+                      confirmLabel="Delete scenario"
+                      onCancel={() => setPendingDeleteScenario(null)}
+                      onConfirm={() => {
+                        setPendingDeleteScenario(null);
+                        setExpandedId(null);
+                        mutate((p) => ({ ...p, scenarios: p.scenarios.filter((x) => x.id !== s.id) }));
+                      }}
+                    />
+                  )}
                 </div>
                 {expanded && <ScenarioEditor project={project} scenario={s} mutate={mutate} />}
               </li>

@@ -16,6 +16,22 @@ export interface SequenceImport {
   error?: string;
 }
 
+/** Portable package: the exact shape the History dialog downloads, so file
+ * export, KV share and file import all round-trip through one builder. */
+export function sequencePackage(doc: SequenceDocument): {
+  kind: string;
+  packageVersion: number;
+  exportedAt: string;
+  document: SequenceDocument;
+} {
+  return {
+    kind: "gravenx-sequence-package",
+    packageVersion: 1,
+    exportedAt: new Date().toISOString(),
+    document: doc,
+  };
+}
+
 function fresh(doc: SequenceDocument, name: string): SequenceDocument {
   return { ...doc, id: `${doc.id}_imp_${Date.now().toString(36)}`, name: name.slice(0, 160), updatedAt: Date.now() };
 }

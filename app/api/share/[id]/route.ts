@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { validateShareStructure } from "@/lib/erd/shareLink";
+import { validateShareEnvelope } from "@/lib/share/envelope";
 import { shareKv } from "../store";
 
 const KEY_PREFIX = "share:";
@@ -30,6 +31,8 @@ export async function GET(
     // Expired (TTL) or never existed - indistinguishable by design.
     return NextResponse.json({ error: "Share link expired or invalid." }, { status: 404 });
   }
+  const envelope = validateShareEnvelope(raw);
+  if (envelope) return NextResponse.json(envelope);
   const structure = validateShareStructure(raw);
   if (!structure) {
     return NextResponse.json({ error: "Share link expired or invalid." }, { status: 404 });

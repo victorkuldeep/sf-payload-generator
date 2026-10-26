@@ -25,7 +25,8 @@ import { downloadGovernancePack } from "@/lib/decisions/adrLog";
 import { RichTextEditor } from "../notes/RichTextEditor";
 import { consoleLinkHref } from "@/lib/console/model";
 import { RecordWhereUsed } from "@/components/graph/WhereUsedStrip";
-import { findDeepRecord, useDeepParam } from "@/lib/deep/deep";
+import { findDeepRecord, syncDeepParam, useDeepParam } from "@/lib/deep/deep";
+import { DeepLinkButton } from "../ui/DeepLinkButton";
 import { listSystemProjects } from "@/lib/system-design/store";
 import { listExperiences } from "@/lib/wireframe/store";
 import { listSequences } from "@/lib/sequence/store";
@@ -106,6 +107,12 @@ export function DecisionsRoute() {
       deepDone.current = true;
     }
   }, [loaded, deepId, items]);
+
+  // Keep the URL on the open decision so it survives reloads and pastes.
+  useEffect(() => {
+    if (!loaded) return;
+    syncDeepParam("id", activeId);
+  }, [loaded, activeId]);
 
   /** Every write funnels through here so a failed save is visible, never silent. */
   const recordSave = async (d: Decision): Promise<boolean> => {
@@ -673,6 +680,7 @@ function DecisionEditor({
           <Button size="sm" variant="secondary" onClick={onExport} title="Download this decision as a portable package">
             Export
           </Button>
+          <DeepLinkButton path="/decisions" param="id" value={d.id} />
           <Button size="sm" variant="secondary" onClick={onDelete} title="Delete this decision">
             Delete
           </Button>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Button from "../ui/Button";
 import type { SequenceDocument } from "@/lib/sequence/model";
+import { sequencePackage } from "@/lib/sequence/packageIo";
 import { printStatements } from "@/lib/sequence/dsl";
 import { toMermaid } from "@/lib/sequence/mermaid";
 import { listSequenceSnapshots, saveSequence, saveSequenceSnapshot, type SequenceSnapshot } from "@/lib/sequence/store";
@@ -146,7 +147,7 @@ export function SequenceHistoryDialog({ doc, onRestored, onClose }: { doc: Seque
           <Button
             size="sm"
             variant="secondary"
-            onClick={() => download(`${slug}-v${doc.version}-package.json`, JSON.stringify({ kind: "gravenx-sequence-package", packageVersion: 1, exportedAt: new Date().toISOString(), document: doc }, null, 2), "application/json")}
+            onClick={() => download(`${slug}-v${doc.version}-package.json`, JSON.stringify(sequencePackage(doc), null, 2), "application/json")}
           >
             Package JSON
           </Button>

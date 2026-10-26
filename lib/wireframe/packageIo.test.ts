@@ -17,6 +17,14 @@ describe("importExperiencePackage", () => {
     expect(r.ok).toBe(true);
   });
 
+  it("round-trips the shared builder through the importer", async () => {
+    const { experiencePackage } = await import("./packageIo");
+    const exp = newExperience("Round trip");
+    const r = importExperiencePackage(JSON.stringify(experiencePackage(exp)));
+    expect(r.ok).toBe(true);
+    expect(r.experience?.name).toBe("Round trip (imported)");
+  });
+
   it("rejects garbage", () => {
     expect(importExperiencePackage("nope").ok).toBe(false);
     expect(importExperiencePackage(JSON.stringify({ kind: "nope" })).ok).toBe(false);

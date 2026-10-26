@@ -9,6 +9,7 @@
 
 import { useMemo, useState } from "react";
 import Button from "../../ui/Button";
+import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { resolveChain, type ChainLane } from "@/lib/system-design/chain";
 import { newId, operationsForSystem, type FlowDef, type SystemProject } from "@/lib/system-design/model";
 import { edgeLabel, fieldLabel, panelShell, type Mutate } from "./shared";
@@ -125,6 +126,7 @@ function FlowEditor({ project, flow, mutate }: { project: SystemProject; flow: F
 
 export function FlowsTab({ project, mutate, onRunFlow }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [pendingDeleteFlow, setPendingDeleteFlow] = useState<string | null>(null);
 
   return (
     <div className={panelShell}>
@@ -195,16 +197,25 @@ export function FlowsTab({ project, mutate, onRunFlow }: Props) {
                   <Button size="sm" disabled={startMissing || f.lanes.length === 0} onClick={() => onRunFlow(f)}>Run</Button>
                   <button
                     type="button"
-                    onClick={() => {
-                      if (!window.confirm(`Delete flow "${f.name}"?`)) return;
-                      setExpandedId(null);
-                      mutate((p) => ({ ...p, flows: p.flows.filter((x) => x.id !== f.id) }));
-                    }}
+                    onClick={() => setPendingDeleteFlow(f.id)}
                     aria-label={`Delete flow ${f.name}`}
                     className="rounded px-1.5 py-0.5 text-ivory-400 hover:text-red-700 cursor-pointer"
                   >
                     ×
                   </button>
+                  {pendingDeleteFlow === f.id && (
+                    <ConfirmDialog
+                      title={`Delete flow "${f.name}"?`}
+                      message="The run sequence and its lane mapping are removed. This cannot be undone."
+                      confirmLabel="Delete flow"
+                      onCancel={() => setPendingDeleteFlow(null)}
+                      onConfirm={() => {
+                        setPendingDeleteFlow(null);
+                        setExpandedId(null);
+                        mutate((p) => ({ ...p, flows: p.flows.filter((x) => x.id !== f.id) }));
+                      }}
+                    />
+                  )}
                 </div>
                 {!expanded && !startMissing && (
                   <p className="mt-0.5 truncate font-mono text-[10px] text-ivory-500">{edgeLabel(project, f.startEdgeId)}</p>

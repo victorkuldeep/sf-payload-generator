@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Button from "./ui/Button";
+import { ConfirmDialog } from "./ui/ConfirmDialog";
 
 interface WebhooksPanelProps {
   instanceUrl: string;
@@ -427,13 +428,13 @@ export function WebhooksPanel({ instanceUrl, getToken, onSessionExpired, active 
     }
   };
 
+  const [pendingRelease, setPendingRelease] = useState<string | null>(null);
+
   const mutate = async (
     uuid: string,
     path: "activate" | "heartbeat" | "release",
     payload: unknown,
-    confirmMsg?: string
   ) => {
-    if (confirmMsg && !window.confirm(confirmMsg)) return;
     setOpBusy(true);
     try {
       const url = path === "activate" ? "/api/webhooks/activate" : `/api/webhooks/${uuid}/${path}`;
@@ -654,17 +655,25 @@ export function WebhooksPanel({ instanceUrl, getToken, onSessionExpired, active 
                 size="sm"
                 variant="danger"
                 disabled={opBusy}
-                onClick={() =>
-                  void mutate(
-                    selected.uuid,
-                    "release",
-                    session(),
-                    `Release ${selected.name}? Captured requests are purged and the URL stops working.`
-                  )
-                }
+                onClick={() => setPendingRelease(selected.uuid)}
+                title="Release this inbox - captured requests are purged and the URL stops working"
               >
                 Release
               </Button>
+              {pendingRelease && (
+                <ConfirmDialog
+                  title={`Release ${entries.find((e) => e.uuid === pendingRelease)?.name ?? "this inbox"}?`}
+                  message="Captured requests are purged and the URL stops working. This cannot be undone."
+                  confirmLabel="Release inbox"
+                  tone="danger"
+                  onCancel={() => setPendingRelease(null)}
+                  onConfirm={() => {
+                    const uuid = pendingRelease;
+                    setPendingRelease(null);
+                    void mutate(uuid, "release", session());
+                  }}
+                />
+              )}
             </span>
           </div>
 

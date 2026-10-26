@@ -21,6 +21,7 @@ import {
 } from "@/lib/composite/studio";
 import StudioRequests, { type StudioRequestActions } from "./composite-studio/StudioRequests";
 import StudioGraph from "./composite-studio/StudioGraph";
+import { ConfirmDialog } from "./ui/ConfirmDialog";
 import StudioPayloadView from "./composite-studio/StudioPayload";
 import Button from "./ui/Button";
 import { CollectionTrayButton } from "./CollectionTrayButton";
@@ -155,11 +156,10 @@ export default function CompositePanel({
     setOrderNotice(null);
   }, [bundles.length]);
 
-  const closeBundle = useCallback((tabId: string) => {
-    const tab = bundles.find((t) => t.tabId === tabId);
-    if (!tab) return;
-    const dirty = tab.doc.requests.length > 1 || tab.doc.requests.some((r) => r.fields.length > 0);
-    if (dirty && !window.confirm(`Close "${tab.doc.name}"? Unsaved bundle work will be lost.`)) return;
+  const [pendingCloseBundle, setPendingCloseBundle] = useState<string | null>(null);
+
+  const doCloseBundle = useCallback((tabId: string) => {
+    setPendingCloseBundle(null);
     if (bundles.length <= 1) {
       // Keep one tab: reset it in place so ids stay consistent.
       setBundles([{ tabId, doc: freshBundleDoc() }]);
@@ -179,6 +179,17 @@ export default function CompositePanel({
     setTestError(null);
     setOrderNotice(null);
   }, [bundles]);
+
+  const requestCloseBundle = useCallback((tabId: string) => {
+    const tab = bundles.find((t) => t.tabId === tabId);
+    if (!tab) return;
+    const dirty = tab.doc.requests.length > 1 || tab.doc.requests.some((r) => r.fields.length > 0);
+    if (dirty) {
+      setPendingCloseBundle(tabId);
+      return;
+    }
+    doCloseBundle(tabId);
+  }, [bundles, doCloseBundle]);
 
   const issues = useMemo(() => validateStudio(doc, describes), [doc, describes]);
   const errCount = issues.filter((i) => i.level === "error").length;
@@ -704,7 +715,7 @@ export default function CompositePanel({
               )}
               <button
                 type="button"
-                onClick={() => closeBundle(t.tabId)}
+                onClick={() => requestCloseBundle(t.tabId)}
                 aria-label={`Close ${t.doc.name}`}
                 title="Close bundle"
                 className={`rounded px-1 cursor-pointer ${active ? "hover:bg-white/20" : "hover:bg-[#F5F1E8]"}`}
@@ -715,6 +726,15 @@ export default function CompositePanel({
           );
         })}
       </div>
+      {pendingCloseBundle && (
+        <ConfirmDialog
+          title={`Close "${bundles.find((t) => t.tabId === pendingCloseBundle)?.doc.name ?? "bundle"}"?`}
+          message="Unsaved bundle work will be lost. This cannot be undone."
+          confirmLabel="Close bundle"
+          onCancel={() => setPendingCloseBundle(null)}
+          onConfirm={() => doCloseBundle(pendingCloseBundle)}
+        />
+      )}
       {/* Transaction toolbar */}
       <div className="rounded-xl border border-[#E8E2D8] bg-white px-4 py-3">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">

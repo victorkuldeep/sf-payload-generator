@@ -125,12 +125,30 @@ describe("privacy / GDPR surface", () => {
     expect(designer).toMatch(/isProduction/);
   });
 
+  it("no native dialogs anywhere - confirms go through the app modal", () => {
+    const bad: string[] = [];
+    for (const f of [...sourceFiles("app"), ...sourceFiles("components"), ...sourceFiles("lib")]) {
+      const body = read(f);
+      if (/window\.(confirm|alert|prompt)\(/.test(body)) bad.push(f);
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it("shared confirm + prompt dialogs exist for destructive and input flows", () => {
+    const dialogs = read("components/ui/ConfirmDialog.tsx");
+    expect(dialogs).toMatch(/export function ConfirmDialog/);
+    expect(dialogs).toMatch(/export function PromptDialog/);
+    expect(dialogs).toMatch(/tone/);
+  });
+
   it("author UI is wired on the ERD canvas with confirm guardrails", () => {
     const panel = read("components/SchemaPanel.tsx");
     expect(panel).toMatch(/authorMode/);
     expect(panel).toMatch(/AuthorFieldDialog/);
     expect(panel).toMatch(/AuthorObjectDialog/);
-    expect(panel).toMatch(/window\.confirm/);
+    expect(panel).toMatch(/pendingProdField/);
+    expect(panel).toMatch(/pendingProdObject/);
+    expect(panel).toMatch(/tone="danger"/);
     expect(panel).toMatch(/connectable=\{authorMode\}/);
     const node = read("components/erd/ErdTableNode.tsx");
     expect(node).toMatch(/onAddField/);

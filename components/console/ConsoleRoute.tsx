@@ -16,7 +16,9 @@ import {
 import { exportConsoleTasks, importConsoleTasks, deleteConsoleTask, listConsoleTasks, saveConsoleTask } from "@/lib/console/store";
 import { countAttachments, deleteTaskAttachments, listAllAttachments, saveAttachment } from "@/lib/console/attachments";
 import { downloadTaskList } from "@/lib/console/taskExport";
-import { findDeepRecord, useDeepParam } from "@/lib/deep/deep";
+import { CONSOLE_SAMPLES } from "@/lib/console/samples";
+import { findDeepRecord, syncDeepParam, useDeepParam } from "@/lib/deep/deep";
+import { DeepLinkButton } from "../ui/DeepLinkButton";
 import {
   consoleToCanvas,
   liveSchemaFns,
@@ -137,6 +139,12 @@ export function ConsoleRoute() {
       deepDone.current = true;
     }
   }, [loaded, deepTask, tasks]);
+
+  // Keep the URL on the selected task so it survives reloads and pastes.
+  useEffect(() => {
+    if (!loaded) return;
+    syncDeepParam("task", selectedId);
+  }, [loaded, selectedId]);
 
   const persist = useCallback(async (task: ConsoleTask) => {
     setTasks((prev) => prev.map((t) => (t.id === task.id ? task : t)).sort((a, b) => b.updatedAt - a.updatedAt));
@@ -325,6 +333,31 @@ export function ConsoleRoute() {
     [],
   );
 
+  const loadSamples = useCallback(async () => {
+    const existing = new Set(tasks.map((t) => t.title));
+    const fresh = CONSOLE_SAMPLES.filter((s) => !existing.has(s.title));
+    if (fresh.length === 0) {
+      setNotice("Samples already in the queue.");
+      return;
+    }
+    const made: ConsoleTask[] = [];
+    for (const s of fresh) {
+      const task: ConsoleTask = {
+        ...newConsoleTask(s.title),
+        kind: s.kind,
+        status: s.status,
+        priority: s.priority,
+        ...(s.owner ? { owner: s.owner } : {}),
+        ...(s.body ? { body: s.body } : {}),
+      };
+      await saveConsoleTask(task);
+      made.push(task);
+    }
+    setTasks((prev) => [...made, ...prev].sort((a, b) => b.updatedAt - a.updatedAt));
+    setSelectedId(made[0].id);
+    setNotice(`Loaded ${made.length} sample task${made.length === 1 ? "" : "s"} - edit or delete freely.`);
+  }, [tasks]);
+
   const selected = tasks.find((t) => t.id === selectedId) ?? null;
 
   const filtered = useMemo(() => {
@@ -391,6 +424,15 @@ export function ConsoleRoute() {
               className="cursor-pointer rounded-lg border border-[#E8E2D8] px-2.5 py-1.5 text-xs font-semibold text-[#27241F] transition-colors hover:border-[#C9A86A] disabled:opacity-50"
             >
               {xlsBusy ? "Building…" : "Excel (.xlsx)"}
+            </button>
+            {selected && <DeepLinkButton path="/console" param="task" value={selected.id} />}
+            <button
+              type="button"
+              onClick={() => void loadSamples()}
+              title="Load three training tasks - review, question, decision"
+              className="cursor-pointer rounded-lg border border-[#E8E2D8] px-2.5 py-1.5 text-xs font-semibold text-[#27241F] transition-colors hover:border-[#C9A86A]"
+            >
+              Samples
             </button>
             <button
               type="button"

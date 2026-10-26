@@ -21,6 +21,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { toPng } from "html-to-image";
 import Button from "../ui/Button";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import Input from "../ui/Input";
 import Badge from "../ui/Badge";
 import {
@@ -60,6 +61,10 @@ import {
 import { buildCdcSyncProject, buildDemoProject, buildGroqSampleProject, buildOrderFanoutProject, buildRetryFallbackProject, buildRevenueCloudProject, buildTmfSampleProject } from "@/lib/system-design/demo";
 import { deleteCanvasBlob, isPastesableImage, newBlobId, probeImageSize, putCanvasBlob } from "@/lib/system-design/blobStore";
 import { SYSTEM_DRAFT_KEY } from "@/lib/draw/toSystemDraft";
+import { syncDeepParam } from "@/lib/deep/deep";
+import { validateShareEnvelope } from "@/lib/share/envelope";
+import { DeepLinkButton } from "../ui/DeepLinkButton";
+import { ShareButton } from "../share/ShareButton";
 import { SystemGlyph } from "./SystemNode";
 import { TestRunner } from "./TestRunner";
 import { RunEdgeDialog } from "./RunEdgeDialog";
@@ -821,6 +826,43 @@ export function SystemDesigner() {
   // Initial load: most recent project, else a fresh one (unsaved until Save).
   useEffect(() => {
     void (async () => {
+      // Collaboration entry: ?share=<id> imports the shared project as a
+      // local copy. Consumed once; the key is cleared either way.
+      try {
+        const q = new URLSearchParams(window.location.search);
+        const shareId = q.get("share")?.trim() || null;
+        if (shareId) {
+          syncDeepParam("share", null);
+          try {
+            const res = await fetch(`/api/share/${encodeURIComponent(shareId)}`);
+            const raw: unknown = await res.json().catch(() => null);
+            const env = validateShareEnvelope(raw);
+            if (res.ok && env && env.kind === "system-project") {
+              const { project: imported, issues } = importProject(env.data);
+              const valid = imported ? ensureDefaultInterfaces(imported) : null;
+              if (valid) {
+                try { sessionStorage.removeItem(SYSTEM_DRAFT_KEY); } catch { /* ignore */ }
+                setProject({ ...valid, id: newId("proj"), name: `${valid.name} (shared)`, updatedAt: Date.now() });
+                setPast([]);
+                setFuture([]);
+                setSelNodeId(null);
+                setSelEdgeId(null);
+                setSaveState("dirty");
+                setProjectList(await listSystemProjects());
+                return;
+              }
+              void issues;
+              setImportIssues(["$: Shared project failed validation - link ignored."]);
+            } else {
+              setImportIssues(["$: Share link expired, invalid, or not a system project."]);
+            }
+          } catch {
+            setImportIssues(["$: Could not read that share link."]);
+          }
+        }
+      } catch {
+        /* non-browser or blocked query - normal load */
+      }
       try {
         const raw = sessionStorage.getItem(SYSTEM_DRAFT_KEY);
         if (raw) {
@@ -886,6 +928,14 @@ export function SystemDesigner() {
     readyRef.current = true;
   }, []);
 
+  // Keep the URL on the saved project so canvases are linkable and a reload
+  // restores them. Unsaved drafts clear the key instead of advertising an id
+  // that resolves nowhere.
+  useEffect(() => {
+    if (!project) return;
+    syncDeepParam("project", projectList.some((p) => p.id === project.id) ? project.id : null);
+  }, [project, projectList]);
+
   // Debounced autosave: every mutation persists ~800ms later. Guards keep the
   // initial load from ever being overwritten by a blank state.
   useEffect(() => {
@@ -939,10 +989,28 @@ export function SystemDesigner() {
     setSaveState("dirty");
   }, [pushHistory]);
 
+  /** App-modal replacement for window.confirm: one pending action at a time. */
+  const [pendingAction, setPendingAction] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    danger?: boolean;
+    run: () => void;
+  } | null>(null);
+
   /** Active environment + production guard: PROD targets confirm every run. */
   const activeEnv = project?.environments.find((e) => e.id === project.activeEnvironmentId) ?? null;
   const guardProd = (action: () => void): void => {
-    if (activeEnv?.isProduction && !window.confirm(`"${activeEnv.name}" is marked PRODUCTION. Run anyway?`)) return;
+    if (activeEnv?.isProduction) {
+      setPendingAction({
+        title: `"${activeEnv.name}" is marked PRODUCTION.`,
+        message: "This run hits live systems. Confirm to proceed.",
+        confirmLabel: "Run anyway",
+        danger: true,
+        run: action,
+      });
+      return;
+    }
     action();
   };
   const openTestOp = (opId: string): void => guardProd(() => setTestOpId(opId));
@@ -993,8 +1061,7 @@ export function SystemDesigner() {
     const flow = project?.flows.find((f) => f.id === s.flowId);
     if (!project || !flow) return;
     const mockCount = Object.keys(s.mockOverrides).length;
-    if (mockCount > 0 && !window.confirm(`Apply ${mockCount} mock override${mockCount === 1 ? "" : "s"} to operations, seed the start payload, and open the chain runner? Existing mocks on those operations are replaced.`)) return;
-    guardProd(() => {
+    const fire = (): void => guardProd(() => {
       mutate((p) => {
         const startEdge = p.connections.find((c) => c.id === flow.startEdgeId);
         const operations = p.operations.map((o) => {
@@ -1019,6 +1086,16 @@ export function SystemDesigner() {
       setRunChainScenarioId(s.id);
       setRunVis({});
     });
+    if (mockCount > 0) {
+      setPendingAction({
+        title: `Apply ${mockCount} mock override${mockCount === 1 ? "" : "s"} and run?`,
+        message: "Existing mocks on those operations are replaced, the start payload is seeded, and the chain runner opens.",
+        confirmLabel: "Apply and run",
+        run: fire,
+      });
+      return;
+    }
+    fire();
   };
 
   const undo = useCallback(() => {
@@ -1386,70 +1463,42 @@ export function SystemDesigner() {
     }
   }, [project]);
 
-  const loadDemo = useCallback(() => {
-    if (project && (project.systems.length > 0 || saveState === "dirty")) {
-      if (!window.confirm("Replace the current canvas with the demo architecture? Unsaved work will be lost.")) return;
-    }
-    const demo = buildDemoProject();
-    setProject(demo);
-    setPast([]);
-    setFuture([]);
-    setSelNodeId(null);
-    setSelEdgeId(null);
-    setSaveState("dirty");
-  }, [project, saveState]);
-
-  const loadTmfSample = useCallback(() => {
-    if (project && (project.systems.length > 0 || saveState === "dirty")) {
-      if (!window.confirm("Replace the current canvas with the order-flow sample? Unsaved work will be lost.")) return;
-    }
-    setProject(buildTmfSampleProject());
-    setPast([]);
-    setFuture([]);
-    setSelNodeId(null);
-    setSelEdgeId(null);
-    setSaveState("dirty");
-  }, [project, saveState]);
-
-  const loadGroqSample = useCallback(() => {
-    if (project && (project.systems.length > 0 || saveState === "dirty")) {
-      if (!window.confirm("Replace the current canvas with the GROQ chat sample? Unsaved work will be lost.")) return;
-    }
-    setProject(buildGroqSampleProject());
-    setPast([]);
-    setFuture([]);
-    setSelNodeId(null);
-    setSelEdgeId(null);
-    setSaveState("dirty");
-  }, [project, saveState]);
-
-  const loadSample = useCallback((label: string, build: () => SystemProject) => {
-    if (project && (project.systems.length > 0 || saveState === "dirty")) {
-      if (!window.confirm(`Replace the current canvas with ${label}? Unsaved work will be lost.`)) return;
-    }
+  const loadBuilt = useCallback((build: () => SystemProject) => {
+    setPendingAction(null);
     setProject(build());
     setPast([]);
     setFuture([]);
     setSelNodeId(null);
     setSelEdgeId(null);
     setSaveState("dirty");
-  }, [project, saveState]);
+  }, []);
+
+  const replaceCanvas = useCallback((label: string, build: () => SystemProject) => {
+    if (project && (project.systems.length > 0 || saveState === "dirty")) {
+      setPendingAction({
+        title: `Replace the current canvas with ${label}?`,
+        message: "Unsaved work will be lost. This cannot be undone.",
+        confirmLabel: "Replace canvas",
+        run: () => loadBuilt(build),
+      });
+      return;
+    }
+    loadBuilt(build);
+  }, [project, saveState, loadBuilt]);
+
+  const loadDemo = useCallback(() => replaceCanvas("the demo architecture", buildDemoProject), [replaceCanvas]);
+
+  const loadTmfSample = useCallback(() => replaceCanvas("the order-flow sample", buildTmfSampleProject), [replaceCanvas]);
+
+  const loadGroqSample = useCallback(() => replaceCanvas("the GROQ chat sample", buildGroqSampleProject), [replaceCanvas]);
+
+  const loadSample = useCallback((label: string, build: () => SystemProject) => replaceCanvas(label, build), [replaceCanvas]);
   const loadFanoutSample = useCallback(() => loadSample("the TMF fan-out sample", buildOrderFanoutProject), [loadSample]);
   const loadRevenueSample = useCallback(() => loadSample("the Revenue Cloud sample", buildRevenueCloudProject), [loadSample]);
   const loadCdcSample = useCallback(() => loadSample("the CDC sync sample", buildCdcSyncProject), [loadSample]);
   const loadFlowSample = useCallback(() => loadSample("the retry + fallback sample", buildRetryFallbackProject), [loadSample]);
 
-  const newCanvas = useCallback(() => {
-    if (project && (project.systems.length > 0 || saveState === "dirty")) {
-      if (!window.confirm("Start a blank canvas? Unsaved work will be lost.")) return;
-    }
-    setProject(newProject());
-    setPast([]);
-    setFuture([]);
-    setSelNodeId(null);
-    setSelEdgeId(null);
-    setSaveState("dirty");
-  }, [project, saveState]);
+  const newCanvas = useCallback(() => replaceCanvas("a blank canvas", newProject), [replaceCanvas]);
 
   const openProject = useCallback(async (id: string) => {
     const loaded = await loadSystemProject(id);
@@ -1654,6 +1703,8 @@ export function SystemDesigner() {
               Import
             </span>
           </Button>
+          <DeepLinkButton path="/system" param="project" value={projectList.some((p) => p.id === project.id) ? project.id : null} />
+          <ShareButton kind="system-project" name={project.name} getPayload={() => exportProject(project)} />
           <input
             ref={fileRef}
             type="file"
@@ -2462,6 +2513,20 @@ export function SystemDesigner() {
         />
       )}
 
+      {pendingAction && (
+        <ConfirmDialog
+          title={pendingAction.title}
+          message={pendingAction.message}
+          confirmLabel={pendingAction.confirmLabel}
+          tone={pendingAction.danger ? "danger" : "default"}
+          onCancel={() => setPendingAction(null)}
+          onConfirm={() => {
+            const run = pendingAction.run;
+            setPendingAction(null);
+            run();
+          }}
+        />
+      )}
       {confirmDeleteId && (
         <div className="modal-overlay" onClick={() => setConfirmDeleteId(null)}>
           <div className="modal-card max-w-sm flex flex-col" role="dialog" aria-modal="true" aria-label="Delete project" onClick={(e) => e.stopPropagation()}>

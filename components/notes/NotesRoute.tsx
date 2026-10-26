@@ -6,7 +6,8 @@ import { InventoryAside } from "../ui/InventoryAside";
 import { RichTextEditor } from "./RichTextEditor";
 import { WordImportButton } from "./WordImportButton";
 import type { DocxImport } from "@/lib/notes/docxImport";
-import { findDeepRecord, useDeepParam } from "@/lib/deep/deep";
+import { findDeepRecord, syncDeepParam, useDeepParam } from "@/lib/deep/deep";
+import { DeepLinkButton } from "../ui/DeepLinkButton";
 import { CONSOLE_STATUSES, CONSOLE_STATUS_LABELS } from "@/lib/console/model";
 import { noteDocxFilename, noteToDocxBlob } from "@/lib/notes/docxExport";
 import {
@@ -55,6 +56,12 @@ export function NotesRoute() {
       deepDone.current = true;
     }
   }, [loaded, deepId, notes]);
+
+  // Keep the URL on the open note so it survives reloads and pastes.
+  useEffect(() => {
+    if (!loaded) return;
+    syncDeepParam("id", activeId);
+  }, [loaded, activeId]);
 
   const shown = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -239,6 +246,7 @@ export function NotesRoute() {
               <Button size="sm" variant="ghost" onClick={() => void exportWord()} disabled={exporting} title="Export this note as Word (.docx)">
                 {exporting ? "Exporting…" : "Export Word"}
               </Button>
+              {active && <DeepLinkButton path="/notes" param="id" value={active.id} />}
               <WordImportButton onImport={(imp) => void importWord(imp)} onError={setNotice} />
               {notice && (
                 <span role="status" className="max-w-[260px] truncate text-[11px] text-[#9A5B13]" title={notice}>

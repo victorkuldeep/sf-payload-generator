@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Button from "../ui/Button";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import type { Experience } from "@/lib/wireframe/model";
-import { buildOdaManifest } from "@/lib/wireframe/model";
-import { buildSpec } from "@/lib/wireframe/buildSpec";
+import { experiencePackage } from "@/lib/wireframe/packageIo";
 import { listSnapshots, saveExperience, saveSnapshot, type WireframeSnapshot } from "@/lib/wireframe/store";
 
 function download(filename: string, text: string, mime: string) {
@@ -32,6 +32,7 @@ export function HistoryDialog({ exp, onRestored, onClose }: { exp: Experience; o
   const [snaps, setSnaps] = useState<WireframeSnapshot[]>([]);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pendingRestore, setPendingRestore] = useState<WireframeSnapshot | null>(null);
 
   const refresh = async () => {
     setSnaps(await listSnapshots(exp.id).catch(() => []));
@@ -62,7 +63,7 @@ export function HistoryDialog({ exp, onRestored, onClose }: { exp: Experience; o
   };
 
   const restore = async (snap: WireframeSnapshot) => {
-    if (!window.confirm(`Restore v${snap.version}${snap.note ? ` - "${snap.note}"` : ""}? Current canvas becomes unsaved work.`)) return;
+    setPendingRestore(null);
     setBusy(true);
     const ok = await saveExperience({ ...snap.payload, id: exp.id, version: snap.version, status: snap.status }).catch(() => false);
     setBusy(false);
@@ -73,11 +74,7 @@ export function HistoryDialog({ exp, onRestored, onClose }: { exp: Experience; o
     const slug = exp.name.replace(/[^A-Za-z0-9]+/g, "-").toLowerCase();
     download(
       `${slug}-v${exp.version}-package.json`,
-      JSON.stringify(
-        { kind: "gravenx-experience-package", packageVersion: 1, exportedAt: new Date().toISOString(), experience: exp, manifest: buildOdaManifest(exp), spec: buildSpec(exp) },
-        null,
-        2,
-      ),
+      JSON.stringify(experiencePackage(exp), null, 2),
       "application/json",
     );
   };
@@ -134,7 +131,7 @@ export function HistoryDialog({ exp, onRestored, onClose }: { exp: Experience; o
                   {new Date(s.createdAt).toLocaleString()} · {s.payload.screens.length} screens · {s.payload.components.length} components
                 </p>
               </div>
-              <Button size="sm" variant="secondary" onClick={() => void restore(s)} disabled={busy}>
+              <Button size="sm" variant="secondary" onClick={() => setPendingRestore(s)} disabled={busy}>
                 Restore
               </Button>
             </li>
@@ -151,6 +148,15 @@ export function HistoryDialog({ exp, onRestored, onClose }: { exp: Experience; o
           </Button>
         </div>
       </div>
+      {pendingRestore && (
+        <ConfirmDialog
+          title={`Restore v${pendingRestore.version}?`}
+          message={`Current canvas becomes unsaved work${pendingRestore.note ? ` - "${pendingRestore.note}"` : ""}.`}
+          confirmLabel="Restore snapshot"
+          onCancel={() => setPendingRestore(null)}
+          onConfirm={() => void restore(pendingRestore)}
+        />
+      )}
     </div>
   );
 }

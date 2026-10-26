@@ -5,7 +5,8 @@ import Button from "../ui/Button";
 import { ConfirmDialog } from "../wireframe/ConfirmDialog";
 import { consoleLinkHref } from "@/lib/console/model";
 import { RecordWhereUsed } from "@/components/graph/WhereUsedStrip";
-import { findDeepRecord, useDeepParam } from "@/lib/deep/deep";
+import { findDeepRecord, syncDeepParam, useDeepParam } from "@/lib/deep/deep";
+import { DeepLinkButton } from "../ui/DeepLinkButton";
 import {
   canTransition,
   linkRequirement,
@@ -99,6 +100,12 @@ export function RequirementsRoute() {
       deepDone.current = true;
     }
   }, [loaded, deepId, items]);
+
+  // Keep the URL on the open requirement so it survives reloads and pastes.
+  useEffect(() => {
+    if (!loaded) return;
+    syncDeepParam("id", activeId);
+  }, [loaded, activeId]);
 
   const persist = async (next: Requirement) => {
     setItems((prev) => prev.map((i) => (i.id === next.id ? next : i)));
@@ -513,6 +520,7 @@ function RequirementEditor({
           <Button size="sm" variant="secondary" onClick={onExport} title="Download this requirement as a portable package">
             Export
           </Button>
+          <DeepLinkButton path="/requirements" param="id" value={r.id} />
           <Button size="sm" variant="secondary" onClick={onDelete} title="Delete this requirement">
             Delete
           </Button>
