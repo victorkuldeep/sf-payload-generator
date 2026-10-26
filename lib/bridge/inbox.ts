@@ -10,6 +10,7 @@ import {
 } from "./protocol";
 import { hasBridgeHandler, runBridgeHandler } from "./registry";
 import { getBridgeSettings } from "./settings";
+import { surfaceForCommand, surfaceLabel } from "./surfaces";
 
 /**
  * Tab-side inbox: dials the localhost bridge, pairs with the session code,
@@ -23,6 +24,8 @@ export interface InboxEvents {
   onStatus: (status: "connecting" | "live" | "error", error?: string) => void;
   onApproval: (call: BridgeCall, approve: (ok: boolean) => void) => void;
   onEvent: (kind: string, ok: boolean, detail: string) => void;
+  /** Navigate the studio (Next router) so the owning tab can register. Optional - without it, unknown commands fail closed. */
+  onNavigatePath?: (path: string) => void;
 }
 
 export interface SocketLike {
@@ -129,9 +132,13 @@ export class BridgeInbox {
   private async dispatch(call: BridgeCall): Promise<void> {
     const label = `${call.command}`;
     if (!hasBridgeHandler(call.command)) {
-      this.events.onEvent(label, false, `Unknown command ${call.command} - fail closed.`);
-      this.reply(call.id, { ok: false, error: `Unknown bridge command: ${call.command}` });
-      return;
+      // The owning tab is not mounted - navigate there and wait for it to
+      // register instead of failing closed. Unknown commands still fail.
+      if (!(await this.ensureSurface(call))) {
+        this.events.onEvent(label, false, `Unknown command ${call.command} - fail closed.`);
+        this.reply(call.id, { ok: false, error: `Unknown bridge command: ${call.command}` });
+        return;
+      }
     }
     if (!isWriteCommand(call.command)) {
       try {
@@ -185,6 +192,36 @@ export class BridgeInbox {
 
   approve(id: string, ok: boolean): void {
     this.approvalWaiters.get(id)?.(ok);
+  }
+
+  /**
+   * Open the owning surface for a command whose tab is not mounted, then
+   * wait for it to register. Returns true when the handler is ready.
+   * Unknown commands (no owning surface) return false - fail closed.
+   */
+  private async ensureSurface(call: BridgeCall): Promise<boolean> {
+    const path = surfaceForCommand(call.command);
+    if (!path || !this.events.onNavigatePath) return false;
+    this.events.onEvent(
+      `${call.command}`,
+      true,
+      `Opening ${surfaceLabel(path)} for the agent - running there in a moment.`
+    );
+    try {
+      this.events.onNavigatePath(path);
+    } catch {
+      return false;
+    }
+    for (let i = 0; i < 48; i++) {
+      if (hasBridgeHandler(call.command)) return true;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    this.events.onEvent(
+      `${call.command}`,
+      false,
+      `Opened ${surfaceLabel(path)} but it never registered ${call.command} - ask the architect to open it.`
+    );
+    return false;
   }
 
   private reply(id: string, partial: Omit<BridgeResult, "v" | "id" | "type">): void {

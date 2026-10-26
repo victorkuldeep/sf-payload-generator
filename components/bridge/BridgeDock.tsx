@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { BridgeInbox } from "@/lib/bridge/inbox";
 import type { BridgeCall } from "@/lib/bridge/protocol";
 import { describeCommand } from "@/lib/bridge/protocol";
@@ -33,6 +34,7 @@ function readDockPos(): { x: number; y: number } | null {
  */
 export function BridgeDock() {
   const settings = useBridgeSettings();
+  const router = useRouter();
   const inboxRef = useRef<BridgeInbox | null>(null);
   const approveRef = useRef<((ok: boolean) => void) | null>(null);
   const [open, setOpen] = useState(false);
@@ -83,6 +85,11 @@ export function BridgeDock() {
       onEvent: (kind, ok, detail) => {
         void logToolRun({ skill: "agent-bridge", tool: kind, label: detail.slice(0, 200), ok, detail: detail.slice(0, 500) });
       },
+      // Agent commands find their tab: sys.* opens System Design, erd.* the
+      // Schema canvas. The inbox waits for the tab to register, then runs.
+      onNavigatePath: (path) => {
+        router.push(path);
+      },
     });
     inboxRef.current?.close();
     inboxRef.current = inbox;
@@ -91,7 +98,7 @@ export function BridgeDock() {
       inbox.close();
       if (inboxRef.current === inbox) inboxRef.current = null;
     };
-  }, [settings.enabled, settings.code, settings.port, settings.attempt]);
+  }, [settings.enabled, settings.code, settings.port, settings.attempt, router]);
 
   const decide = (ok: boolean) => {
     const call = pending;
