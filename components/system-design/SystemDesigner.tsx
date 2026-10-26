@@ -190,6 +190,8 @@ function DesignerCanvas({
   canUngroup,
   onGroup,
   onUngroup,
+  canDelete,
+  onDeleteSelection,
 }: {
   project: SystemProject;
   onMoveSystems: (moves: { id: string; x: number; y: number }[]) => void;
@@ -224,6 +226,8 @@ function DesignerCanvas({
   canUngroup: boolean;
   onGroup: () => void;
   onUngroup: () => void;
+  canDelete: boolean;
+  onDeleteSelection: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition, fitView, getNodes, getNodesBounds } = useReactFlow();
@@ -276,6 +280,12 @@ function DesignerCanvas({
   // draw.io tools: Select (click, marquee, shift adds) or Pan. Touch
   // always pans - marquee is a mouse gesture.
   const [tool, setTool] = useState<'select' | 'pan'>('select');
+  // Empty-canvas overlay dismissal: Start drops it to a blank canvas without
+  // forcing a template. Resets per project so a fresh canvas explains itself.
+  const [started, setStarted] = useState(false);
+  useEffect(() => {
+    setStarted(false);
+  }, [project.id]);
   const isTouchOrPen = typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
   useEffect(() => {
     if (draggingRef.current) return;
@@ -566,7 +576,7 @@ function DesignerCanvas({
         )}
         <Controls position="bottom-left" />
       </ReactFlow>
-      {project.systems.length === 0 && (
+      {project.systems.length === 0 && !started && (
         <div className="absolute inset-0 z-10 flex items-center justify-center p-6 pointer-events-none">
           <div className="pointer-events-auto max-w-sm rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] px-6 py-5 text-center shadow-[0_12px_36px_-16px_rgba(24,20,12,0.4)]">
             <svg width="300" height="120" viewBox="0 0 300 120" fill="none" aria-hidden="true" className="mx-auto h-auto w-full max-w-[280px]">
@@ -598,13 +608,28 @@ function DesignerCanvas({
               Drag a system in from the inventory - or start from a template.
             </p>
             <p className="mt-2.5 text-[11px] text-ivory-500">⌘/Ctrl+Z undo · Del removes · drag between nodes to connect</p>
-            <Button size="sm" className="mt-3" onClick={emptyAction}>
-              Browse templates
-            </Button>
+            <div className="mt-3 flex items-center justify-center gap-2">
+              <Button size="sm" onClick={() => setStarted(true)}>
+                Start
+              </Button>
+              <Button size="sm" variant="secondary" onClick={emptyAction}>
+                Browse templates
+              </Button>
+            </div>
           </div>
         </div>
       )}
       <div className="absolute right-3 top-3 z-10 flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={onDeleteSelection}
+          disabled={!canDelete}
+          title="Delete selection (Del)"
+          aria-label="Delete selection"
+          className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-1.5 text-ivory-700 transition-colors cursor-pointer hover:border-red-400 hover:text-red-700 disabled:cursor-default disabled:opacity-40 disabled:hover:border-[var(--color-line)] disabled:hover:text-ivory-700"
+        >
+          <Trash2 size={13} aria-hidden="true" />
+        </button>
         <button
           type="button"
           onClick={onTogglePresent}
@@ -1147,6 +1172,39 @@ export function SystemDesigner() {
     return true;
   }, [project, selIds, mutate]);
 
+  // Shared by the Del key and the canvas toolbar delete button.
+  // Multi-delete: every selected node goes; edges touching them go too.
+  const deleteSelection = useCallback(() => {
+    if (!(selNodeId || selEdgeId || selNoteId || selIds.length > 0)) return;
+    const sysDel = new Set(selIds.filter((id) => project?.systems.some((x) => x.id === id)));
+    if (selNodeId) sysDel.add(selNodeId);
+    const eid = selEdgeId;
+    const markDel = new Set(
+      selIds.filter(
+        (id) => project?.canvasNotes.some((n) => n.id === id) || project?.canvasImages.some((g) => g.id === id)
+      )
+    );
+    if (selNoteId) markDel.add(selNoteId);
+    const doomedBlobs = project?.canvasImages.filter((g) => markDel.has(g.id)).map((g) => g.blobId) ?? [];
+    mutate((p) =>
+      pruneCanvasGroups({
+        ...p,
+        systems: p.systems.filter((x) => !sysDel.has(x.id)),
+        connections: p.connections.filter(
+          (c) => c.id !== eid && !sysDel.has(c.sourceId) && !sysDel.has(c.targetId)
+        ),
+        canvasNotes: p.canvasNotes.filter((n) => !markDel.has(n.id)),
+        canvasImages: p.canvasImages.filter((g) => !markDel.has(g.id)),
+      })
+    );
+    for (const b of doomedBlobs) void deleteCanvasBlob(b);
+    setSelIds([]);
+    setSelNodeId(null);
+    setSelEdgeId(null);
+    setSelNoteId(null);
+    setEditingNoteId(null);
+  }, [selNodeId, selEdgeId, selNoteId, selIds, mutate, project]);
+
   // Keyboard: delete selection, undo/redo, escape clears.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1183,39 +1241,12 @@ export function SystemDesigner() {
       }
       if ((e.key === "Delete" || e.key === "Backspace") && (selNodeId || selEdgeId || selNoteId || selIds.length > 0)) {
         e.preventDefault();
-        // Multi-delete: every selected node goes; edges touching them go too.
-        const sysDel = new Set(selIds.filter((id) => project?.systems.some((x) => x.id === id)));
-        if (selNodeId) sysDel.add(selNodeId);
-        const eid = selEdgeId;
-        const markDel = new Set(
-          selIds.filter(
-            (id) => project?.canvasNotes.some((n) => n.id === id) || project?.canvasImages.some((g) => g.id === id)
-          )
-        );
-        if (selNoteId) markDel.add(selNoteId);
-        const doomedBlobs = project?.canvasImages.filter((g) => markDel.has(g.id)).map((g) => g.blobId) ?? [];
-        mutate((p) =>
-          pruneCanvasGroups({
-            ...p,
-            systems: p.systems.filter((x) => !sysDel.has(x.id)),
-            connections: p.connections.filter(
-              (c) => c.id !== eid && !sysDel.has(c.sourceId) && !sysDel.has(c.targetId)
-            ),
-            canvasNotes: p.canvasNotes.filter((n) => !markDel.has(n.id)),
-            canvasImages: p.canvasImages.filter((g) => !markDel.has(g.id)),
-          })
-        );
-        for (const b of doomedBlobs) void deleteCanvasBlob(b);
-        setSelIds([]);
-        setSelNodeId(null);
-        setSelEdgeId(null);
-        setSelNoteId(null);
-        setEditingNoteId(null);
+        deleteSelection();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selNodeId, selEdgeId, selNoteId, selIds, mutate, undo, redo, project, groupSelection, ungroupSelection]);
+  }, [selNodeId, selEdgeId, selNoteId, selIds, mutate, undo, redo, project, groupSelection, ungroupSelection, deleteSelection]);
 
   const expandGroup = useCallback((id: string): string[] => {
     const g = project?.groups.find((gg) => gg.memberIds.includes(id));
@@ -1407,11 +1438,29 @@ export function SystemDesigner() {
     setSelNodeId(null);
   }, [mutate, project]);
 
+  // Blank-canvas loader shared by the UI New action and the sys.new bridge
+  // command. Declared above the bridge context so the memo can close over it.
+  const loadBuilt = useCallback((build: () => SystemProject) => {
+    setPendingAction(null);
+    setProject(build());
+    setPast([]);
+    setFuture([]);
+    setSelNodeId(null);
+    setSelEdgeId(null);
+    setSaveState("dirty");
+  }, []);
+
   // Live agent bridge (sys.* commands): the tab-side context mirroring the
   // ERD bridge. projectRef (declared with the other refs) keeps handlers
   // fresh; registration re-runs when the stable callbacks change.
   const systemBridgeCtx = useMemo<SystemBridgeContext>(() => ({
     getProject: () => projectRef.current,
+    newBlankProject: (name) => {
+      const clean = (name ?? "").trim().slice(0, 80);
+      const p = newProject(clean || undefined);
+      loadBuilt(() => p);
+      return { id: p.id, name: p.name };
+    },
     placeSystems: (specs) => {
       const p = projectRef.current;
       if (!p) throw new Error("No system project open - open or create one in System Design first.");
@@ -1463,7 +1512,7 @@ export function SystemDesigner() {
       if (selNodeId && gone.has(selNodeId)) setSelNodeId(null);
       return { removed: doomed.map((s) => s.name) };
     },
-  }), [mutate, connectSystems, selNodeId]);
+  }), [mutate, connectSystems, selNodeId, loadBuilt]);
 
   useEffect(() => {
     const handlers = buildSystemBridgeHandlers(systemBridgeCtx);
@@ -1528,16 +1577,6 @@ export function SystemDesigner() {
       setSaveError(err instanceof Error ? err.message : "Save failed.");
     }
   }, [project]);
-
-  const loadBuilt = useCallback((build: () => SystemProject) => {
-    setPendingAction(null);
-    setProject(build());
-    setPast([]);
-    setFuture([]);
-    setSelNodeId(null);
-    setSelEdgeId(null);
-    setSaveState("dirty");
-  }, []);
 
   const replaceCanvas = useCallback((label: string, build: () => SystemProject) => {
     if (project && (project.systems.length > 0 || saveState === "dirty")) {
@@ -2112,6 +2151,8 @@ export function SystemDesigner() {
                 canUngroup={touchingGroups.length > 0}
                 onGroup={() => { groupSelection(); }}
                 onUngroup={() => { ungroupSelection(); }}
+                canDelete={Boolean(selNodeId || selEdgeId || selNoteId || selIds.length > 0)}
+                onDeleteSelection={deleteSelection}
               />
             )}
           </ReactFlowProvider>

@@ -20,6 +20,7 @@ export const BRIDGE_PROTOCOL_V = 1;
 /** Commands the tab understands. Reads are free; writes need approval. */
 export const BRIDGE_READS = ["bridge.ping", "erd.snapshot", "erd.objects", "arch.activity", "sys.snapshot"] as const;
 export const BRIDGE_WRITES = [
+  "sys.new",
   "sys.place",
   "sys.connect",
   "sys.remove",
@@ -105,6 +106,8 @@ export function describeCommand(command: string, args: Record<string, unknown>):
       return "Search org objects (schema browse)";
     case "arch.activity":
       return "Read the org-mutation audit trail";
+    case "sys.new":
+      return `Start a new blank system project${args.name ? `: ${str(args.name)}` : ""} (replaces the current canvas; the old project stays saved)`;
     case "sys.snapshot":
       return "Read the open system project (systems, connections)";
     case "sys.place":

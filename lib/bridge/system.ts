@@ -21,12 +21,14 @@ import { SYSTEM_TEMPLATES } from "../system-design/model";
 export interface SystemBridgeContext {
   /** Current project (null when no project is open). */
   getProject: () => SystemProject | null;
+  newBlankProject: (name?: string) => { id: string; name: string };
   placeSystems: (specs: { type: string; name?: string; x?: number; y?: number }[]) => { placed: string[] };
   connectByName: (from: string, to: string, label?: string) => { from: string; to: string };
   removeByName: (names: string[]) => { removed: string[] };
 }
 
 export const SYSTEM_BRIDGE_KINDS = [
+  "sys.new",
   "sys.snapshot",
   "sys.place",
   "sys.connect",
@@ -72,6 +74,11 @@ export function resolveSystemType(ref: string): { type: SystemType; templateInde
 
 export function buildSystemBridgeHandlers(ctx: SystemBridgeContext): Record<string, (args: Record<string, unknown>) => Promise<unknown>> {
   return {
+    "sys.new": async (args) => {
+      const name = strArg(args, "name");
+      return ctx.newBlankProject(name || undefined);
+    },
+
     "sys.snapshot": async () => {
       const p = ctx.getProject();
       if (!p) throw new Error("No system project open - open or create one in System Design first.");

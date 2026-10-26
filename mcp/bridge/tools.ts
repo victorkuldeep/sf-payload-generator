@@ -75,6 +75,11 @@ export function liveTools(hub: BridgeHub): McpTool[] {
       30000,
     ),
     live(
+      hub, "system_live_new", "Start a new blank System Design project from scratch (replaces the current canvas; the old project stays saved). Call this first when there is no open project.",
+      { name: z.string().min(1).max(80).optional().describe("Project name, e.g. Headless CPQ demo") },
+      "sys.new",
+    ),
+    live(
       hub, "system_live_snapshot", "Read the open System Design project: systems with types/positions, connections with status, counts. Read-only.",
       {},
       "sys.snapshot",

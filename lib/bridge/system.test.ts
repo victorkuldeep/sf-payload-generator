@@ -46,6 +46,7 @@ function setupCtx(): SystemBridgeContext & {
     connected,
     removed,
     getProject: () => project,
+    newBlankProject: (name?: string) => ({ id: "p-new", name: name ?? "Untitled architecture" }),
     placeSystems: (specs) => {
       // Mirror the real ctx: unknown types fail the whole call.
       for (const s of specs) resolveSystemType(s.type);
@@ -67,10 +68,18 @@ function setupCtx(): SystemBridgeContext & {
 }
 
 describe("system bridge handlers", () => {
-  it("registers the 4 sys kinds", () => {
-    expect(SYSTEM_BRIDGE_KINDS).toHaveLength(4);
+  it("registers the 5 sys kinds", () => {
+    expect(SYSTEM_BRIDGE_KINDS).toHaveLength(5);
     const handlers = buildSystemBridgeHandlers(setupCtx());
     for (const kind of SYSTEM_BRIDGE_KINDS) expect(handlers[kind]).toBeTypeOf("function");
+  });
+
+  it("starts a blank project from scratch", async () => {
+    const handlers = buildSystemBridgeHandlers(setupCtx());
+    const named = (await handlers["sys.new"]!({ name: "Headless CPQ demo" })) as { id: string; name: string };
+    expect(named).toEqual({ id: "p-new", name: "Headless CPQ demo" });
+    const blank = (await handlers["sys.new"]!({})) as { id: string; name: string };
+    expect(blank).toEqual({ id: "p-new", name: "Untitled architecture" });
   });
 
   it("snapshots the open project", async () => {
