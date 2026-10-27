@@ -333,6 +333,7 @@ export function AppHeader(props: AppHeaderProps) {
       punch: "Topologies, sequences and experiences on canvas - architecture before implementation.",
       items: [
         { kind: "mode", id: "schema", label: "Schema", desc: "ERD + graph schema explorer" },
+        { kind: "route", href: "/lens", label: "Lens", desc: "Org metadata lens - coverage, automation load, heaviest objects" },
         { kind: "route", href: "/system", label: "System", desc: "Visual architecture and integration workbench" },
         { kind: "route", href: "/sequence", label: "Sequence", desc: "Describe the interaction, see the architecture" },
         { kind: "route", href: "/wireframe", label: "Wireframe", desc: "Schema-aware experience modeling" },

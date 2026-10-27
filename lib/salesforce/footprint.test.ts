@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fetchFootprint, fetchKeyPrefix, footprintSectionKeys, type FootprintRunner } from "./footprint";
+import { fetchFieldUsage, fetchFootprint, fetchKeyPrefix, flowLane, footprintMarkdown, footprintSectionKeys, type FootprintRunner } from "./footprint";
 
 function runnerFor(handlers: Record<string, object[]> | Error): FootprintRunner {
   return async (soql: string) => {
@@ -62,6 +62,37 @@ describe("automation footprint", () => {
     expect(prefix).toBe("001");
     const missing = await fetchKeyPrefix("Nope__c", async () => ({ ok: true, records: [] }));
     expect(missing).toBe("");
+  });
+
+  it("lanes flows by start type and builds a forwardable brief", () => {
+    expect(flowLane("RecordBeforeSave")).toBe("before");
+    expect(flowLane("RecordAfterSave · AutoLaunched")).toBe("after");
+    expect(flowLane("")).toBe("other");
+    const md = footprintMarkdown({
+      apiName: "Account",
+      total: 1,
+      sections: [
+        { key: "triggers", label: "Triggers", status: "ok", rows: [{ id: "t", name: "AcctTrig", detail: "Active", active: true }] },
+        { key: "flows", label: "Flows", status: "unavailable", rows: [], note: "denied" },
+      ],
+    });
+    expect(md).toContain("# Automation footprint · Account");
+    expect(md).toContain("- AcctTrig - Active (active)");
+    expect(md).toContain("## Flows (unavailable)");
+  });
+
+  it("resolves field usage through the dependency index", async () => {
+    const usage = await fetchFieldUsage("Account", "Industry", async (soql) => {
+      if (soql.includes("FROM FieldDefinition")) return { ok: true, records: [{ DurableId: "00Nxx" }] };
+      if (soql.includes("FROM MetadataComponentDependency")) {
+        return { ok: true, records: [{ MetadataComponentName: "Acct Flow", MetadataComponentType: "Flow" }] };
+      }
+      return { ok: false, error: "no mock" };
+    });
+    expect(usage.status).toBe("ok");
+    expect(usage.deps).toEqual([{ name: "Acct Flow", type: "Flow" }]);
+    const missing = await fetchFieldUsage("Account", "Nope__c", async () => ({ ok: true, records: [] }));
+    expect(missing.status).toBe("unavailable");
   });
 
   it("marks sections unavailable instead of fabricating zeros", async () => {

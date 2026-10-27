@@ -7067,6 +7067,7 @@ export default function SchemaPanel({
           instanceUrl={instanceUrl}
           apiVersion={apiVersion}
           getToken={getToken}
+          fields={(describes.get(automationApi)?.fields ?? []).map((f) => ({ name: f.name, label: f.label }))}
           onClose={() => setAutomationApi(null)}
           onLoaded={recordAutomationTotal}
         />

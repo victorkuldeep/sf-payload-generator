@@ -621,6 +621,7 @@ export function ExplorerPanel({
           instanceUrl={instanceUrl}
           apiVersion={apiVersion}
           getToken={getToken}
+          fields={(describe?.fields ?? []).map((f) => ({ name: f.name, label: f.label }))}
           onClose={() => setAutomationOpen(false)}
         />
       )}

@@ -148,6 +148,79 @@ export async function fetchKeyPrefix(apiName: string, run: FootprintRunner): Pro
   return "";
 }
 
+/**
+ * Save-order timeline: platform-fixed stages with the footprint sections
+ * pinned where they fire. Triggers span before+after (phase lives in code,
+ * not metadata); flows split by TriggerType when the org exposes it.
+ */
+export interface TimelineStage {
+  stage: string;
+  blurb: string;
+  sections: string[];
+  note?: string;
+}
+
+export const EXECUTION_TIMELINE: TimelineStage[] = [
+  { stage: "1 · Validation", blurb: "Required, format and rule checks reject the save here.", sections: ["validation"] },
+  { stage: "2 · Before triggers + flows", blurb: "Field updates before the record commits.", sections: ["triggers", "flows"], note: "Trigger phase is in code - flows split by start type below." },
+  { stage: "3 · Assignment + ownership", blurb: "Lead/Case routing, then queue ownership.", sections: ["assignment", "queues"] },
+  { stage: "4 · After triggers + flows", blurb: "Cross-object work after commit.", sections: ["triggers", "flows"], note: "Same records as stage 2 - phase per code and flow start element." },
+  { stage: "5 · Async + evaluation", blurb: "Approvals, duplicate jobs and scheduled paths.", sections: ["approvals", "duplicates"] },
+];
+
+/** Lane for one flow row by its start trigger type. */
+export function flowLane(detail: string): "before" | "after" | "other" {
+  const d = detail.toLowerCase();
+  if (d.includes("before")) return "before";
+  if (d.includes("after")) return "after";
+  return "other";
+}
+
+export interface FieldUsage {
+  status: "ok" | "unavailable";
+  deps: { name: string; type: string }[];
+  note?: string;
+}
+
+/** "Where is this field used?" via the platform dependency index. */
+export async function fetchFieldUsage(apiName: string, fieldName: string, run: FootprintRunner): Promise<FieldUsage> {
+  try {
+    const f = await run(
+      `SELECT DurableId FROM FieldDefinition WHERE EntityDefinition.QualifiedApiName = '${apiName.trim()}' AND QualifiedApiName = '${fieldName.trim()}' LIMIT 1`
+    );
+    const id = f.ok && f.records && f.records.length > 0 ? str(f.records[0]["DurableId"]) : "";
+    if (!id) return { status: "unavailable", deps: [], note: "Field not found in this org." };
+    const d = await run(
+      `SELECT MetadataComponentName, MetadataComponentType FROM MetadataComponentDependency WHERE RefMetadataComponentId = '${id}'`
+    );
+    if (!d.ok) return { status: "unavailable", deps: [], note: d.error || "Dependency index unavailable." };
+    const deps = (d.records ?? []).map((r) => ({ name: str(r["MetadataComponentName"]) || "(unnamed)", type: str(r["MetadataComponentType"]) || "component" }));
+    deps.sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name));
+    return { status: "ok", deps };
+  } catch (e) {
+    return { status: "unavailable", deps: [], note: e instanceof Error ? e.message : "Dependency index unavailable." };
+  }
+}
+
+/** One-page Markdown brief of the whole footprint - built for forwarding. */
+export function footprintMarkdown(fp: Footprint): string {
+  const lines = [`# Automation footprint · ${fp.apiName}`, ``, `Total: ${fp.total} records across ${fp.sections.length} sections. Live Tooling API read.`, ``];
+  for (const s of fp.sections) {
+    lines.push(`## ${s.label} (${s.status === "ok" ? s.rows.length : "unavailable"})`);
+    if (s.status !== "ok") {
+      lines.push(`Not readable in this org${s.note ? ` - ${s.note}` : "."}`, ``);
+      continue;
+    }
+    if (s.rows.length === 0) {
+      lines.push(`None.`, ``);
+      continue;
+    }
+    for (const r of s.rows) lines.push(`- ${r.name}${r.detail ? ` - ${r.detail}` : ""}${r.active === true ? " (active)" : r.active === false ? " (inactive)" : ""}`);
+    lines.push(``);
+  }
+  return lines.join("\n");
+}
+
 export function footprintSectionKeys(): string[] {
   return SECTIONS.map((s) => s.key);
 }
