@@ -19,7 +19,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "mcp": "tsx mcp/server.ts",
-    "mcp:bundle": "esbuild mcp/server.ts --bundle --platform=node --format=cjs --outfile=mcp/dist/gravenx-mcp.cjs"
+    "mcp:bundle": "esbuild mcp/server.ts --bundle --platform=node --format=cjs --outfile=mcp/dist/gravenx-mcp.cjs",
+    "skills:sync": "node scripts/sync-skills.mjs",
+    "skills:check": "node scripts/sync-skills.mjs --check",
+    "skills:bundle": "node scripts/bundle-skills.mjs",
+    "skills:install": "node scripts/install-skills.mjs"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.1.1",
