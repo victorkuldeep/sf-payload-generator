@@ -9,6 +9,7 @@ import { downloadExplorerWorkbook, fieldAuditQuery, parseAuditEnvelope, type Aud
 import { objectInfoPath, parseDependencyGraph, type DepEdge } from "@/lib/salesforce/picklistDeps";
 import { toolingQueryPath } from "@/lib/salesforce/picklistValues";
 import { PicklistValuesButton } from "@/components/PicklistValuesButton";
+import { AutomationModal } from "./erd/AutomationModal";
 
 interface ExplorerPanelProps {
   objects: SalesforceObject[];
@@ -77,6 +78,7 @@ export function ExplorerPanel({
   const [audit, setAudit] = useState<Record<string, FieldAudit>>({});
   const [auditNote, setAuditNote] = useState<string | null>(null);
   const [depEdges, setDepEdges] = useState<DepEdge[]>([]);
+  const [automationOpen, setAutomationOpen] = useState(false);
 
   const fetchDeps = async (objectApi: string, labels: Record<string, string>) => {
     setDepEdges([]);
@@ -451,6 +453,14 @@ export function ExplorerPanel({
               >
                 {xlsBusy ? "Building…" : "Dictionary (.xlsx)"}
               </button>
+              <button
+                type="button"
+                onClick={() => setAutomationOpen(true)}
+                title="Automation on this object - triggers, flows, queues, validation, approvals (live Tooling API read)"
+                className="rounded-md border border-[var(--color-line)] px-2.5 py-1.5 text-xs font-semibold hover:bg-ivory-50"
+              >
+                Automation
+              </button>
             </div>
 
             <div>
@@ -601,6 +611,18 @@ export function ExplorerPanel({
           </div>
         ) : null}
       </div>
+      )}
+      {describe && automationOpen && selName && (
+        <AutomationModal
+          key={selName}
+          apiName={selName}
+          label={describe.label}
+          keyPrefix=""
+          instanceUrl={instanceUrl}
+          apiVersion={apiVersion}
+          getToken={getToken}
+          onClose={() => setAutomationOpen(false)}
+        />
       )}
     </div>
   );

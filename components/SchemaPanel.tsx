@@ -26,6 +26,7 @@ import { DiscoverPicker, type DiscoverCandidate } from "./erd/DiscoverPicker";
 import { HidePanel } from "./erd/HidePanel";
 import { PicklistPopover, type PicklistPopoverData } from "./erd/PicklistPopover";
 import { RecordTypePopover, type RecordTypePopoverData } from "./erd/RecordTypePopover";
+import { AutomationModal } from "./erd/AutomationModal";
 import { EntityLogModal } from "./erd/EntityLogModal";
 import {
   listSnapshotsByOrg,
@@ -1177,6 +1178,15 @@ export default function SchemaPanel({
   const [logModalOpen, setLogModalOpen] = useState(false);
   /** Open-items compiled list in the notes panel (icon + count when shut). */
   const [openItemsOpen, setOpenItemsOpen] = useState(false);
+  /** Automation footprint modal (Tooling API) + per-object totals for node badges. */
+  const [automationApi, setAutomationApi] = useState<string | null>(null);
+  const [automationTotals, setAutomationTotals] = useState<Record<string, number>>({});
+  const openAutomation = useCallback((apiName: string) => setAutomationApi(apiName), []);
+  const recordAutomationTotal = useCallback(
+    (apiName: string, total: number) =>
+      setAutomationTotals((prev) => (prev[apiName] === total ? prev : { ...prev, [apiName]: total })),
+    []
+  );
   const notesRestoredRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -2691,6 +2701,8 @@ export default function SchemaPanel({
             hasNote: rows.length > 0,
             hasTodo: rows.some((r) => (r.kind ?? "task") === "task" && r.status !== "done"),
             onNoteClick: openEntityNote,
+            onAutomationClick: openAutomation,
+            automationTotal: automationTotals[n.id] ?? null,
             onMakeRoot: makeRoot,
             onRecordTypesClick: openRecordTypes,
             customParentCount: d ? customParentTargets(d).length : 0,
@@ -2705,7 +2717,7 @@ export default function SchemaPanel({
         };
       }),
     };
-  }, [visibleDescribes, describes, labels, rootName, spot, enforced, entityLog, openEntityNote, makeRoot, openRecordTypes, showCustomPull, copyFieldTable, copyFieldDataTable, tagById, nodeTags, tagFilter, tagMode]);
+  }, [visibleDescribes, describes, labels, rootName, spot, enforced, entityLog, openEntityNote, openAutomation, automationTotals, makeRoot, openRecordTypes, showCustomPull, copyFieldTable, copyFieldDataTable, tagById, nodeTags, tagFilter, tagMode]);
 
   // Graph default = FULL 1-level neighborhood (parents left, children right),
   // lite previews included - this is the intent of graph view. Family
@@ -7042,6 +7054,21 @@ export default function SchemaPanel({
             }
             setEntryMetaById(id, { anchor }, `Anchor set to ${anchor.id}`);
           }}
+        />
+      )}
+
+      {/* Automation footprint modal - Tooling API read of triggers/flows/queues/validation/approvals. */}
+      {automationApi && (
+        <AutomationModal
+          key={automationApi}
+          apiName={automationApi}
+          label={labels.get(automationApi) ?? automationApi}
+          keyPrefix=""
+          instanceUrl={instanceUrl}
+          apiVersion={apiVersion}
+          getToken={getToken}
+          onClose={() => setAutomationApi(null)}
+          onLoaded={recordAutomationTotal}
         />
       )}
 

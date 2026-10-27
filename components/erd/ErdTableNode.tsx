@@ -357,6 +357,27 @@ function ErdTableNodeInner({ data, selected }: NodeProps<Node<ErdNodeData>>) {
               <span className={`absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full ${data.hasTodo ? "bg-red-500" : "bg-bronze-500"}`} aria-hidden="true" />
             )}
           </button>
+            {data.onAutomationClick && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  data.onAutomationClick?.(data.apiName);
+                }}
+                title="Automation on this object - triggers, flows, queues, validation, approvals"
+                aria-label={`Show automation on ${data.apiName}`}
+                className={`nodrag relative shrink-0 rounded p-1 transition-colors cursor-pointer ${data.isRoot ? "text-ivory-300 hover:text-white hover:bg-ivory-800" : "text-ivory-950 hover:text-bronze-600 hover:bg-ivory-200"}`}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                  <path d="M13 2 4.5 13.5H11L10 22l8.5-11.5H12L13 2Z" strokeLinejoin="round" />
+                </svg>
+                {typeof data.automationTotal === "number" && (
+                  <span className="absolute -top-1.5 -right-1.5 rounded-full bg-ivory-950 px-1 text-[8px] font-bold leading-tight text-ivory-100" aria-hidden="true">
+                    {data.automationTotal}
+                  </span>
+                )}
+              </button>
+            )}
           {data.authorPending && (
             <span className="shrink-0 rounded border border-amber-300 bg-amber-100 px-1 py-px text-[9px] font-bold text-amber-800" title="Deploying to the org - not live yet">
               DEPLOYING

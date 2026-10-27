@@ -74,6 +74,9 @@ export interface ErdNodeData extends Record<string, unknown> {
   hasNote?: boolean;
   hasTodo?: boolean;
   onNoteClick?: (apiName: string) => void;
+  /** Automation footprint (triggers/flows/queues/…) - header Zap icon + total badge. */
+  onAutomationClick?: (apiName: string) => void;
+  automationTotal?: number | null;
   /** Promote this table to canvas root (shared re-root, both views follow). */
   onMakeRoot?: (apiName: string) => void;
   /** Per-entity pulls: parents / children in one shot, tabbed Custom vs Standard. */
